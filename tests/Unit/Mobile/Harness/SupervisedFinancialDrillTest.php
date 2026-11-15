@@ -635,26 +635,58 @@ class SupervisedFinancialDrillTest extends TestCase
         $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
         mkdir($harnessDir, 0700, true);
 
+        $envVarsToScope = [
+            'APP_ENV',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+            'PHASE8_TEST_DB_EMPTY_PASSWORD',
+        ];
+        $savedStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envVarsToScope);
+
         try {
-            SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
-                schemaName: 'accounting_p8_tmp_0123456789ab',
-                proofPath: $proofFile,
-                proofNonce: str_repeat('a', 32),
-                harnessDir: $harnessDir,
-                childPid: 1234,
-                repoRoot: dirname(__DIR__, 3)
-            );
-            $this->fail('Expected RuntimeException from assertPrimarySchema with malformed proof file');
-        } catch (RuntimeException $e) {
-            // Expected: assertPrimarySchema threw
-            // Verify env was restored to its pre-call state in the finally block
-            $this->assertSame($origProof, getenv('PHASE8_DISPOSABLE_DB_PROOF'),
-                'PHASE8_DISPOSABLE_DB_PROOF must be restored after captureVerifiedOwnedSnapshot fails');
-            $this->assertSame($origNonce, getenv('PHASE8_DISPOSABLE_DB_NONCE'),
-                'PHASE8_DISPOSABLE_DB_NONCE must be restored after captureVerifiedOwnedSnapshot fails');
-            $this->assertSame($origAllow, getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
-                'PHASE8_ALLOW_DISPOSABLE_DB must be restored after captureVerifiedOwnedSnapshot fails');
+            putenv('APP_ENV=testing');
+            $_ENV['APP_ENV'] = 'testing';
+            $_SERVER['APP_ENV'] = 'testing';
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            $_ENV['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
+            $_SERVER['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            $_ENV['PHASE8_TEST_DB_PORT'] = '3342';
+            $_SERVER['PHASE8_TEST_DB_PORT'] = '3342';
+            putenv('PHASE8_TEST_DB_USERNAME=disposable_test_user');
+            $_ENV['PHASE8_TEST_DB_USERNAME'] = 'disposable_test_user';
+            $_SERVER['PHASE8_TEST_DB_USERNAME'] = 'disposable_test_user';
+            putenv('PHASE8_TEST_DB_PASSWORD=');
+            $_ENV['PHASE8_TEST_DB_PASSWORD'] = '';
+            $_SERVER['PHASE8_TEST_DB_PASSWORD'] = '';
+            putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+            $_ENV['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+            $_SERVER['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+
+            try {
+                SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+                    schemaName: 'accounting_p8_tmp_0123456789ab',
+                    proofPath: $proofFile,
+                    proofNonce: str_repeat('a', 32),
+                    harnessDir: $harnessDir,
+                    childPid: 1234,
+                    repoRoot: dirname(__DIR__, 3)
+                );
+                $this->fail('Expected Exception from assertPrimarySchema with malformed proof file');
+            } catch (\Throwable $e) {
+                // Expected: assertPrimarySchema threw
+                // Verify env was restored to its pre-call state in the finally block
+                $this->assertSame($origProof, getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+                    'PHASE8_DISPOSABLE_DB_PROOF must be restored after captureVerifiedOwnedSnapshot fails');
+                $this->assertSame($origNonce, getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+                    'PHASE8_DISPOSABLE_DB_NONCE must be restored after captureVerifiedOwnedSnapshot fails');
+                $this->assertSame($origAllow, getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+                    'PHASE8_ALLOW_DISPOSABLE_DB must be restored after captureVerifiedOwnedSnapshot fails');
+            }
         } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
             @rmdir($harnessDir);
         }
     }

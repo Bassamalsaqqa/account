@@ -11,6 +11,7 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use Tests\Support\Harness\DisposableMobileV2BackendHarness;
 use Tests\Support\Harness\MobileV2HarnessCommand;
+use Tests\Support\Harness\SupervisedPairedFinancialDrill;
 use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 
@@ -2432,44 +2433,114 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_financial_post_run_inspector_defaults_to_no_execute_when_flags_missing(): void
     {
-        putenv('MOBILE_V2_HARNESS_ENABLE');
-        putenv('PHASE8_ALLOW_DISPOSABLE_DB');
-
-        $sampleSchema = 'accounting_p8_tmp_0123456789ab';
+        $envVars = ['MOBILE_V2_HARNESS_ENABLE', 'PHASE8_ALLOW_DISPOSABLE_DB'];
+        $savedStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envVars);
 
         try {
-            \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates($sampleSchema);
-            $this->fail('Expected RuntimeException for missing harness enable flag');
-        } catch (\RuntimeException $e) {
-            $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
+            putenv('MOBILE_V2_HARNESS_ENABLE');
+            unset($_ENV['MOBILE_V2_HARNESS_ENABLE'], $_SERVER['MOBILE_V2_HARNESS_ENABLE']);
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB');
+            unset($_ENV['PHASE8_ALLOW_DISPOSABLE_DB'], $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB']);
+
+            $sampleSchema = 'accounting_p8_tmp_0123456789ab';
+
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates($sampleSchema);
+                $this->fail('Expected RuntimeException for missing harness enable flag');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
+            }
+
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureBaseline(1, $sampleSchema);
+                $this->fail('Expected RuntimeException for captureBaseline without flags');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
+            }
+        } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
         }
+    }
+
+    #[Test]
+    public function test_financial_post_run_inspector_refuses_when_app_env_not_testing(): void
+    {
+        $envVars = [
+            'APP_ENV',
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+        ];
+        $savedStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envVars);
 
         try {
-            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureBaseline(1, $sampleSchema);
-            $this->fail('Expected RuntimeException for captureBaseline without flags');
-        } catch (\RuntimeException $e) {
-            $this->assertStringContainsString('Inspector refused: defaults to NO-EXECUTE', $e->getMessage());
+            putenv('MOBILE_V2_HARNESS_ENABLE=1');
+            $_ENV['MOBILE_V2_HARNESS_ENABLE'] = '1';
+            $_SERVER['MOBILE_V2_HARNESS_ENABLE'] = '1';
+
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
+            $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
+
+            // 1. Refuse when APP_ENV is unset
+            putenv('APP_ENV');
+            unset($_ENV['APP_ENV'], $_SERVER['APP_ENV']);
+
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('accounting_p8_tmp_0123456789ab');
+                $this->fail('Expected RuntimeException when APP_ENV is unset');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('DisposableMariaDbSchema refused: APP_ENV is not testing.', $e->getMessage());
+            }
+
+            // 2. Refuse when APP_ENV is explicitly 'production'
+            putenv('APP_ENV=production');
+            $_ENV['APP_ENV'] = 'production';
+            $_SERVER['APP_ENV'] = 'production';
+
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('accounting_p8_tmp_0123456789ab');
+                $this->fail('Expected RuntimeException when APP_ENV is production');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('DisposableMariaDbSchema refused: APP_ENV is not testing.', $e->getMessage());
+            }
+        } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
         }
     }
 
     #[Test]
     public function test_financial_post_run_inspector_refuses_malformed_or_unproven_disposable_schema(): void
     {
-        $backupEnv = [
-            'MOBILE_V2_HARNESS_ENABLE' => getenv('MOBILE_V2_HARNESS_ENABLE'),
-            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
-            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
-            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
-            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
-            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
-            'PHASE8_TEST_DB_EMPTY_PASSWORD' => getenv('PHASE8_TEST_DB_EMPTY_PASSWORD'),
-            'PHASE8_DISPOSABLE_DB_PROOF' => getenv('PHASE8_DISPOSABLE_DB_PROOF'),
-            'PHASE8_DISPOSABLE_DB_NONCE' => getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+        $envVars = [
+            'APP_ENV',
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+            'PHASE8_TEST_DB_EMPTY_PASSWORD',
+            'PHASE8_DISPOSABLE_DB_PROOF',
+            'PHASE8_DISPOSABLE_DB_NONCE',
         ];
+        $savedStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envVars);
 
         try {
+            putenv('APP_ENV=testing');
+            $_ENV['APP_ENV'] = 'testing';
+            $_SERVER['APP_ENV'] = 'testing';
+
             putenv('MOBILE_V2_HARNESS_ENABLE=1');
+            $_ENV['MOBILE_V2_HARNESS_ENABLE'] = '1';
+            $_SERVER['MOBILE_V2_HARNESS_ENABLE'] = '1';
+
             putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
+            $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
 
             // 1. Refuse malformed schema name
             try {
@@ -2481,11 +2552,27 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
             // 2. Refuse when ownership proof is missing - provide local dummy test admin settings to reach ownership proof branch
             putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            $_ENV['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
+            $_SERVER['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
+
             putenv('PHASE8_TEST_DB_PORT=3342');
+            $_ENV['PHASE8_TEST_DB_PORT'] = '3342';
+            $_SERVER['PHASE8_TEST_DB_PORT'] = '3342';
+
             putenv('PHASE8_TEST_DB_USERNAME=disposable_test_user');
+            $_ENV['PHASE8_TEST_DB_USERNAME'] = 'disposable_test_user';
+            $_SERVER['PHASE8_TEST_DB_USERNAME'] = 'disposable_test_user';
+
             putenv('PHASE8_TEST_DB_PASSWORD=disposable_test_pass');
+            $_ENV['PHASE8_TEST_DB_PASSWORD'] = 'disposable_test_pass';
+            $_SERVER['PHASE8_TEST_DB_PASSWORD'] = 'disposable_test_pass';
+
             putenv('PHASE8_DISPOSABLE_DB_PROOF');
+            unset($_ENV['PHASE8_DISPOSABLE_DB_PROOF'], $_SERVER['PHASE8_DISPOSABLE_DB_PROOF']);
+
             putenv('PHASE8_DISPOSABLE_DB_NONCE');
+            unset($_ENV['PHASE8_DISPOSABLE_DB_NONCE'], $_SERVER['PHASE8_DISPOSABLE_DB_NONCE']);
+
             try {
                 \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('accounting_p8_tmp_deadbeef0000');
                 $this->fail('Expected RuntimeException for missing proof');
@@ -2493,48 +2580,57 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 $this->assertStringContainsString('Disposable schema ownership proof is required', $e->getMessage());
             }
         } finally {
-            foreach ($backupEnv as $key => $val) {
-                if ($val === false) {
-                    putenv($key);
-                } else {
-                    putenv("{$key}={$val}");
-                }
-            }
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
         }
     }
 
     #[Test]
     public function test_financial_post_run_inspector_fails_closed_when_test_admin_credentials_missing(): void
     {
-        $backupEnv = [
-            'MOBILE_V2_HARNESS_ENABLE' => getenv('MOBILE_V2_HARNESS_ENABLE'),
-            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
-            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
-            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
-            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
-            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+        $envVars = [
+            'APP_ENV',
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
         ];
+        $savedStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envVars);
 
         try {
+            putenv('APP_ENV=testing');
+            $_ENV['APP_ENV'] = 'testing';
+            $_SERVER['APP_ENV'] = 'testing';
+
             putenv('MOBILE_V2_HARNESS_ENABLE=1');
+            $_ENV['MOBILE_V2_HARNESS_ENABLE'] = '1';
+            $_SERVER['MOBILE_V2_HARNESS_ENABLE'] = '1';
+
             putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
+            $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
+
             putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            $_ENV['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
+            $_SERVER['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
+
             putenv('PHASE8_TEST_DB_PORT=3342');
+            $_ENV['PHASE8_TEST_DB_PORT'] = '3342';
+            $_SERVER['PHASE8_TEST_DB_PORT'] = '3342';
+
             putenv('PHASE8_TEST_DB_USERNAME');
+            unset($_ENV['PHASE8_TEST_DB_USERNAME'], $_SERVER['PHASE8_TEST_DB_USERNAME']);
+
             putenv('PHASE8_TEST_DB_PASSWORD');
+            unset($_ENV['PHASE8_TEST_DB_PASSWORD'], $_SERVER['PHASE8_TEST_DB_PASSWORD']);
 
             \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertExecutionGates('accounting_p8_tmp_deadbeef0000');
             $this->fail('Expected RuntimeException for missing test administrative connection credentials');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Explicit disposable test administrative connection is required', $e->getMessage());
         } finally {
-            foreach ($backupEnv as $key => $val) {
-                if ($val === false) {
-                    putenv($key);
-                } else {
-                    putenv("{$key}={$val}");
-                }
-            }
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
         }
     }
 
@@ -3079,6 +3175,17 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_secure_bootstrap_credentials_loader_enforces_permissions_and_schema_match(): void
     {
+        $envVars = [
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+            'PHASE8_TEST_DB_EMPTY_PASSWORD',
+            'PHASE8_DISPOSABLE_DB_PROOF',
+            'PHASE8_DISPOSABLE_DB_NONCE',
+        ];
+        $savedStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envVars);
+
         $tmpDir = sys_get_temp_dir().'/guard_test_creds_'.bin2hex(random_bytes(6));
         mkdir($tmpDir, 0700, true);
         chmod($tmpDir, 0700);
@@ -3141,6 +3248,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         } finally {
             @unlink($configFile);
             @rmdir($tmpDir);
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
         }
     }
 
