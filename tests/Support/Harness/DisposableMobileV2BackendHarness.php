@@ -229,6 +229,63 @@ final class DisposableMobileV2BackendHarness
     }
 
     /**
+     * Test transport single-response suppression configuration for Lost ACK testing.
+     * Defaults to null (default-deny).
+     *
+     * @var array{
+     *     enabled: bool,
+     *     target_event_id: string,
+     *     target_schema: string,
+     *     target_nonce: string,
+     *     target_uid: int,
+     *     witness_path?: string
+     * }|null
+     */
+    private ?array $lostAckSuppression = null;
+
+    /**
+     * Configures single-response test-transport suppression for advanced lost-ACK testing.
+     * Defaults to null (default-deny).
+     *
+     * @param array{
+     *     enabled: bool,
+     *     target_event_id: string,
+     *     target_schema: string,
+     *     target_nonce: string,
+     *     target_uid: int,
+     *     witness_path?: string
+     * }|null $config
+     */
+    public function configureLostAckSuppression(?array $config): void
+    {
+        if ($config === null || empty($config['enabled'])) {
+            $this->lostAckSuppression = null;
+
+            return;
+        }
+
+        if (! preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', (string) ($config['target_event_id'] ?? ''))) {
+            throw new \InvalidArgumentException("Lost ACK target_event_id must be valid UUID, got '".($config['target_event_id'] ?? 'null')."'.");
+        }
+        if (! preg_match('/^accounting_p8_tmp_[0-9a-f]{12}$/', (string) ($config['target_schema'] ?? ''))) {
+            throw new \InvalidArgumentException("Lost ACK target_schema must match disposable schema regex, got '".($config['target_schema'] ?? 'null')."'.");
+        }
+        if (trim((string) ($config['target_nonce'] ?? '')) === '') {
+            throw new \InvalidArgumentException('Lost ACK target_nonce must be a non-empty string.');
+        }
+
+        $this->lostAckSuppression = $config;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function getLostAckSuppression(): ?array
+    {
+        return $this->lostAckSuppression;
+    }
+
+    /**
      * Test seam: inject simulated provisioned state and ownership proof for unit testing gate logic.
      * Pure in-memory state; zero sockets, zero DB connections.
      */
@@ -1123,6 +1180,46 @@ if (\$routeResult !== null) {
 \$response = \$kernel->handle(
     \$request = \\Illuminate\\Http\\Request::capture()
 );
+
+// Owned test-transport single-response suppression boundary (Lost ACK post-commit simulation)
+\$suppression = \$config['lost_ack_suppression'] ?? null;
+if (is_array(\$suppression)
+    && ! empty(\$suppression['enabled'])
+    && (\$response->getStatusCode() === 201)
+    && (string) (\$config['harness_nonce'] ?? '') === (string) (\$suppression['target_nonce'] ?? '')
+    && (string) (\$config['schema_name'] ?? '') === (string) (\$suppression['target_schema'] ?? '')
+    && (! function_exists('posix_getuid') || posix_getuid() === (int) (\$suppression['target_uid'] ?? -1))
+) {
+    \$reqContent = \$request->getContent();
+    \$parsedBody = is_string(\$reqContent) && \$reqContent !== '' ? json_decode(\$reqContent, true) : null;
+    \$reqEventId = is_array(\$parsedBody) ? (\$parsedBody['client_event_id'] ?? null) : null;
+    if (\$reqEventId === null) {
+        \$uriParts = explode('/', trim(\$request->getPathInfo(), '/'));
+        \$lastPart = end(\$uriParts);
+        if (is_string(\$lastPart) && preg_match('/^[0-9a-fA-F-]{36}$/', \$lastPart)) {
+            \$reqEventId = \$lastPart;
+        }
+    }
+
+    if (\$reqEventId !== null && hash_equals((string) \$suppression['target_event_id'], (string) \$reqEventId)) {
+        \$witnessPath = (string) (\$suppression['witness_path'] ?? (\$bootstrapDir.'/lost_ack_suppression_witness.json'));
+        if (! file_exists(\$witnessPath)) {
+            file_put_contents(\$witnessPath, json_encode([
+                'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                'timestamp' => microtime(true),
+                'client_event_id' => \$reqEventId,
+                'schema_name' => \$config['schema_name'],
+                'harness_nonce' => \$config['harness_nonce'],
+                'response_status_code_before_suppression' => 201,
+                'server_commit_verified' => true,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            chmod(\$witnessPath, 0600);
+            \$kernel->terminate(\$request, \$response);
+            exit(0);
+        }
+    }
+}
+
 \$response->send();
 \$kernel->terminate(\$request, \$response);
 PHP;
@@ -1880,7 +1977,7 @@ PHP;
 
         // Write private 0600 child JSON config containing verified DB parameters and ownership nonce
         $childConfigPath = $bootstrapDir.'/child_bootstrap_config.json';
-        file_put_contents($childConfigPath, json_encode([
+        $childConfigPayload = [
             'expected_backend_head' => $backendHead,
             'schema_name' => $schemaName,
             'proof_path' => $this->proofPath,
@@ -1893,7 +1990,11 @@ PHP;
             'cache_dir' => $cacheDir,
             'env_file' => $testEnvPath,
             'readiness_only' => $this->readinessOnly,
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        ];
+        if ($this->lostAckSuppression !== null) {
+            $childConfigPayload['lost_ack_suppression'] = $this->lostAckSuppression;
+        }
+        file_put_contents($childConfigPath, json_encode($childConfigPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         chmod($childConfigPath, 0600);
 
         // Write isolated test-only .env.harness (0600)

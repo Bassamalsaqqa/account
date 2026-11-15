@@ -2282,4 +2282,235 @@ final class DisposableFinancialPostRunInspector
             'errors' => $errors,
         ];
     }
+
+    /**
+     * Validates outer evidence JSON against the authoritative advanced probe contract
+     * (docs/integration/mobile-v2-advanced-probe-schema.json).
+     *
+     * Invariants enforced:
+     * - Contract version must be 'v2_advanced_probe_evidence_v1'
+     * - Scope must be 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION'
+     * - Exactly 7 scenarios present:
+     *   1. readiness_probe: PASS (200)
+     *   2. financial_cash_fresh_commit_201: PASS (201)
+     *   3. financial_cash_idempotent_replay_200: PASS (200)
+     *   4. financial_cash_event_status_posted: PASS (200)
+     *   5. financial_cash_tamper_409: PASS (409)
+     *   6. transport_lost_ack_recovery: PASS (200)
+     *   7. stock_permission_rollback_probes: PASS (in [403, 422, 500])
+     * - lost_ack_recovery_evidence must verify single-response suppression at test-transport boundary
+     *   and recovery via GET status returning HTTP 200 with completed receipt and matching payload digest.
+     * - rollback_probes_evidence must verify zero economic delta and healthy reconciliations.
+     * - Separate trusted DB report is mandatory and must match execution context.
+     *
+     * @param  array<string, mixed>|string  $evidenceJson
+     * @param  array<string, mixed>  $expectedPins
+     * @param  array<string, mixed>|null  $trustedDbReport
+     * @return array{is_valid: bool, errors: array<string>}
+     */
+    public static function validateAdvancedProbeEvidenceJson(
+        array|string $evidenceJson,
+        array $expectedPins,
+        ?array $trustedDbReport = null
+    ): array {
+        $data = is_string($evidenceJson) ? json_decode($evidenceJson, true) : $evidenceJson;
+        if (! is_array($data)) {
+            return [
+                'is_valid' => false,
+                'errors' => ['Advanced probe evidence must be a valid JSON object.'],
+            ];
+        }
+
+        $errors = [];
+
+        // 1. Contract version
+        if (($data['contract_version'] ?? '') !== 'v2_advanced_probe_evidence_v1') {
+            $errors[] = "Advanced probe evidence contract_version must be 'v2_advanced_probe_evidence_v1', got '".($data['contract_version'] ?? 'null')."'.";
+        }
+
+        // 2. Scope
+        if (($data['scope'] ?? '') !== 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
+            $errors[] = "Advanced probe evidence scope must be 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', got '".($data['scope'] ?? 'null')."'.";
+        }
+
+        // 3. Expected pins match
+        $backendHead = $expectedPins['backendExecutionHead'] ?? '';
+        if ($backendHead !== '' && ($data['backend_head'] ?? '') !== $backendHead) {
+            $errors[] = "backend_head mismatch: expected {$backendHead}, got ".($data['backend_head'] ?? 'null').'.';
+        }
+
+        $pubHead = $expectedPins['clientPublicationHead'] ?? '';
+        if ($pubHead !== '' && ($data['android_publication_head'] ?? '') !== $pubHead) {
+            $errors[] = "android_publication_head mismatch: expected {$pubHead}, got ".($data['android_publication_head'] ?? 'null').'.';
+        }
+
+        $exeHead = $expectedPins['clientExecutableHead'] ?? '';
+        if ($exeHead !== '' && ($data['android_executable_head'] ?? '') !== $exeHead) {
+            $errors[] = "android_executable_head mismatch: expected {$exeHead}, got ".($data['android_executable_head'] ?? 'null').'.';
+        }
+
+        // 4. Scenarios
+        $scenarios = $data['scenarios'] ?? null;
+        if (! is_array($scenarios) || count($scenarios) !== 7) {
+            $errors[] = 'Advanced probe evidence scenarios must be an array of exactly 7 items.';
+        } else {
+            $scenariosMap = [];
+            foreach ($scenarios as $sc) {
+                if (is_array($sc) && isset($sc['name']) && is_string($sc['name'])) {
+                    $scenariosMap[$sc['name']] = $sc;
+                }
+            }
+
+            $expectedScenarios = [
+                'readiness_probe' => 200,
+                'financial_cash_fresh_commit_201' => 201,
+                'financial_cash_idempotent_replay_200' => 200,
+                'financial_cash_event_status_posted' => 200,
+                'financial_cash_tamper_409' => 409,
+                'transport_lost_ack_recovery' => 200,
+            ];
+
+            foreach ($expectedScenarios as $name => $expCode) {
+                if (! isset($scenariosMap[$name])) {
+                    $errors[] = "Scenario '{$name}' is missing from evidence.";
+
+                    continue;
+                }
+                $sc = $scenariosMap[$name];
+                if (($sc['status'] ?? '') !== 'PASS') {
+                    $errors[] = "Scenario '{$name}' must have status 'PASS', got '".($sc['status'] ?? 'null')."'.";
+                }
+                if (($sc['httpStatusCode'] ?? null) !== $expCode) {
+                    $errors[] = "Scenario '{$name}' httpStatusCode mismatch: expected {$expCode}, got ".($sc['httpStatusCode'] ?? 'null').'.';
+                }
+            }
+
+            // Probe 7: stock_permission_rollback_probes
+            if (! isset($scenariosMap['stock_permission_rollback_probes'])) {
+                $errors[] = "Scenario 'stock_permission_rollback_probes' is missing from evidence.";
+            } else {
+                $sc = $scenariosMap['stock_permission_rollback_probes'];
+                if (($sc['status'] ?? '') !== 'PASS') {
+                    $errors[] = "Scenario 'stock_permission_rollback_probes' must have status 'PASS', got '".($sc['status'] ?? 'null')."'.";
+                }
+                $scCode = $sc['httpStatusCode'] ?? null;
+                if (! in_array($scCode, [403, 422, 500], true)) {
+                    $errors[] = "Scenario 'stock_permission_rollback_probes' httpStatusCode must be 403, 422, or 500, got ".($scCode ?? 'null').'.';
+                }
+            }
+        }
+
+        // 5. Lost ACK recovery evidence
+        $lostAck = $data['lost_ack_recovery_evidence'] ?? null;
+        if (! is_array($lostAck)) {
+            $errors[] = 'lost_ack_recovery_evidence block is missing or not an array.';
+        } else {
+            if (($lostAck['suppression_mode'] ?? '') !== 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP') {
+                $errors[] = "lost_ack_recovery_evidence suppression_mode must be 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP'.";
+            }
+            if (($lostAck['server_commit_verified_before_suppression'] ?? false) !== true) {
+                $errors[] = 'lost_ack_recovery_evidence server_commit_verified_before_suppression must be true.';
+            }
+            if (($lostAck['recovery_method'] ?? '') !== 'RETAINED_EVENT_GET_STATUS') {
+                $errors[] = "lost_ack_recovery_evidence recovery_method must be 'RETAINED_EVENT_GET_STATUS'.";
+            }
+            if (($lostAck['recovery_http_status'] ?? 0) !== 200) {
+                $errors[] = "lost_ack_recovery_evidence recovery_http_status must be 200, got ".($lostAck['recovery_http_status'] ?? 'null').'.';
+            }
+            if (($lostAck['receipt_status'] ?? '') !== 'completed') {
+                $errors[] = "lost_ack_recovery_evidence receipt_status must be 'completed', got '".($lostAck['receipt_status'] ?? 'null')."'.";
+            }
+            $expDigest = $expectedPins['expectedPayloadDigest'] ?? '';
+            if ($expDigest !== '' && ($lostAck['matching_payload_digest'] ?? '') !== $expDigest) {
+                $errors[] = "lost_ack_recovery_evidence matching_payload_digest mismatch: expected {$expDigest}, got ".($lostAck['matching_payload_digest'] ?? 'null').'.';
+            }
+        }
+
+        // 6. Rollback probes evidence
+        $rollback = $data['rollback_probes_evidence'] ?? null;
+        if (! is_array($rollback)) {
+            $errors[] = 'rollback_probes_evidence block is missing or not an array.';
+        } else {
+            $probes = $rollback['probes'] ?? null;
+            if (! is_array($probes) || count($probes) < 1) {
+                $errors[] = 'rollback_probes_evidence probes must contain at least 1 probe result.';
+            } else {
+                foreach ($probes as $idx => $p) {
+                    if (! ($p['economic_delta_zero'] ?? false)) {
+                        $errors[] = "Rollback probe #{$idx} ('".($p['probe_name'] ?? 'unknown')."') failed economic_delta_zero check.";
+                    }
+                    if (! ($p['reconciliations_healthy'] ?? false)) {
+                        $errors[] = "Rollback probe #{$idx} ('".($p['probe_name'] ?? 'unknown')."') failed reconciliations_healthy check.";
+                    }
+                    if (($p['issue_count'] ?? -1) !== 0) {
+                        $errors[] = "Rollback probe #{$idx} issue_count must be 0, got ".($p['issue_count'] ?? 'null').'.';
+                    }
+                }
+            }
+        }
+
+        // 7. Mandatory trusted DB inspection report
+        if ($trustedDbReport === null) {
+            $errors[] = 'Separate REQUIRED trusted owned DB inspection report is mandatory; cannot be omitted.';
+        } else {
+            if (($trustedDbReport['scope'] ?? '') !== 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
+                $errors[] = "Trusted DB report scope mismatch: expected 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', got '".($trustedDbReport['scope'] ?? 'null')."'.";
+            }
+            if (! ($trustedDbReport['is_canonical_delta_valid'] ?? false)) {
+                $errors[] = 'Trusted DB report canonical delta validity is not true.';
+            }
+            if (! ($trustedDbReport['gl_batches_balanced'] ?? false)) {
+                $errors[] = 'Trusted DB report gl_batches_balanced is not true.';
+            }
+            if (! ($trustedDbReport['all_healthy'] ?? false)) {
+                $errors[] = 'Trusted DB report all_healthy is not true.';
+            }
+        }
+
+        return [
+            'is_valid' => $errors === [],
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Asserts that a rollback probe resulted in exactly zero net delta across all entity counts.
+     *
+     * @param  array<string, int>  $baseline  Pre-probe metrics
+     * @param  array<string, int>  $postProbe  Post-probe metrics
+     * @return array{is_zero_delta: bool, deltas: array<string, int>, errors: array<string>}
+     */
+    public static function assertRollbackZeroDelta(array $baseline, array $postProbe): array
+    {
+        $keys = [
+            'sales_invoices',
+            'sales_invoice_lines',
+            'sales_invoice_lot_allocations',
+            'customer_payments',
+            'customer_payment_allocations',
+            'mobile_event_receipts',
+            'stock_movements',
+            'posting_batches',
+            'posting_lines',
+        ];
+
+        $deltas = [];
+        $errors = [];
+
+        foreach ($keys as $k) {
+            $baseVal = (int) ($baseline[$k] ?? 0);
+            $postVal = (int) ($postProbe[$k] ?? 0);
+            $delta = $postVal - $baseVal;
+            $deltas[$k] = $delta;
+            if ($delta !== 0) {
+                $errors[] = "Rollback entity '{$k}' delta must be 0, got {$delta} (baseline: {$baseVal}, post: {$postVal}).";
+            }
+        }
+
+        return [
+            'is_zero_delta' => $errors === [],
+            'deltas' => $deltas,
+            'errors' => $errors,
+        ];
+    }
 }

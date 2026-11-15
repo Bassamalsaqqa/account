@@ -204,7 +204,7 @@ def verify_template_source_pins(manifest_data, repo_dir):
                 f"manifest template has '{template_sha}', but actual source hash is '{actual_sha}'"
             )
 
-def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir, template_path=None):
+def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir, template_path=None, scope=REQUIRED_SCOPE):
     if template_path is None:
         template_path = os.path.join(repo_dir, 'docs/integration/mobile-v2-integration-manifest.json')
     validate_no_symlink_components(template_path, "Manifest template path")
@@ -217,7 +217,8 @@ def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir, tem
     manifest['backend_execution_head_sha'] = backend_head
     manifest['peer_android_approved_head_sha'] = pub_head
     manifest['peer_android_executable_head_sha'] = exe_head
-    manifest['status'] = REQUIRED_SCOPE
+    manifest['status'] = scope
+    manifest['scope'] = scope
 
     manifest_path = os.path.join(output_dir, 'pairing-manifest.json')
     with open(manifest_path, 'w') as f:
@@ -228,6 +229,7 @@ def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir, tem
     return manifest_path, manifest_sha
 
 def cmd_prepare(args):
+    scope = 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION' if getattr(args, 'advanced_probes', False) else REQUIRED_SCOPE
     # Validate original input paths for symlinks BEFORE realpath resolution (Defect 4 fix)
     try:
         validate_no_symlink_components(args.repo_dir, "Backend repository path")
@@ -308,7 +310,7 @@ def cmd_prepare(args):
 
     # 2. Prepare pairing manifest with both pub and exe pins
     try:
-        manifest_path, manifest_sha = prepare_manifest(run_dir, backend_head, pub_head, exe_head, repo_dir)
+        manifest_path, manifest_sha = prepare_manifest(run_dir, backend_head, pub_head, exe_head, repo_dir, scope=scope)
     except (ValueError, RuntimeError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
@@ -431,6 +433,7 @@ def main():
     p_prepare.add_argument("--output-dir", required=True, help="Target drill output directory (0700)")
     p_prepare.add_argument("--expires", type=int, default=600, help="Prestart approval TTL in seconds (default: 600)")
     p_prepare.add_argument("--paired-hold", type=int, default=120, help="Paired hold seconds (default: 120)")
+    p_prepare.add_argument("--advanced-probes", action="store_true", default=False, help="Enable advanced probe execution scope (ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION)")
     p_prepare.set_defaults(func=cmd_prepare)
 
     p_live = subparsers.add_parser("record-live-approval", help="Record Root live approval JSON with root_live_handoff_approved=true")

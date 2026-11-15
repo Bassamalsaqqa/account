@@ -4666,6 +4666,288 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
         }
     }
+
+    #[Test]
+    public function test_harness_lost_ack_suppression_configuration_defaults_to_null_and_enforces_strict_types(): void
+    {
+        $harness = new \Tests\Support\Harness\DisposableMobileV2BackendHarness();
+        $this->assertNull($harness->getLostAckSuppression(), 'Lost ACK suppression must default to null (default-deny)');
+
+        // 1. null config leaves it null
+        $harness->configureLostAckSuppression(null);
+        $this->assertNull($harness->getLostAckSuppression());
+
+        // 2. enabled = false leaves it null
+        $harness->configureLostAckSuppression(['enabled' => false]);
+        $this->assertNull($harness->getLostAckSuppression());
+
+        // 3. Invalid UUID throws
+        try {
+            $harness->configureLostAckSuppression([
+                'enabled' => true,
+                'target_event_id' => 'not-a-uuid',
+                'target_schema' => 'accounting_p8_tmp_0123456789ab',
+                'target_nonce' => 'test-nonce-123',
+                'target_uid' => 1000,
+            ]);
+            $this->fail('Expected InvalidArgumentException for non-UUID target_event_id');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('target_event_id must be valid UUID', $e->getMessage());
+        }
+
+        // 4. Invalid schema throws
+        try {
+            $harness->configureLostAckSuppression([
+                'enabled' => true,
+                'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'target_schema' => 'invalid_schema_name',
+                'target_nonce' => 'test-nonce-123',
+                'target_uid' => 1000,
+            ]);
+            $this->fail('Expected InvalidArgumentException for invalid target_schema regex');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('target_schema must match disposable schema regex', $e->getMessage());
+        }
+
+        // 5. Empty nonce throws
+        try {
+            $harness->configureLostAckSuppression([
+                'enabled' => true,
+                'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'target_schema' => 'accounting_p8_tmp_0123456789ab',
+                'target_nonce' => '   ',
+                'target_uid' => 1000,
+            ]);
+            $this->fail('Expected InvalidArgumentException for empty target_nonce');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('target_nonce must be a non-empty string', $e->getMessage());
+        }
+
+        // 6. Valid config accepted
+        $validConfig = [
+            'enabled' => true,
+            'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'target_schema' => 'accounting_p8_tmp_0123456789ab',
+            'target_nonce' => 'valid-nonce-abc',
+            'target_uid' => 1000,
+            'witness_path' => '/tmp/lost_ack_witness.json',
+        ];
+        $harness->configureLostAckSuppression($validConfig);
+        $this->assertSame($validConfig, $harness->getLostAckSuppression());
+    }
+
+    #[Test]
+    public function test_advanced_probe_outer_validator_enforces_contract_version_and_scope(): void
+    {
+        $expectedPins = [
+            'backendExecutionHead' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+            'clientPublicationHead' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
+            'clientExecutableHead' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
+            'expectedPayloadDigest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+        ];
+
+        // 1. Missing / wrong contract version rejected
+        $badVersion = [
+            'contract_version' => 'wrong_version',
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+        ];
+        $resVersion = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            $badVersion,
+            $expectedPins
+        );
+        $this->assertFalse($resVersion['is_valid']);
+        $this->assertTrue(collect($resVersion['errors'])->contains(fn ($e) => str_contains($e, "contract_version must be 'v2_advanced_probe_evidence_v1'")));
+
+        // 2. Wrong scope rejected
+        $badScope = [
+            'contract_version' => 'v2_advanced_probe_evidence_v1',
+            'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
+        ];
+        $resScope = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            $badScope,
+            $expectedPins
+        );
+        $this->assertFalse($resScope['is_valid']);
+        $this->assertTrue(collect($resScope['errors'])->contains(fn ($e) => str_contains($e, "scope must be 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION'")));
+    }
+
+    #[Test]
+    public function test_advanced_probe_outer_validator_rejects_unverified_commit_in_lost_ack_evidence(): void
+    {
+        $expectedPins = [
+            'backendExecutionHead' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+            'clientPublicationHead' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
+            'clientExecutableHead' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
+            'expectedPayloadDigest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+        ];
+
+        $payload = [
+            'contract_version' => 'v2_advanced_probe_evidence_v1',
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'backend_head' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+            'android_publication_head' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
+            'android_executable_head' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
+            'scenarios' => [
+                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201],
+                ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409],
+                ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'stock_permission_rollback_probes', 'status' => 'PASS', 'httpStatusCode' => 403],
+            ],
+            'lost_ack_recovery_evidence' => [
+                'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                'target_client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'server_commit_verified_before_suppression' => false, // UNVERIFIED! Must fail closed!
+                'suppression_witness_file' => '/tmp/lost_ack_witness.json',
+                'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
+                'recovery_http_status' => 200,
+                'receipt_status' => 'completed',
+                'matching_payload_digest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+                'sales_invoice_public_id' => '01M7GJCCHWVFF30PTHQYZDRYYC',
+                'customer_payment_public_id' => '01M7GJCCPQTT2RXJGA499E66D3',
+            ],
+            'rollback_probes_evidence' => [
+                'probes_count' => 1,
+                'probes' => [
+                    [
+                        'probe_name' => 'permission_denial',
+                        'client_event_id' => 'a1234567-888f-4890-90bf-1f05f416a19a',
+                        'expected_http_status' => 403,
+                        'actual_http_status' => 403,
+                        'economic_delta_zero' => true,
+                        'reconciliations_healthy' => true,
+                        'issue_count' => 0,
+                    ],
+                ],
+            ],
+        ];
+
+        $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            $payload,
+            $expectedPins
+        );
+        $this->assertFalse($res['is_valid']);
+        $this->assertTrue(collect($res['errors'])->contains(fn ($e) => str_contains($e, 'server_commit_verified_before_suppression must be true')));
+    }
+
+    #[Test]
+    public function test_advanced_probe_outer_validator_rejects_rollback_probes_with_nonzero_delta_or_unhealthy_recon(): void
+    {
+        $expectedPins = [
+            'backendExecutionHead' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+            'clientPublicationHead' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
+            'clientExecutableHead' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
+            'expectedPayloadDigest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+        ];
+
+        // 1. Non-zero delta rejected
+        $payloadBadDelta = [
+            'contract_version' => 'v2_advanced_probe_evidence_v1',
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'backend_head' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+            'android_publication_head' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
+            'android_executable_head' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
+            'scenarios' => [
+                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201],
+                ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409],
+                ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'stock_permission_rollback_probes', 'status' => 'PASS', 'httpStatusCode' => 403],
+            ],
+            'lost_ack_recovery_evidence' => [
+                'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                'target_client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'server_commit_verified_before_suppression' => true,
+                'suppression_witness_file' => '/tmp/lost_ack_witness.json',
+                'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
+                'recovery_http_status' => 200,
+                'receipt_status' => 'completed',
+                'matching_payload_digest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+                'sales_invoice_public_id' => '01M7GJCCHWVFF30PTHQYZDRYYC',
+                'customer_payment_public_id' => '01M7GJCCPQTT2RXJGA499E66D3',
+            ],
+            'rollback_probes_evidence' => [
+                'probes_count' => 1,
+                'probes' => [
+                    [
+                        'probe_name' => 'insufficient_stock',
+                        'client_event_id' => 'a1234567-888f-4890-90bf-1f05f416a19a',
+                        'expected_http_status' => 422,
+                        'actual_http_status' => 422,
+                        'economic_delta_zero' => false, // FAILED: lingering leaked entities!
+                        'reconciliations_healthy' => true,
+                        'issue_count' => 0,
+                    ],
+                ],
+            ],
+        ];
+
+        $resBadDelta = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            $payloadBadDelta,
+            $expectedPins
+        );
+        $this->assertFalse($resBadDelta['is_valid']);
+        $this->assertTrue(collect($resBadDelta['errors'])->contains(fn ($e) => str_contains($e, 'failed economic_delta_zero check')));
+    }
+
+    #[Test]
+    public function test_assert_rollback_zero_delta_detects_any_leaked_row(): void
+    {
+        $baseline = [
+            'sales_invoices' => 10,
+            'sales_invoice_lines' => 15,
+            'sales_invoice_lot_allocations' => 15,
+            'customer_payments' => 8,
+            'customer_payment_allocations' => 8,
+            'mobile_event_receipts' => 5,
+            'stock_movements' => 20,
+            'posting_batches' => 12,
+            'posting_lines' => 36,
+        ];
+
+        // 1. Identical counts -> zero delta PASS
+        $resZero = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $baseline);
+        $this->assertTrue($resZero['is_zero_delta']);
+        $this->assertSame([], $resZero['errors']);
+
+        // 2. Leaked invoice -> FAIL
+        $leakedInv = $baseline;
+        $leakedInv['sales_invoices'] = 11;
+        $resInv = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $leakedInv);
+        $this->assertFalse($resInv['is_zero_delta']);
+        $this->assertTrue(collect($resInv['errors'])->contains(fn ($e) => str_contains($e, "Rollback entity 'sales_invoices' delta must be 0, got 1")));
+
+        // 3. Leaked stock movement -> FAIL
+        $leakedSm = $baseline;
+        $leakedSm['stock_movements'] = 21;
+        $resSm = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $leakedSm);
+        $this->assertFalse($resSm['is_zero_delta']);
+        $this->assertTrue(collect($resSm['errors'])->contains(fn ($e) => str_contains($e, "Rollback entity 'stock_movements' delta must be 0, got 1")));
+    }
+
+    #[Test]
+    public function test_basic_outer_validator_strictly_rejects_advanced_probes_claiming_pass(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // Alter probe 6 to claim PASS in basic fixture
+        $tamperedData = $goldenData;
+        $tamperedData['scenarios'][5]['status'] = 'PASS';
+        $tamperedData['scenarios'][5]['httpStatusCode'] = 200;
+
+        $fixture = $this->createSyntheticTrustedDbReportFixture();
+        $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $tamperedData,
+            $fixture['expectedPins'],
+            $fixture['report']
+        );
+        $this->assertFalse($res['is_valid']);
+        $this->assertTrue(collect($res['errors'])->contains(fn ($e) => str_contains($e, "cannot claim 'PASS' in basic financial run; must be exactly 'NOT_RUN'")));
+    }
 }
 
 
