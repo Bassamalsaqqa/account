@@ -11,9 +11,11 @@ Root remains the sole independent witness:
 - Subcommand `record-live-approval` writes live.json with ALL exact required fields
   including `root_live_handoff_approved: true`.
 - Zero worktree mutations: NEVER executes git checkout, reset, or clean.
+- Invariant: NEVER overwrites initial immutable pre.json snapshot.
 """
 
 import os
+import re
 import sys
 import json
 import stat
@@ -21,6 +23,8 @@ import hashlib
 import datetime
 import argparse
 import subprocess
+
+HEX40_REGEX = re.compile(r'^[0-9a-f]{40}$')
 
 def get_default_repo_dir():
     # 4 dirname levels: Harness -> Support -> tests -> repo root
@@ -31,21 +35,83 @@ def get_default_repo_dir():
             cwd=os.path.dirname(os.path.abspath(__file__))
         ).decode().strip()
         if os.path.isdir(git_root):
-            return git_root
+            return os.path.realpath(git_root)
     except Exception:
         pass
-    return candidate
+    return os.path.realpath(candidate)
 
 DEFAULT_REPO_DIR = get_default_repo_dir()
 REQUIRED_SCOPE = 'ROOT_AUTHORIZED_PAIRED_EXECUTION'
 
+def validate_no_symlink_components(path, label="Path"):
+    """Validates that no component in the path is a symlink."""
+    curr = os.path.abspath(path)
+    while curr and curr != '/' and curr != os.path.dirname(curr):
+        if os.path.islink(curr):
+            raise ValueError(f"{label} component is a symlink: {curr}")
+        curr = os.path.dirname(curr)
+
 def assert_not_protected_worktree(path):
-    norm = os.path.normpath(os.path.abspath(path))
-    if '7ac8' in norm or 't3-7ac8b73d' in norm:
+    """Enforces canonical realpath check refusing active 7ac8 development lane."""
+    validate_no_symlink_components(path, "Worktree path")
+    canonical = os.path.realpath(path)
+    if '7ac8' in canonical or 't3-7ac8b73d' in canonical:
         raise ValueError(
-            f"Protected active Android lane path refusal ({norm}). "
+            f"Protected active Android lane path refusal ({canonical}). "
             "Paired execution requires an isolated, Root-approved worktree."
         )
+
+def validate_secure_output_dir(output_dir, backend_dir, android_dir):
+    """
+    Validates output directory:
+    - No symlinks in any component
+    - Canonical path strictly outside backend and android checkouts
+    - Mode 0700 owned by current UID
+    """
+    validate_no_symlink_components(output_dir, "Output directory")
+    canonical_out = os.path.realpath(output_dir)
+    canonical_backend = os.path.realpath(backend_dir)
+    canonical_android = os.path.realpath(android_dir)
+
+    if canonical_out == canonical_backend or canonical_out.startswith(canonical_backend + os.sep):
+        raise ValueError(f"Output directory must be external to backend repository: {canonical_out}")
+    if canonical_out == canonical_android or canonical_out.startswith(canonical_android + os.sep):
+        raise ValueError(f"Output directory must be external to Android repository: {canonical_out}")
+
+    current_uid = os.getuid() if hasattr(os, 'getuid') else -1
+
+    if os.path.exists(canonical_out):
+        st = os.stat(canonical_out)
+        if (st.st_mode & 0o777) != 0o700:
+            raise ValueError(f"Output directory permissions insecure: expected 0700, got {oct(st.st_mode & 0o777)}")
+        if current_uid != -1 and st.st_uid != current_uid:
+            raise ValueError(f"Output directory owner mismatch: expected UID {current_uid}, got {st.st_uid}")
+    else:
+        os.makedirs(canonical_out, mode=0o700, exist_ok=False)
+        st = os.stat(canonical_out)
+        if (st.st_mode & 0o777) != 0o700:
+            os.chmod(canonical_out, 0o700)
+
+    return canonical_out
+
+def validate_commit_sha(sha, label):
+    """Validates 40-character lowercase hexadecimal SHA string."""
+    cleaned = sha.strip().lower()
+    if not HEX40_REGEX.match(cleaned):
+        raise ValueError(f"{label} must be a 40-character lowercase hex SHA: got '{sha}'")
+    return cleaned
+
+def verify_commit_exists(repo_dir, sha, label):
+    """Verifies that a commit object exists in the repository object store."""
+    try:
+        subprocess.check_call(
+            ['git', 'cat-file', '-e', f'{sha}^{{commit}}'],
+            cwd=repo_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    except subprocess.CalledProcessError:
+        raise ValueError(f"{label} commit object does not exist in repository: {sha}")
 
 def get_git_state(repo_dir):
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo_dir).decode().strip()
@@ -129,12 +195,12 @@ def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir):
     return manifest_path, manifest_sha
 
 def cmd_prepare(args):
-    repo_dir = os.path.abspath(args.repo_dir)
-    run_dir = os.path.abspath(args.output_dir)
-    android_dir = os.path.abspath(args.android_dir)
+    repo_dir = os.path.realpath(args.repo_dir)
+    android_dir = os.path.realpath(args.android_dir)
 
-    # Validate Android path - reject active protected lanes immediately
+    # Validate paths & refuse protected active lane
     try:
+        assert_not_protected_worktree(repo_dir)
         assert_not_protected_worktree(android_dir)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -144,10 +210,20 @@ def cmd_prepare(args):
         print(f"ERROR: Android repo directory not found: {android_dir}", file=sys.stderr)
         sys.exit(1)
 
-    pub_head = args.android_pub_head.strip().lower()
-    exe_head = args.android_exe_head.strip().lower()
-    if len(pub_head) != 40 or len(exe_head) != 40:
-        print("ERROR: --android-pub-head and --android-exe-head must be 40-character hex SHAs", file=sys.stderr)
+    # Validate output dir
+    try:
+        run_dir = validate_secure_output_dir(args.output_dir, repo_dir, android_dir)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        pub_head = validate_commit_sha(args.android_pub_head, "Android publication HEAD")
+        exe_head = validate_commit_sha(args.android_exe_head, "Android executable HEAD")
+        verify_commit_exists(android_dir, pub_head, "Android publication HEAD")
+        verify_commit_exists(android_dir, exe_head, "Android executable HEAD")
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
     # Read Android HEAD and verify against expected pub pin (read-only)
@@ -165,9 +241,6 @@ def cmd_prepare(args):
         print("FAIL-CLOSED: Worktree checkout must not be mutated. Provide a worktree at the expected publication pin.", file=sys.stderr)
         sys.exit(1)
 
-    os.makedirs(run_dir, mode=0o700, exist_ok=True)
-    os.chmod(run_dir, 0o700)
-
     backend_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo_dir).decode().strip()
     print(f"[Prepare] Target Directory: {run_dir}")
     print(f"[Prepare] Backend HEAD:     {backend_head}")
@@ -175,16 +248,28 @@ def cmd_prepare(args):
     print(f"[Prepare] Android Pub HEAD: {pub_head}")
     print(f"[Prepare] Android Exe HEAD: {exe_head}")
 
-    # 1. Capture PRE state for BOTH repositories before any other action
+    # 1. Capture PRE state - do NOT overwrite existing pre.json (Defect 7 fix)
     pre_state = {
         'backend': get_git_state(repo_dir),
         'android': get_git_state(android_dir),
+        'metadata': {
+            'captured_by': 'root-operator-tool.py',
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
     }
     pre_path = os.path.join(run_dir, 'pre.json')
-    with open(pre_path, 'w') as f:
-        json.dump(pre_state, f, indent=2)
-    os.chmod(pre_path, 0o600)
-    print(f"[Prepare] Wrote pre.json (SHA: {sha256_file(pre_path)})")
+    if os.path.exists(pre_path):
+        # Initial pre.json already exists (written by operator driver); write distinct prepare witness
+        tool_prep_path = os.path.join(run_dir, 'tool_prepare.json')
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        with os.fdopen(os.open(tool_prep_path, flags, 0o600), 'w') as f:
+            json.dump(pre_state, f, indent=2)
+        print(f"[Prepare] Initial pre.json preserved. Wrote tool_prepare.json (SHA: {sha256_file(tool_prep_path)})")
+    else:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        with os.fdopen(os.open(pre_path, flags, 0o600), 'w') as f:
+            json.dump(pre_state, f, indent=2)
+        print(f"[Prepare] Wrote pre.json (SHA: {sha256_file(pre_path)})")
 
     # 2. Prepare pairing manifest with both pub and exe pins
     manifest_path, manifest_sha = prepare_manifest(run_dir, backend_head, pub_head, exe_head, repo_dir)
@@ -240,7 +325,7 @@ def cmd_prepare(args):
           f"    --handoff-sha <candidate_whole_sha256>\n")
 
 def cmd_record_live(args):
-    run_dir = os.path.abspath(args.output_dir)
+    run_dir = os.path.realpath(args.output_dir)
     if not os.path.isdir(run_dir):
         print(f"Error: directory {run_dir} does not exist", file=sys.stderr)
         sys.exit(1)
@@ -276,12 +361,12 @@ def cmd_record_live(args):
     print(json.dumps(live_data, indent=2))
 
 def cmd_post_log(args):
-    repo_dir = os.path.abspath(args.repo_dir)
-    run_dir = os.path.abspath(args.output_dir)
+    repo_dir = os.path.realpath(args.repo_dir)
+    run_dir = os.path.realpath(args.output_dir)
     post_state = {'backend': get_git_state(repo_dir)}
 
     if args.android_dir:
-        android_dir = os.path.abspath(args.android_dir)
+        android_dir = os.path.realpath(args.android_dir)
         try:
             assert_not_protected_worktree(android_dir)
             if os.path.isdir(android_dir):

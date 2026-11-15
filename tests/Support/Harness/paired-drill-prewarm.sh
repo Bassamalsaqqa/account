@@ -9,11 +9,11 @@ set -euo pipefail
 #
 # Constraints & Guarantees:
 # - Zero financial HTTP traffic: No backend server is active; no financial endpoints touched.
-# - Explicit parameterization: Pub and exe pins must be explicitly provided.
-# - Protected lane refusal: Never targets active development lanes (e.g. *7ac8*).
+# - Explicit parameterization: Pub and exe pins must be strictly 40-hex lowercase.
+# - Canonical protected lane refusal: Resolves realpath, rejects any *7ac8* path.
 # - Zero worktree mutations: Never performs git checkout, reset, or clean.
-# - Tracked clean enforcement: Fails closed if tracked files differ from HEAD.
-# - Untracked allowlist: Fails closed if unknown untracked files are present.
+# - Initial status: Must be strictly clean (git status --porcelain empty).
+# - Post-compile allowlist: Restricts newly created artifacts strictly to owned Gradle directories.
 # ==============================================================================
 
 ANDROID_REPO=""
@@ -59,7 +59,6 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Fallback to environment variables if not passed via CLI
 ANDROID_REPO="${ANDROID_REPO:-${ANDROID_REPO_DIR:-}}"
 EXPECTED_PUB_HEAD="${EXPECTED_PUB_HEAD:-${ANDROID_PUB_HEAD:-}}"
 EXPECTED_EXE_HEAD="${EXPECTED_EXE_HEAD:-${ANDROID_EXE_HEAD:-}}"
@@ -69,30 +68,43 @@ if [ -z "${ANDROID_REPO}" ]; then
     exit 1
 fi
 
-# Protected active lane refusal (e.g. active a29 development lane)
-case "${ANDROID_REPO}" in
-    *7ac8*|*t3-7ac8b73d*)
-        echo "ERROR: Protected active Android lane path refusal (${ANDROID_REPO}). Paired prewarm requires an isolated, Root-approved worktree." >&2
-        exit 1
-        ;;
-esac
-
 if [ ! -d "${ANDROID_REPO}" ]; then
     echo "ERROR: Directory does not exist: ${ANDROID_REPO}" >&2
     exit 1
 fi
 
-if [ -z "${EXPECTED_PUB_HEAD}" ]; then
-    echo "ERROR: Expected publication HEAD pin is required (--android-pub-head=<sha> or ANDROID_PUB_HEAD)" >&2
+# Canonical realpath resolution & protected active lane refusal
+CANONICAL_ANDROID_REPO="$(readlink -f "${ANDROID_REPO}")"
+case "${CANONICAL_ANDROID_REPO}" in
+    *7ac8*|*t3-7ac8b73d*)
+        echo "ERROR: Protected active Android lane path refusal (${CANONICAL_ANDROID_REPO}). Paired prewarm requires an isolated, Root-approved worktree." >&2
+        exit 1
+        ;;
+esac
+
+# 40-hex regex validation
+if [[ ! "${EXPECTED_PUB_HEAD}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: Expected publication HEAD pin must be a 40-hex lowercase SHA: '${EXPECTED_PUB_HEAD}'" >&2
     exit 1
 fi
 
-if [ -z "${EXPECTED_EXE_HEAD}" ]; then
-    echo "ERROR: Expected executable HEAD pin is required (--android-exe-head=<sha> or ANDROID_EXE_HEAD)" >&2
+if [[ ! "${EXPECTED_EXE_HEAD}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: Expected executable HEAD pin must be a 40-hex lowercase SHA: '${EXPECTED_EXE_HEAD}'" >&2
     exit 1
 fi
 
-cd "${ANDROID_REPO}"
+cd "${CANONICAL_ANDROID_REPO}"
+
+# Verify commit existence in object store (read-only)
+if ! git cat-file -e "${EXPECTED_PUB_HEAD}^{commit}" 2>/dev/null; then
+    echo "ERROR: Publication commit object does not exist in repository: ${EXPECTED_PUB_HEAD}" >&2
+    exit 1
+fi
+
+if ! git cat-file -e "${EXPECTED_EXE_HEAD}^{commit}" 2>/dev/null; then
+    echo "ERROR: Executable commit object does not exist in repository: ${EXPECTED_EXE_HEAD}" >&2
+    exit 1
+fi
 
 # Read actual HEAD without mutation
 ACTUAL_HEAD=$(git rev-parse HEAD)
@@ -103,37 +115,16 @@ if [ "${ACTUAL_HEAD}" != "${EXPECTED_PUB_HEAD}" ]; then
     exit 1
 fi
 
-# Enforce clean tracked files vs HEAD
-if ! git diff-index --quiet HEAD --; then
-    echo "ERROR: Android repository has modified tracked files vs HEAD:" >&2
-    git diff --name-only HEAD >&2
+# Initial state check: MUST be strictly clean (no modified or untracked files)
+INITIAL_STATUS=$(git status --porcelain)
+if [ -n "${INITIAL_STATUS}" ]; then
+    echo "ERROR: Android repository must be strictly clean before prewarm. Found:" >&2
+    echo "${INITIAL_STATUS}" >&2
     exit 1
 fi
 
-# Enforce strict dirty allowlist for untracked files
-UNTRACKED=$(git ls-files --others --exclude-standard)
-if [ -n "${UNTRACKED}" ]; then
-    DIRTY_DISALLOWED=""
-    while IFS= read -r untracked_file; do
-        [ -z "${untracked_file}" ] && continue
-        case "${untracked_file}" in
-            build/*|.gradle/*|app/build/*|docs/integration/v2-online-cash-evidence/*)
-                # Allowed owned build/evidence untracked artifacts
-                ;;
-            *)
-                DIRTY_DISALLOWED="${DIRTY_DISALLOWED}\n  ${untracked_file}"
-                ;;
-        esac
-    done <<< "${UNTRACKED}"
-
-    if [ -n "${DIRTY_DISALLOWED}" ]; then
-        echo -e "ERROR: Disallowed untracked files in Android repository:${DIRTY_DISALLOWED}" >&2
-        exit 1
-    fi
-fi
-
 echo "=== Mobile V2 Paired Drill Android Prewarm ==="
-echo "Android Worktree : ${ANDROID_REPO}"
+echo "Android Worktree : ${CANONICAL_ANDROID_REPO}"
 echo "Publication HEAD : ${ACTUAL_HEAD}"
 echo "Executable Pin   : ${EXPECTED_EXE_HEAD}"
 if [ -n "${OFFLINE_FLAG}" ]; then
@@ -155,5 +146,34 @@ START_EPOCH=$(date +%s.%N)
 
 END_EPOCH=$(date +%s.%N)
 DURATION=$(python3 -c "print(f'{$END_EPOCH - $START_EPOCH:.3f}')" 2>/dev/null || echo "completed")
+
+# Post-compile verification: Tracked files must remain untouched
+if ! git diff-index --quiet HEAD --; then
+    echo "ERROR: Prewarm compilation modified tracked git files:" >&2
+    git diff --name-only HEAD >&2
+    exit 1
+fi
+
+# Post-compile untracked allowlist: Restricted strictly to owned Gradle directories
+POST_UNTRACKED=$(git ls-files --others --exclude-standard)
+if [ -n "${POST_UNTRACKED}" ]; then
+    DISALLOWED=""
+    while IFS= read -r f; do
+        [ -z "${f}" ] && continue
+        case "${f}" in
+            .gradle/*|build/*|app/build/*)
+                # Strictly owned Gradle build artifact
+                ;;
+            *)
+                DISALLOWED="${DISALLOWED}\n  ${f}"
+                ;;
+        esac
+    done <<< "${POST_UNTRACKED}"
+
+    if [ -n "${DISALLOWED}" ]; then
+        echo -e "ERROR: Disallowed untracked files created outside owned build directories:${DISALLOWED}" >&2
+        exit 1
+    fi
+fi
 
 echo "=== Prewarm Finished (${DURATION}s) ==="

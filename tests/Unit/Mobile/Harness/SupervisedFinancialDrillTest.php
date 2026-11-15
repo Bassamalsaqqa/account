@@ -30,9 +30,10 @@ use Tests\Support\Harness\VerifiedOwnedSnapshot;
  * - Evidence scenario enforcement (exact 7 items: 5 PASS, 2 NOT_RUN with null httpStatusCode).
  * - Structured cleanup: mandatory prevalidated owned snapshot, foreign DB port (3306) rejection, and exact schema absence verification.
  * - Root prestart CLI pub/exe override rejection and 40-hex SHA validation.
- * - Protected active Android worktree refusal (*7ac8* / t3-7ac8b73d) and clean isolated path acceptance.
+ * - Protected active Android worktree refusal (*7ac8* / t3-7ac8b73d), canonical symlink rejection, and clean isolated path acceptance.
+ * - Backend runtime HEAD and working directory (cwd) mismatch rejection.
  *
- * NOTE: Authored source tests. UNRUN pending QA lease grant.
+ * NOTE: Authored source tests (54 total). UNRUN pending QA lease grant.
  */
 class SupervisedFinancialDrillTest extends TestCase
 {
@@ -303,6 +304,78 @@ class SupervisedFinancialDrillTest extends TestCase
             '/home/t3dev/.t3/worktrees/small-trader-android/t3-c8dda700-isolated'
         );
         $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function test_assert_not_protected_worktree_rejects_symlink_resolving_to_active_lane(): void
+    {
+        $symlinkTarget = $this->tempDir . '/mock_7ac8_lane';
+        mkdir($symlinkTarget, 0700, true);
+        $symlinkPath = $this->tempDir . '/innocent_alias';
+        symlink($symlinkTarget, $symlinkPath);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PROTECTED_WORKTREE_REFUSED');
+
+        SupervisedPairedFinancialDrill::assertNotProtectedWorktree($symlinkPath);
+    }
+
+    #[Test]
+    public function test_prestart_approval_fails_closed_when_backend_head_mismatches(): void
+    {
+        $filePath = $this->tempDir . '/approval.json';
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => str_repeat('2', 40),
+            'android_executable_head' => str_repeat('3', 40),
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PRESTART_APPROVAL_BACKEND_HEAD_MISMATCH');
+
+        SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('9', 40), // Mismatched backend head
+            null,
+            null,
+            $this->tempDir
+        );
+    }
+
+    #[Test]
+    public function test_prestart_approval_fails_closed_when_cwd_mismatches(): void
+    {
+        $filePath = $this->tempDir . '/approval.json';
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => str_repeat('2', 40),
+            'android_executable_head' => str_repeat('3', 40),
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PRESTART_APPROVAL_CWD_MISMATCH');
+
+        SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('1', 40),
+            null,
+            null,
+            sys_get_temp_dir() // Mismatched cwd
+        );
     }
 
     #[Test]

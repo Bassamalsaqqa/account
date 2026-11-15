@@ -884,6 +884,13 @@ class SupervisedPairedFinancialDrill
         if (str_contains($normalized, '7ac8') || str_contains($normalized, 't3-7ac8b73d')) {
             throw new RuntimeException("PROTECTED_WORKTREE_REFUSED: Active development lane '{$path}' must not be targeted for paired drills. An isolated, Root-approved worktree is required.");
         }
+        $real = realpath($path);
+        if ($real !== false) {
+            $realNorm = str_replace('\\', '/', $real);
+            if (str_contains($realNorm, '7ac8') || str_contains($realNorm, 't3-7ac8b73d')) {
+                throw new RuntimeException("PROTECTED_WORKTREE_REFUSED: Canonical target '{$real}' is a protected active development lane.");
+            }
+        }
     }
 
     /**
