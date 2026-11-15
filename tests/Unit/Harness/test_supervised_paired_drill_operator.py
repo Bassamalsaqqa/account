@@ -275,7 +275,7 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         # Create a throwaway git repository fixture (NEVER a real checkout)
         git_dir = os.path.join(self.test_dir, 'throwaway_git')
         os.makedirs(git_dir, mode=0o700)
-        subprocess.check_call(['git', 'init'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        subprocess.check_call(['git', 'init'], cwd=git_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=git_dir)
         subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=git_dir)
 
@@ -316,7 +316,7 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
     def test_verify_source_parity_mismatch_unexpected_or_missing_files(self):
         git_dir = os.path.join(self.test_dir, 'throwaway_git_mismatch')
         os.makedirs(git_dir, mode=0o700)
-        subprocess.check_call(['git', 'init'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        subprocess.check_call(['git', 'init'], cwd=git_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=git_dir)
         subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=git_dir)
 
@@ -357,7 +357,7 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         mock_worktree = os.path.join(self.test_dir, 'mock_android_peer')
         if not os.path.exists(mock_worktree):
             os.makedirs(mock_worktree, mode=0o700)
-            subprocess.check_call(['git', 'init'], cwd=mock_worktree, stdout=subprocess.DEVNULL)
+            subprocess.check_call(['git', 'init'], cwd=mock_worktree, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.check_call(
                 ['git', 'symbolic-ref', 'HEAD', 'refs/heads/t3/verify-isolated-worktree'],
                 cwd=mock_worktree,
@@ -468,6 +468,15 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
             )
         self.assertIn("parent directory insecure permissions", str(ctx.exception))
 
+    def test_binding_record_file_insecure_permissions_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        os.chmod(binding_file, 0o644)
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("permissions insecure", str(ctx.exception))
+
     def test_binding_record_delta_count_mismatch_fails_closed(self):
         binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
             overrides={"pins": {
@@ -479,7 +488,8 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
             operator_driver.verify_binding_record(
                 binding_file, expected_sha, android_dir, pub_head, exe_head
             )
-        self.assertIn("does not match expected count 8", str(ctx.exception))
+        self.assertIn("Binding record count mismatch", str(ctx.exception))
+        self.assertIn("pub_vs_exe_delta specifies 8 files, but approved_docs_delta_paths has 5", str(ctx.exception))
 
     def test_binding_record_forbidden_extension_in_delta_fails_closed(self):
         binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
@@ -492,7 +502,7 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
             operator_driver.verify_binding_record(
                 binding_file, expected_sha, android_dir, pub_head, exe_head
             )
-        self.assertIn("Forbidden source code extension", str(ctx.exception))
+        self.assertIn("contains forbidden source extension", str(ctx.exception))
 
     def test_binding_record_disallowed_prefix_in_delta_fails_closed(self):
         binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
@@ -505,7 +515,7 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
             operator_driver.verify_binding_record(
                 binding_file, expected_sha, android_dir, pub_head, exe_head
             )
-        self.assertIn("Disallowed prefix in approved delta path", str(ctx.exception))
+        self.assertIn("does not start with approved documentation prefix", str(ctx.exception))
 
     def test_cli_omitted_binding_record_rejected(self):
         parser = operator_driver.build_parser()

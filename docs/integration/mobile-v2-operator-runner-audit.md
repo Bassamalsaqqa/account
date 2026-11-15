@@ -136,7 +136,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `541b3314ee1923e6c15134b957fec09925fe60969aa5c7aa0abbb2f34c97435d` | Python Unit Suite (29 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `8255528f48a7e0710169523cab6ec5ecb2a2eacee593391ed804d009ae9dbfc8` | Python Unit Suite (30 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
@@ -584,7 +584,61 @@ In `supervised-paired-drill-operator.py`:
   - `test_cli_omitted_binding_record_rejected`: Omitting `--binding-record` raises `SystemExit` (exit code 2) with error output.
   - `test_cli_omitted_expected_binding_sha_rejected`: Omitting `--expected-binding-sha` raises `SystemExit` (exit code 2) with error output.
   - `test_cli_mandatory_binding_args_accepted`: Providing both flags parses successfully and preserves values.
-- All 29 unit tests remain strictly authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
+
+### 14.6 Root First Failure Remediation, Assertion Audit & Complete Test Method Inventory
+- **Root Failure Evidence Preserved:** `/home/t3dev/.t3/userdata/attachments/root-d43-operator-tests-wat33o2o/` (failure log `raw.log` SHA: `faae3f2b...`, exit code 1).
+  - Root invoked `python3 -m unittest -f` on commit `c66e564`.
+  - Test stopped at test 3 on `test_binding_record_delta_count_mismatch_fails_closed`.
+  - Diagnosis: Source-to-test wording mismatch. The operator raised:
+    `Binding record count mismatch: pub_vs_exe_delta specifies 8 files, but approved_docs_delta_paths has 5`
+    while the test asserted:
+    `self.assertIn("does not match expected count 8", str(ctx.exception))`
+- **Remediation & Full Exception Assertion Audit:**
+  - Updated `test_binding_record_delta_count_mismatch_fails_closed` to assert `self.assertIn("Binding record count mismatch", ...)` and `self.assertIn("pub_vs_exe_delta specifies 8 files, but approved_docs_delta_paths has 5", ...)`.
+  - Audited all exception assertions against actual operator driver strings:
+    - `test_binding_record_forbidden_extension_in_delta_fails_closed`: aligned to `"contains forbidden source extension"`.
+    - `test_binding_record_disallowed_prefix_in_delta_fails_closed`: aligned to `"does not start with approved documentation prefix"`.
+    - Restored `test_binding_record_file_insecure_permissions_fails_closed` (`"permissions insecure"`).
+    - Added `stderr=subprocess.DEVNULL` to throwaway git fixture `git init` invocations to suppress branch naming hint warnings.
+- **Complete Test Method Inventory (Exact Count: 30 Methods):**
+  1. `test_validate_no_symlink_components_rejects_symlink`
+  2. `test_assert_not_protected_worktree_rejects_7ac8`
+  3. `test_validate_secure_output_dir_rejects_inside_backend_repo`
+  4. `test_validate_secure_output_dir_rejects_non_empty_dir`
+  5. `test_validate_future_live_approval_path_rejects_already_existing_file`
+  6. `test_validate_commit_sha_and_manifest_sha_rejects_invalid`
+  7. `test_compare_git_states_detects_drift`
+  8. `test_compare_git_states_allows_declared_owned_output_artifact`
+  9. `test_compare_git_states_rejects_undeclared_untracked_file`
+  10. `test_run_supervised_child_silent_child_timeout`
+  11. `test_run_supervised_child_unterminated_output`
+  12. `test_run_supervised_child_forking_descendant_reaped`
+  13. `test_run_supervised_child_log_write_failure_propagates`
+  14. `test_verify_source_parity_accepts_docs_and_rejects_code_diff`
+  15. `test_verify_source_parity_mismatch_unexpected_or_missing_files`
+  16. `test_binding_record_valid_passes`
+  17. `test_binding_record_missing_fails_closed`
+  18. `test_binding_record_tampered_sha_fails_closed`
+  19. `test_binding_record_root_verified_not_true_fails_closed`
+  20. `test_binding_record_peer_attached_not_true_fails_closed`
+  21. `test_binding_record_worktree_mismatch_fails_closed`
+  22. `test_binding_record_branch_mismatch_fails_closed`
+  23. `test_binding_record_parent_insecure_permissions_fails_closed`
+  24. `test_binding_record_file_insecure_permissions_fails_closed`
+  25. `test_binding_record_delta_count_mismatch_fails_closed`
+  26. `test_binding_record_forbidden_extension_in_delta_fails_closed`
+  27. `test_binding_record_disallowed_prefix_in_delta_fails_closed`
+  28. `test_cli_omitted_binding_record_rejected`
+  29. `test_cli_omitted_expected_binding_sha_rejected`
+  30. `test_cli_mandatory_binding_args_accepted`
+
+- **Execution State:** All 30 unit tests remain strictly authored and unrun (`testsAUTHOREDUNRUN`). Financial case 5 has **NOT** been started.
+
+### 14.7 Operator-Next Ready Invocation for Root Direct Execution
+Root may directly run the reviewed, tracked unit test suite using:
+```bash
+python3 -m unittest -v tests/Unit/Harness/test_supervised_paired_drill_operator.py
+```
 
 
 
