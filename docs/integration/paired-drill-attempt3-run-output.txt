@@ -1,0 +1,40 @@
+==============================================================================
+Mobile V2 Paired Financial Integration Supervisor
+==============================================================================
+  Backend Runtime HEAD : 9373589f009e006e8eed4082c7ced0be0b62bf3c
+  Backend App Tree     : d584067cf8f8a3588f4031a4cdb2107e0fa80b4d (G1 ADMITTED)
+  Source Harness SHA   : 7fcf73a3c55940aa484464a56078506cb9faa15b22656750d88923dc3d90b3cc (MATCH)
+  Guard Test SHA       : a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda (MATCH)
+  CLI Command SHA      : 0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7 (MATCH)
+  CLI Runner SHA       : 70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075 (MATCH)
+  Manifest SHA-256     : bea3fbc0ef41ffbe999f4ccdfe3fadfa0fb1d3d19ebd053371c339bc242cb74b
+  Paired Hold Seconds  : 120s
+  Private Output Dir   : /home/t3dev/.t3/userdata/attachments/root-basic3-9373589 (0700)
+  Root Prestart Gate   : GRANTED (verified from /home/t3dev/.t3/userdata/attachments/root-basic3-9373589/prestart.json)
+  Android Pub HEAD     : b0d5965e7dc5d0e483880afa0bf3ca6a025ee3e6
+  Android Exe HEAD     : 360ce78408f09ecff451381e595a4ffe2f116969
+
+Launching single child paired lifecycle (--run)...
+[Child ERR] Owned schema created: accounting_p8_tmp_ff0b72f41794
+  [Child] Schema       : accounting_p8_tmp_ff0b72f41794
+  [Child] CA Cert      : /tmp/v2_harness_67d48fd0984d9bd5/bootstrap/test-ca.pem
+  [Probe] Performing strict TLS GET 200 check to allowlisted loopback URL...
+  [Probe] Strict TLS probe verified 200 OK with matching nonce.
+
+==============================================================================
+CANDIDATE CLIENT HANDOFF EXPOSED FOR ROOT WITNESS RECORD:
+  Path   : /tmp/v2_harness_67d48fd0984d9bd5/runtime_client_handoff.json
+  SHA256 : d629ba4857025140fa3e6b40748e73644f38b331f88706f2e41a895d7d6d719f
+==============================================================================
+Awaiting independent external Root live approval at '/home/t3dev/.t3/userdata/attachments/root-basic3-9373589/live.json'...
+  Root Live Gate       : GRANTED (witnessed SHA: d629ba4857025140fa3e6b40748e73644f38b331f88706f2e41a895d7d6d719f)
+  [DB] Company Public ULID : 01M7FSPYR86TREC41SCZ7P4NVH
+  [DB] Company Integer ID  : 1 (resolved via proof PDO)
+  [Baseline] Hash      : ed746cce6c03ebf0ac60f47a8d7c206eb1440073592a6f5cd67af429e916ef57 (canonical)
+
+Executing Android client under host JVM (timeout: 76.914089202881s)...
+
+Supervisor Error: The process "'./gradlew' 'cleanTestDebugUnitTest' 'testDebugUnitTest' '--no-build-cache' '--tests' 'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke' '--tests' 'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.testCashPilotFinancialAcceptanceEnforcement' '--max-workers=1' '-Dorg.gradle.workers.max=1' '-Dorg.gradle.jvmargs=-XX:ActiveProcessorCount=2 -XX:+UseSerialGC -Xmx1536m' '-Pkotlin.compiler.execution.strategy=in-process' '--no-daemon'" exceeded the timeout of 76.914089202881 seconds.
+[Cleanup] Sending SIGTERM to child process (PID 1774622, matches snapshot)...
+[Child ERR] Owned schema dropped: accounting_p8_tmp_ff0b72f41794
+  [Final Witness] Recorded POST-cleanup witness: /home/t3dev/.t3/userdata/attachments/root-basic3-9373589/post_cleanup_final_witness.json (SHA: 3f9ae785809b42a0a6983c3dde7d7fb1ef40c9be81db94584a201cc9189d6e27)

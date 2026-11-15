@@ -1,0 +1,31 @@
+{
+    "contract_name": "Mobile V2 Post-Cleanup Final Witness",
+    "recorded_at_utc": "2026-11-15T14:29:26Z",
+    "execution_pins": {
+        "backend_execution_head_sha": "9373589f009e006e8eed4082c7ced0be0b62bf3c",
+        "peer_android_approved_head_sha": "b0d5965e7dc5d0e483880afa0bf3ca6a025ee3e6",
+        "peer_android_executable_head_sha": "360ce78408f09ecff451381e595a4ffe2f116969",
+        "manifest_sha256": "bea3fbc0ef41ffbe999f4ccdfe3fadfa0fb1d3d19ebd053371c339bc242cb74b"
+    },
+    "ownership_snapshot": {
+        "schema_name": "accounting_p8_tmp_ff0b72f41794",
+        "child_pid": 1774622,
+        "harness_dir": "/tmp/v2_harness_67d48fd0984d9bd5",
+        "proof_parent_dir": "/tmp/p8_proof_326b2bff95c44b5b",
+        "proof_evidence_sha256": "9c9ca71bc42821e57deb0ba4f15401e3e4d47a8fb4889c8305c0217594db2f78",
+        "verified_at": 1794752872
+    },
+    "cleanup_observations": {
+        "child_reaped": true,
+        "schema_absent": true,
+        "listeners_closed": true,
+        "harness_absent": true,
+        "proof_parent_absent": true,
+        "cleanup_success": true,
+        "cleanup_errors": []
+    },
+    "supervisor_outcome": {
+        "exit_code": 1,
+        "overall_success": false
+    }
+}
