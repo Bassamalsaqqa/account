@@ -137,7 +137,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `9074ecebf4d8fc10588f3c3743190230e1455a7bb1111428fc046e79eb9a38c1` | Python Unit Suite (41 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `1a4042ccf8c11ad7c42a05496bd205fac9ab751ff266f2f8038e5b8501f4c19d` | Python Unit Suite (41 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
@@ -532,6 +532,11 @@ To resolve this cleanly without compromising safety:
 | | `root-peer-baseline-tests-w6no73md/argv.json` | `9dcf016d8008f963206c81ccc1d7fd66a1d770b39aa3a05b2040aa24ffd44633` |
 | | `root-peer-baseline-tests-w6no73md/pre.json` | `c668ffdc6efed1f43c66f064adc3c74fdf4bdca0432ec137b843058262b1d99a` |
 | | `root-peer-baseline-tests-w6no73md/post.json` | `c668ffdc6efed1f43c66f064adc3c74fdf4bdca0432ec137b843058262b1d99a` |
+| **Root Peer Baseline Tests 2 (26 PASS, 1 ERROR)** | `root-peer-baseline-tests-637e0hae/raw.log` | `a96b114eefda2098ba70c137c3e21dece35bac0a46217567a65ad3dfe3d60c91` |
+| | `root-peer-baseline-tests-637e0hae/exit.json` | `5df32aaf96715be5c66b2d1d6b394808bec429d347e5fbe18105b1ce97a32e4e` |
+| | `root-peer-baseline-tests-637e0hae/argv.json` | `9dcf016d8008f963206c81ccc1d7fd66a1d770b39aa3a05b2040aa24ffd44633` |
+| | `root-peer-baseline-tests-637e0hae/pre.json` | `3e1ed88b25fe54756b4715a05f7e5f041c4395a1b1fecd3908da1c8aeb59025b` |
+| | `root-peer-baseline-tests-637e0hae/post.json` | `3e1ed88b25fe54756b4715a05f7e5f041c4395a1b1fecd3908da1c8aeb59025b` |
 
 ---
 
@@ -864,6 +869,21 @@ Authored 11 comprehensive throwaway fixture tests in `tests/Unit/Harness/test_su
   - Remediated by modifying `test_peer_baseline_record_fails_on_sha_mismatch` to write equal-length 25-byte content (`b'{"sample_evidence": fals}'`), allowing the size check to pass and directly exercising the SHA-256 mismatch guard.
   - Added a dedicated test `test_peer_baseline_record_fails_on_size_mismatch` to verify that byte size discrepancies are caught by the size guard.
   - All tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root review.
+
+#### 7. Root Execution `root-peer-baseline-tests-637e0hae` & Exact Exception Type Alignment
+- **Run ID**: `root-peer-baseline-tests-637e0hae`
+- **Commit**: `c550952e06af4e26ca7fe7bdea2b3058a3ddfe78`
+- **Command**: `python3 -B -m unittest -f tests/Unit/Harness/test_supervised_paired_drill_operator.py`
+- **Exit Code**: `1` (STOP on first failure, no retries)
+- **Results**: Ran 27 tests in 0.158s (**26 PASS, 0 failures, 1 ERROR**).
+- **Repository Invariance**: Pre/post source, HEAD, and git status hashes 100% matched in backend repository (`invariance: true`; pure backend execution, Android worktree untouched).
+- **Retained Evidence**: `/home/t3dev/.t3/userdata/attachments/root-peer-baseline-tests-637e0hae` (0700 dir, 0600 files: `raw.log`, `exit.json`, `argv.json`, `pre.json`, `post.json`).
+- **Defect & Remediation**:
+  - `test_peer_baseline_record_fails_on_symlink_artifact` expected `RuntimeError`, but the security helper `validate_no_symlink_components` (line 84) correctly raises `ValueError(f"{label} contains a symlink component: {curr}")`.
+  - Remediated by narrowing `test_peer_baseline_record_fails_on_symlink_artifact` to expect exact `ValueError` with `"contains a symlink component"`.
+  - Security helper preserved without alteration; exception catching is exact (no broad `Exception` or tuples).
+  - Comprehensive inspection of all remaining unit tests confirmed exact exception types, error texts, and guard ordering match their invoked helpers.
+  - All 41 tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root review.
 
 
 

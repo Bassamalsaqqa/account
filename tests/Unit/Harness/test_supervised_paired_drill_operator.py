@@ -691,11 +691,9 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         os.remove(target_file)
         os.symlink(real_target, target_file)
 
-        with self.assertRaises(RuntimeError) as ctx:
+        with self.assertRaises(ValueError) as ctx:
             operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
-        self.assertTrue(
-            "not a regular file" in str(ctx.exception) or "symlink component" in str(ctx.exception).lower()
-        )
+        self.assertIn("contains a symlink component", str(ctx.exception))
 
     def test_peer_baseline_record_fails_on_modified_tracked_file(self):
         # Untracked baseline file matches, but a tracked file is modified
