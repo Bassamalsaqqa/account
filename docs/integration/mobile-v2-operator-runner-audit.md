@@ -313,11 +313,193 @@ All run directories are preserved in `/home/t3dev/.t3/userdata/attachments/` (di
 
 ---
 
-## 8. Operational Scope & Stand-Down
+## 8. Root Compliant Validation Report (`root-runner-validation-ryb_aio5`)
 
-- **Operational Acceptance:** Standalone 124 / source accepted ONLY. Zero production cash.
-- **Execution Authority:** Suspended. No additional tests, compilation, DB, TLS, or Gradle actions authorized.
-- **Source Hardening Status:** Python operator driver unit suite (21 tests) verified green under commit `60e0e03`.
-- **Zero Active Jobs:** No daemons, listeners, background processes, or untracked changes exist in the workspace.
-- Standing down for Root direct command execution.
+Following the disclosure of variable name typos and argument omissions in previous assistant runs, Root executed the fully compliant validation grant directly at backend HEAD `fa70c31888e8847bf11af9f631c9471c58da149c`:
+
+- **Execution Directory:** `/home/t3dev/.t3/userdata/attachments/root-runner-validation-ryb_aio5` (mode `0700` / `0600`)
+- **Backend HEAD SHA:** `fa70c31888e8847bf11af9f631c9471c58da149c`
+- **Peer Android Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c`
+- **Peer Android Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
+- **Exact Verified Environment:**
+  ```json
+  {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "APP_ENV": "testing",
+    "DB_HOST": "127.0.0.1",
+    "DB_PORT": "1",
+    "DB_URL": "",
+    "PHASE8_TEST_DB_HOST": "127.0.0.1",
+    "PHASE8_TEST_DB_PORT": "1",
+    "PHASE8_ALLOW_DISPOSABLE_DB": "0",
+    "MOBILE_V2_HARNESS_ENABLE": "0"
+  }
+  ```
+
+### 8.1 Results Breakdown
+1. **Phase 1 (Python Operator Driver Unit Suite):**
+   - **Command:** `python3 -B -m unittest -f tests/Unit/Harness/test_supervised_paired_drill_operator.py`
+   - **Duration:** 1.54s
+   - **Exit Code:** 0
+   - **Outcome:** 21 tests passed (OK).
+   - **Log SHA-256:** `f73c450789d4bd9924c94fb3c8d3f2d6ac614d12bffaf41150f27fe518aa686c`
+2. **Phase 2 (PHP Supervised Financial Drill Guard Suite):**
+   - **Command:** `php vendor/bin/phpunit --no-configuration --bootstrap vendor/autoload.php --stop-on-failure --stop-on-error --log-junit=.../phpunit.xml tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php`
+   - **Duration:** 0.20s
+   - **Exit Code:** 0
+   - **Outcome:** 54 tests passed, 388 assertions (100% OK, 0 failures, 0 errors, 15 notices).
+   - **Log SHA-256:** `920bec8bdd4e6a33f5486cc8ac6fda1086b57240af4d6cc47889f0c0ff776965`
+   - **JUnit XML SHA-256:** `dbf5458f24cb93071a2a00d6c8d1d89ac7aaf7cbd8d05aa5f51a75e7912dbd51`
+3. **Repository State & Invariance:**
+   - Both backend and Android repository pre/post states matched exactly (`invariance.json` SHA: `f4ec8714a5241a6168955dd6b55a3efb4ca51fa186fd79e28ff5ec70cb7f8623`, `equal: true`).
+   - `pre.json` & `post.json` SHA-256: `a8d413918662c7faccfb1ebed4011280eea10b05a85bab2be22e7a5863e89bd2`.
+
+---
+
+## 9. Root Limited Compile Prewarm Report (`root-c8-prewarm-516028edca`)
+
+Following compliant validation, Root authorized and executed a limited compile-only prewarm task:
+
+- **Output Directory:** `/home/t3dev/.t3/userdata/attachments/root-c8-prewarm-516028edca`
+- **Target Android Worktree:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
+- **Target Android HEADs:** Publication `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c` / Executable `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
+- **Command Invoked:**
+  ```bash
+  /home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/paired-drill-prewarm.sh \
+    --android-repo-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
+    --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
+    --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
+    --offline
+  ```
+- **Exit Code:** 0 (SUCCESS)
+- **Execution Duration:** 142.220s (metadata duration: 142.498s)
+- **Pre/Post Verification:** `pre_post_matched: true`, `drift_detected: false`.
+- **Artifacts & Checksums:**
+  - `argv.json`: `98c4599f052b286e4139cfd6047aabc7d1d586fba62840cfe4f03ec6c6816fe4`
+  - `exit_metadata.json`: `6b27f0323f428729ecdc5f4accfb80c8b3286ba301aa8d5832a424f84911a876`
+  - `operator_execution.log`: `f27d120e7d65c8518daef202c682a91f49147b690b8de82d142d5f7b37adc5b6`
+  - `pre.json`: `9d3de92320be1725e4ce4aba5ad3975b70cf9b632e24351fe962a3e0e629374a`
+  - `post.json`: `984e9a42fcf15acb9613834d8a7268827523dfa98d9733882331c45b6eca1efc`
+
+---
+
+## 10. Root Attempt 4 Paired Drill Execution Report (`root-c8-pair4-prep` & `root-c8-pair4-exec`)
+
+Root executed a full paired integration drill using the decoupled preparation and execution handshake:
+
+- **Preparation Directory:** `/home/t3dev/.t3/userdata/attachments/root-c8-pair4-prep`
+- **Execution Directory:** `/home/t3dev/.t3/userdata/attachments/root-c8-pair4-exec`
+- **Backend Runtime HEAD:** `fa70c31888e8847bf11af9f631c9471c58da149c`
+- **Backend App Tree SHA:** `d584067cf8f8a3588f4031a4cdb2107e0fa80b4d` (G1 Admitted)
+- **Peer Android Worktree:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13` (branch `t3/android-qualified-basic-peer-c8dda700`)
+- **Android Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c`
+- **Android Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
+- **External Pairing Manifest SHA-256:** `1c08a9b8113b593d161aa2fa1296bedb79b9314519fe6c779f56343a6eb2c8a3`
+
+### 10.1 Live Witness & Handoff Handshake
+1. **Prestart Gate:** Verified prestart approval from `/home/t3dev/.t3/userdata/attachments/root-c8-pair4-prep/prestart.json` (SHA: `bbb5aa17...`).
+2. **Strict Loopback TLS Probe:** Backend supervisor spawned owned child harness (`PID 1883372`, schema `accounting_p8_tmp_95dd9951106a`). Strict TLS GET 200 probe to `https://127.0.0.1:18443/_harness/readiness` verified HTTP 200 OK with matching nonce.
+3. **Live Handoff Approval:** Candidate handoff exposed at `/tmp/v2_harness_30b1effa66c68e04/runtime_client_handoff.json` (SHA: `3b56f1b1c3f88c8080abf959b4ea988f08ca762a1c1eed411ece640680b299d2`). Root approved live handoff via external `/home/t3dev/.t3/userdata/attachments/root-c8-pair4-prep/live.json` (SHA: `c8e80e99...`).
+4. **Pre-Run DB Baseline:** Captured pre-run financial baseline (SHA: `1d2f0345...`, 0 invoices, 0 customer payments, 1 stock movement of 100.00 qty).
+
+### 10.2 Host JVM Test Execution & Partial Failure Analysis
+- **Execution Command:** Gradle `testDebugUnitTest` executed under single-use JVM daemon (duration: 19s).
+- **Test Summary:** 2 tests executed, 1 passed, 1 failed.
+  - `testCashPilotFinancialAcceptanceEnforcement`: **PASSED** (0.01s).
+  - `executePairedOnlineCashPilotSmoke`: **FAILED** (0.61s).
+- **Exact Stack Trace:**
+  ```text
+  SmallTraderOnlineCashPilotSmokeTest > executePairedOnlineCashPilotSmoke FAILED
+      java.lang.IllegalArgumentException: Base origin must not contain a path segment: [REDACTED]
+          at com.example.data.mobile.readclient.EndpointSecurity.validateBaseOrigin(Transport.kt:178)
+          at com.example.data.mobile.readclient.http.OkHttpTransport.<init>(OkHttpTransport.kt:95)
+          at com.example.data.mobile.readclient.http.OkHttpTransport.<init>(OkHttpTransport.kt:87)
+          at com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke(SmallTraderOnlineCashPilotSmokeTest.kt:247)
+  ```
+- **Defect Diagnosis:** The candidate runtime handoff provided `config.baseUrl = "https://127.0.0.1:18443/api/mobile/v2"`. At line 247 of `SmallTraderOnlineCashPilotSmokeTest.kt`, the `OkHttpTransport` constructor treated `baseUrl` as an origin argument and passed it to `EndpointSecurity.validateBaseOrigin()`. `validateBaseOrigin()` rejected the `/api/mobile/v2` path segment, throwing `IllegalArgumentException` prior to any cash client initialization or network dispatch.
+- **Remediation Assignment:** Android Root assigned the original writer to perform a SOURCE-ONLY fix aligning origin vs. API path handling with NO weakening of `EndpointSecurity` validation guards.
+
+### 10.3 Teardown & Post-Cleanup Final Witness
+- Following JVM test failure, supervisor executed clean resource teardown:
+  - Child process (`PID 1883372`) reaped via SIGTERM.
+  - Dedicated schema `accounting_p8_tmp_95dd9951106a` dropped.
+  - Proof parent directory `/tmp/p8_proof_90f6532223f5fef4` removed.
+  - Top-level harness directory `/tmp/v2_harness_30b1effa66c68e04` removed.
+  - Ports and listeners closed.
+- **Post-Cleanup Final Witness:** `/home/t3dev/.t3/userdata/attachments/root-c8-pair4-exec/post_cleanup_final_witness.json` (SHA: `69606450ee2db73b831f12e71608ebde1add05c7642ca0542e8e455b10f58545`). All resource absence verified (`child_reaped: true`, `schema_absent: true`, `listeners_closed: true`, `harness_absent: true`, `cleanup_success: true`, exit code 1).
+
+---
+
+## 11. Explicit Owned Output Artifact Accounting Specification
+
+During Attempt 4, the operator detected repository status drift on the peer Android worktree:
+```json
+{
+  "drift_detected": true,
+  "drift_details": {
+    "android_status_drift": {
+      "pre": "",
+      "post": "?? app/docs/"
+    }
+  }
+}
+```
+
+### 11.1 Investigation & Diagnosis
+The untracked directory was caused by the Android test runner writing its partial failure client evidence:
+- **Created Path:** `app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`
+- **SHA-256:** `412ace7059e4128a7e6b89c07b86ed4f7a51358ce5e6f6289e603fec3409c4a3`
+- **Source Code Invariance:** Zero tracked `.kt`, `.java`, `.gradle`, or configuration files were modified (tracked source hashes matched pre-state 100%).
+- **Operator Constraint:** Broad prefix allowlists (e.g. `allow_untracked("app/docs/**")`) are strictly forbidden, as they can conceal unintended artifacts or leak untracked mutations.
+
+### 11.2 Required Operator Accounting Contract
+To resolve this cleanly without compromising safety:
+1. **Explicit Pre-Declaration:** The operator driver must declare an exact relative output artifact allowlist prior to execution (e.g., `app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`).
+2. **Pre-State Capture:** Prior to execution, record whether the target path exists and capture its pre-run hash (if any).
+3. **Post-State Validation:** Post-execution status differences in the worktree are permitted **only if**:
+   - Every status difference corresponds strictly and exclusively to a declared owned output artifact path.
+   - The file is newly created or updated with verified ownership (current UID), non-symlink canonical path, and fresh timestamp.
+   - Any other untracked file or any change to tracked source files immediately triggers `FAIL-CLOSED` drift error.
+   - Evidence in the frozen peer is never deleted.
+
+---
+
+## 12. Retained Evidence Checksum Table (Root Validations & Attempt 4)
+
+| Run / Phase | Artifact Path | SHA-256 Checksum |
+| :--- | :--- | :--- |
+| **Root Validation** | `root-runner-validation-ryb_aio5/invariance.json` | `f4ec8714a5241a6168955dd6b55a3efb4ca51fa186fd79e28ff5ec70cb7f8623` |
+| | `root-runner-validation-ryb_aio5/phase1.log` | `f73c450789d4bd9924c94fb3c8d3f2d6ac614d12bffaf41150f27fe518aa686c` |
+| | `root-runner-validation-ryb_aio5/phase2.log` | `920bec8bdd4e6a33f5486cc8ac6fda1086b57240af4d6cc47889f0c0ff776965` |
+| | `root-runner-validation-ryb_aio5/phpunit.xml` | `dbf5458f24cb93071a2a00d6c8d1d89ac7aaf7cbd8d05aa5f51a75e7912dbd51` |
+| | `root-runner-validation-ryb_aio5/results.json` | `44be5cb232a6d187685096d833c30245f74090fd1dcbdbc2d32a415a1e024443` |
+| **Root Prewarm** | `root-c8-prewarm-516028edca/exit_metadata.json` | `6b27f0323f428729ecdc5f4accfb80c8b3286ba301aa8d5832a424f84911a876` |
+| | `root-c8-prewarm-516028edca/operator_execution.log` | `f27d120e7d65c8518daef202c682a91f49147b690b8de82d142d5f7b37adc5b6` |
+| **Attempt 4 Prep** | `root-c8-pair4-prep/pairing-manifest.json` | `1c08a9b8113b593d161aa2fa1296bedb79b9314519fe6c779f56343a6eb2c8a3` |
+| | `root-c8-pair4-prep/prestart.json` | `bbb5aa17459c2f28a8054ee657b635bc588f8790423f30a3f51d05f7725b55fb` |
+| | `root-c8-pair4-prep/live.json` | `c8e80e99b625534413b5acaa9db6adaca01dd0ce499ce55fce24eca63007fefb` |
+| **Attempt 4 Exec** | `root-c8-pair4-exec/argv.json` | `be620d529e94bc7ba8195445d0d05f8f7a4ccd4812a843be020879def15d45d5` |
+| | `root-c8-pair4-exec/exit_metadata.json` | `1d1d012abfb66b489280e6c71cf4d1a091ad245ade2a0fbf79b5a2397e885cfb` |
+| | `root-c8-pair4-exec/operator_execution.log` | `59929e06dc77d9cc2bcfef25c6395fc62ed8e397ad813c5bb1cb12281b409cd5` |
+| | `root-c8-pair4-exec/pre_run_baseline.json` | `1d2f03456ad1078d7d4d99413abcc858c4b9adced304e8ccfe55cb233e5caebb` |
+| | `root-c8-pair4-exec/raw_android_test_output.log` | `e5324a592d9177a3d00080c7b841e45bf05c120d12aaf9ca76257be9b56af764` |
+| | `root-c8-pair4-exec/post_cleanup_final_witness.json` | `69606450ee2db73b831f12e71608ebde1add05c7642ca0542e8e455b10f58545` |
+| | `root-c8-pair4-exec/post_cleanup_artifact_index.json` | `8880aada657707b638cb504335108d2c5d01bb95682cb9d4b87f71ad68dea486` |
+| **Diagnostics** | `partial_failure_diagnostics/partial_client_evidence.json` | `412ace7059e4128a7e6b89c07b86ed4f7a51358ce5e6f6289e603fec3409c4a3` |
+| | `partial_failure_diagnostics/partial_failure_index.json` | `bfd397f7f6baa8b38406571433eb2117fa79de63c1a83091420830107e578c44` |
+| | `partial_failure_diagnostics/TEST-...SmallTraderOnlineCashPilotSmokeTest.xml` | `62cd2b5cc38ab2a5670e4f19f950df5bc25f193bbf2f7187edac5cb125bf9e35` |
+
+---
+
+## 13. Financial Basic Acceptance Status & Stand-Down
+
+- **Financial Basic Status:** **NOT PASSED**.
+  - The paired integration drill failed at test 1 constructor origin validation.
+  - No financial cash transactions, posting batches, invoices, or receipts were processed.
+  - Six post-event financial reconciliation queries were **NOT RUN**.
+- **Execution Authority:** Strictly **SUSPENDED**. No Gradle, tests, database, TLS, or Android write operations permitted.
+- **Lease Status:** Released. No open listeners, ports, or background daemons active.
+- **Git State:** All git SHAs verified directly from repository object store (`fa70c31888e8847bf11af9f631c9471c58da149c`). No external git mutations.
+- Standing down for Android Root's source fix.
+
 
