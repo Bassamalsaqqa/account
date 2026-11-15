@@ -541,34 +541,8 @@ try {
     require '.$autoloadPath.';
     $app = new \Illuminate\Foundation\Application('.$appRootEsc.');
     $app["env"] = "testing";
-    $permConfig = file_exists('.$appRootEsc.'."/config/permission.php") ? require '.$appRootEsc.'."/config/permission.php" : [];
-    $config = new \Illuminate\Config\Repository([
-        "permission" => $permConfig,
-        "cache" => [
-            "default" => "array",
-            "stores" => [
-                "array" => ["driver" => "array", "serialize" => false],
-            ],
-        ],
-    ]);
-    $app->instance("config", $config);
 
-    $guard = new \Illuminate\Auth\RequestGuard(fn () => null, new \Illuminate\Http\Request());
-    $auth = new class($guard) implements \Illuminate\Contracts\Auth\Factory {
-        public function __construct(private \Illuminate\Contracts\Auth\Guard $guard) {}
-        public function guard($name = null): \Illuminate\Contracts\Auth\Guard { return $this->guard; }
-        public function shouldUse($name): void {}
-        public function __call(string $method, array $args): mixed { return $this->guard->{$method}(...$args); }
-    };
-    $app->instance("auth", $auth);
-    $app->instance(\Illuminate\Contracts\Auth\Factory::class, $auth);
-    $app->instance(\Illuminate\Contracts\Auth\Guard::class, $guard);
-
-    $cacheManager = new \Illuminate\Cache\CacheManager($app);
-    $app->instance("cache", $cacheManager);
-    $app->instance(\Illuminate\Contracts\Cache\Factory::class, $cacheManager);
-    $app->singleton(\Spatie\Permission\PermissionRegistrar::class);
-
+    \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedContainerServices($app);
     \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
 
     $context = $app->make(\App\Support\Tenancy\CompanyContext::class);

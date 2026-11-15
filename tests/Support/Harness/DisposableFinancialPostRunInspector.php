@@ -926,6 +926,62 @@ final class DisposableFinancialPostRunInspector
     }
 
     /**
+     * Binds minimal isolated container services required by CompanyContext and reconciliation
+     * services: sessionless RequestGuard with null user contracts, array-only CacheManager,
+     * and Spatie PermissionRegistrar. Autoload only, zero session files, zero default DB dials.
+     */
+    public static function bindIsolatedContainerServices(\Illuminate\Foundation\Application $app): void
+    {
+        $appDir = dirname(__DIR__, 3);
+        $permissionConfig = file_exists($appDir.'/config/permission.php')
+            ? require $appDir.'/config/permission.php'
+            : [];
+
+        $existingConfig = $app->bound('config') ? $app->make('config')->all() : [];
+        $mergedConfig = array_replace_recursive([
+            'database' => [
+                'default' => 'disposable_inspector',
+                'connections' => [],
+            ],
+            'cache' => [
+                'default' => 'array',
+                'stores' => [
+                    'array' => [
+                        'driver' => 'array',
+                        'serialize' => false,
+                    ],
+                ],
+            ],
+            'permission' => $permissionConfig,
+        ], $existingConfig);
+
+        $app->instance('config', new \Illuminate\Config\Repository($mergedConfig));
+
+        // Minimal legitimate sessionless RequestGuard with null user contracts (zero session/DB IO)
+        $sessionlessGuard = new \Illuminate\Auth\RequestGuard(
+            fn () => null,
+            new \Illuminate\Http\Request()
+        );
+        $authManager = new class($sessionlessGuard) implements \Illuminate\Contracts\Auth\Factory {
+            public function __construct(private \Illuminate\Contracts\Auth\Guard $guard) {}
+            public function guard($name = null): \Illuminate\Contracts\Auth\Guard { return $this->guard; }
+            public function shouldUse($name): void {}
+            public function __call(string $method, array $args): mixed { return $this->guard->{$method}(...$args); }
+        };
+        $app->instance('auth', $authManager);
+        $app->instance(\Illuminate\Contracts\Auth\Factory::class, $authManager);
+        $app->instance(\Illuminate\Contracts\Auth\Guard::class, $sessionlessGuard);
+
+        // Array-only CacheManager and singleton PermissionRegistrar for CompanyContext::clearSessionless
+        $cacheManager = new \Illuminate\Cache\CacheManager($app);
+        $app->instance('cache', $cacheManager);
+        $app->instance(\Illuminate\Contracts\Cache\Factory::class, $cacheManager);
+        $app->singleton(\Spatie\Permission\PermissionRegistrar::class);
+
+        $app->singleton(CompanyContext::class);
+    }
+
+    /**
      * Executes the 6 canonical read-only reconciliation services in context-free system mode
      * using the minimal isolated container pattern from bin/final-release-check.php.
      * Binds all models and services to the EXACT verified read-only PDO instance
@@ -941,6 +997,13 @@ final class DisposableFinancialPostRunInspector
         $previousGlobalContainer = \Illuminate\Container\Container::getInstance();
         $previousApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
         $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
+        $previousTeamId = null;
+        if (function_exists('getPermissionsTeamId')) {
+            try {
+                $previousTeamId = getPermissionsTeamId();
+            } catch (\Throwable) {
+            }
+        }
 
         $pdo = null;
         $app = null;
@@ -948,6 +1011,7 @@ final class DisposableFinancialPostRunInspector
         $connection = null;
         $results = [];
         $allHealthy = true;
+        $primaryException = null;
 
         try {
             $pdo = self::assertExecutionGates($expectedSchemaName);
@@ -959,50 +1023,7 @@ final class DisposableFinancialPostRunInspector
             $app = new \Illuminate\Foundation\Application($appDir);
             $app['env'] = 'testing';
 
-            $permissionConfig = file_exists($appDir.'/config/permission.php')
-                ? require $appDir.'/config/permission.php'
-                : [];
-
-            $configRepo = new \Illuminate\Config\Repository([
-                'database' => [
-                    'default' => 'disposable_inspector',
-                    'connections' => [],
-                ],
-                'cache' => [
-                    'default' => 'array',
-                    'stores' => [
-                        'array' => [
-                            'driver' => 'array',
-                            'serialize' => false,
-                        ],
-                    ],
-                ],
-                'permission' => $permissionConfig,
-            ]);
-            $app->instance('config', $configRepo);
-
-            // Minimal legitimate sessionless RequestGuard with null user contracts (zero session/DB IO)
-            $sessionlessGuard = new \Illuminate\Auth\RequestGuard(
-                fn () => null,
-                new \Illuminate\Http\Request()
-            );
-            $authManager = new class($sessionlessGuard) implements \Illuminate\Contracts\Auth\Factory {
-                public function __construct(private \Illuminate\Contracts\Auth\Guard $guard) {}
-                public function guard($name = null): \Illuminate\Contracts\Auth\Guard { return $this->guard; }
-                public function shouldUse($name): void {}
-                public function __call(string $method, array $args): mixed { return $this->guard->{$method}(...$args); }
-            };
-            $app->instance('auth', $authManager);
-            $app->instance(\Illuminate\Contracts\Auth\Factory::class, $authManager);
-            $app->instance(\Illuminate\Contracts\Auth\Guard::class, $sessionlessGuard);
-
-            // Array-only CacheManager and singleton PermissionRegistrar for CompanyContext::clearSessionless
-            $cacheManager = new \Illuminate\Cache\CacheManager($app);
-            $app->instance('cache', $cacheManager);
-            $app->instance(\Illuminate\Contracts\Cache\Factory::class, $cacheManager);
-            $app->singleton(\Spatie\Permission\PermissionRegistrar::class);
-
-            $app->singleton(CompanyContext::class);
+            self::bindIsolatedContainerServices($app);
 
             // Wrap the SAME verified read-only PDO connection
             $connection = new \Illuminate\Database\MySqlConnection($pdo, $expectedSchemaName, '', [
@@ -1079,65 +1100,100 @@ final class DisposableFinancialPostRunInspector
 
                 $context->clear(sessionless: true);
             }
+        } catch (\Throwable $e) {
+            $primaryException = $e;
+            throw $e;
         } finally {
+            $cleanupExceptions = [];
+
+            // 1. Rollback snapshot on read-only PDO
             if ($pdo instanceof PDO) {
                 try {
                     $pdo->rollBack();
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
+                    $cleanupExceptions[] = 'PDO rollback failed: '.$e->getMessage();
                 }
             }
 
+            // 2. Disconnect and purge database manager
             if ($manager instanceof \Illuminate\Database\DatabaseManager) {
                 try {
                     $manager->purge('disposable_inspector');
                     $manager->disconnect('disposable_inspector');
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
+                    $cleanupExceptions[] = 'DB manager disconnect failed: '.$e->getMessage();
                 }
             }
 
+            // 3. Clear only isolated context while isolated container and facades are still active
+            if ($app instanceof \Illuminate\Foundation\Application && $app->bound(CompanyContext::class)) {
+                try {
+                    $app->make(CompanyContext::class)->clear(sessionless: true);
+                } catch (\Throwable $e) {
+                    $cleanupExceptions[] = 'Isolated CompanyContext clear failed: '.$e->getMessage();
+                }
+            }
+
+            // 4. Restore exact previous model connection resolver
             try {
                 if ($previousResolver !== null) {
                     \Illuminate\Database\Eloquent\Model::setConnectionResolver($previousResolver);
                 } else {
                     \Illuminate\Database\Eloquent\Model::unsetConnectionResolver();
                 }
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
+                $cleanupExceptions[] = 'Model resolver restoration failed: '.$e->getMessage();
             }
 
+            // 5. Clear resolved facade instances and restore previous facade application
             try {
                 \Illuminate\Support\Facades\Facade::clearResolvedInstances();
                 \Illuminate\Support\Facades\Facade::setFacadeApplication($previousApp);
             } catch (\Throwable) {
+                try {
+                    \Illuminate\Support\Facades\Facade::setFacadeApplication($previousApp);
+                } catch (\Throwable $e) {
+                    $cleanupExceptions[] = 'Facade application restoration failed: '.$e->getMessage();
+                }
             }
 
+            // 6. Restore exact previous global container
             try {
                 if ($previousGlobalContainer !== null) {
                     \Illuminate\Container\Container::setInstance($previousGlobalContainer);
                 }
             } catch (\Throwable) {
+                $cleanupExceptions[] = 'Global container restoration failed: '.$e->getMessage();
             }
 
-            // Ensure tenant contexts absent upon restoration
+            // 7. Restore exact previous permission team ID (without touching caller context or old guard/session)
             if (function_exists('setPermissionsTeamId')) {
                 try {
-                    setPermissionsTeamId(null);
+                    setPermissionsTeamId($previousTeamId);
                 } catch (\Throwable) {
-                }
-            }
-            if ($previousApp !== null) {
-                try {
-                    if ($previousApp->bound(CompanyContext::class)) {
-                        $previousApp->make(CompanyContext::class)->clear(sessionless: true);
-                    }
-                } catch (\Throwable) {
+                    $cleanupExceptions[] = 'Permission teamId restoration failed: '.$e->getMessage();
                 }
             }
 
+            // 8. Flush isolated application
             if ($app instanceof \Illuminate\Foundation\Application) {
                 try {
                     $app->flush();
                 } catch (\Throwable) {
+                    $cleanupExceptions[] = 'Isolated app flush failed: '.$e->getMessage();
                 }
+            }
+
+            // Ensure cleanup failure is not swallowed when claiming successful reconciliation
+            if (! empty($cleanupExceptions)) {
+                $cleanupSummary = implode('; ', $cleanupExceptions);
+                if ($primaryException !== null) {
+                    throw new \RuntimeException(
+                        "Reconciliation failed with error: {$primaryException->getMessage()}. Additionally, cleanup failed: {$cleanupSummary}",
+                        previous: $primaryException
+                    );
+                }
+                throw new \RuntimeException("Reconciliation cleanup failed: {$cleanupSummary}");
             }
         }
 
