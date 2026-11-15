@@ -1,0 +1,27 @@
+{
+  "phaseA_junit.xml": {
+    "sha256": "1abb09ef408555d29ed45451eb821df26188d502f4da090c063f2a3f16a1a3ab",
+    "bytes": 18775,
+    "permissions": "0o600"
+  },
+  "phaseA_meta.json": {
+    "sha256": "74e219612846bdf47037f8424d20190c6412e9f7bd158c81aca9eac2b30e062a",
+    "bytes": 656,
+    "permissions": "0o600"
+  },
+  "phaseA_post_backend.json": {
+    "sha256": "12837ac6624975832f5736633f836833b100f5c988e5a198ef973adeb9058ab9",
+    "bytes": 300760,
+    "permissions": "0o600"
+  },
+  "phaseA_pre_backend.json": {
+    "sha256": "a1fe42fd7ff70351bc1ba09b108c48620efdbe516639df61426368ec177e56fc",
+    "bytes": 300760,
+    "permissions": "0o600"
+  },
+  "phaseA_raw.txt": {
+    "sha256": "5fd3c9db618d69ef785ab3c16fbf8ddda3999dc3aae3372989dd0ada86acc530",
+    "bytes": 1503,
+    "permissions": "0o600"
+  }
+}
