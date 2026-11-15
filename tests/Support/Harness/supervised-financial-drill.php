@@ -314,55 +314,13 @@ try {
     $childConfigPath = $bootstrapDir . '/child_bootstrap_config.json';
     SupervisedPairedFinancialDrill::assertSecureFilePermissions($childConfigPath, 'CHILD_CONFIG');
 
-    $handoffPath = $harnessDir . '/runtime_client_handoff.json';
-    SupervisedPairedFinancialDrill::assertSecureFilePermissions($handoffPath, 'CLIENT_HANDOFF');
-
-    // 8. Validate Full Client Handoff Contract & Triple Match
-    $handoffRaw = (string) file_get_contents($handoffPath);
-    $candidateHandoffSha = hash('sha256', $handoffRaw);
-    $handoff = json_decode($handoffRaw, true);
-    if (! is_array($handoff)) {
-        throw new \RuntimeException("Handoff file contains invalid JSON.");
-    }
-
-    DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
-    SupervisedPairedFinancialDrill::verifyHandoffTripleMatch($handoff);
-
-    if (($handoff['lifecycle_phase'] ?? '') !== 'ACTIVE_TLS_READY') {
-        throw new \RuntimeException("Handoff lifecycle_phase must be ACTIVE_TLS_READY.");
-    }
-
-    $readinessUrl = (string) ($handoff['startup_tls']['readiness_url'] ?? '');
-    $readinessNonce = (string) ($handoff['startup_tls']['readiness_nonce'] ?? '');
-    $caCertSha = (string) ($handoff['startup_tls']['ca_cert_sha256'] ?? '');
-
-    if (! hash_equals(hash_file('sha256', $caCertPath), $caCertSha)) {
-        throw new \RuntimeException("CA cert SHA256 mismatch vs handoff startup_tls.");
-    }
-
-    // Strict TLS GET 200 with URL allowlist before JVM and external Root approval
-    echo "  [Probe] Performing strict TLS GET 200 check to allowlisted loopback URL...\n";
-    SupervisedPairedFinancialDrill::performStrictTlsReadinessCheck($readinessUrl, $caCertPath, $readinessNonce);
-    echo "  [Probe] Strict TLS probe verified 200 OK with matching nonce.\n";
-
-    // 9. Expose Candidate Handoff & Capture Owned Snapshot BEFORE Awaiting Live Root Approval
-    echo "\n==============================================================================\n";
-    echo "CANDIDATE CLIENT HANDOFF EXPOSED FOR ROOT WITNESS RECORD:\n";
-    echo "  Path   : {$handoffPath}\n";
-    echo "  SHA256 : {$candidateHandoffSha}\n";
-    echo "==============================================================================\n";
-
-    // 10. Extract Payloads & Verified Canonical Digest (Receipt Semantics: profile digest != raw wire SHA)
-    $rawWirePayloadSha = (string) ($handoff['raw_wire_sample']['raw_wire_payload_sha256'] ?? '');
-    $rawProfileDigest = (string) ($handoff['canonical_intent_profile_digest'] ?? '');
-    $canonicalPayloadDigest = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($rawProfileDigest);
-    $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
-    $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
-
-    // 11. BEFORE awaiting live witness: snapshot parent env allowlist from ALL THREE stores
-    //     (getenv + $_ENV + $_SERVER) BEFORE any mutation, including before the loader and before
-    //     the scoped setters below. Capturing here ensures the finally block restores the exact
-    //     pre-entry ambient state on any exception path, preventing ambient production DSN leakage.
+    // 8. Capture Verified Owned Snapshot EARLIEST (BEFORE TLS probe & handoff validation)
+    //    Capturing snapshot immediately after child config discovery guarantees that ANY
+    //    subsequent pre-live failure (TLS probe failure, malformed handoff, witness timeout)
+    //    enters the finally block with a valid VerifiedOwnedSnapshot, ensuring automated child
+    //    reaping, admin schema drop on port 3342, and harness temp cleanup.
+    //
+    // Snapshot parent env allowlist from ALL THREE stores BEFORE any mutation:
     $envAllowlist = [
         'APP_ENV',
         'MOBILE_V2_HARNESS_ENABLE',
@@ -377,9 +335,7 @@ try {
     ];
     $parentEnvToRestore = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envAllowlist);
 
-    // Set scoped testing flags AFTER originals are captured and prestart approval verified,
-    // but BEFORE captureVerifiedOwnedSnapshot (which calls fromLiveOwnership -> assertPrimarySchema).
-    // assertPrimarySchema refuses if APP_ENV != 'testing' or PHASE8_ALLOW_DISPOSABLE_DB != '1'.
+    // Set scoped testing flags required for DisposableMariaDbSchema::assertPrimarySchema validation
     $scopedPreCaptureVars = [
         'APP_ENV'                  => 'testing',
         'MOBILE_V2_HARNESS_ENABLE' => '1',
@@ -396,9 +352,7 @@ try {
     $proofPath = $creds['proof_path'];
     $proofNonce = $creds['proof_nonce'];
 
-    // Capture verified owned snapshot BEFORE awaiting live witness so cleanup is guaranteed
-    // on ANY subsequent pre-live failure (timeout, signal, abort).
-    // NO economic queries or financial dispatch are executed here.
+    // Capture verified owned snapshot: performs full proof/nonce/permissions/assertPrimarySchema verification
     $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
         $schemaName,
         $proofPath,
@@ -441,6 +395,51 @@ try {
         $_ENV[$varName]    = $varVal;
         $_SERVER[$varName] = $varVal;
     }
+
+    // 9. Discover & Validate Full Client Handoff Contract & Triple Match
+    $handoffPath = $harnessDir . '/runtime_client_handoff.json';
+    SupervisedPairedFinancialDrill::assertSecureFilePermissions($handoffPath, 'CLIENT_HANDOFF');
+
+    $handoffRaw = (string) file_get_contents($handoffPath);
+    $candidateHandoffSha = hash('sha256', $handoffRaw);
+    $handoff = json_decode($handoffRaw, true);
+    if (! is_array($handoff)) {
+        throw new \RuntimeException("Handoff file contains invalid JSON.");
+    }
+
+    DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    SupervisedPairedFinancialDrill::verifyHandoffTripleMatch($handoff);
+
+    if (($handoff['lifecycle_phase'] ?? '') !== 'ACTIVE_TLS_READY') {
+        throw new \RuntimeException("Handoff lifecycle_phase must be ACTIVE_TLS_READY.");
+    }
+
+    $readinessUrl = (string) ($handoff['startup_tls']['readiness_url'] ?? '');
+    $readinessNonce = (string) ($handoff['startup_tls']['readiness_nonce'] ?? '');
+    $caCertSha = (string) ($handoff['startup_tls']['ca_cert_sha256'] ?? '');
+
+    if (! hash_equals(hash_file('sha256', $caCertPath), $caCertSha)) {
+        throw new \RuntimeException("CA cert SHA256 mismatch vs handoff startup_tls.");
+    }
+
+    // Strict TLS GET 200 with URL allowlist before JVM and external Root approval
+    echo "  [Probe] Performing strict TLS GET 200 check to allowlisted loopback URL...\n";
+    SupervisedPairedFinancialDrill::performStrictTlsReadinessCheck($readinessUrl, $caCertPath, $readinessNonce);
+    echo "  [Probe] Strict TLS probe verified 200 OK with matching nonce.\n";
+
+    // 10. Expose Candidate Handoff for Independent External Live Root Approval
+    echo "\n==============================================================================\n";
+    echo "CANDIDATE CLIENT HANDOFF EXPOSED FOR ROOT WITNESS RECORD:\n";
+    echo "  Path   : {$handoffPath}\n";
+    echo "  SHA256 : {$candidateHandoffSha}\n";
+    echo "==============================================================================\n";
+
+    // 11. Extract Payloads & Verified Canonical Digest (Receipt Semantics: profile digest != raw wire SHA)
+    $rawWirePayloadSha = (string) ($handoff['raw_wire_sample']['raw_wire_payload_sha256'] ?? '');
+    $rawProfileDigest = (string) ($handoff['canonical_intent_profile_digest'] ?? '');
+    $canonicalPayloadDigest = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($rawProfileDigest);
+    $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
+    $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
 
     // 12. Gate 2: Bounded Wait for Independent External Live Root Approval (45s humane bound)
     $liveApprovalTarget = $rootLiveApprovalFile ?? $outputDir . '/live_root_approval.json';

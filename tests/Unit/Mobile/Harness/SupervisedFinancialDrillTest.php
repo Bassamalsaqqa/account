@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
+use Tests\Support\Harness\DisposableFinancialPostRunInspector;
 use Tests\Support\Harness\SupervisedPairedFinancialDrill;
 use Tests\Support\Harness\VerifiedOwnedSnapshot;
 
@@ -726,6 +727,17 @@ class SupervisedFinancialDrillTest extends TestCase
         $instance = (new \ReflectionClass(DisposableMariaDbSchema::class))->newInstanceWithoutConstructor();
         $ref = new \ReflectionClass(DisposableMariaDbSchema::class);
 
+        // Inject mocked PDO expecting one exact DROP statement BEFORE owned=true so neither drop()
+        // nor __destruct() can ever attempt a real PDO connection to 3342.
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->expects($this->once())
+            ->method('exec')
+            ->with('DROP DATABASE IF EXISTS `accounting_p8_tmp_0123456789ab`');
+
+        $propAdminPdo = $ref->getProperty('adminPdo');
+        $propAdminPdo->setAccessible(true);
+        $propAdminPdo->setValue($instance, $mockPdo);
+
         $propOwned = $ref->getProperty('owned');
         $propOwned->setAccessible(true);
         $propOwned->setValue($instance, true);
@@ -743,27 +755,196 @@ class SupervisedFinancialDrillTest extends TestCase
             'PASSWORD' => '',
         ]);
 
-        $env = $instance->environment();
-        $proofFile = $env['PHASE8_DISPOSABLE_DB_PROOF'] ?? '';
-        $this->assertFileExists($proofFile);
+        $proofFile = null;
+        $proofDir = null;
 
-        $proofDir = dirname($proofFile);
-        $this->assertTrue(is_dir($proofDir));
+        try {
+            $env = $instance->environment();
+            $proofFile = $env['PHASE8_DISPOSABLE_DB_PROOF'] ?? '';
+            $this->assertFileExists($proofFile);
 
-        $dirPerms = fileperms($proofDir) & 0777;
-        $this->assertSame(0700, $dirPerms, 'Proof parent directory must have strict 0700 permissions');
+            $proofDir = dirname($proofFile);
+            $this->assertTrue(is_dir($proofDir));
 
-        $filePerms = fileperms($proofFile) & 0777;
-        $this->assertSame(0600, $filePerms, 'Proof file must have strict 0600 permissions');
+            $dirPerms = fileperms($proofDir) & 0777;
+            $this->assertSame(0700, $dirPerms, 'Proof parent directory must have strict 0700 permissions');
 
-        $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
-        $this->assertSame($currentUid, fileowner($proofDir), 'Proof directory must be owned by current UID');
-        $this->assertSame($currentUid, fileowner($proofFile), 'Proof file must be owned by current UID');
+            $filePerms = fileperms($proofFile) & 0777;
+            $this->assertSame(0600, $filePerms, 'Proof file must have strict 0600 permissions');
 
-        // Cleanup via drop() must remove both proof file and proof directory
-        $instance->drop();
-        $this->assertFileDoesNotExist($proofFile, 'Proof file must be unlinked on drop');
-        $this->assertDirectoryDoesNotExist($proofDir, 'Proof directory must be removed on drop');
+            $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+            $this->assertSame($currentUid, fileowner($proofDir), 'Proof directory must be owned by current UID');
+            $this->assertSame($currentUid, fileowner($proofFile), 'Proof file must be owned by current UID');
+
+            // Cleanup via drop() must invoke mocked DROP statement and remove proof file and directory
+            $instance->drop();
+            $this->assertFileDoesNotExist($proofFile, 'Proof file must be unlinked on drop');
+            $this->assertDirectoryDoesNotExist($proofDir, 'Proof directory must be removed on drop');
+        } finally {
+            if ($proofFile !== null && is_file($proofFile)) {
+                @unlink($proofFile);
+            }
+            if ($proofDir !== null && is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_actual_drill_ordering_tls_failure_triggers_cleanup_with_early_captured_snapshot(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $proofNonce = str_repeat('c', 32);
+
+        // Create harness directory with 0700 permissions
+        $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+        $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+        mkdir($harnessDir, 0700, true);
+
+        // Create bootstrap directory with 0700 permissions
+        $bootstrapDir = $harnessDir . '/bootstrap';
+        mkdir($bootstrapDir, 0700, true);
+
+        // Create private 0700 proof parent directory and 0600 proof file
+        $proofDir = $this->tempDir . '/proof_dir';
+        if (! is_dir($proofDir)) {
+            mkdir($proofDir, 0700, true);
+        }
+        $proofPath = $proofDir . '/proof.json';
+        $proofContent = json_encode([
+            'schema' => $schemaName,
+            'host'   => '127.0.0.1',
+            'port'   => '3342',
+            'nonce'  => $proofNonce,
+        ], JSON_THROW_ON_ERROR);
+        file_put_contents($proofPath, $proofContent);
+        chmod($proofPath, 0600);
+
+        // Create 0600 child bootstrap config
+        $childConfigPath = $bootstrapDir . '/child_bootstrap_config.json';
+        file_put_contents($childConfigPath, json_encode([
+            'db_host'     => '127.0.0.1',
+            'db_port'     => '3342',
+            'db_username' => 'test_runner',
+            'db_password' => '',
+            'schema_name' => $schemaName,
+            'proof_path'  => $proofPath,
+            'proof_nonce' => $proofNonce,
+        ], JSON_THROW_ON_ERROR));
+        chmod($childConfigPath, 0600);
+
+        // Create dummy 0600 ca.pem
+        $caCertPath = $bootstrapDir . '/ca.pem';
+        file_put_contents($caCertPath, "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n");
+        chmod($caCertPath, 0600);
+
+        // Snapshot original parent environment across all three stores BEFORE mutation
+        $envAllowlist = [
+            'APP_ENV',
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+            'PHASE8_TEST_DB_EMPTY_PASSWORD',
+            'PHASE8_DISPOSABLE_DB_PROOF',
+            'PHASE8_DISPOSABLE_DB_NONCE',
+        ];
+        $parentEnvToRestore = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envAllowlist);
+
+        $origAppEnv = getenv('APP_ENV');
+
+        $snapshot = null;
+        $caughtTlsException = null;
+
+        try {
+            // STEP 8 in actual script: Set scoped testing flags required for assertion
+            $scopedPreCaptureVars = [
+                'APP_ENV'                  => 'testing',
+                'MOBILE_V2_HARNESS_ENABLE' => '1',
+                'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+            ];
+            foreach ($scopedPreCaptureVars as $varName => $varVal) {
+                putenv("{$varName}={$varVal}");
+                $_ENV[$varName]    = $varVal;
+                $_SERVER[$varName] = $varVal;
+            }
+
+            // Load bootstrap credentials from child config
+            $creds = DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials($childConfigPath, $schemaName);
+
+            // Capture verified owned snapshot EARLIEST (before handoff and before TLS readiness check)
+            $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+                $schemaName,
+                $creds['proof_path'],
+                $creds['proof_nonce'],
+                $harnessDir,
+                1234,
+                $repoRoot
+            );
+
+            $this->assertNotNull($snapshot, 'Snapshot must be captured BEFORE TLS readiness check');
+            $this->assertSame($schemaName, $snapshot->schemaName);
+
+            // STEP 9 in actual script: performStrictTlsReadinessCheck, which FAILS
+            // (e.g. readiness URL violates the loopback allowlist or TLS connection fails)
+            try {
+                SupervisedPairedFinancialDrill::performStrictTlsReadinessCheck(
+                    'https://disallowed-host.example.com:18443/ready',
+                    $caCertPath,
+                    'unexpected-nonce'
+                );
+            } catch (\Throwable $e) {
+                $caughtTlsException = $e;
+            }
+
+            $this->assertNotNull($caughtTlsException, 'TLS readiness check must throw exception');
+            $this->assertStringContainsString('READINESS_URL_NOT_ALLOWED', $caughtTlsException->getMessage());
+
+            // Mock DB expectations for cleanup: port 3342 check, schema exists before drop, absent after drop
+            $mockPortStmt = $this->createMock(PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+            $mockSchemaStmt = $this->createMock(PDOStatement::class);
+            $mockSchemaStmt->method('fetch')->willReturnOnConsecutiveCalls(
+                ['SCHEMA_NAME' => $schemaName],
+                false
+            );
+
+            $mockPdo = $this->createMock(PDO::class);
+            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+            $mockPdo->expects($this->once())->method('exec')->with("DROP DATABASE IF EXISTS `{$schemaName}`");
+
+            // Execute the script's actual cleanup helper: executeCleanupAndRestoreEnv
+            // Because $snapshot was captured BEFORE the TLS failure, cleanup succeeds completely
+            $cleanupResult = SupervisedPairedFinancialDrill::executeCleanupAndRestoreEnv(
+                childProcess: null,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                parentEnvToRestore: $parentEnvToRestore,
+                adminPdo: $mockPdo
+            );
+
+            $this->assertTrue($cleanupResult['success'], 'Cleanup after TLS failure must succeed');
+            $this->assertTrue($cleanupResult['schema_absent'], 'Schema must be verified absent');
+            $this->assertTrue($cleanupResult['temp_cleaned'], 'Harness temp directory must be removed');
+            $this->assertEmpty($cleanupResult['errors']);
+            $this->assertDirectoryDoesNotExist($harnessDir, 'Harness directory must be deleted');
+
+            // Verify parent environment was restored to pre-drill state
+            $this->assertSame($origAppEnv, getenv('APP_ENV'), 'Parent APP_ENV must be restored after cleanup');
+        } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($parentEnvToRestore);
+            if (is_dir($harnessDir)) {
+                @unlink($childConfigPath);
+                @unlink($caCertPath);
+                @rmdir($bootstrapDir);
+                @rmdir($harnessDir);
+            }
+        }
     }
 
     #[Test]

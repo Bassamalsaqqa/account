@@ -155,15 +155,20 @@ final class DisposableMariaDbSchema
         $name = $this->schemaName();
         if ($this->proofPath === null) {
             $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
-            if (! is_dir($proofDir) && ! mkdir($proofDir, 0700, true)) {
-                throw new RuntimeException('Unable to create private schema ownership proof directory.');
-            }
-            chmod($proofDir, 0700);
+            $oldUmask = umask(0077);
+            try {
+                if (! is_dir($proofDir) && ! mkdir($proofDir, 0700, true)) {
+                    throw new RuntimeException('Unable to create private schema ownership proof directory.');
+                }
+                chmod($proofDir, 0700);
 
-            $path = $proofDir . '/proof.json';
-            $this->proofNonce = bin2hex(random_bytes(16));
-            file_put_contents($path, json_encode(['schema' => $name, 'host' => $this->settings['HOST'], 'port' => $this->settings['PORT'], 'nonce' => $this->proofNonce], JSON_THROW_ON_ERROR));
-            chmod($path, 0600);
+                $path = $proofDir . '/proof.json';
+                $this->proofNonce = bin2hex(random_bytes(16));
+                file_put_contents($path, json_encode(['schema' => $name, 'host' => $this->settings['HOST'], 'port' => $this->settings['PORT'], 'nonce' => $this->proofNonce], JSON_THROW_ON_ERROR));
+                chmod($path, 0600);
+            } finally {
+                umask($oldUmask);
+            }
             $this->tempFiles[] = $path;
             $this->tempFiles[] = $proofDir;
             $this->proofPath = $path;
