@@ -911,6 +911,71 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         self.assertEqual(prepared['peer_android_executable_head_sha'], exe_head)
         self.assertEqual(prepared['status'], root_operator_tool.REQUIRED_SCOPE)
 
+    def test_make_prestart_json_supports_advanced_scope_and_rejects_unauthorized(self):
+        backend_head = 'a' * 40
+        pub_head = 'b' * 40
+        exe_head = 'c' * 40
+        manifest_sha = 'd' * 64
+
+        # 1. Default scope is REQUIRED_SCOPE
+        prestart_default = root_operator_tool.make_prestart_json(
+            manifest_sha, backend_head, pub_head, exe_head, REPO_ROOT
+        )
+        self.assertEqual(prestart_default['scope'], root_operator_tool.REQUIRED_SCOPE)
+        self.assertTrue(prestart_default['root_coordination_granted'])
+
+        # 2. Explicit SCOPE_ADVANCED_EXECUTION
+        prestart_advanced = root_operator_tool.make_prestart_json(
+            manifest_sha, backend_head, pub_head, exe_head, REPO_ROOT,
+            scope=root_operator_tool.SCOPE_ADVANCED_EXECUTION
+        )
+        self.assertEqual(prestart_advanced['scope'], root_operator_tool.SCOPE_ADVANCED_EXECUTION)
+
+        # 3. Unauthorized / invented scope raises ValueError
+        with self.assertRaises(ValueError) as ctx:
+            root_operator_tool.make_prestart_json(
+                manifest_sha, backend_head, pub_head, exe_head, REPO_ROOT,
+                scope='UNAUTHORIZED_INVENTED_SCOPE'
+            )
+        self.assertIn("Invalid scope 'UNAUTHORIZED_INVENTED_SCOPE'", str(ctx.exception))
+
+    def test_build_parser_parses_expected_scope_and_advanced_probes(self):
+        parser = operator_driver.build_parser()
+
+        # Basic prepare-only without advanced flags
+        args = parser.parse_args([
+            '--output-dir', '/tmp/test_out',
+            '--android-dir', '/tmp/test_android',
+            '--expected-backend-head', 'a' * 40,
+            '--android-pub-head', 'b' * 40,
+            '--android-exe-head', 'c' * 40,
+            '--binding-record', '/tmp/test_binding.json',
+            '--expected-binding-sha', 'd' * 64,
+            '--prepare-only',
+        ])
+        self.assertIsNone(args.expected_scope)
+        self.assertFalse(args.advanced_probes)
+
+        # Execute with advanced scope and advanced probes
+        args_adv = parser.parse_args([
+            '--output-dir', '/tmp/test_out',
+            '--android-dir', '/tmp/test_android',
+            '--expected-backend-head', 'a' * 40,
+            '--android-pub-head', 'b' * 40,
+            '--android-exe-head', 'c' * 40,
+            '--binding-record', '/tmp/test_binding.json',
+            '--expected-binding-sha', 'd' * 64,
+            '--execute',
+            '--manifest', '/tmp/manifest.json',
+            '--root-approval-file', '/tmp/prestart.json',
+            '--root-live-approval-file', '/tmp/future_live.json',
+            '--expected-scope', 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            '--advanced-probes',
+        ])
+        self.assertEqual(args_adv.expected_scope, 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION')
+        self.assertTrue(args_adv.advanced_probes)
+
 
 if __name__ == '__main__':
     unittest.main()
+

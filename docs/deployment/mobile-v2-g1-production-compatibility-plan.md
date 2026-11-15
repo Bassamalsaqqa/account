@@ -20,6 +20,7 @@ The delta between the deployed baseline commit (`8cd4322`) and current `HEAD` en
 - **Exact Routing Boundary**: When `MOBILE_V2_CASH_SLICE_ENABLED=false`, V2 routes are omitted from routing registration, resulting in strict **HTTP 404 NOT_FOUND** fallback responses at the boundary—never HTTP 503 or 403.
 - **Backward-Compatible Metadata (G1)**: The mobile bootstrap endpoint preserves the exact historical 12-key metadata contract by default, with opt-in support for `currency_minor_units` (G1 currency scales: 0 for zero-decimal currencies like JPY, 2 for standard currencies like ILS/USD, 3 for 3-decimal currencies like JOD/KWD/BHD/OMR).
 - **Zero On-Host Builds**: Pre-built static assets are deployed through the reviewed `bin/deploy.sh` allowlist. No on-host `npm run build` or blind overlays.
+- **Rollout Readiness Posture**: **NOT claimed to be deployment-ready**. Migrations have NOT been run in production or in this branch (`testsAUTHOREDUNRUN` preserved). Production rollout is strictly gated by off-host export completeness, coherent restore qualification, and explicit separate Owner release authorization.
 
 ---
 
@@ -158,14 +159,17 @@ Schema::table('products', function (Blueprint $table): void {
 
 ### 3.1 Destructive Risk Analysis
 1. **Irreversible Data Loss**: Running `migrate:rollback` restores the empty columns `tax_rate_id` and `barcode`, but **permanently loses the cell contents**.
-2. **Mandatory Pre-Migration Export**: Before executing `php artisan migrate`, the operator MUST export all existing `products` rows containing non-null `tax_rate_id` or `barcode` to a secure, timestamped, off-host CSV/SQL artifact:
+2. **Mandatory Pre-Migration Export**: Before executing `php artisan migrate`, the operator MUST export all existing `products` rows containing non-null `tax_rate_id` or `barcode` to a secure, timestamped, off-host CSV/SQL artifact using actual schema columns (`id`, `public_id`, `company_id`, `sku`, `name_ar`, `name_en`, `tax_rate_id`, `barcode`—no invented columns):
    ```bash
-   # Export products table columns prior to drop
+   # Export products table columns prior to drop (verified against 2026_09_30_000021_create_products_table.php)
    mysql -h 127.0.0.1 -u <actual_db_user> -p <actual_db_name> -e \
-     "SELECT id, company_id, code, name_en, name_ar, tax_rate_id, barcode FROM products WHERE tax_rate_id IS NOT NULL OR barcode IS NOT NULL;" \
+     "SELECT id, public_id, company_id, sku, name_ar, name_en, tax_rate_id, barcode FROM products WHERE tax_rate_id IS NOT NULL OR barcode IS NOT NULL;" \
      > /path/to/protected/backups/products_destructive_columns_backup_$(date +%Y%m%d%H%M%S).tsv
    ```
-3. **Audit Verification**: Verify the TSV file size, line count, and checksum. File permissions must be `0600` inside a `0700` directory.
+3. **Audit Verification & Restore Qualification**:
+   - Verify the TSV file size, line count, and checksum. File permissions must be `0600` inside a `0700` directory.
+   - Off-host export completeness and restore qualification testing must be completed and certified before any rollout window is initiated.
+   - **Migrations are NOT run in this PR/branch**. The system is NOT claimed to be deployment-ready until restore qualification passes.
 4. **Offline Policy Reset**: Migration 000002 explicitly updates `company_mobile_settings` offline policy columns to `false` and `NULL`. This is intentional (unapproved policies cannot be presumed valid), but current settings must be recorded in the pre-deployment database dump.
 
 ---

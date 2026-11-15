@@ -36,6 +36,7 @@ $expectedDbReportSha = null;
 $expectedEvidenceSha = null;
 $expectedPayloadDigest = null;
 $expectedScope = null;
+$isAdvancedProbes = false;
 
 foreach ($argvList as $arg) {
     if ($arg === '--baseline' || $arg === '--capture-baseline') {
@@ -48,6 +49,8 @@ foreach ($argvList as $arg) {
         $isReconcile = true;
     } elseif ($arg === '--compose-trusted-report') {
         $isComposeTrustedReport = true;
+    } elseif ($arg === '--advanced-probes') {
+        $isAdvancedProbes = true;
     } elseif (str_starts_with($arg, '--validate-evidence=')) {
         $evidenceFile = substr($arg, 20);
     } elseif (str_starts_with($arg, '--trusted-db-report=')) {
@@ -220,7 +223,25 @@ if ($evidenceFile !== null) {
         'expectedPayloadDigest' => $expectedPayloadDigest,
     ];
 
-    $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
+    $effectiveScope = $expectedScope ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION';
+    if ($isAdvancedProbes || $effectiveScope === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
+        $expectedPins['expectedScope'] = 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION';
+        $expectedPins['expectedClientEventId'] = $expectedEventId;
+        $expectedPins['expectedHandoffSha'] = $expectedHandoffDigest;
+        $expectedPins['expectedDbReportSha'] = $expectedDbReportSha;
+        $expectedPins['actualDbReportFileSha'] = $actualDbReportSha;
+        $expectedPins['expectedTrustedReportDigest'] = $trustedDbReport['digest'] ?? '';
+        $root = dirname(__DIR__, 3);
+        $expectedPins['expectedSourcePins'] = [
+            'source_fixture_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
+            'guard_test_sha256' => (string) hash_file('sha256', $root.'/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php'),
+            'cli_command_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
+            'cli_runner_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
+        ];
+        $validation = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
+    } else {
+        $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
+    }
 
     $outJson = json_encode($validation, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     if ($outputFile !== null) {

@@ -26,6 +26,9 @@ $pairingManifestSha = null;
 $readinessHoldSeconds = null;
 $pairedHoldSeconds = null;
 
+$isAdvancedProbes = false;
+$expectedScope = null;
+
 foreach ($argvList as $arg) {
     if ($arg === '--prepare') {
         $isPrepare = true;
@@ -37,6 +40,10 @@ foreach ($argvList as $arg) {
         $isStart = true;
     } elseif ($arg === '--run') {
         $isRun = true;
+    } elseif ($arg === '--advanced-probes') {
+        $isAdvancedProbes = true;
+    } elseif (str_starts_with($arg, '--expected-scope=')) {
+        $expectedScope = substr($arg, 17);
     } elseif (str_starts_with($arg, '--readiness-hold-seconds=')) {
         $readinessHoldSeconds = substr($arg, 25);
     } elseif (str_starts_with($arg, '--paired-hold-seconds=')) {

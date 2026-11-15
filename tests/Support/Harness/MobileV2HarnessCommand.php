@@ -36,7 +36,9 @@ class MobileV2HarnessCommand extends Command
         {--backend-head=         : Full 40-hex SHA of the current backend worktree HEAD (mandatory)}
         {--android-head=         : Full 40-hex SHA of the peer Android integration HEAD}
         {--pairing-manifest=     : Path to integration pairing manifest (defaults to docs/integration/mobile-v2-integration-manifest.json)}
-        {--pairing-manifest-sha= : Mandatory SHA-256 pin of the pairing manifest}';
+        {--pairing-manifest-sha= : Mandatory SHA-256 pin of the pairing manifest}
+        {--expected-scope=       : Expected execution scope (e.g. ROOT_AUTHORIZED_PAIRED_EXECUTION or ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION)}
+        {--advanced-probes       : Enable advanced probe execution (ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION)}';
 
     protected $description = 'Drive the Mobile V2 paired HTTPS integration harness (source-only by default)';
 
@@ -102,12 +104,18 @@ class MobileV2HarnessCommand extends Command
             return self::FAILURE;
         }
 
+        $advancedProbes = (bool) $this->option('advanced-probes');
+        $expectedScope = (string) ($this->option('expected-scope') ?? '');
+        if ($advancedProbes && $expectedScope === '') {
+            $expectedScope = DisposableMobileV2BackendHarness::SCOPE_ADVANCED_EXECUTION;
+        }
+
         if ($readinessOnly) {
             return $this->handleReadinessOnly($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $holdSeconds);
         }
 
         if ($run) {
-            return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $pairedHoldSeconds);
+            return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $pairedHoldSeconds, $expectedScope ?: null, $advancedProbes);
         }
 
         if ($start) {
@@ -323,9 +331,14 @@ class MobileV2HarnessCommand extends Command
         string $androidHead,
         ?string $pairingManifest = null,
         ?string $pairingManifestSha = null,
-        int $pairedHoldSeconds = 0
+        int $pairedHoldSeconds = 0,
+        ?string $expectedScope = null,
+        bool $advancedProbes = false
     ): int {
         $this->line('Mobile V2 Harness — Foreground Paired Lifecycle (--run)');
+        if ($advancedProbes) {
+            $this->line('  Advanced probe execution enabled (scope: '.($expectedScope ?: DisposableMobileV2BackendHarness::SCOPE_ADVANCED_EXECUTION).')');
+        }
 
         if ($androidHead === '') {
             $this->error('--run requires --android-head=<40hex>.');

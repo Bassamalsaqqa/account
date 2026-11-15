@@ -124,21 +124,23 @@ All components verified in the backend worktree at HEAD:
 
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
-| `tests/Support/Harness/root-operator-tool.py` | `f8f34719fd5b9c9e1542684aebd8b679b563cd6dd0848f12fe1dda2eb48db236` | Tool (Python 3) |
-| `tests/Support/Harness/supervised-paired-drill-operator.py` | `62a28f7d4a635cf4a03539c13ddf4a0184fee248e6bcfb9cbc727cde5b7660ff` | Operator Driver |
+| `tests/Support/Harness/root-operator-tool.py` | `cf2f59b9c604321cea784010736f2c9bf25f7dfaeebda41fcca35c2606060604` | Tool (Python 3) |
+| `tests/Support/Harness/supervised-paired-drill-operator.py` | `37433c88c017b034f6f78f2c555f4c8dedcac192f89f3466a15e80ddd5239ae0` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `34e1450be34ed2658a680914d804baf345ac044cdd87b208665b2a7ef72bd7ce` | Core Harness Class |
-| `tests/Support/Harness/supervised-financial-drill.php` | `b45c95cb91b49d102919def061391751250d821e263f8f9c58ede19b25656ffe` | Supervisor CLI Driver |
-| `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `15b8d0c20ea87db6b085f51f11da1d4ef275567c8ca6f040dd5abefdeca6d71b` | Fixture Harness |
-| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `e4bc8dcb11442be3a7e46691c1dfdfc762a52014ece2da25d46395f41b38d2c7` | Post-Run Inspector |
-| `tests/Support/Harness/financial-inspector-cli.php` | `46d4e38151d8d06f7e79aa13b3c654825b486f5b60a583420eecbcb673d42811` | Post-Run Inspector CLI |
-| `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7` | Artisan Command |
-| `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
+| `tests/Support/Harness/supervised-financial-drill.php` | `c3954716c91d5b72e35ab0747b80695b9931f3fe16b6e3a632f1da938bb46842` | Supervisor CLI Driver |
+| `tests/Support/Harness/TestTransportProxy.php` | `47c47b61743a4a660dd8feb14f708f0410acc769bd8cb8aa65e334a6576ee3c9` | Test Transport Proxy |
+| `tests/Support/Harness/test-transport-proxy-cli.php` | `3c47ee8be1f605015052866af3622901795fa4321cdb84ed12aaf1a5b8affe47` | Transport Proxy CLI Runner |
+| `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `54f27622f98ec3e42b30916357156d1c7e313e030c515d45179c0a71c887b268` | Fixture Harness |
+| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `40a683687e522956efddf3a1e2629eb1aa6d13c98f83eae3156938859af0bd92` | Post-Run Inspector |
+| `tests/Support/Harness/financial-inspector-cli.php` | `98905ba9384a540737b1a1174f39d2937bd2de33af5233d7cf9ce71b6ae81509` | Post-Run Inspector CLI |
+| `tests/Support/Harness/MobileV2HarnessCommand.php` | `fb53d4c46fd68b125b07e362cc2b9dce129f7452d179ea3ed0aab6c928875652` | Artisan Command |
+| `tests/Support/Harness/mobile-v2-harness-cli.php` | `2471b676a7086c06602f7084539e041f2f6400103a12bb26cd68e8e3f796d3a1` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
-| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `239b21cec674e680f9f367149f862512063364690a81670911d9ef781cb4a82f` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `4bc72084eeea3de269386f0f0333fcd76c6b787616524d21ef6c4b90b618feac` | Python Unit Suite (43 tests) |
-| `docs/integration/mobile-v2-integration-manifest.json` | `4caf86a7e00f3bd2e721b286d43ecb2a087c266b34c8274c8c45e0af65047515` | Manifest Template |
+| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `cfaa8d49200cd7aed0dce3c807f53e72ea82afb5d42a5e7c759b0de3b6f70d9f` | Guard Test Suite |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `ebdb8ab100e2a1e0614ed71e959e5955e10752975847e18fccc97327ddbfea13` | Python Unit Suite (45 tests) |
+| `docs/integration/mobile-v2-integration-manifest.json` | `d72beed8cb849abcaea4cb64fdbbc3df8ede55b129bc42e100c5f1731c870fc7` | Manifest Template |
 
 ---
 

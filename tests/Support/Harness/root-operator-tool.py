@@ -139,10 +139,13 @@ def sha256_file(filepath):
             h.update(chunk)
     return h.hexdigest()
 
-def make_prestart_json(manifest_sha, backend_head, pub_head, exe_head, repo_dir, expires_seconds=600):
+def make_prestart_json(manifest_sha, backend_head, pub_head, exe_head, repo_dir, expires_seconds=600, scope=REQUIRED_SCOPE):
+    if scope not in ALLOWED_SCOPES:
+        raise ValueError(f"Invalid scope '{scope}', expected one of {ALLOWED_SCOPES}")
     exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=expires_seconds)
     return {
         'root_coordination_granted': True,
+        'scope': scope,
         'manifest_sha256': manifest_sha,
         'backend_head': backend_head,
         'android_publication_head': pub_head,
@@ -328,7 +331,8 @@ def cmd_prepare(args):
         pub_head,
         exe_head,
         repo_dir,
-        expires_seconds=args.expires
+        expires_seconds=args.expires,
+        scope=scope
     )
     prestart_path = os.path.join(run_dir, 'prestart.json')
     with open(prestart_path, 'w') as f:

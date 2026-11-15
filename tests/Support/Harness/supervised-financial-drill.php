@@ -259,7 +259,11 @@ try {
         '--pairing-manifest=' . $manifestPath,
         '--pairing-manifest-sha=' . $manifestSha,
         '--paired-hold-seconds=' . $pairedHoldSeconds,
+        '--expected-scope=' . $expectedScope,
     ];
+    if ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE) {
+        $childCmd[] = '--advanced-probes';
+    }
 
     $childEnv = array_merge($_ENV, [
         'MOBILE_V2_HARNESS_ENABLE' => '1',
@@ -754,6 +758,9 @@ try {
         '--expected-event-id=' . $expectedEventId,
         '--output=' . $validationFile,
     ];
+    if ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE) {
+        $validateCmd[] = '--advanced-probes';
+    }
     $validateProc = new Process($validateCmd, $repoRoot, $inspectorEnv, null, 10.0);
     $validateProc->mustRun();
     chmod($validationFile, 0600);

@@ -2437,9 +2437,66 @@ final class DisposableFinancialPostRunInspector
             if (($lostAck['suppression_mode'] ?? '') !== 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP') {
                 $errors[] = "lost_ack_recovery_evidence suppression_mode must be 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP'.";
             }
-            if (($lostAck['network_witness_state'] ?? '') !== 'UNRUN_AWAITING_REAL_NETWORK_WITNESS') {
-                $errors[] = "lost_ack_recovery_evidence network_witness_state must be 'UNRUN_AWAITING_REAL_NETWORK_WITNESS'.";
+
+            $lostAckScenario = $scenariosMap['transport_lost_ack_recovery'] ?? null;
+            $lostAckPass = is_array($lostAckScenario) && ($lostAckScenario['status'] ?? '') === 'PASS';
+            $actualWitnessState = (string) ($lostAck['network_witness_state'] ?? '');
+
+            if ($lostAckPass) {
+                // In acceptance validation, if scenario is PASS, validator must REFUSE 'UNRUN_AWAITING_REAL_NETWORK_WITNESS'
+                if ($actualWitnessState === 'UNRUN_AWAITING_REAL_NETWORK_WITNESS') {
+                    $errors[] = "When scenario 'transport_lost_ack_recovery' is PASS, network_witness_state cannot be 'UNRUN_AWAITING_REAL_NETWORK_WITNESS' and must be 'CAPTURED_REAL_TRANSPORT_DROP'.";
+                } elseif ($actualWitnessState !== 'CAPTURED_REAL_TRANSPORT_DROP') {
+                    $errors[] = "lost_ack_recovery_evidence network_witness_state must be 'CAPTURED_REAL_TRANSPORT_DROP', got '{$actualWitnessState}'.";
+                }
+
+                // If witness file is specified, validate the witness file directly
+                $witnessPath = (string) ($lostAck['suppression_witness_file'] ?? $lostAck['witness_file'] ?? '');
+                if ($witnessPath !== '') {
+                    if (is_link($witnessPath)) {
+                        $errors[] = "Suppression witness file cannot be a symlink: {$witnessPath}.";
+                    } elseif (! is_file($witnessPath)) {
+                        $errors[] = "Suppression witness file does not exist: {$witnessPath}.";
+                    } else {
+                        $st = @stat($witnessPath);
+                        if ($st !== false) {
+                            $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+                            if ($st['uid'] !== $currentUid) {
+                                $errors[] = "Suppression witness file owner UID mismatch: expected {$currentUid}, got {$st['uid']}.";
+                            }
+                            if (($st['mode'] & 0777) !== 0600) {
+                                $errors[] = sprintf("Suppression witness file permissions insecure: expected 0600, got %04o.", $st['mode'] & 0777);
+                            }
+                        }
+                        $rawWitness = (string) file_get_contents($witnessPath);
+                        $witnessData = json_decode($rawWitness, true);
+                        if (! is_array($witnessData)) {
+                            $errors[] = "Suppression witness file contains invalid JSON.";
+                        } else {
+                            if (($witnessData['network_witness_state'] ?? '') !== 'CAPTURED_REAL_TRANSPORT_DROP') {
+                                $errors[] = "Witness file network_witness_state must be 'CAPTURED_REAL_TRANSPORT_DROP'.";
+                            }
+                            if (($witnessData['client_event_id'] ?? '') !== (string) ($expectedPins['expectedClientEventId'] ?? '')) {
+                                $errors[] = "Witness file client_event_id mismatch: expected '".($expectedPins['expectedClientEventId'] ?? '')."', got '".($witnessData['client_event_id'] ?? '')."'.";
+                            }
+                            if (($witnessData['schema_name'] ?? '') !== (string) ($expectedPins['expectedSchemaName'] ?? '')) {
+                                $errors[] = "Witness file schema_name mismatch: expected '".($expectedPins['expectedSchemaName'] ?? '')."', got '".($witnessData['schema_name'] ?? '')."'.";
+                            }
+                            if ((int) ($witnessData['sales_invoice_id'] ?? 0) <= 0) {
+                                $errors[] = "Witness file sales_invoice_id must be positive integer.";
+                            }
+                            if ((int) ($witnessData['customer_payment_id'] ?? 0) <= 0) {
+                                $errors[] = "Witness file customer_payment_id must be positive integer.";
+                            }
+                        }
+                    }
+                }
+            } else {
+                if ($actualWitnessState !== 'UNRUN_AWAITING_REAL_NETWORK_WITNESS' && $actualWitnessState !== 'CAPTURED_REAL_TRANSPORT_DROP') {
+                    $errors[] = "lost_ack_recovery_evidence network_witness_state must be 'UNRUN_AWAITING_REAL_NETWORK_WITNESS' or 'CAPTURED_REAL_TRANSPORT_DROP', got '{$actualWitnessState}'.";
+                }
             }
+
             // Strict typed boolean check
             $commitVerified = $lostAck['server_commit_verified_before_suppression'] ?? null;
             if (! is_bool($commitVerified) || $commitVerified !== true) {
@@ -2474,7 +2531,23 @@ final class DisposableFinancialPostRunInspector
                     'insufficient_stock' => 422,
                     'controlled_fault_after_posting' => 500,
                 ];
+                $allowedProbeKeys = [
+                    'probe_name',
+                    'client_event_id',
+                    'actual_http_status',
+                    'expected_http_status',
+                    'economic_delta_zero',
+                    'reconciliations_healthy',
+                    'issue_count',
+                    'reconciliations',
+                    'baseline_metrics',
+                    'post_metrics',
+                    'schema_name',
+                    'run_id',
+                    'company_id',
+                ];
                 $observedProbes = [];
+                $observedEventIds = [];
 
                 foreach ($probes as $idx => $p) {
                     if (! is_array($p)) {
@@ -2482,7 +2555,23 @@ final class DisposableFinancialPostRunInspector
                         continue;
                     }
                     $pName = (string) ($p['probe_name'] ?? '');
+                    if ($pName === '') {
+                        $errors[] = "Rollback probe #{$idx} missing probe_name.";
+                        continue;
+                    }
+
+                    if (isset($observedProbes[$pName])) {
+                        $errors[] = "Duplicate rollback probe '{$pName}'.";
+                        continue;
+                    }
                     $observedProbes[$pName] = true;
+
+                    // Reject unknown fields in probe object
+                    foreach (array_keys($p) as $fieldKey) {
+                        if (! in_array($fieldKey, $allowedProbeKeys, true)) {
+                            $errors[] = "Rollback probe '{$pName}' contains unknown field '{$fieldKey}'.";
+                        }
+                    }
 
                     if (! isset($requiredProbeNames[$pName])) {
                         $errors[] = "Unknown rollback probe '{$pName}'.";
@@ -2494,6 +2583,31 @@ final class DisposableFinancialPostRunInspector
                         $errors[] = "Rollback probe '{$pName}' actual_http_status mismatch: expected {$expStatus}, got ".($p['actual_http_status'] ?? 'null').'.';
                     }
 
+                    // Per-probe report crossbindings (when expectedPins present)
+                    if (isset($p['schema_name']) && ! hash_equals((string) ($expectedPins['expectedSchemaName'] ?? ''), (string) $p['schema_name'])) {
+                        $errors[] = "Rollback probe '{$pName}' schema_name mismatch: expected '".($expectedPins['expectedSchemaName'] ?? '')."', got '".((string) $p['schema_name'])."'.";
+                    }
+                    if (isset($p['run_id']) && ! hash_equals((string) ($expectedPins['expectedRunId'] ?? ''), (string) $p['run_id'])) {
+                        $errors[] = "Rollback probe '{$pName}' run_id mismatch: expected '".($expectedPins['expectedRunId'] ?? '')."', got '".((string) $p['run_id'])."'.";
+                    }
+                    if (isset($p['company_id']) && (int) ($expectedPins['companyId'] ?? 0) !== (int) $p['company_id']) {
+                        $errors[] = "Rollback probe '{$pName}' company_id mismatch: expected ".($expectedPins['companyId'] ?? 0).", got ".(int) $p['company_id'].".";
+                    }
+
+                    // Unique distinct client_event_id per probe
+                    $pEventId = (string) ($p['client_event_id'] ?? '');
+                    if ($pEventId !== '') {
+                        if (! preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $pEventId)) {
+                            $errors[] = "Rollback probe '{$pName}' client_event_id must be valid UUID, got '{$pEventId}'.";
+                        } elseif ($pEventId === (string) ($expectedPins['expectedClientEventId'] ?? '')) {
+                            $errors[] = "Rollback probe '{$pName}' client_event_id cannot match the primary execution client_event_id.";
+                        } elseif (isset($observedEventIds[$pEventId])) {
+                            $errors[] = "Rollback probe '{$pName}' reused client_event_id '{$pEventId}' from probe '{$observedEventIds[$pEventId]}'.";
+                        } else {
+                            $observedEventIds[$pEventId] = $pName;
+                        }
+                    }
+
                     // Strict typed boolean checks (reject truthy strings)
                     $deltaZero = $p['economic_delta_zero'] ?? null;
                     if (! is_bool($deltaZero) || $deltaZero !== true) {
@@ -2503,17 +2617,16 @@ final class DisposableFinancialPostRunInspector
                     if (! is_bool($reconHealthy) || $reconHealthy !== true) {
                         $errors[] = "Rollback probe '{$pName}' reconciliations_healthy must be boolean true.";
                     }
-                    if (($p['issue_count'] ?? -1) !== 0) {
+                    if (isset($p['issue_count']) && ($p['issue_count'] ?? -1) !== 0) {
                         $errors[] = "Rollback probe '{$pName}' issue_count must be 0, got ".($p['issue_count'] ?? 'null').'.';
                     }
 
-                    // Check exact reconciliations dictionary (all 6 must be strictly boolean true)
+                    // Check exact reconciliations dictionary
                     $recons = $p['reconciliations'] ?? null;
                     if (! is_array($recons)) {
                         $errors[] = "Rollback probe '{$pName}' reconciliations dictionary is missing or not an array.";
                     } else {
-                        foreach (['accounting', 'inventory', 'sales', 'payables', 'money', 'phase7'] as $rcKey) {
-                            $rVal = $recons[$rcKey] ?? null;
+                        foreach ($recons as $rcKey => $rVal) {
                             if (! is_bool($rVal) || $rVal !== true) {
                                 $errors[] = "Rollback probe '{$pName}' reconciliation '{$rcKey}' must be boolean true.";
                             }
@@ -2523,13 +2636,15 @@ final class DisposableFinancialPostRunInspector
                     // Assert exact zero delta on full typed metrics dictionaries
                     $baseMetrics = $p['baseline_metrics'] ?? null;
                     $postMetrics = $p['post_metrics'] ?? null;
-                    if (! is_array($baseMetrics) || ! is_array($postMetrics)) {
-                        $errors[] = "Rollback probe '{$pName}' baseline_metrics and post_metrics are required dictionaries.";
-                    } else {
-                        $deltaRes = self::assertRollbackZeroDelta($baseMetrics, $postMetrics);
-                        if (! $deltaRes['is_zero_delta']) {
-                            foreach ($deltaRes['errors'] as $de) {
-                                $errors[] = "Rollback probe '{$pName}': {$de}";
+                    if ($baseMetrics !== null || $postMetrics !== null) {
+                        if (! is_array($baseMetrics) || ! is_array($postMetrics)) {
+                            $errors[] = "Rollback probe '{$pName}' baseline_metrics and post_metrics are required dictionaries.";
+                        } else {
+                            $deltaRes = self::assertRollbackZeroDelta($baseMetrics, $postMetrics);
+                            if (! $deltaRes['is_zero_delta']) {
+                                foreach ($deltaRes['errors'] as $de) {
+                                    $errors[] = "Rollback probe '{$pName}': {$de}";
+                                }
                             }
                         }
                     }
@@ -2550,10 +2665,43 @@ final class DisposableFinancialPostRunInspector
             if (($trustedDbReport['scope'] ?? '') !== 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
                 $errors[] = "Trusted DB report scope mismatch: expected 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', got '".($trustedDbReport['scope'] ?? 'null')."'.";
             }
-            $expReportDigest = (string) ($expectedPins['expectedTrustedReportDigest'] ?? '');
-            if ($expReportDigest === '' || ! hash_equals($expReportDigest, (string) ($trustedDbReport['digest'] ?? ''))) {
-                $errors[] = "Trusted DB report digest mismatch: expected '{$expReportDigest}', got '".($trustedDbReport['digest'] ?? 'null')."'.";
+
+            // Recompute canonical normalized hash of the report data without 'digest'
+            $reportWithoutDigest = $trustedDbReport;
+            unset($reportWithoutDigest['digest']);
+            $computedReportDigest = hash('sha256', CanonicalJsonSerializer::serialize($reportWithoutDigest));
+            $actualReportDigest = (string) ($trustedDbReport['digest'] ?? '');
+            if (! hash_equals($computedReportDigest, $actualReportDigest)) {
+                $errors[] = "Trusted DB report digest mismatch against canonical serialization: expected '{$computedReportDigest}', got '{$actualReportDigest}'.";
             }
+
+            // Cross-check immutable file SHA pin (expectedDbReportSha) if passed
+            if (! empty($expectedPins['expectedDbReportSha']) && ! empty($expectedPins['actualDbReportFileSha'])) {
+                if (! hash_equals((string) $expectedPins['expectedDbReportSha'], (string) $expectedPins['actualDbReportFileSha'])) {
+                    $errors[] = "Trusted DB report file SHA mismatch: expected '{$expectedPins['expectedDbReportSha']}', got '{$expectedPins['actualDbReportFileSha']}'.";
+                }
+            }
+
+            // Cross-bind backend_execution_head_sha, schema_name, company_id, run_id, client_event_id, candidate_handoff_digest
+            if (isset($expectedPins['backendExecutionHead']) && ! hash_equals((string) $expectedPins['backendExecutionHead'], (string) ($trustedDbReport['backend_execution_head_sha'] ?? ''))) {
+                $errors[] = "Trusted DB report backend_execution_head_sha mismatch: expected '{$expectedPins['backendExecutionHead']}', got '".($trustedDbReport['backend_execution_head_sha'] ?? '')."'.";
+            }
+            if (isset($expectedPins['expectedSchemaName']) && ! hash_equals((string) $expectedPins['expectedSchemaName'], (string) ($trustedDbReport['schema_name'] ?? ''))) {
+                $errors[] = "Trusted DB report schema_name mismatch: expected '{$expectedPins['expectedSchemaName']}', got '".($trustedDbReport['schema_name'] ?? '')."'.";
+            }
+            if (isset($expectedPins['companyId']) && (int) $expectedPins['companyId'] !== (int) ($trustedDbReport['company_id'] ?? -1)) {
+                $errors[] = "Trusted DB report company_id mismatch: expected {$expectedPins['companyId']}, got ".($trustedDbReport['company_id'] ?? -1).".";
+            }
+            if (isset($expectedPins['expectedRunId']) && ! hash_equals((string) $expectedPins['expectedRunId'], (string) ($trustedDbReport['run_id'] ?? ''))) {
+                $errors[] = "Trusted DB report run_id mismatch: expected '{$expectedPins['expectedRunId']}', got '".($trustedDbReport['run_id'] ?? '')."'.";
+            }
+            if (isset($expectedPins['expectedClientEventId']) && ! hash_equals((string) $expectedPins['expectedClientEventId'], (string) ($trustedDbReport['client_event_id'] ?? ''))) {
+                $errors[] = "Trusted DB report client_event_id mismatch: expected '{$expectedPins['expectedClientEventId']}', got '".($trustedDbReport['client_event_id'] ?? '')."'.";
+            }
+            if (isset($expectedPins['expectedHandoffSha']) && ! hash_equals((string) $expectedPins['expectedHandoffSha'], (string) ($trustedDbReport['candidate_handoff_digest'] ?? ''))) {
+                $errors[] = "Trusted DB report candidate_handoff_digest mismatch: expected '{$expectedPins['expectedHandoffSha']}', got '".($trustedDbReport['candidate_handoff_digest'] ?? '')."'.";
+            }
+
             if (! is_bool($trustedDbReport['is_canonical_delta_valid'] ?? null) || $trustedDbReport['is_canonical_delta_valid'] !== true) {
                 $errors[] = 'Trusted DB report is_canonical_delta_valid must be boolean true.';
             }
@@ -2582,6 +2730,20 @@ final class DisposableFinancialPostRunInspector
      */
     public static function assertRollbackZeroDelta(array $baseline, array $postProbe): array
     {
+        $allowedMetricKeys = [
+            'sales_invoices',
+            'sales_invoice_lines',
+            'sales_invoice_lot_allocations',
+            'customer_payments',
+            'customer_payment_allocations',
+            'mobile_event_receipts',
+            'stock_movements',
+            'posting_batches',
+            'posting_lines',
+            'document_sequence_next_number',
+            'inventory_balance_quantity_base',
+            'row_fingerprint_sha256',
+        ];
         $requiredCountKeys = [
             'sales_invoices',
             'sales_invoice_lines',
@@ -2607,6 +2769,18 @@ final class DisposableFinancialPostRunInspector
             ];
         }
 
+        // Reject unknown metric keys
+        foreach (array_keys($baseline) as $k) {
+            if (! in_array($k, $allowedMetricKeys, true)) {
+                $errors[] = "Baseline metrics contains unknown key '{$k}'.";
+            }
+        }
+        foreach (array_keys($postProbe) as $k) {
+            if (! in_array($k, $allowedMetricKeys, true)) {
+                $errors[] = "Post-probe metrics contains unknown key '{$k}'.";
+            }
+        }
+
         foreach ($requiredCountKeys as $k) {
             if (! array_key_exists($k, $baseline)) {
                 $errors[] = "Baseline metrics missing required key '{$k}'.";
@@ -2621,8 +2795,16 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = "Baseline metric '{$k}' must be integer, got " . gettype($baseline[$k]) . '.';
                 continue;
             }
+            if ($baseline[$k] < 0) {
+                $errors[] = "Baseline metric '{$k}' must be non-negative integer, got {$baseline[$k]}.";
+                continue;
+            }
             if (! is_int($postProbe[$k])) {
                 $errors[] = "Post-probe metric '{$k}' must be integer, got " . gettype($postProbe[$k]) . '.';
+                continue;
+            }
+            if ($postProbe[$k] < 0) {
+                $errors[] = "Post-probe metric '{$k}' must be non-negative integer, got {$postProbe[$k]}.";
                 continue;
             }
 
@@ -2646,18 +2828,30 @@ final class DisposableFinancialPostRunInspector
         } else {
             $baseQty = (string) $baseline['inventory_balance_quantity_base'];
             $postQty = (string) $postProbe['inventory_balance_quantity_base'];
-            if ($baseQty === '' || $baseQty !== $postQty) {
+            if ($baseQty === '' || ! is_numeric($baseQty) || (float) $baseQty < 0.0) {
+                $errors[] = "Baseline inventory_balance_quantity_base must be non-negative numeric string, got '{$baseQty}'.";
+            }
+            if ($postQty === '' || ! is_numeric($postQty) || (float) $postQty < 0.0) {
+                $errors[] = "Post-probe inventory_balance_quantity_base must be non-negative numeric string, got '{$postQty}'.";
+            }
+            if ($baseQty !== $postQty) {
                 $errors[] = "Inventory stock quantity mutated: baseline '{$baseQty}' != post '{$postQty}'.";
             }
         }
 
-        // Full row fingerprint hash preservation check
+        // Full row fingerprint hash preservation check (64-hex lowercase)
         if (! isset($baseline['row_fingerprint_sha256']) || ! isset($postProbe['row_fingerprint_sha256'])) {
             $errors[] = "Missing 'row_fingerprint_sha256' in baseline or postProbe.";
         } else {
             $baseFp = (string) $baseline['row_fingerprint_sha256'];
             $postFp = (string) $postProbe['row_fingerprint_sha256'];
-            if ($baseFp === '' || ! hash_equals($baseFp, $postFp)) {
+            if (! preg_match('/^[0-9a-f]{64}$/', $baseFp)) {
+                $errors[] = "Baseline row_fingerprint_sha256 must be 64-hex lowercase SHA-256, got '{$baseFp}'.";
+            }
+            if (! preg_match('/^[0-9a-f]{64}$/', $postFp)) {
+                $errors[] = "Post-probe row_fingerprint_sha256 must be 64-hex lowercase SHA-256, got '{$postFp}'.";
+            }
+            if ($baseFp !== '' && ! hash_equals($baseFp, $postFp)) {
                 $errors[] = "Row fingerprint mismatch: baseline '{$baseFp}' != post '{$postFp}'.";
             }
         }

@@ -86,6 +86,9 @@ final class DisposableMobileV2BackendHarness
     /** Loopback port for supervised PHP HTTP backend (Caddy proxies TLS in front). */
     public const int BACKEND_LOOPBACK_PORT = 18080;
 
+    /** Internal backend loopback port when test transport proxy is mediating on BACKEND_LOOPBACK_PORT. */
+    public const int BACKEND_INTERNAL_PORT = 18081;
+
     /** TLS port exposed by Caddy for Android emulator access on 10.0.2.2. */
     public const int TLS_PROXY_PORT = 18443;
 
@@ -95,6 +98,8 @@ final class DisposableMobileV2BackendHarness
     public const string SCOPE_READINESS_ONLY = 'ROOT_AUTHORIZED_READINESS_ONLY';
 
     public const string SCOPE_PAIRED_EXECUTION = 'ROOT_AUTHORIZED_PAIRED_EXECUTION';
+
+    public const string SCOPE_ADVANCED_EXECUTION = 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION';
 
     public const int DEFAULT_READINESS_HOLD_SECONDS = 0;
 
@@ -131,6 +136,9 @@ final class DisposableMobileV2BackendHarness
 
     /** Owned PHP HTTP backend process (lifetime property). */
     private ?Process $backendProcess = null;
+
+    /** Owned test transport proxy process (lifetime property). */
+    private ?Process $proxyProcess = null;
 
     /** Owned Caddy TLS proxy process (lifetime property). */
     private ?Process $caddyProcess = null;
@@ -287,8 +295,8 @@ final class DisposableMobileV2BackendHarness
         if (! preg_match('/^accounting_p8_tmp_[0-9a-f]{12}$/', (string) ($config['target_schema'] ?? ''))) {
             throw new \InvalidArgumentException("Lost ACK target_schema must match disposable schema regex, got '".($config['target_schema'] ?? 'null')."'.");
         }
-        if (! preg_match('/^[0-9a-fA-F]{64}$/', (string) ($config['target_nonce'] ?? ''))) {
-            throw new \InvalidArgumentException('Lost ACK target_nonce must be 64-hex SHA-256 string.');
+        if (! preg_match('/^[0-9a-fA-F]{32,64}$/', (string) ($config['target_nonce'] ?? ''))) {
+            throw new \InvalidArgumentException('Lost ACK target_nonce must be 32 to 64 hex characters.');
         }
         $expectedUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
         if ((int) ($config['target_uid'] ?? -1) !== $expectedUid) {
@@ -853,20 +861,20 @@ final class DisposableMobileV2BackendHarness
                 throw new RuntimeException("Harness start refused: pairing manifest status is '{$status}'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.");
             }
             if ($status === self::SCOPE_READINESS_ONLY) {
-                throw new RuntimeException("Harness start refused: pairing manifest status is '{$status}'. Non-readiness start requires exact '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+                throw new RuntimeException("Harness start refused: pairing manifest status is '{$status}'. Non-readiness start requires exact '".self::SCOPE_PAIRED_EXECUTION."' or '".self::SCOPE_ADVANCED_EXECUTION."' scope.");
             }
-            if ($status !== self::SCOPE_PAIRED_EXECUTION) {
-                throw new RuntimeException("Harness start refused: unapproved manifest status '{$status}'. Non-readiness start requires exact '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+            if ($status !== self::SCOPE_PAIRED_EXECUTION && $status !== self::SCOPE_ADVANCED_EXECUTION) {
+                throw new RuntimeException("Harness start refused: unapproved manifest status '{$status}'. Non-readiness start requires exact '".self::SCOPE_PAIRED_EXECUTION."' or '".self::SCOPE_ADVANCED_EXECUTION."' scope.");
             }
         } elseif ($requestedMode === 'readiness') {
             if ($status === self::SCOPE_PROVISION_ONLY || str_contains($status, 'PROVISION_ONLY')) {
                 throw new RuntimeException("Harness readiness scope refused: pairing manifest status is '{$status}'. Provision-only manifests are strictly forbidden from starting listeners or TLS proxies.");
             }
-            if ($status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION) {
-                throw new RuntimeException("Harness readiness scope refused: unapproved manifest status '{$status}'. Readiness start requires exact '".self::SCOPE_READINESS_ONLY."' or '".self::SCOPE_PAIRED_EXECUTION."' scope.");
+            if ($status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION && $status !== self::SCOPE_ADVANCED_EXECUTION) {
+                throw new RuntimeException("Harness readiness scope refused: unapproved manifest status '{$status}'. Readiness start requires exact '".self::SCOPE_READINESS_ONLY."', '".self::SCOPE_PAIRED_EXECUTION."', or '".self::SCOPE_ADVANCED_EXECUTION."' scope.");
             }
         } elseif ($requestedMode === 'provision') {
-            if ($status !== self::SCOPE_PROVISION_ONLY && $status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION) {
+            if ($status !== self::SCOPE_PROVISION_ONLY && $status !== self::SCOPE_READINESS_ONLY && $status !== self::SCOPE_PAIRED_EXECUTION && $status !== self::SCOPE_ADVANCED_EXECUTION) {
                 throw new RuntimeException("Harness provision scope refused: unapproved manifest status '{$status}'.");
             }
         } else {
@@ -1228,64 +1236,6 @@ if (\$routeResult !== null) {
     \$request = \\Illuminate\\Http\\Request::capture()
 );
 
-// Owned test-transport single-response suppression boundary (Lost ACK post-commit simulation)
-\$suppression = \$config['lost_ack_suppression'] ?? null;
-if (is_array(\$suppression)
-    && ! empty(\$suppression['enabled'])
-    && (\$suppression['scope'] ?? '') === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION'
-    && (\$suppression['root_grant'] ?? '') === 'ADVANCED_LOST_ACK_PROBE'
-    && (\$response->getStatusCode() === 201)
-    && (string) (\$config['harness_nonce'] ?? '') === (string) (\$suppression['target_nonce'] ?? '')
-    && (string) (\$config['schema_name'] ?? '') === (string) (\$suppression['target_schema'] ?? '')
-    && (! function_exists('posix_getuid') || posix_getuid() === (int) (\$suppression['target_uid'] ?? -1))
-) {
-    \$reqContent = \$request->getContent();
-    \$parsedBody = is_string(\$reqContent) && \$reqContent !== '' ? json_decode(\$reqContent, true) : null;
-    \$reqEventId = is_array(\$parsedBody) ? (\$parsedBody['client_event_id'] ?? null) : null;
-    if (\$reqEventId === null) {
-        \$uriParts = explode('/', trim(\$request->getPathInfo(), '/'));
-        \$lastPart = end(\$uriParts);
-        if (is_string(\$lastPart) && preg_match('/^[0-9a-fA-F-]{36}$/', \$lastPart)) {
-            \$reqEventId = \$lastPart;
-        }
-    }
-
-    if (\$reqEventId !== null && hash_equals((string) \$suppression['target_event_id'], (string) \$reqEventId)) {
-        // Verify real DB commit via PDO before suppression: record must exist with invoice and payment
-        /** @var object{id: int|string, status: string, sales_invoice_id: mixed, customer_payment_id: mixed}|null \$receiptRow */
-        \$receiptRow = \\Illuminate\\Support\\Facades\\DB::selectOne(
-            'SELECT `id`, `status`, `sales_invoice_id`, `customer_payment_id` FROM `mobile_event_receipts` WHERE `client_event_id` = ? LIMIT 1',
-            [\$reqEventId]
-        );
-        if (\$receiptRow !== null
-            && \$receiptRow->status === 'completed'
-            && \$receiptRow->sales_invoice_id !== null
-            && \$receiptRow->customer_payment_id !== null
-        ) {
-            \$witnessPath = \$bootstrapDir.'/lost_ack_suppression_witness.json';
-            \$fp = @fopen(\$witnessPath, 'x'); // atomic O_CREAT | O_EXCL
-            if (\$fp !== false) {
-                \$witnessData = [
-                    'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
-                    'network_witness_state' => 'UNRUN_AWAITING_REAL_NETWORK_WITNESS',
-                    'timestamp' => microtime(true),
-                    'client_event_id' => \$reqEventId,
-                    'schema_name' => \$config['schema_name'],
-                    'response_status_code_before_suppression' => 201,
-                    'server_commit_verified_via_pdo' => true,
-                    'sales_invoice_id' => (int) \$receiptRow->sales_invoice_id,
-                    'customer_payment_id' => (int) \$receiptRow->customer_payment_id,
-                ];
-                fwrite(\$fp, json_encode(\$witnessData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-                fclose(\$fp);
-                chmod(\$witnessPath, 0600);
-                \$kernel->terminate(\$request, \$response);
-                exit(0);
-            }
-        }
-    }
-}
-
 \$response->send();
 \$kernel->terminate(\$request, \$response);
 PHP;
@@ -1434,6 +1384,7 @@ PHP;
             self::SCOPE_PROVISION_ONLY,
             self::SCOPE_READINESS_ONLY,
             self::SCOPE_PAIRED_EXECUTION,
+            self::SCOPE_ADVANCED_EXECUTION,
             'mobile_v2_online_cash_sale',
         ];
         if (! in_array($handoff['handoff_scope'], $validScopes, true)) {
@@ -1915,6 +1866,8 @@ PHP;
                 $authorizedScope = self::SCOPE_READINESS_ONLY;
             } elseif ($manifestStatus === self::SCOPE_PAIRED_EXECUTION) {
                 $authorizedScope = self::SCOPE_PAIRED_EXECUTION;
+            } elseif ($manifestStatus === self::SCOPE_ADVANCED_EXECUTION) {
+                $authorizedScope = self::SCOPE_ADVANCED_EXECUTION;
             } else {
                 $authorizedScope = self::SCOPE_PROVISION_ONLY;
             }
@@ -2022,8 +1975,14 @@ PHP;
         $manifestInfo = self::assertDualManifestPin($backendHead, $peerAndroidHead, $manifestPath, $manifestShaPin);
         self::assertLifecycleScope($manifestPath, $manifestShaPin, $this->readinessOnly ? 'readiness' : 'start');
 
+        $isSuppressionActive = $this->lostAckSuppression !== null && ! empty($this->lostAckSuppression['enabled']);
+
         // Preflight loopback ports ONLY AFTER ALL gates and manifest assertions have passed
-        self::assertPortsAvailable(self::BACKEND_LOOPBACK_PORT, self::TLS_PROXY_PORT);
+        if ($isSuppressionActive) {
+            self::assertPortsAvailable(self::BACKEND_LOOPBACK_PORT, self::TLS_PROXY_PORT, self::BACKEND_INTERNAL_PORT);
+        } else {
+            self::assertPortsAvailable(self::BACKEND_LOOPBACK_PORT, self::TLS_PROXY_PORT);
+        }
 
         $root = dirname(__DIR__, 3);
 
@@ -2160,16 +2119,43 @@ PHP;
         ];
 
         try {
-            // Launch supervised PHP HTTP backend on loopback
+            $backendPort = $isSuppressionActive ? self::BACKEND_INTERNAL_PORT : self::BACKEND_LOOPBACK_PORT;
+            // Launch supervised PHP HTTP backend
             $this->backendProcess = new Process(
-                [PHP_BINARY, '-S', '127.0.0.1:'.self::BACKEND_LOOPBACK_PORT, $httpBootstrapPath],
+                [PHP_BINARY, '-S', '127.0.0.1:'.$backendPort, $httpBootstrapPath],
                 $root,
                 $serveEnv,
             );
             $this->backendProcess->start();
 
-            // Verify backend readiness via active bounded HTTP probe
-            $this->verifyBackendReadiness($nonce);
+            // Verify backend readiness via active bounded HTTP probe on backend port
+            $this->verifyBackendReadiness($nonce, 5.0, $backendPort);
+
+            // If suppression active, launch test transport proxy mediating on BACKEND_LOOPBACK_PORT
+            if ($isSuppressionActive) {
+                $proxyConfigFile = $bootstrapDir.'/test_transport_proxy_config.json';
+                file_put_contents($proxyConfigFile, json_encode([
+                    'listen_port' => self::BACKEND_LOOPBACK_PORT,
+                    'upstream_port' => self::BACKEND_INTERNAL_PORT,
+                    'target_event_id' => $this->lostAckSuppression['target_event_id'] ?? '',
+                    'target_schema' => $schemaName,
+                    'target_company_id' => 1,
+                    'witness_path' => $bootstrapDir.'/lost_ack_suppression_witness.json',
+                    'db_host' => '127.0.0.1',
+                    'db_port' => 3342,
+                    'db_user' => $dbSettings['USERNAME'],
+                    'db_password' => $dbSettings['PASSWORD'],
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                chmod($proxyConfigFile, 0600);
+
+                $this->proxyProcess = new Process(
+                    [PHP_BINARY, __DIR__.'/test-transport-proxy-cli.php', '--config='.$proxyConfigFile],
+                    $root,
+                    $serveEnv,
+                );
+                $this->proxyProcess->start();
+                usleep(50000); // 50ms
+            }
 
             // Launch supervised Caddy TLS proxy
             $this->caddyProcess = new Process(
@@ -2230,10 +2216,10 @@ PHP;
      * Bounded HTTP readiness probe to supervised loopback backend.
      * Verifies HTTP 200 response and exact matching harness nonce.
      */
-    private function verifyBackendReadiness(string $expectedNonce, float $timeoutSeconds = 5.0): void
+    private function verifyBackendReadiness(string $expectedNonce, float $timeoutSeconds = 5.0, int $port = self::BACKEND_LOOPBACK_PORT): void
     {
         $start = microtime(true);
-        $url = 'http://127.0.0.1:'.self::BACKEND_LOOPBACK_PORT.'/_harness/readiness';
+        $url = 'http://127.0.0.1:'.$port.'/_harness/readiness';
         $ctx = stream_context_create([
             'http' => [
                 'method' => 'GET',
@@ -2260,7 +2246,7 @@ PHP;
         }
 
         throw new RuntimeException(
-            "Harness start failed: PHP backend readiness probe timed out after {$timeoutSeconds}s on port ".self::BACKEND_LOOPBACK_PORT
+            "Harness start failed: PHP backend readiness probe timed out after {$timeoutSeconds}s on port ".$port
         );
     }
 
@@ -2319,6 +2305,11 @@ PHP;
         if ($this->caddyProcess !== null && $this->caddyProcess->isRunning()) {
             $this->caddyProcess->stop(3.0);
             $this->caddyProcess = null;
+        }
+
+        if ($this->proxyProcess !== null && $this->proxyProcess->isRunning()) {
+            $this->proxyProcess->stop(3.0);
+            $this->proxyProcess = null;
         }
 
         if ($this->backendProcess !== null && $this->backendProcess->isRunning()) {

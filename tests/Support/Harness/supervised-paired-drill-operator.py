@@ -921,6 +921,8 @@ def build_parser():
     parser.add_argument("--manifest-sha", default=None, help="SHA-256 override pin for external pairing manifest (required for --execute)")
     parser.add_argument("--root-approval-file", default=None, help="Root prestart approval file (required for --execute)")
     parser.add_argument("--root-live-approval-file", default=None, help="Private future path for Root live approval (required for --execute; must NOT exist at startup)")
+    parser.add_argument("--expected-scope", default=None, help="Expected authorization scope (e.g. ROOT_AUTHORIZED_PAIRED_EXECUTION or ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION)")
+    parser.add_argument("--advanced-probes", action="store_true", default=False, help="Enable advanced probe execution")
 
     return parser
 
@@ -1075,6 +1077,10 @@ def main():
                     f'--output-dir={output_dir}',
                     f'--paired-hold={args.paired_hold}',
                 ]
+                if args.expected_scope:
+                    prep_cmd.append(f'--expected-scope={args.expected_scope}')
+                if args.advanced_probes:
+                    prep_cmd.append('--advanced-probes')
                 argv_path = os.path.join(output_dir, 'argv.json')
                 with open(argv_path, 'w') as f:
                     json.dump(prep_cmd, f, indent=2)
@@ -1122,6 +1128,10 @@ def main():
                     f'--android-repo-dir={android_dir}',
                     f'--output-dir={output_dir}'
                 ]
+                if args.expected_scope:
+                    exec_cmd.append(f'--expected-scope={args.expected_scope}')
+                if args.advanced_probes:
+                    exec_cmd.append('--advanced-probes')
                 argv_path = os.path.join(output_dir, 'argv.json')
                 with open(argv_path, 'w') as f:
                     json.dump(exec_cmd, f, indent=2)
