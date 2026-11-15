@@ -81,6 +81,9 @@ timeout 60 ./vendor/bin/phpunit \
 - **Failures**: 1
 - **Errors**: 0
 - **Suite Outcome**: STOPPED WITH EXIT CODE 1
+- **Suite Breakdown**:
+  - `DisposableMobileV2BackendHarnessGuardTest.php`: 97 executed, 97 passed, 0 failures, 0 errors, 477 assertions.
+  - `SupervisedFinancialDrillTest.php`: 10 executed, 9 passed, 1 failure, 0 errors, 22 assertions (stopped on 10th test: `test_verify_evidence_freshness_accepts_golden_25ae_fixture`).
 - **Unreached Test Inventory Preserved**: 21 tests
   - Remaining in `SupervisedFinancialDrillTest.php`: 21 tests (tests 11 through 31)
 

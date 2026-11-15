@@ -317,7 +317,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_verify_evidence_freshness_accepts_golden_25ae_fixture(): void
     {
-        $fixturePath = dirname(__DIR__, 2) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
+        $fixturePath = dirname(__DIR__, 3) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
         $this->assertFileExists($fixturePath);
 
         $fixtureBytes = (string) file_get_contents($fixturePath);
@@ -345,7 +345,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_verify_evidence_freshness_rejects_alias_mutations(): void
     {
-        $fixturePath = dirname(__DIR__, 2) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
+        $fixturePath = dirname(__DIR__, 3) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
         $data = json_decode((string) file_get_contents($fixturePath), true);
 
         // 1. Mutate manifestDigest to alias handoffDigest
@@ -396,7 +396,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_verify_evidence_freshness_rejects_scenario_mutations(): void
     {
-        $fixturePath = dirname(__DIR__, 2) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
+        $fixturePath = dirname(__DIR__, 3) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
         $data = json_decode((string) file_get_contents($fixturePath), true);
 
         // 1. Missing scenario (6 items instead of 7)
@@ -445,7 +445,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_exact_cleanup_skips_destructive_actions_when_snapshot_is_null(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $result = SupervisedPairedFinancialDrill::executeExactCleanup(
             null,
             null, // No snapshot
@@ -461,7 +461,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_exact_cleanup_rejects_foreign_db_port(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $snapshot = $this->createValidSnapshot($repoRoot);
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
@@ -497,14 +497,14 @@ class SupervisedFinancialDrillTest extends TestCase
             proofNonce: '0123456789abcdef0123456789abcdef',
             harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
             childPid: 12345,
-            repoRoot: dirname(__DIR__, 3)
+            repoRoot: dirname(__DIR__, 4)
         );
     }
 
     #[Test]
     public function test_exact_cleanup_reports_failure_when_schema_lingers(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $snapshot = $this->createValidSnapshot($repoRoot);
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
@@ -533,7 +533,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_exact_cleanup_succeeds_when_clean(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $snapshot = $this->createValidSnapshot($repoRoot);
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
@@ -576,7 +576,7 @@ class SupervisedFinancialDrillTest extends TestCase
             proofNonce: str_repeat('a', 32),
             harnessDir: $this->tempDir,
             childPid: 1234,
-            repoRoot: dirname(__DIR__, 3)
+            repoRoot: dirname(__DIR__, 4)
         );
     }
 
@@ -592,7 +592,7 @@ class SupervisedFinancialDrillTest extends TestCase
             proofNonce: str_repeat('a', 32),
             harnessDir: $this->tempDir,
             childPid: 0,
-            repoRoot: dirname(__DIR__, 3)
+            repoRoot: dirname(__DIR__, 4)
         );
     }
 
@@ -613,7 +613,7 @@ class SupervisedFinancialDrillTest extends TestCase
             proofNonce: 'short',
             harnessDir: $this->tempDir,
             childPid: 1234,
-            repoRoot: dirname(__DIR__, 3)
+            repoRoot: dirname(__DIR__, 4)
         );
     }
 
@@ -673,7 +673,7 @@ class SupervisedFinancialDrillTest extends TestCase
                     proofNonce: str_repeat('a', 32),
                     harnessDir: $harnessDir,
                     childPid: 1234,
-                    repoRoot: dirname(__DIR__, 3)
+                    repoRoot: dirname(__DIR__, 4)
                 );
             } catch (\Throwable $e) {
                 $caught = $e;
@@ -707,7 +707,7 @@ class SupervisedFinancialDrillTest extends TestCase
         // This test documents real provenance distinction: manifestDigest is a sha256 hex string
         // (whole handoff SHA) while runId is a UUID — structurally and semantically distinct.
         // The test does NOT execute any subprocess or make real network/DB calls.
-        $fixturePath = dirname(__DIR__, 2) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
+        $fixturePath = dirname(__DIR__, 3) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
         $this->assertFileExists($fixturePath);
 
         $data = json_decode((string) file_get_contents($fixturePath), true);
@@ -775,7 +775,7 @@ class SupervisedFinancialDrillTest extends TestCase
     {
         // When a running child process PID differs from the snapshot's captured childPid,
         // executeExactCleanup must refuse to send any signals and report PID_MISMATCH.
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $snapshot = $this->createValidSnapshot($repoRoot, childPid: 99999);
 
         $mockChild = $this->createMock(Process::class);
@@ -807,7 +807,7 @@ class SupervisedFinancialDrillTest extends TestCase
     {
         // When a running child process exists but snapshot is null, executeExactCleanup
         // must not send signals (can't verify PID) and must report the skip.
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
 
         $mockChild = $this->createMock(Process::class);
         $mockChild->method('isRunning')->willReturn(true);
@@ -837,7 +837,7 @@ class SupervisedFinancialDrillTest extends TestCase
             proofNonce: str_repeat('a', 32),
             harnessDir: $this->tempDir,
             childPid: -1,
-            repoRoot: dirname(__DIR__, 3)
+            repoRoot: dirname(__DIR__, 4)
         );
     }
 
@@ -852,7 +852,7 @@ class SupervisedFinancialDrillTest extends TestCase
             proofNonce: str_repeat('a', 32),
             harnessDir: $this->tempDir,
             childPid: 1234,
-            repoRoot: dirname(__DIR__, 3)
+            repoRoot: dirname(__DIR__, 4)
         );
     }
 
@@ -867,7 +867,7 @@ class SupervisedFinancialDrillTest extends TestCase
             proofNonce: str_repeat('a', 32),
             harnessDir: $this->tempDir,
             childPid: 1234,
-            repoRoot: dirname(__DIR__, 3)
+            repoRoot: dirname(__DIR__, 4)
         );
     }
 
@@ -878,7 +878,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_from_live_ownership_rejects_harness_dir_inside_repo(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $insideHarness = $repoRoot . '/tests/v2_harness_' . bin2hex(random_bytes(8));
         mkdir($insideHarness, 0700, true);
 
@@ -905,7 +905,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_from_live_ownership_rejects_invalid_harness_dir_name(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $invalidHarness = sys_get_temp_dir() . '/invalid_harness_name_' . bin2hex(random_bytes(4));
         mkdir($invalidHarness, 0700, true);
 
@@ -932,7 +932,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_scoped_cleanup_and_three_store_env_restoration_lifecycle(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $testDbVars = [
             'APP_ENV',
             'MOBILE_V2_HARNESS_ENABLE',
@@ -1067,7 +1067,7 @@ class SupervisedFinancialDrillTest extends TestCase
     #[Test]
     public function test_scoped_cleanup_restores_all_stores_even_when_cleanup_throws(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = dirname(__DIR__, 4);
         $testDbVars = [
             'APP_ENV',
             'MOBILE_V2_HARNESS_ENABLE',
