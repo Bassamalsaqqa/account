@@ -121,3 +121,30 @@ All raw logs and audit artifacts are preserved under `/home/t3dev/.t3/userdata/a
 The single short exclusive owned DB qualification lease granted for `b8996447b3b3fb81b21a659107a0c71e6b66f43f` is **RELEASED IMMEDIATELY**.
 Zero background listeners, servers, or database connections remain active.
 Working tree non-doc diff against `b8996447b3b3fb81b21a659107a0c71e6b66f43f` is strictly empty.
+
+---
+
+### 7. Errata & Source Consolidation (Post-Attempt Review)
+
+Following Root inspection of Phase 1 failure artifacts, the following source corrections were implemented in commit `6e3378a38b4af1c2cd8a19b268134a12ac8e8143`:
+
+1. **Child Process Environment Propagation Fix**:
+   - `DisposableMariaDbSchema::environment()` explicitly includes `PHASE8_TEST_DB_HOST`, `PHASE8_TEST_DB_PORT`, `PHASE8_TEST_DB_USERNAME`, `PHASE8_TEST_DB_PASSWORD`, and `PHASE8_TEST_DB_EMPTY_PASSWORD` in the returned array, ensuring Symfony `Process` child processes receive administrative credentials without relying on ambient inheritance.
+   - `loadSecureAdministrativeCredentials` in `disposable-db-qualification-runner.php` populates `$_ENV` and `$_SERVER` alongside `putenv`.
+   - `$isolatedEnv` explicitly passes administrative test credentials into the isolated Laravel pre-boot environment.
+
+2. **Synthetic Child Process Pre-check Regression**:
+   - Added Pre-check 3 in `disposable-db-qualification-runner.php` validating that a spawned Symfony `Process` child receives explicit dummy credentials and a fresh synthetic ownership proof, validating `testSettings()` and `assertPrimarySchema()` without dialing any database socket.
+
+3. **Correction of False Observations in Runner Output**:
+   - Replaced assumed literals (`owned_pdo_verified = true`, `3342`) with observed nullable state.
+   - Sentinel report and dedicated PDO fields are marked `NOT_RUN` and `null` if failure occurs prior to reaching Step 8/9.
+   - Baseline and six-reconciler results are marked `NOT_RUN` / `null` if unreached.
+
+4. **Exact MariaDB Absence Query**:
+   - Schema drop verification uses `SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?` to prevent underscore single-character wildcard ambiguity.
+
+5. **Watchdog Security Hardening**:
+   - Configured nonsecret environment logging to use a strict allowlist of known safe keys rather than serializing all ambient environment variables.
+   - Future qualification attempts will target a fresh unique directory with independent nonce (`p8_db_qualification_phase2_<nonce>`), preserving Phase 1 artifacts intact.
+
