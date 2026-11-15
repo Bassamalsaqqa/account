@@ -11,6 +11,7 @@ use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
+use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use DateTimeImmutable;
@@ -1407,6 +1408,28 @@ final class DisposableFinancialPostRunInspector
      * @param  array<string, mixed>  $reconcileResult
      * @return array<string, mixed>
      */
+    public static function computeReportDigest(array $coreDeterministicPayload): string
+    {
+        return hash('sha256', CanonicalJsonSerializer::serialize($coreDeterministicPayload));
+    }
+
+    /**
+     * Composes an authoritative trusted DB inspection report from individually verified components.
+     *
+     * @param  array{
+     *     scope: string,
+     *     runId: string,
+     *     eventId: string,
+     *     schemaName: string,
+     *     companyId: int,
+     *     sourceHead: string,
+     *     handoffDigest: string,
+     * }  $metadata
+     * @param  array<string, mixed>  $baseline
+     * @param  array<string, mixed>  $deltaResult
+     * @param  array<string, mixed>  $reconcileResult
+     * @return array<string, mixed>
+     */
     public static function composeTrustedDbReport(
         array $metadata,
         array $baseline,
@@ -1453,7 +1476,7 @@ final class DisposableFinancialPostRunInspector
             'reconciler_results' => $reconcileResult['reconciler_results'] ?? [],
         ];
 
-        $reportDigest = hash('sha256', (string) json_encode($coreDeterministicPayload, JSON_UNESCAPED_SLASHES));
+        $reportDigest = self::computeReportDigest($coreDeterministicPayload);
 
         return [
             'scope' => (string) $metadata['scope'],
@@ -2221,7 +2244,7 @@ final class DisposableFinancialPostRunInspector
                 'all_healthy' => (bool) ($trustedDbReport['all_healthy'] ?? false),
                 'reconciler_results' => $trustedDbReport['reconciler_results'] ?? [],
             ];
-            $recomputedDigest = hash('sha256', (string) json_encode($coreDeterministicPayload, JSON_UNESCAPED_SLASHES));
+            $recomputedDigest = self::computeReportDigest($coreDeterministicPayload);
             $actualDigest = (string) ($trustedDbReport['report_digest'] ?? '');
             if ($actualDigest === '' || ! hash_equals($recomputedDigest, $actualDigest)) {
                 $errors[] = "Trusted DB report report_digest mismatch: recomputed '{$recomputedDigest}', got '{$actualDigest}'.";
@@ -2476,11 +2499,26 @@ final class DisposableFinancialPostRunInspector
                             if (($witnessData['network_witness_state'] ?? '') !== 'CAPTURED_REAL_TRANSPORT_DROP') {
                                 $errors[] = "Witness file network_witness_state must be 'CAPTURED_REAL_TRANSPORT_DROP'.";
                             }
-                            if (($witnessData['client_event_id'] ?? '') !== (string) ($expectedPins['expectedClientEventId'] ?? '')) {
-                                $errors[] = "Witness file client_event_id mismatch: expected '".($expectedPins['expectedClientEventId'] ?? '')."', got '".($witnessData['client_event_id'] ?? '')."'.";
+                            $wEventId = (string) ($witnessData['event_id'] ?? $witnessData['client_event_id'] ?? '');
+                            if ($wEventId !== (string) ($expectedPins['expectedClientEventId'] ?? '')) {
+                                $errors[] = "Witness file event_id mismatch: expected '".($expectedPins['expectedClientEventId'] ?? '')."', got '{$wEventId}'.";
                             }
                             if (($witnessData['schema_name'] ?? '') !== (string) ($expectedPins['expectedSchemaName'] ?? '')) {
                                 $errors[] = "Witness file schema_name mismatch: expected '".($expectedPins['expectedSchemaName'] ?? '')."', got '".($witnessData['schema_name'] ?? '')."'.";
+                            }
+                            if (! is_bool($witnessData['db_commit_verified'] ?? null) || $witnessData['db_commit_verified'] !== true) {
+                                $errors[] = "Witness file db_commit_verified must be boolean true.";
+                            }
+                            if (! is_bool($witnessData['client_socket_dropped'] ?? null) || $witnessData['client_socket_dropped'] !== true) {
+                                $errors[] = "Witness file client_socket_dropped must be boolean true.";
+                            }
+                            if (($witnessData['bytes_forwarded'] ?? -1) !== 0) {
+                                $errors[] = "Witness file bytes_forwarded must be integer 0, got ".($witnessData['bytes_forwarded'] ?? 'null').".";
+                            }
+                            if (! empty($witnessData['target_nonce_hash'])) {
+                                if (! preg_match('/^[0-9a-f]{64}$/', (string) $witnessData['target_nonce_hash'])) {
+                                    $errors[] = "Witness file target_nonce_hash must be a 64-hex lowercase SHA-256 string.";
+                                }
                             }
                             if ((int) ($witnessData['sales_invoice_id'] ?? 0) <= 0) {
                                 $errors[] = "Witness file sales_invoice_id must be positive integer.";
@@ -2666,13 +2704,30 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = "Trusted DB report scope mismatch: expected 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', got '".($trustedDbReport['scope'] ?? 'null')."'.";
             }
 
-            // Recompute canonical normalized hash of the report data without 'digest'
-            $reportWithoutDigest = $trustedDbReport;
-            unset($reportWithoutDigest['digest']);
-            $computedReportDigest = hash('sha256', CanonicalJsonSerializer::serialize($reportWithoutDigest));
-            $actualReportDigest = (string) ($trustedDbReport['digest'] ?? '');
-            if (! hash_equals($computedReportDigest, $actualReportDigest)) {
-                $errors[] = "Trusted DB report digest mismatch against canonical serialization: expected '{$computedReportDigest}', got '{$actualReportDigest}'.";
+            $coreDeterministicPayload = [
+                'scope' => (string) ($trustedDbReport['scope'] ?? ''),
+                'run_id' => (string) ($trustedDbReport['run_id'] ?? ''),
+                'event_id' => (string) ($trustedDbReport['event_id'] ?? ''),
+                'schema_name' => (string) ($trustedDbReport['schema_name'] ?? ''),
+                'company_id' => (int) ($trustedDbReport['company_id'] ?? 0),
+                'source_head' => (string) ($trustedDbReport['source_head'] ?? ''),
+                'handoff_digest' => (string) ($trustedDbReport['handoff_digest'] ?? ''),
+                'baseline_hash' => (string) ($trustedDbReport['baseline_hash'] ?? ''),
+                'deltas' => $trustedDbReport['deltas'] ?? [],
+                'canonical_graph' => $trustedDbReport['canonical_graph'] ?? [],
+                'is_canonical_delta_valid' => (bool) ($trustedDbReport['is_canonical_delta_valid'] ?? false),
+                'gl_batches_balanced' => (bool) ($trustedDbReport['gl_batches_balanced'] ?? false),
+                'all_healthy' => (bool) ($trustedDbReport['all_healthy'] ?? false),
+                'reconciler_results' => $trustedDbReport['reconciler_results'] ?? [],
+            ];
+            $computedReportDigest = self::computeReportDigest($coreDeterministicPayload);
+            $actualReportDigest = (string) ($trustedDbReport['report_digest'] ?? $trustedDbReport['digest'] ?? '');
+            if ($actualReportDigest === '' || ! hash_equals($computedReportDigest, $actualReportDigest)) {
+                $errors[] = "Trusted DB report report_digest mismatch against canonical serialization: expected '{$computedReportDigest}', got '{$actualReportDigest}'.";
+            }
+            $expReportDigest = (string) ($expectedPins['expectedReportDigest'] ?? $expectedPins['expectedTrustedReportDigest'] ?? '');
+            if ($expReportDigest !== '' && ! hash_equals($expReportDigest, $actualReportDigest)) {
+                $errors[] = "Expected report_digest mismatch: expected '{$expReportDigest}', got '{$actualReportDigest}'.";
             }
 
             // Cross-check immutable file SHA pin (expectedDbReportSha) if passed
@@ -2689,8 +2744,9 @@ final class DisposableFinancialPostRunInspector
             if (isset($expectedPins['expectedSchemaName']) && ! hash_equals((string) $expectedPins['expectedSchemaName'], (string) ($trustedDbReport['schema_name'] ?? ''))) {
                 $errors[] = "Trusted DB report schema_name mismatch: expected '{$expectedPins['expectedSchemaName']}', got '".($trustedDbReport['schema_name'] ?? '')."'.";
             }
-            if (isset($expectedPins['companyId']) && (int) $expectedPins['companyId'] !== (int) ($trustedDbReport['company_id'] ?? -1)) {
-                $errors[] = "Trusted DB report company_id mismatch: expected {$expectedPins['companyId']}, got ".($trustedDbReport['company_id'] ?? -1).".";
+            $expectedCompanyId = (int) ($expectedPins['expectedCompanyId'] ?? $expectedPins['companyId'] ?? 0);
+            if ($expectedCompanyId > 0 && (int) ($trustedDbReport['company_id'] ?? -1) !== $expectedCompanyId) {
+                $errors[] = "Trusted DB report company_id mismatch: expected {$expectedCompanyId}, got ".($trustedDbReport['company_id'] ?? -1).".";
             }
             if (isset($expectedPins['expectedRunId']) && ! hash_equals((string) $expectedPins['expectedRunId'], (string) ($trustedDbReport['run_id'] ?? ''))) {
                 $errors[] = "Trusted DB report run_id mismatch: expected '{$expectedPins['expectedRunId']}', got '".($trustedDbReport['run_id'] ?? '')."'.";

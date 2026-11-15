@@ -5353,6 +5353,92 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertFalse($res['is_valid']);
         $this->assertTrue(collect($res['errors'])->contains(fn ($e) => str_contains($e, "cannot claim 'PASS' in basic financial run; must be exactly 'NOT_RUN'")));
     }
+
+    #[Test]
+    public function test_test_transport_proxy_is_target_request_matches_exact_ulid_and_rejects_digit_or_unanchored_path(): void
+    {
+        $targetEventId = 'c0686be5-888f-4890-90bf-1f05f416a19a';
+        $targetCompanyUlid = '01M7CZPF6TP283F3ZRXF5P8GT2';
+
+        $proxy = new \Tests\Support\Harness\TestTransportProxy([
+            'target_event_id' => $targetEventId,
+            'target_schema' => 'accounting_p8_tmp_0123456789ab',
+            'target_company_id' => 1,
+            'target_company_public_id' => $targetCompanyUlid,
+            'witness_path' => '/tmp/lost_ack_suppression_witness.json',
+        ]);
+
+        $validBody = json_encode(['client_event_id' => $targetEventId, 'amount' => '58.000000']);
+        $validPath = "/api/mobile/v2/companies/{$targetCompanyUlid}/sales/online-cash";
+
+        // 1. Exact match PASS
+        $this->assertTrue($proxy->isTargetRequest('POST', $validPath, $validBody));
+
+        // 2. Digit-only unanchored path FAILS
+        $digitPath = "/api/mobile/v2/companies/1/sales/online-cash";
+        $this->assertFalse($proxy->isTargetRequest('POST', $digitPath, $validBody));
+
+        // 3. Unanchored trailing slash or prefix FAILS
+        $prefixPath = "/v1{$validPath}";
+        $this->assertFalse($proxy->isTargetRequest('POST', $prefixPath, $validBody));
+        $suffixPath = "{$validPath}/extra";
+        $this->assertFalse($proxy->isTargetRequest('POST', $suffixPath, $validBody));
+
+        // 4. Mismatched company ULID FAILS
+        $wrongCompanyPath = "/api/mobile/v2/companies/01M7CZPF6TP283F3ZRXF5P8GT9/sales/online-cash";
+        $this->assertFalse($proxy->isTargetRequest('POST', $wrongCompanyPath, $validBody));
+
+        // 5. Non-POST method FAILS
+        $this->assertFalse($proxy->isTargetRequest('GET', $validPath, $validBody));
+        $this->assertFalse($proxy->isTargetRequest('PUT', $validPath, $validBody));
+
+        // 6. Mismatched client_event_id FAILS
+        $wrongEventBody = json_encode(['client_event_id' => 'd0686be5-888f-4890-90bf-1f05f416a19a']);
+        $this->assertFalse($proxy->isTargetRequest('POST', $validPath, $wrongEventBody));
+
+        // 7. Malformed JSON body FAILS
+        $this->assertFalse($proxy->isTargetRequest('POST', $validPath, 'not-json'));
+    }
+
+    #[Test]
+    public function test_test_transport_proxy_cli_refuses_invocation_without_config(): void
+    {
+        $cliScript = dirname(__DIR__, 3) . '/tests/Support/Harness/test-transport-proxy-cli.php';
+        $proc = new \Symfony\Component\Process\Process([PHP_BINARY, $cliScript]);
+        $proc->run();
+
+        $this->assertFalse($proc->isSuccessful());
+        $this->assertSame(1, $proc->getExitCode());
+        $this->assertStringContainsString('Missing mandatory --config=<path>', $proc->getErrorOutput());
+    }
+
+    #[Test]
+    public function test_trusted_db_report_canonical_digest_matches_actual_app_serializer(): void
+    {
+        $payload = [
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'run_id' => '019ea456-0000-7000-8000-000000000001',
+            'event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'source_head' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+            'handoff_digest' => str_repeat('a', 64),
+            'baseline_hash' => str_repeat('b', 64),
+            'deltas' => ['sales_invoices' => 1],
+            'canonical_graph' => ['sales_invoice' => ['id' => 1, 'unit_price' => '50.000000']],
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'all_healthy' => true,
+            'reconciler_results' => ['gl_batches_balanced' => true],
+        ];
+
+        $digest = \Tests\Support\Harness\DisposableFinancialPostRunInspector::computeReportDigest($payload);
+        $expectedCanonical = \App\Support\Mobile\Contract\CanonicalJsonSerializer::serialize($payload);
+        $expectedHash = hash('sha256', $expectedCanonical);
+
+        $this->assertSame($expectedHash, $digest);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $digest);
+    }
 }
 
 

@@ -217,6 +217,7 @@ if ($evidenceFile !== null) {
         'expectedScope' => $expectedScope ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
         'expectedSchemaName' => $schemaName ?? '',
         'companyId' => $companyId ?? 0,
+        'expectedCompanyId' => $companyId ?? 0,
         'expectedRunId' => $runId,
         'expectedEventId' => $expectedEventId,
         'expectedBaselineHash' => $expectedBaselineHash,
@@ -230,7 +231,8 @@ if ($evidenceFile !== null) {
         $expectedPins['expectedHandoffSha'] = $expectedHandoffDigest;
         $expectedPins['expectedDbReportSha'] = $expectedDbReportSha;
         $expectedPins['actualDbReportFileSha'] = $actualDbReportSha;
-        $expectedPins['expectedTrustedReportDigest'] = $trustedDbReport['digest'] ?? '';
+        $expectedPins['expectedTrustedReportDigest'] = $trustedDbReport['report_digest'] ?? $trustedDbReport['digest'] ?? '';
+        $expectedPins['expectedReportDigest'] = $trustedDbReport['report_digest'] ?? $trustedDbReport['digest'] ?? '';
         $root = dirname(__DIR__, 3);
         $expectedPins['expectedSourcePins'] = [
             'source_fixture_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),

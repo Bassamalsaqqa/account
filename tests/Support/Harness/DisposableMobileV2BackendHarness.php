@@ -228,12 +228,26 @@ final class DisposableMobileV2BackendHarness
      */
     private ?array $fixtureManifest = null;
 
+    private ?int $companyId = null;
+
+    private ?string $companyPublicId = null;
+
     /**
      * @return array<string, mixed>|null
      */
     public function getFixtureManifest(): ?array
     {
         return $this->fixtureManifest;
+    }
+
+    public function getCompanyId(): ?int
+    {
+        return $this->companyId;
+    }
+
+    public function getCompanyPublicId(): ?string
+    {
+        return $this->companyPublicId;
     }
 
     /**
@@ -1798,6 +1812,9 @@ PHP;
             $currencyCode = (string) $company->base_currency_code;
             $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($currencyCode);
 
+            $this->companyId = (int) $company->id;
+            $this->companyPublicId = (string) $company->public_id;
+
             $this->fixtureManifest = [
                 'schema_name' => $this->schema->schemaName(),
                 'company_public_id' => (string) $company->public_id,
@@ -2133,18 +2150,31 @@ PHP;
 
             // If suppression active, launch test transport proxy mediating on BACKEND_LOOPBACK_PORT
             if ($isSuppressionActive) {
-                $proxyConfigFile = $bootstrapDir.'/test_transport_proxy_config.json';
-                file_put_contents($proxyConfigFile, json_encode([
-                    'listen_port' => self::BACKEND_LOOPBACK_PORT,
-                    'upstream_port' => self::BACKEND_INTERNAL_PORT,
-                    'target_event_id' => $this->lostAckSuppression['target_event_id'] ?? '',
-                    'target_schema' => $schemaName,
-                    'target_company_id' => 1,
-                    'witness_path' => $bootstrapDir.'/lost_ack_suppression_witness.json',
-                    'db_host' => '127.0.0.1',
-                    'db_port' => 3342,
+                $dbCredentialsPath = $bootstrapDir.'/proxy_db_credentials.json';
+                file_put_contents($dbCredentialsPath, json_encode([
                     'db_user' => $dbSettings['USERNAME'],
                     'db_password' => $dbSettings['PASSWORD'],
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                chmod($dbCredentialsPath, 0600);
+
+                $targetNonce = (string) ($this->lostAckSuppression['target_nonce'] ?? '');
+                $proxyConfigFile = $bootstrapDir.'/test_transport_proxy_config.json';
+                file_put_contents($proxyConfigFile, json_encode([
+                    'scope' => self::SCOPE_ADVANCED_EXECUTION,
+                    'owner_pid' => getmypid(),
+                    'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+                    'target_event_id' => $this->lostAckSuppression['target_event_id'] ?? '',
+                    'target_schema' => $schemaName,
+                    'target_company_id' => $this->companyId ?? 1,
+                    'target_company_public_id' => $this->companyPublicId ?? '01M7CZPF6TP283F3ZRXF5P8GT2',
+                    'target_nonce_hash' => hash('sha256', $targetNonce),
+                    'expected_digest' => (string) ($this->lostAckSuppression['expected_digest'] ?? ''),
+                    'credentials_file' => $dbCredentialsPath,
+                    'witness_path' => $bootstrapDir.'/lost_ack_suppression_witness.json',
+                    'listen_port' => self::BACKEND_LOOPBACK_PORT,
+                    'upstream_port' => self::BACKEND_INTERNAL_PORT,
+                    'db_host' => '127.0.0.1',
+                    'db_port' => 3342,
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
                 chmod($proxyConfigFile, 0600);
 

@@ -412,6 +412,32 @@ class MobileV2HarnessCommand extends Command
             );
             $this->line('  Provision OK — schema: '.$provision['manifest']['schema_name']);
 
+            // Configure advanced probe hooks on harness instance when requested
+            if ($advancedProbes) {
+                $manifest = $provision['manifest'];
+                $targetEventId = (string) ($manifest['sample_event_id'] ?? '');
+                $targetSchema = (string) ($manifest['schema_name'] ?? '');
+                $companyId = $harness->getCompanyId() ?? 1;
+                $targetNonce = bin2hex(random_bytes(16));
+                $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+
+                $harness->configureLostAckSuppression([
+                    'enabled' => true,
+                    'scope' => DisposableMobileV2BackendHarness::SCOPE_ADVANCED_EXECUTION,
+                    'root_grant' => 'ADVANCED_LOST_ACK_PROBE',
+                    'target_event_id' => $targetEventId,
+                    'target_schema' => $targetSchema,
+                    'target_nonce' => $targetNonce,
+                    'target_uid' => $currentUid,
+                    'expected_digest' => (string) ($provision['canonical_digest'] ?? ''),
+                    'target_company_id' => $companyId,
+                ]);
+
+                // Reset simulated fault stage to null for initial run; set per probe during probe execution
+                $harness->configureSimulatedFaultStage(null);
+                $this->line('  Advanced lost-ACK suppression configured for target event: '.$targetEventId);
+            }
+
             // Safe interrupted setup check 2: between provision and start
             pcntl_signal_dispatch();
             if ($aborted) {
