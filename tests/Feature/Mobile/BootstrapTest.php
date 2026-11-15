@@ -526,61 +526,63 @@ final class BootstrapTest extends TestCase
         setPermissionsTeamId($jodCompany->id);
         $this->user->assignRole('Cashier');
 
-        $jodLedger = LedgerAccount::create([
-            'company_id' => $jodCompany->id,
-            'code' => '1011',
-            'name_ar' => 'صندوق دينار',
-            'name_en' => 'JOD Cash Box',
-            'account_type' => LedgerAccount::TYPE_ASSET,
-            'normal_balance' => LedgerAccount::BALANCE_DEBIT,
-            'is_control' => false,
-            'is_system' => false,
-            'active' => true,
-        ]);
+        CompanyScope::executeWithoutScope(function () use ($jodCompany): void {
+            $jodLedger = LedgerAccount::create([
+                'company_id' => $jodCompany->id,
+                'code' => '1011',
+                'name_ar' => 'صندوق دينار',
+                'name_en' => 'JOD Cash Box',
+                'account_type' => LedgerAccount::TYPE_ASSET,
+                'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+                'is_control' => false,
+                'is_system' => false,
+                'active' => true,
+            ]);
 
-        $jodCash = MoneyAccount::create([
-            'company_id' => $jodCompany->id,
-            'account_type' => 'cash',
-            'name_ar' => 'صندوق رئيسي دينار',
-            'name_en' => 'Main Cash JOD',
-            'currency_code' => 'JOD',
-            'ledger_account_id' => $jodLedger->id,
-            'is_active' => true,
-            'created_by' => $this->user->id,
-        ]);
+            $jodCash = MoneyAccount::create([
+                'company_id' => $jodCompany->id,
+                'account_type' => 'cash',
+                'name_ar' => 'صندوق رئيسي دينار',
+                'name_en' => 'Main Cash JOD',
+                'currency_code' => 'JOD',
+                'ledger_account_id' => $jodLedger->id,
+                'is_active' => true,
+                'created_by' => $this->user->id,
+            ]);
 
-        $jodWarehouse = Warehouse::create([
-            'company_id' => $jodCompany->id,
-            'code' => 'WH-JOD',
-            'name_ar' => 'مستودع عمان',
-            'name_en' => 'Amman Warehouse',
-            'active' => true,
-            'is_default' => true,
-            'created_by' => $this->user->id,
-        ]);
+            $jodWarehouse = Warehouse::create([
+                'company_id' => $jodCompany->id,
+                'code' => 'WH-JOD',
+                'name_ar' => 'مستودع عمان',
+                'name_en' => 'Amman Warehouse',
+                'active' => true,
+                'is_default' => true,
+                'created_by' => $this->user->id,
+            ]);
 
-        $jodCustomer = Customer::create([
-            'company_id' => $jodCompany->id,
-            'code' => 'CUST-JOD',
-            'name_ar' => 'عميل عمان',
-            'name_en' => 'Amman Customer',
-            'status' => 'active',
-            'created_by' => $this->user->id,
-        ]);
+            $jodCustomer = Customer::create([
+                'company_id' => $jodCompany->id,
+                'code' => 'CUST-JOD',
+                'name_ar' => 'عميل عمان',
+                'name_en' => 'Amman Customer',
+                'status' => 'active',
+                'created_by' => $this->user->id,
+            ]);
 
-        CompanyMobileSetting::create([
-            'company_id' => $jodCompany->id,
-            'walk_in_customer_id' => $jodCustomer->id,
-            'approved_cash_account_id' => $jodCash->id,
-            'default_warehouse_id' => $jodWarehouse->id,
-            'default_tax_rate_id' => null,
-            'offline_policy_enabled' => false,
-            'offline_cash_only' => true,
-            'max_offline_hours' => 12,
-            'max_offline_sales_count' => 50,
-            'max_offline_total_amount' => 5000,
-            'catalog_snapshot_version' => 'snap-jod-v1',
-        ]);
+            CompanyMobileSetting::create([
+                'company_id' => $jodCompany->id,
+                'walk_in_customer_id' => $jodCustomer->id,
+                'approved_cash_account_id' => $jodCash->id,
+                'default_warehouse_id' => $jodWarehouse->id,
+                'default_tax_rate_id' => null,
+                'offline_policy_enabled' => false,
+                'offline_cash_only' => true,
+                'max_offline_hours' => 12,
+                'max_offline_sales_count' => 50,
+                'max_offline_total_amount' => 5000,
+                'catalog_snapshot_version' => 'snap-jod-v1',
+            ]);
+        });
 
         $tokenJod = $this->issueToken($jodCompany);
         $responseJod = $this->withHeader('Authorization', "Bearer {$tokenJod}")
@@ -623,61 +625,63 @@ final class BootstrapTest extends TestCase
         setPermissionsTeamId($jpyCompany->id);
         $this->user->assignRole('Cashier');
 
-        $jpyLedger = LedgerAccount::create([
-            'company_id' => $jpyCompany->id,
-            'code' => '1012',
-            'name_ar' => 'صندوق ين',
-            'name_en' => 'JPY Cash Box',
-            'account_type' => LedgerAccount::TYPE_ASSET,
-            'normal_balance' => LedgerAccount::BALANCE_DEBIT,
-            'is_control' => false,
-            'is_system' => false,
-            'active' => true,
-        ]);
+        CompanyScope::executeWithoutScope(function () use ($jpyCompany): void {
+            $jpyLedger = LedgerAccount::create([
+                'company_id' => $jpyCompany->id,
+                'code' => '1012',
+                'name_ar' => 'صندوق ين',
+                'name_en' => 'JPY Cash Box',
+                'account_type' => LedgerAccount::TYPE_ASSET,
+                'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+                'is_control' => false,
+                'is_system' => false,
+                'active' => true,
+            ]);
 
-        $jpyCash = MoneyAccount::create([
-            'company_id' => $jpyCompany->id,
-            'account_type' => 'cash',
-            'name_ar' => 'صندوق رئيسي ين',
-            'name_en' => 'Main Cash JPY',
-            'currency_code' => 'JPY',
-            'ledger_account_id' => $jpyLedger->id,
-            'is_active' => true,
-            'created_by' => $this->user->id,
-        ]);
+            $jpyCash = MoneyAccount::create([
+                'company_id' => $jpyCompany->id,
+                'account_type' => 'cash',
+                'name_ar' => 'صندوق رئيسي ين',
+                'name_en' => 'Main Cash JPY',
+                'currency_code' => 'JPY',
+                'ledger_account_id' => $jpyLedger->id,
+                'is_active' => true,
+                'created_by' => $this->user->id,
+            ]);
 
-        $jpyWarehouse = Warehouse::create([
-            'company_id' => $jpyCompany->id,
-            'code' => 'WH-JPY',
-            'name_ar' => 'مستودع طوكيو',
-            'name_en' => 'Tokyo Warehouse',
-            'active' => true,
-            'is_default' => true,
-            'created_by' => $this->user->id,
-        ]);
+            $jpyWarehouse = Warehouse::create([
+                'company_id' => $jpyCompany->id,
+                'code' => 'WH-JPY',
+                'name_ar' => 'مستودع طوكيو',
+                'name_en' => 'Tokyo Warehouse',
+                'active' => true,
+                'is_default' => true,
+                'created_by' => $this->user->id,
+            ]);
 
-        $jpyCustomer = Customer::create([
-            'company_id' => $jpyCompany->id,
-            'code' => 'CUST-JPY',
-            'name_ar' => 'عميل طوكيو',
-            'name_en' => 'Tokyo Customer',
-            'status' => 'active',
-            'created_by' => $this->user->id,
-        ]);
+            $jpyCustomer = Customer::create([
+                'company_id' => $jpyCompany->id,
+                'code' => 'CUST-JPY',
+                'name_ar' => 'عميل طوكيو',
+                'name_en' => 'Tokyo Customer',
+                'status' => 'active',
+                'created_by' => $this->user->id,
+            ]);
 
-        CompanyMobileSetting::create([
-            'company_id' => $jpyCompany->id,
-            'walk_in_customer_id' => $jpyCustomer->id,
-            'approved_cash_account_id' => $jpyCash->id,
-            'default_warehouse_id' => $jpyWarehouse->id,
-            'default_tax_rate_id' => null,
-            'offline_policy_enabled' => false,
-            'offline_cash_only' => true,
-            'max_offline_hours' => 12,
-            'max_offline_sales_count' => 50,
-            'max_offline_total_amount' => 5000,
-            'catalog_snapshot_version' => 'snap-jpy-v1',
-        ]);
+            CompanyMobileSetting::create([
+                'company_id' => $jpyCompany->id,
+                'walk_in_customer_id' => $jpyCustomer->id,
+                'approved_cash_account_id' => $jpyCash->id,
+                'default_warehouse_id' => $jpyWarehouse->id,
+                'default_tax_rate_id' => null,
+                'offline_policy_enabled' => false,
+                'offline_cash_only' => true,
+                'max_offline_hours' => 12,
+                'max_offline_sales_count' => 50,
+                'max_offline_total_amount' => 5000,
+                'catalog_snapshot_version' => 'snap-jpy-v1',
+            ]);
+        });
 
         $tokenJpy = $this->issueToken($jpyCompany);
         $responseJpy = $this->withHeader('Authorization', "Bearer {$tokenJpy}")

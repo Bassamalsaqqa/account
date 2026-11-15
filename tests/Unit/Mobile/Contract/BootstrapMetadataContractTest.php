@@ -7,6 +7,7 @@ namespace Tests\Unit\Mobile\Contract;
 use App\Http\Controllers\Api\Mobile\V1\BootstrapController;
 use App\Models\Company;
 use App\Models\User;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\Contract\Revision3\Exceptions\IntentProfileValidationException;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\WireResponse;
