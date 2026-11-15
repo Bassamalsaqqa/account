@@ -13,6 +13,8 @@ Following Root's suspension of execution authority and directives regarding unau
 
 All ad-hoc scratch scripts have been retired/quarantined and replaced with **ONE repo-tracked, reviewable operator driver** (`tests/Support/Harness/supervised-paired-drill-operator.py`). In addition, the path resolution defect in `tests/Support/Harness/root-operator-tool.py` has been resolved, hardcoded commit pins have been completely eradicated, protected active development lanes are unconditionally refused, and strict dual-repo state capture is enforced before any operations.
 
+Android Root has completed the setup of the dedicated, separate T3-bound peer worktree at `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13` on branch `t3/android-qualified-basic-peer-c8dda700` (`attached: TRUE`). A private persistent binding record has been established and hashed at `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json`.
+
 Unit test coverage in `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` was expanded from 45 to 51 tests to verify all new adversarial constraints. All authored tests remain **strictly unrun** (`testsAUTHOREDUNRUN`) pending Root review and explicit QA grant.
 
 ---
@@ -107,30 +109,40 @@ All components verified in the backend worktree at HEAD:
 
 ---
 
-## 5. Historical Untracked File Status & Disclaimer
+## 5. T3-Bound Verified Peer Binding Record & Provenance
 
+Android Root has completed the setup and verification of the dedicated T3-bound peer worktree:
+- **Worktree Directory:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
+- **Branch:** `t3/android-qualified-basic-peer-c8dda700`
+- **Attached:** `TRUE` (T3 Android supervisor thread moved via handoff, `baseRef: local c8`, `startFromOrigin: false`, `runSetup: false`, `no new agent`)
+- **Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c` (clean/pub)
+- **Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
+- **Root 203 Source/Build Wrapper Hashmap SHA:** `9613771bf4701b3694d83a7e5caeee642fc4d246356f7e7520bef09fecdaf846`
+- **Publication vs. Executable Delta:** 10 docs-only commits between `c8` and `5f`.
+- **Selection Difference Audit:** Root verified an expanded selection of **204 files** with **0 mismatch vs. `5f` git objects**. This expanded 204-file selection is distinguished from the historical 203 source/build wrapper selection.
+- **Protected Active Lane:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-7ac8b73d-abb5d6e52b3b3cf9` remains the protected active writer lane, untouched and permanently disallowed as a paired execution target.
+- **Private Binding Record:** Persisted at `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json` (SHA-256: `9819d6d20f853d33811533f49b183bf40986f21979225dce7a0f1c08c8c830ff`, mode `0600`, directory mode `0700`).
+
+### Historical Untracked File Status Disclaimer
 As observed by Root during reflog analysis, all 203 tracked source and build files at `a29` commit object match Root-observed tree hash `6173250b9c5f29a3d26c87e99830588dd48c8aee8ab0dbc8956bcd8aa923a1c9`. Furthermore, git commit objects `a29a10d`, `4a59258`, and `fd26808` are confirmed intact in the Android repository object store.
 
-**Disclaimer Regarding Historical Untracked Loss:**  
 While tracked git object integrity is fully proven, whether any untracked or uncommitted work in the Android repository was affected during the historical unauthorized checkout prior to PRE attestation cannot be proven retrospectively. The presence of untracked directories (such as `attempt-1/` and user asset slices) proves that untracked directories were not universally obliterated, but does NOT constitute proof of zero historical untracked file loss.
-
-All operator tools now strictly forbid any command that could mutate worktree files or checkouts.
 
 ---
 
-## 6. Authoritative Next Argv for New Accepted Peer Pins
+## 6. Authoritative Next Argv for Verified T3-Bound Peer Pins
 
-When Root approves paired execution with the new accepted peer pins:
-- **Accepted Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c`
-- **Accepted Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
-- **Target Android Worktree:** An isolated, non-`7ac8` worktree approved by Root (e.g. `/home/t3dev/.t3/worktrees/small-trader-android/t3-c8dda700-isolated`)
+When Root grants execution authority for the verified peer:
+- **Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c`
+- **Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
+- **Target Android Worktree:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
 
 ### 6.1 Phase B Compile-Only Prewarm Command
 ```bash
 python3 tests/Support/Harness/supervised-paired-drill-operator.py \
   --output-dir=/home/t3dev/.t3/userdata/attachments/prewarm-c8dda700-$(date +%s) \
   --backend-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
-  --android-dir=/path/to/isolated/android-c8dda700 \
+  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
   --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
   --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
   --prewarm-only \
@@ -142,7 +154,7 @@ python3 tests/Support/Harness/supervised-paired-drill-operator.py \
 ```bash
 python3 tests/Support/Harness/root-operator-tool.py prepare \
   --repo-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
-  --android-dir=/path/to/isolated/android-c8dda700 \
+  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
   --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
   --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
   --output-dir=/home/t3dev/.t3/userdata/attachments/drill-c8dda700-$(date +%s) \
@@ -151,9 +163,10 @@ python3 tests/Support/Harness/root-operator-tool.py prepare \
 
 ---
 
-## 7. Status & Stand-Down
+## 7. Operational Scope & Stand-Down
 
-- All syntax checks pass (`python3 -m py_compile`, `bash -n`, `php -l`).
-- Zero background jobs, daemons, or listeners active.
-- Execution authority remains **SUSPENDED**.
+- **Operational Acceptance:** Standalone 124 / source accepted ONLY. No production cash endpoints or live financial execution permitted.
+- **Execution Authority:** Remains **SUSPENDED**. No Gradle commands, setup steps, databases, TLS listeners, or test suites have been executed.
+- **Syntax Validation:** All files pass static compilation (`python3 -m py_compile`, `bash -n`, `php -l`).
+- **Zero Active Jobs:** No background processes, daemons, or listeners active.
 - Standing down for Root review and instructions.
