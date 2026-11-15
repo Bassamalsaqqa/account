@@ -316,3 +316,108 @@ All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qu
 - **Lease Status**: **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
 - **DOCS ONLY Publish**: No unrequested source fixes bundled into docs handback. Root next source fix separately.
 
+---
+
+### 10. Phase 4 Bounded Qualification Attempt & Outcome (`264fd8a7850ae4d7da2f05f73b20e6be5df808d3`)
+
+**Execution Date**: 2026-11-15T07:54:19+02:00  
+**Branch**: `t3/recover-cash-writer`  
+**Execution HEAD**: `264fd8a7850ae4d7da2f05f73b20e6be5df808d3`  
+**Lease**: `ONE exclusive owned 3342 Phase 4 DB attempt` (RELEASED IMMEDIATELY)  
+**Outcome**: `FAILED` (Exit code: 1, Stop on FIRST failure, NO autofix/retry)  
+**Elapsed Runtime**: `4.4230s` (Subprocess PID: `1500088`)  
+**Teardown**: Owned schema dropped, independent absence verified (`ABSENCE_CONFIRMED`)
+
+#### 10.1 Invariant & Source Integrity Verification (PRE & POST)
+Pre- and post-execution source hashes match strictly across all components:
+- `tests/Support/Harness/disposable-db-qualification-runner.php`: `3c36900200c7bae7cdcc4f5daeaf2ddbdbefda72d19e4986068d3922a170e996`
+- `tests/Support/Harness/DisposableFinancialPostRunInspector.php`: `4f419bef5aed7352230b1d54934a40f6cabebb912eb8ed771604473869954550`
+- `tests/Support/Harness/DisposableMobileV2BackendHarness.php`: `271eb8c30e1d86a636fb8eaab46b7426fbcf84f8d009f8ad7b18d5d6bf43f12c`
+- `tests/Support/DisposableMariaDbSchema.php`: `ac69d1e6f0875eff250ce1fd688f47fbb95162dcd081f33f889ebf1fc184c352`
+- `docs/integration/mobile-v2-client-handoff-schema.json`: `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275`
+- `tests/Support/Harness/fixtures/golden-provenance-manifest.json`: `2135861348655859da9ef4f232cbb1b3ba87debce0b9806340df62bce0476f08`
+- `tests/Support/Harness/fixtures/synthetic-financial-golden-wire.json`: `25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6`
+- `tests/Support/Harness/fixtures/synthetic-financial-golden-wrapper.json`: `7458f05b57fe149beec9e26ebec77015b45f2acfcc428687f10c216f80f1592d`
+- `docs/integration/mobile-v2-integration-manifest.json`: `c53ccd90bca5dbe34b7ab6191f332a8e8b84de0869e8b060623d980e2759f78a`
+- `app/Actions/Company/CreateCompanyAction.php`: `fa2f38cb99780e4c635c7a3f72d77c8832265c9aaacf366a8ee88853ceff26b5`
+- **Working Tree State**: Clean (`git status --porcelain` empty).
+- **Production Diff**: `git diff 6981511405d7bcd04cd8f8a09e64443ce0aaf47e -- app routes config composer.lock` => 0 bytes.
+
+#### 10.2 Major Milestones Successfully Verified in Phase 4
+1. **Pre-checks**:
+   - `proof_refusal`: **PASS** (`Disposable schema ownership proof is required. Use the isolated runner.`)
+   - `invalid_schema_refusal`: **PASS** (`Inspector refused: invalid disposable schema name 'invalid_schema_name'.`)
+   - `child_env_propagation`: **PASS** (`Synthetic child process validated testSettings and assertPrimarySchema under explicit environment without DB socket.`)
+2. **Schema Lifecycle & Migrations**:
+   - Schema created: `accounting_p8_tmp_3a758a5c6e0b` on `127.0.0.1:3342`.
+   - Full migrations executed cleanly in ~3 seconds via Symfony process with propagated credentials: **PASS**.
+3. **Canonical Foundation Fixture**:
+   - `CreateCompanyAction` created canonical `company_id = 1` with initial roles and permissions: **PASS**.
+4. **Ambient Connection Sentinel**:
+   - Default connection poisoned to `127.0.0.1:1` / `poison_sentinel_unconnectable`.
+   - Interceptor active: **0** ambient dials recorded (`ambient_connection_attempts: 0`): **PASS**.
+5. **Statement Timeout Verification**:
+   - `DisposableFinancialPostRunInspector::configureStatementTimeout($dedicatedPdo, 5)` verified by querying `SELECT @@session.max_statement_time`: returned `5.000000` seconds: **PASS**.
+6. **Server-Enforced Read-Only Denial (`read_only_proof: VERIFIED`)**:
+   - `server_version`: `"10.11.18-MariaDB-0+deb12u1"`
+   - Ordinary InnoDB probe table `_disposable_ro_probe` created and initial value `(1, 'initial')` inserted: **PASS**.
+   - `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`: **PASS** (`transaction_start_success: true`).
+   - Probe read within snapshot returned `'initial'`: **PASS**.
+   - Attempted `UPDATE _disposable_ro_probe SET val = 'mutated' WHERE id = 1`:
+     - Driver rejection: `errorInfo[1] === 1792` AND `SQLSTATE errorInfo[0] === '25006'` (**VERIFIED EXACT SERVER CODES**).
+     - Message: `"SQLSTATE[25006]: Read only sql transaction: 1792 Cannot execute statement in a READ ONLY transaction"`.
+   - Row value verified inside transaction after denial: returned `'initial'`: **PASS**.
+   - Transaction rolled back; row value verified via independent query: returned `'initial'`: **PASS**.
+   - Probe table dropped cleanly: **PASS**.
+7. **Pre-Reconciliation Baseline Captured**:
+   - Full baseline query executed cleanly across all entities for `company_id = 1`:
+     - `sales_invoices`: 0
+     - `sales_invoice_lines`: 0
+     - `sales_invoice_lot_allocations`: 0
+     - `customer_payments`: 0
+     - `customer_payment_allocations`: 0
+     - `mobile_event_receipts`: 0
+     - `stock_movements`: 0 (qty sum exact `"0.000000"`)
+     - `posting_batches`: 0
+     - `posting_lines`: 0
+     - `document_sequences`: all 12 sequence keys initialized to next number 1.
+
+#### 10.3 First Failure Encountered (Reconciler Dependency `[auth]`)
+- At Step 11 (`runSixReconciliations`), one of the reconciliation services invoked `auth()` or depended on the Laravel authentication manager:
+  ```
+  Target class [auth] does not exist.
+  ```
+- **Root Cause**: The isolated runner boots a minimal CLI kernel for qualification speed and isolation. The Laravel `AuthServiceProvider` is not registered in the minimal container, causing container resolution to throw `BindingResolutionException: Target class [auth] does not exist` when reconciliation services access authentication context.
+- **Truthful Status Reporting**:
+  - `read_only_proof.status`: **`VERIFIED`** (all 7 proof conditions satisfied).
+  - `pre_baseline`: Populated with actual zero-delta metrics.
+  - `post_baseline`: `null`.
+  - `baseline_comparison.status`: **`NOT_RUN`**.
+  - `six_reconcilers_status`: **`NOT_RUN`**.
+  - `six_reconciler_results`: `null`.
+- **Enforcement**: STOP ON FIRST FAILURE enforced immediately. `qualification_status = "FAILED"`, `exit_code = 1`. No autofix, retry, or mid-run adjustments.
+
+#### 10.4 Teardown & Absence Verification
+1. **Internal Synchronous Teardown**:
+   - The runner's `finally` block dropped `accounting_p8_tmp_3a758a5c6e0b`.
+2. **External Watchdog Independent Absence Query**:
+   - Executed `SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'accounting_p8_tmp_3a758a5c6e0b'` against MariaDB port 3342.
+   - Returned `0` rows (**`ABSENCE_CONFIRMED`**). Zero schema leakage.
+3. **Process Hierarchy**:
+   - Subprocess PID `1500088` and all migration workers cleanly exited and were reaped in `4.4230s`. Zero dangling processes.
+
+#### 10.5 Phase 4 Retained Artifacts & Hashes
+All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qualification_phase4_2be4f397/` (dir `0700`, files `0600`):
+- `admin_credentials.json`: `bab71f831ab1d27c91376f79e221a1f118355b21f9d61f39e26709e3bf9219e8`
+- `pre_source_hashes.json`: `11d2ed99e241cf2f1bcd1efc6593d1cd64b572a16d57a4a8fcddb5ec7ded290a`
+- `post_source_hashes.json`: `11d2ed99e241cf2f1bcd1efc6593d1cd64b572a16d57a4a8fcddb5ec7ded290a`
+- `raw_stderr.log`: `888788df5bb2f093fbb467447c59442946e239a161c511244bdcbb0807a98b11`
+- `raw_stdout.log`: `b6fd268c8a0c3d778730e5649c4b3c822fe91dbbc71ca4646da45e3e52356fec`
+- `runner_output.json`: `b6fd268c8a0c3d778730e5649c4b3c822fe91dbbc71ca4646da45e3e52356fec`
+- `watchdog_audit.json`: `c7886d30817e7bc36b160bd2836112e5940de629d470390a918ab173131c4dce`
+- `watchdog_runner_phase4.py`: `354f894d0d900de81989adc279fef819d21078d80cbf255f257b0393a48ab78d`
+
+#### 10.6 Stand Down & Lease Release
+- **Lease Status**: **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
+- **DOCS ONLY Publish**: No unrequested source fixes bundled into docs handback. Root next source fix separately.
+
