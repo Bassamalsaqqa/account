@@ -4254,8 +4254,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db(): void
     {
-        $prevContainer = \Illuminate\Container\Container::getInstance();
-        $prevFacadeApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
+        $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
+        $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
 
         try {
             // Simulate bare CLI context: container and facades cleared
@@ -4285,11 +4285,158 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         } finally {
             \Illuminate\Container\Container::setInstance($prevContainer);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
-            if ($prevFacadeApp !== null) {
-                \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
+        }
+    }
+
+    #[Test]
+    public function test_run_six_reconciliations_restores_bare_context_on_denied_execution_gates(): void
+    {
+        $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
+        $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+
+        try {
+            // 1. Establish bare context: container and facades cleared
+            \Illuminate\Container\Container::setInstance(null);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication(null);
+
+            $this->assertNull((new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+            $this->assertNull((new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
+
+            // 2. Invoke actual runSixReconciliations with denied execution gates (invalid schema name)
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::runSixReconciliations(
+                    1,
+                    'denied_invalid_schema_name'
+                );
+                $this->fail('Expected runSixReconciliations to fail closed on denied execution gates.');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('invalid disposable schema name', $e->getMessage());
             }
+
+            // 3. Assert bare context is fully restored in finally
+            $this->assertNull((new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+            $this->assertNull((new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
+        } finally {
+            \Illuminate\Container\Container::setInstance($prevContainer);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
+        }
+    }
+
+    #[Test]
+    public function test_run_six_reconciliations_preserves_partially_configured_caller_application_on_failure(): void
+    {
+        $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
+        $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+
+        $appDir = dirname(__DIR__, 4);
+        $callerApp = new \Illuminate\Foundation\Application($appDir);
+        $callerApp['env'] = 'testing';
+
+        // Configure caller config
+        $configRepo = new \Illuminate\Config\Repository([
+            'caller_custom_key' => 'caller_custom_val_123',
+            'cache' => [
+                'default' => 'array',
+                'stores' => ['array' => ['driver' => 'array', 'serialize' => false]],
+            ],
+            'permission' => require $appDir.'/config/permission.php',
+        ]);
+        $callerApp->instance('config', $configRepo);
+
+        // Configure caller auth
+        $customAuth = new \stdClass();
+        $callerApp->instance('auth', $customAuth);
+
+        // Configure caller cache
+        $cacheManager = new \Illuminate\Cache\CacheManager($callerApp);
+        $callerApp->instance('cache', $cacheManager);
+        $callerApp->instance(\Illuminate\Contracts\Cache\Factory::class, $cacheManager);
+        $callerApp->instance(\Illuminate\Cache\CacheManager::class, $cacheManager);
+
+        // Bind PermissionRegistrar and set non-null team
+        $callerApp->singleton(\Spatie\Permission\PermissionRegistrar::class);
+        $callerApp->make(\Spatie\Permission\PermissionRegistrar::class)->setPermissionsTeamId(777);
+
+        try {
+            \Illuminate\Container\Container::setInstance($callerApp);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($callerApp);
+
+            // Resolve a facade to cache resolved instance
+            $this->assertSame('caller_custom_val_123', \Illuminate\Support\Facades\Config::get('caller_custom_key'));
+            $this->assertSame(777, getPermissionsTeamId());
+
+            $facadeResolvedRef = new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'resolvedInstance');
+            $this->assertArrayHasKey('config', $facadeResolvedRef->getValue());
+
+            // Invoke actual runSixReconciliations with denied execution gates
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::runSixReconciliations(
+                    1,
+                    'denied_invalid_schema_name'
+                );
+                $this->fail('Expected runSixReconciliations to fail closed on denied execution gates.');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('invalid disposable schema name', $e->getMessage());
+            }
+
+            // Assert caller context is completely preserved and unchanged
+            $this->assertSame($callerApp, (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+            $this->assertSame($callerApp, (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
+            $this->assertSame('caller_custom_val_123', $callerApp->make('config')->get('caller_custom_key'));
+            $this->assertSame($customAuth, $callerApp->make('auth'));
+            $this->assertSame($cacheManager, $callerApp->make('cache'));
+            $this->assertSame(777, getPermissionsTeamId());
+            $this->assertArrayHasKey('config', $facadeResolvedRef->getValue());
+        } finally {
+            \Illuminate\Container\Container::setInstance($prevContainer);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
+        }
+    }
+
+    #[Test]
+    public function test_run_six_reconciliations_preserves_complete_caller_context_on_denied_execution_gates(): void
+    {
+        $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
+        $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+
+        $appDir = dirname(__DIR__, 4);
+        $completeApp = new \Illuminate\Foundation\Application($appDir);
+        $completeApp['env'] = 'testing';
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedContainerServices($completeApp);
+        $completeApp->make(\Spatie\Permission\PermissionRegistrar::class)->setPermissionsTeamId(888);
+
+        try {
+            \Illuminate\Container\Container::setInstance($completeApp);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($completeApp);
+
+            $this->assertSame(888, getPermissionsTeamId());
+
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::runSixReconciliations(
+                    1,
+                    'denied_invalid_schema_name'
+                );
+                $this->fail('Expected runSixReconciliations to fail closed on denied execution gates.');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('invalid disposable schema name', $e->getMessage());
+            }
+
+            $this->assertSame($completeApp, (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+            $this->assertSame($completeApp, (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
+            $this->assertSame(888, getPermissionsTeamId());
+        } finally {
+            \Illuminate\Container\Container::setInstance($prevContainer);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
         }
     }
 }
+
 
 

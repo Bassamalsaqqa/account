@@ -393,7 +393,6 @@ if ($isInspectDelta) {
 // Action 5: Run 6 Reconciliations (Safe isolated container, autoload only, NO Kernel bootstrap)
 if ($isReconcile) {
     try {
-        DisposableFinancialPostRunInspector::ensureStandaloneBootstrapDependencyClosure();
         $reconcileResult = DisposableFinancialPostRunInspector::runSixReconciliations($companyId, $schemaName);
 
         $outJson = json_encode($reconcileResult, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

@@ -131,12 +131,12 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
 | `tests/Support/Harness/supervised-financial-drill.php` | `4444ed463500c7dc63383ac3c1d055534fc18dedc7643fe023a4ac6f63ae8723` | Supervisor CLI Driver |
 | `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `7fcf73a3c55940aa484464a56078506cb9faa15b22656750d88923dc3d90b3cc` | Fixture Harness |
-| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `0613d2f202008ccf70440922af3ae0202596e9d5de12d834b547244218a0b312` | Post-Run Inspector |
-| `tests/Support/Harness/financial-inspector-cli.php` | `dd90bc1ff196d9b696973c87073121b551e1a5034c04c83dfa21c8178f1822bf` | Post-Run Inspector CLI |
+| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `f029f9bd18d896c1d1cd5456b1211772fe26479315f19eb3f8de3f3820b74b57` | Post-Run Inspector |
+| `tests/Support/Harness/financial-inspector-cli.php` | `46d4e38151d8d06f7e79aa13b3c654825b486f5b60a583420eecbcb673d42811` | Post-Run Inspector CLI |
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7` | Artisan Command |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
-| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `e353e0daa24819e6679ec8b2448e34504efb1e2d3c843d492d5060af4c1f559e` | Guard Test Suite |
+| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `0f99bb2450fa7ac97691a564c58e53fbba936cbce18a72e35617d493a0c3098a` | Guard Test Suite |
 | `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `8255528f48a7e0710169523cab6ec5ecb2a2eacee593391ed804d009ae9dbfc8` | Python Unit Suite (30 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
@@ -725,14 +725,19 @@ Despite JVM and delta inspection success, FULL acceptance was **NOT ACHIEVED**:
 
 ### 15.6 Narrow Source-Only Fix (Applied)
 To resolve the CLI dependency closure cleanly before Root's next invocation:
-1. Provided standalone bootstrap dependency closure via `DisposableFinancialPostRunInspector::ensureStandaloneBootstrapDependencyClosure()`:
-   - Binds an explicit minimal `Application` container with sessionless auth, array cache, and singleton `PermissionRegistrar`, explicitly binding `\Illuminate\Cache\CacheManager::class` and `\Illuminate\Contracts\Cache\Factory::class`.
-   - Preserves caller's existing application, team ID, and facades when already bound (idempotent).
-   - Retains strict fail-closed exception handling around `getPermissionsTeamId()` (no exception masking or skipping).
-   - Ambience / owned PDO only, with zero weakening of economic core or security flags.
-   - Chained at the top of `runSixReconciliations()` and invoked explicitly prior to reconciliation execution in `financial-inspector-cli.php`.
-2. Added real CLI (no DB) dependency construction regression test in `DisposableMobileV2BackendHarnessGuardTest.php`:
-   - `test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db()` verifies that in a bare CLI environment with cleared container and facades, `ensureStandaloneBootstrapDependencyClosure()` constructs an `Application` instance, binds array cache and Spatie `PermissionRegistrar`, allows `getPermissionsTeamId()` to resolve cleanly to `null` without throwing `CacheManager` resolution exceptions, enforces isolation defaults (`cache.default = 'array'`, `database.default = 'disposable_inspector'`), and maintains strict idempotency.
+1. Corrected caller context preservation lifecycle in `DisposableFinancialPostRunInspector::runSixReconciliations()`:
+   - Captures exact original global container instance (`Container::$instance` via reflection), facade application (`Facade::$app`), resolved facade instances (`Facade::$resolvedInstance`), and Eloquent model connection resolver **BEFORE** any mutation or container construction.
+   - For existing caller `Application` instances (including partially configured callers with custom config, auth, cache, resolved facades, or non-null team ID), snapshots `$previousTeamId` using caller's application without overwriting or mutating caller's container bindings, environment, or facades.
+   - For bare CLI contexts (`Container::$instance` is `null` or a generic Container), establishes an isolated temporary bootstrap container (`createIsolatedBootstrapApplication()`) to resolve `PermissionRegistrar` dependencies without treating it as the caller application and without mutating ambient global state.
+   - Removed duplicate eager `ensureStandaloneBootstrapDependencyClosure()` call from `financial-inspector-cli.php` to prevent premature global container replacement before `runSixReconciliations` captures original caller state.
+   - Strict fail-closed exception handling around `getPermissionsTeamId()` retained unchanged (no exception masking or skipping).
+   - In `finally`, unconditionally restores exact previous global container (including `null`), facade application (including `null`), resolved facade instances, model connection resolver, and caller permission team ID (only on existing caller Application).
+   - Flushes both isolated execution application and temporary bare bootstrap application.
+2. Authored 4 comprehensive real no-DB regression tests in `DisposableMobileV2BackendHarnessGuardTest.php`:
+   - `test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db()`: asserts real `CacheManager` with parameter `$app` and Spatie `PermissionRegistrar` resolution without exceptions, enforcing isolation defaults (`cache.default = 'array'`, `database.default = 'disposable_inspector'`) and restoring `null` facade application.
+   - `test_run_six_reconciliations_restores_bare_context_on_denied_execution_gates()`: verifies that when called from a bare CLI context (`null` container, `null` facade app) with denied execution gates, the bare context is fully and cleanly restored in `finally`.
+   - `test_run_six_reconciliations_preserves_partially_configured_caller_application_on_failure()`: verifies that a real caller `Application` configured with custom config, auth, cache, resolved facades, and non-null Spatie team ID (`777`) remains 100% unchanged across execution gate failure.
+   - `test_run_six_reconciliations_preserves_complete_caller_context_on_denied_execution_gates()`: verifies complete caller application context and team ID (`888`) remain intact across execution gate failure.
 3. Tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
 
 

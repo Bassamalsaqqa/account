@@ -997,34 +997,39 @@ final class DisposableFinancialPostRunInspector
     }
 
     /**
+    /**
+     * Creates an isolated minimal Application container with sessionless auth,
+     * array cache, and singleton PermissionRegistrar, without mutating the ambient global container.
+     */
+    public static function createIsolatedBootstrapApplication(): \Illuminate\Foundation\Application
+    {
+        $appDir = dirname(__DIR__, 3);
+        $app = new \Illuminate\Foundation\Application($appDir);
+        $app['env'] = 'testing';
+
+        self::bindIsolatedContainerServices($app);
+
+        return $app;
+    }
+
+    /**
      * Ensures minimal standalone CLI bootstrap dependency closure before Spatie permission team snapshot.
      * Preserves caller's existing application, team ID, and facades when already bound.
-     * In a bare CLI context, binds an explicit minimal Application container with sessionless auth,
-     * array cache, and singleton PermissionRegistrar, without touching default DB or economic core flags.
+     * If Container::$instance is null or bare generic Container, sets an isolated Application instance.
+     * Never overwrites partially configured caller Application bindings.
      */
     public static function ensureStandaloneBootstrapDependencyClosure(): void
     {
         $container = \Illuminate\Container\Container::getInstance();
-        if ($container instanceof \Illuminate\Foundation\Application
-            && $container->bound('cache')
-            && $container->bound(\Spatie\Permission\PermissionRegistrar::class)
-        ) {
-            // Preserves caller's existing application, team ID, and facades
+        if ($container instanceof \Illuminate\Foundation\Application) {
+            // Preserves caller's existing application, team ID, and facades intact
             return;
         }
 
-        $appDir = dirname(__DIR__, 3);
-        $app = ($container instanceof \Illuminate\Foundation\Application)
-            ? $container
-            : new \Illuminate\Foundation\Application($appDir);
-
-        $app['env'] = 'testing';
-
+        $app = self::createIsolatedBootstrapApplication();
         \Illuminate\Container\Container::setInstance($app);
         \Illuminate\Support\Facades\Facade::clearResolvedInstances();
         \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
-
-        self::bindIsolatedContainerServices($app);
     }
 
     /**
@@ -1071,22 +1076,42 @@ final class DisposableFinancialPostRunInspector
      */
     public static function runSixReconciliations(Company|int $companyOrId, string $expectedSchemaName): array
     {
-        self::ensureStandaloneBootstrapDependencyClosure();
+        // 1. Capture exact original global container instance (without triggering auto-instantiation)
+        $containerInstanceRef = new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance');
+        $previousGlobalContainer = $containerInstanceRef->getValue();
 
-        $previousGlobalContainer = \Illuminate\Container\Container::getInstance();
-        $previousApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
-        $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
+        // 2. Capture exact original facade application
+        $facadeAppRef = new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app');
+        $previousApp = $facadeAppRef->getValue();
 
-        // Snapshot caller's resolved facade instances
+        // 3. Capture exact original resolved facade instances
         $facadeResolvedRef = new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'resolvedInstance');
         $previousResolvedInstances = $facadeResolvedRef->getValue();
 
+        // 4. Capture exact original model connection resolver
+        $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
+
+        // 5. Snapshot caller permission team state BEFORE any mutation
         $hasSnapshottedTeamId = false;
         $previousTeamId = null;
+        $bareBootstrapApp = null;
+
         if (function_exists('getPermissionsTeamId')) {
             try {
-                $previousTeamId = getPermissionsTeamId();
-                $hasSnapshottedTeamId = true;
+                if ($previousGlobalContainer instanceof \Illuminate\Foundation\Application) {
+                    // Caller is an existing Application: snapshot team ID using caller's application
+                    // without mutating caller's container bindings or facades.
+                    $previousTeamId = getPermissionsTeamId();
+                    $hasSnapshottedTeamId = true;
+                } else {
+                    // Bare CLI context (Container::$instance is null or bare generic Container):
+                    // Establish an isolated temporary bootstrap container to resolve registrar
+                    // without treating it as caller application and without mutating original global state.
+                    $bareBootstrapApp = self::createIsolatedBootstrapApplication();
+                    $registrar = $bareBootstrapApp->make(\Spatie\Permission\PermissionRegistrar::class);
+                    $previousTeamId = $registrar->getPermissionsTeamId();
+                    $hasSnapshottedTeamId = true;
+                }
             } catch (\Throwable $e) {
                 // Fail-closed before changing global state
                 throw new \RuntimeException('Failed to snapshot caller permission team ID: '.$e->getMessage(), previous: $e);
@@ -1106,16 +1131,13 @@ final class DisposableFinancialPostRunInspector
             $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
 
             // Minimal isolated container: autoload only, no full service providers, sessions, or background jobs.
-            $appDir = dirname(__DIR__, 3);
-            $app = new \Illuminate\Foundation\Application($appDir);
-            $app['env'] = 'testing';
-
-            self::bindIsolatedContainerServices($app);
+            $app = self::createIsolatedBootstrapApplication();
             $manager = self::bindIsolatedDatabaseManager($app, $pdo, $expectedSchemaName);
 
             // Clear caller cached facade instances BEFORE isolated facade use
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+            \Illuminate\Container\Container::setInstance($app);
             \Illuminate\Database\Eloquent\Model::setConnectionResolver($manager);
 
             // Assert strict isolation invariants
@@ -1244,11 +1266,9 @@ final class DisposableFinancialPostRunInspector
                 $cleanupExceptions[] = 'Facade application restoration failed: '.$e->getMessage();
             }
 
-            // 6. Restore exact previous global container
+            // 6. Restore exact previous global container (including null)
             try {
-                if ($previousGlobalContainer !== null) {
-                    \Illuminate\Container\Container::setInstance($previousGlobalContainer);
-                }
+                \Illuminate\Container\Container::setInstance($previousGlobalContainer);
             } catch (\Throwable $e) {
                 $cleanupExceptions[] = 'Global container restoration failed: '.$e->getMessage();
             }
@@ -1256,18 +1276,27 @@ final class DisposableFinancialPostRunInspector
             // 7. Restore exact previous permission team ID (without touching caller context or old guard/session)
             if ($hasSnapshottedTeamId && function_exists('setPermissionsTeamId')) {
                 try {
-                    setPermissionsTeamId($previousTeamId);
+                    if ($previousGlobalContainer instanceof \Illuminate\Foundation\Application) {
+                        setPermissionsTeamId($previousTeamId);
+                    }
                 } catch (\Throwable $e) {
                     $cleanupExceptions[] = 'Permission teamId restoration failed: '.$e->getMessage();
                 }
             }
 
-            // 8. Flush isolated application
+            // 8. Flush isolated applications
             if ($app instanceof \Illuminate\Foundation\Application) {
                 try {
                     $app->flush();
                 } catch (\Throwable $e) {
                     $cleanupExceptions[] = 'Isolated app flush failed: '.$e->getMessage();
+                }
+            }
+            if ($bareBootstrapApp instanceof \Illuminate\Foundation\Application) {
+                try {
+                    $bareBootstrapApp->flush();
+                } catch (\Throwable $e) {
+                    $cleanupExceptions[] = 'Bare bootstrap app flush failed: '.$e->getMessage();
                 }
             }
 
