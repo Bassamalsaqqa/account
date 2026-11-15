@@ -125,7 +125,7 @@ All components verified in the backend worktree at HEAD:
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
 | `tests/Support/Harness/root-operator-tool.py` | `9f6930b63dc3d267b4472b0432f392bc997f6746446c9920a1e5b012c5d3fc5c` | Tool (Python 3) |
-| `tests/Support/Harness/supervised-paired-drill-operator.py` | `90c18dc9e146f6a1e657fdb0632d049213fd6774c2d22a7d1657f4b44d3426ab` | Operator Driver |
+| `tests/Support/Harness/supervised-paired-drill-operator.py` | `65b094e6ed3573a915cf982893416b444a6509a1c41e6eef5cecc353320de499` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
@@ -136,48 +136,57 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `57a199b0fd04c11da09750da0e277a13b091d601cc9f9b7fe58db9013e97a9c2` | Python Unit Suite (23 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `089d7305c0db05a456ce1e7a6c5360b5939a0d840ca6fa90e74233ec24871050` | Python Unit Suite (26 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
 
 ## 5. T3-Bound Verified Peer Binding Record & Provenance
 
-Android Root has completed setup and verification of the dedicated T3-bound peer worktree:
-- **Worktree Directory:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
-- **Branch:** `t3/android-qualified-basic-peer-c8dda700`
-- **Attached:** `TRUE` (T3 Android supervisor thread moved via handoff, `baseRef: local c8`, `startFromOrigin: false`, `runSetup: false`, `spawnNewAgent: false`)
-- **Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c` (clean/pub)
-- **Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
-- **Root 203 Source/Build Wrapper Hashmap SHA:** `9613771bf4701b3694d83a7e5caeee642fc4d246356f7e7520bef09fecdaf846`
-- **Publication vs. Executable Delta:** 10 docs-only files between `c8` and `5f`.
-- **Selection Difference Audit:** Root verified an expanded selection of **204 files** with **0 mismatch vs. `5f` git objects**. This expanded 204-file selection is distinguished from the historical 203 source/build wrapper selection.
+### 5.1 Accepted Origin-Fix Peer Worktree (`t3-c2c97597...`)
+Following Attempt 4's endpoint security origin failure investigation, Root created, hermetically verified, and bound a new isolated Android worktree:
+- **Worktree Directory:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081`
+- **Branch:** `t3/verify-isolated-worktree`
+- **Attached:** `TRUE` (attached peer worktree with single-writer isolation)
+- **Publication HEAD:** `d43d2c200b4ccce1d7075aed759f51529375d307` (clean/pub)
+- **Executable HEAD:** `82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd`
+- **Root 203 Source/Build Wrapper Hashmap SHA:** `7daf6967a6951506ad47d4fa65d5b141020ddb4d97e29e5033c7b3d94c41e918`
+- **Root Expanded Selection Audit:** 204 files with **0 mismatch vs. `82` git objects**.
+- **Android Validation Status:** 50/50 hermetic origin PASS, production `main` unchanged at `5f`.
+- **Approved Docs Delta:** Exactly 8 documentation files under `docs/evidence/pr24-bootstrap-tax-status-recovery/`.
 - **Protected Active Lane:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-7ac8b73d-abb5d6e52b3b3cf9` remains the protected active writer lane, untouched and permanently disallowed as a paired execution target.
-- **Private Binding Record:** Persisted at `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json` (SHA-256: `a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c`, mode `0600`, directory mode `0700`).
+- **Private Binding Record:** Persisted at `/home/t3dev/.t3/userdata/attachments/peer_binding_d43_verified/binding.json` (SHA-256: `4bca66f1a4b246131beafa9bd087bb2710a722278d655d5a58f718a00fb9bd12`, mode `0600`, directory mode `0700`).
+
+### 5.2 Dynamic Binding & Source Parity Enforcement
+The operator driver (`supervised-paired-drill-operator.py`) enforces strict validation against this binding:
+1. Dynamic checkout branch resolution via `get_git_branch(android_dir)`, validating against `peer_android_branch` in binding.
+2. Dynamic parsing of `<N>_DOCS_ONLY_FILES` marker, requiring `len(approved_docs_delta_paths) == N`.
+3. Strict prefix and file extension validation on all approved delta paths (must start with `docs/` or `app/docs/`, no forbidden code extensions).
+4. Exact set equality comparison between `git diff --name-only pub_head exe_head` and `approved_docs_delta_paths`.
 
 ---
 
 ## 6. Authoritative Next Argv for Complete Workable Lifecycle
 
-When Root grants execution authority for the verified peer:
-- **Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c`
-- **Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
-- **Target Android Worktree:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
+When Root grants execution authority for the accepted origin-fix peer:
+- **Publication HEAD:** `d43d2c200b4ccce1d7075aed759f51529375d307`
+- **Executable HEAD:** `82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd`
+- **Target Android Worktree:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081`
 - **Backend Directory:** `/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision`
-- **Binding Record:** `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json`
-- **Expected Binding SHA:** `a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c`
+- **Binding Record:** `/home/t3dev/.t3/userdata/attachments/peer_binding_d43_verified/binding.json`
+- **Expected Binding SHA:** `4bca66f1a4b246131beafa9bd087bb2710a722278d655d5a58f718a00fb9bd12`
 
 ### 6.1 Phase B Compile-Only Prewarm Command
 ```bash
 python3 tests/Support/Harness/supervised-paired-drill-operator.py \
-  --output-dir=/home/t3dev/.t3/userdata/attachments/prewarm-c8dda700-$(date +%s) \
+  --output-dir=/home/t3dev/.t3/userdata/attachments/prewarm-d43d2c20-$(date +%s) \
   --backend-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
-  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
-  --expected-backend-head=b2b88a7d92aa4880149127d77c06bbef4f94a599 \
-  --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
-  --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
-  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
-  --expected-binding-sha=a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c \
+  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081 \
+  --expected-backend-head=fa70c31888e8847bf11af9f631c9471c58da149c \
+  --android-pub-head=d43d2c200b4ccce1d7075aed759f51529375d307 \
+  --android-exe-head=82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd \
+  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_d43_verified/binding.json \
+  --expected-binding-sha=4bca66f1a4b246131beafa9bd087bb2710a722278d655d5a58f718a00fb9bd12 \
   --prewarm-only \
   --offline \
   --timeout=180
@@ -186,14 +195,14 @@ python3 tests/Support/Harness/supervised-paired-drill-operator.py \
 ### 6.2 Full Paired Drill Preparation Witness Command
 ```bash
 python3 tests/Support/Harness/supervised-paired-drill-operator.py \
-  --output-dir=/home/t3dev/.t3/userdata/attachments/prep-c8dda700-$(date +%s) \
+  --output-dir=/home/t3dev/.t3/userdata/attachments/prep-d43d2c20-$(date +%s) \
   --backend-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
-  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
-  --expected-backend-head=b2b88a7d92aa4880149127d77c06bbef4f94a599 \
-  --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
-  --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
-  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
-  --expected-binding-sha=a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c \
+  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081 \
+  --expected-backend-head=fa70c31888e8847bf11af9f631c9471c58da149c \
+  --android-pub-head=d43d2c200b4ccce1d7075aed759f51529375d307 \
+  --android-exe-head=82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd \
+  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_d43_verified/binding.json \
+  --expected-binding-sha=4bca66f1a4b246131beafa9bd087bb2710a722278d655d5a58f718a00fb9bd12 \
   --prepare-only \
   --paired-hold=120
 ```
@@ -202,14 +211,14 @@ python3 tests/Support/Harness/supervised-paired-drill-operator.py \
 ```bash
 # Executed in a fresh, empty output directory with external manifest and approvals:
 python3 tests/Support/Harness/supervised-paired-drill-operator.py \
-  --output-dir=/home/t3dev/.t3/userdata/attachments/drill-c8dda700-$(date +%s) \
+  --output-dir=/home/t3dev/.t3/userdata/attachments/drill-d43d2c20-$(date +%s) \
   --backend-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
-  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
-  --expected-backend-head=b2b88a7d92aa4880149127d77c06bbef4f94a599 \
-  --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
-  --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
-  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
-  --expected-binding-sha=a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c \
+  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081 \
+  --expected-backend-head=fa70c31888e8847bf11af9f631c9471c58da149c \
+  --android-pub-head=d43d2c200b4ccce1d7075aed759f51529375d307 \
+  --android-exe-head=82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd \
+  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_d43_verified/binding.json \
+  --expected-binding-sha=4bca66f1a4b246131beafa9bd087bb2710a722278d655d5a58f718a00fb9bd12 \
   --manifest=/path/to/external/pairing-manifest.json \
   --manifest-sha=<64hex_sha> \
   --root-approval-file=/path/to/external/prestart.json \
@@ -501,5 +510,70 @@ To resolve this cleanly without compromising safety:
 - **Lease Status:** Released. No open listeners, ports, or background daemons active.
 - **Git State:** All git SHAs verified directly from repository object store (`fa70c31888e8847bf11af9f631c9471c58da149c`). No external git mutations.
 - Standing down for Android Root's source fix.
+
+---
+
+## 14. Origin-Fix Android Peer Transition & Exact Delta Verification
+
+### 14.1 Defect Resolution & Dedicated Isolated Worktree Setup
+Following the diagnostic analysis of Attempt 4 (where `EndpointSecurity.validateBaseOrigin` rejected `baseUrl` containing `/api/mobile/v2`), Android Root assigned the same writer lane to implement an exact, isolated source fix aligning origin vs. API path handling without weakening any security validation guards.
+
+Root completed setup and read-only verification of a new dedicated T3-bound peer worktree:
+- **Worktree Directory:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081`
+- **Branch:** `t3/verify-isolated-worktree`
+- **Publication HEAD:** `d43d2c200b4ccce1d7075aed759f51529375d307` (clean/pub)
+- **Executable HEAD:** `82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd`
+- **Android Validation:** 50/50 hermetic origin PASS, production `main` unchanged at `5f`.
+- **Source Hashmap:** Root 203 source/build wrapper hashmap SHA `7daf6967a6951506ad47d4fa65d5b141020ddb4d97e29e5033c7b3d94c41e918`.
+- **Object Parity:** Root expanded 204 files audit with 0 mismatch vs `82` git objects.
+
+### 14.2 Exact 8-File Approved Docs Delta
+The delta between publication HEAD (`d43d2c...`) and executable HEAD (`82dc65...`) consists of exactly 8 documentation files:
+1. `docs/evidence/pr24-bootstrap-tax-status-recovery/bootstrap_tax_status_recovery_plan.md`
+2. `docs/evidence/pr24-bootstrap-tax-status-recovery/diagnostic_command_chronology.md`
+3. `docs/evidence/pr24-bootstrap-tax-status-recovery/hermetic_offline_verification.md`
+4. `docs/evidence/pr24-bootstrap-tax-status-recovery/pr24_remediation_summary.md`
+5. `docs/evidence/pr24-bootstrap-tax-status-recovery/prewarm_log_sample.md`
+6. `docs/evidence/pr24-bootstrap-tax-status-recovery/retained_evidence_artifacts.md`
+7. `docs/evidence/pr24-bootstrap-tax-status-recovery/root_remediation_attestation.md`
+8. `docs/evidence/pr24-bootstrap-tax-status-recovery/tax_status_parity_audit.md`
+
+### 14.3 Root Private Binding Record
+Root authored and verified the private binding JSON:
+- **Path:** `/home/t3dev/.t3/userdata/attachments/peer_binding_d43_verified/binding.json`
+- **Permissions:** Parent directory `0700` owned by UID `1000`, file `0600` owned by UID `1000`.
+- **SHA-256:** `4bca66f1a4b246131beafa9bd087bb2710a722278d655d5a58f718a00fb9bd12`
+- **Contents:**
+  ```json
+  {
+    "root_verified": true,
+    "peer_android_worktree": "/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081",
+    "peer_android_branch": "t3/verify-isolated-worktree",
+    "peer_android_attached": true,
+    "pins": {
+      "android_publication_head": "d43d2c200b4ccce1d7075aed759f51529375d307",
+      "android_executable_head": "82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd",
+      "pub_vs_exe_delta": "8_DOCS_ONLY_FILES",
+      "approved_docs_delta_paths": [
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/bootstrap_tax_status_recovery_plan.md",
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/diagnostic_command_chronology.md",
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/hermetic_offline_verification.md",
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/pr24_remediation_summary.md",
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/prewarm_log_sample.md",
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/retained_evidence_artifacts.md",
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/root_remediation_attestation.md",
+        "docs/evidence/pr24-bootstrap-tax-status-recovery/tax_status_parity_audit.md"
+      ]
+    }
+  }
+  ```
+
+### 14.4 Source Parity & Dynamic Branch Remediation
+In `supervised-paired-drill-operator.py`:
+1. **Dynamic Branch Resolution (`get_git_branch`):** Replaced hardcoded branch strings. Branch is retrieved from the peer worktree via `git symbolic-ref --short HEAD` (with fallback to `git rev-parse --abbrev-ref HEAD`) and validated against `peer_android_branch` from Root's binding.
+2. **Dynamic Approved Delta Path List:** Replaced hardcoded `10_DOCS_ONLY_FILES` check. The operator parses `<N>_DOCS_ONLY_FILES` from `pub_vs_exe_delta`, verifies that `pins.approved_docs_delta_paths` is a non-empty list of exact length `N`, and validates that every path begins with an approved prefix (`docs/`, `app/docs/`) and contains no forbidden source extensions (`.kt`, `.java`, `.gradle`, `.kts`, `.sh`, `.py`, etc.).
+3. **Exact Delta Match (`verify_source_parity`):** The operator queries `git diff --name-only pub_head exe_head` in the Android peer and compares sorted actual diff files against sorted `approved_docs_delta_paths`. Any missing file or unexpected file immediately raises `SOURCE_PARITY_VIOLATION` and fails closed.
+4. **Authored Unit Tests:** Authored unit tests in `tests/Unit/Harness/test_supervised_paired_drill_operator.py` exercising exact 8-file approved delta matches, missing/unexpected diff files, delta count mismatches, and forbidden file extensions. All tests marked strictly unrun (`testsAUTHOREDUNRUN`).
+
 
 

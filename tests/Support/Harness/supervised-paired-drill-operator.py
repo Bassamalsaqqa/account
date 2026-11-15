@@ -177,6 +177,21 @@ def validate_manifest_sha(sha, label="Manifest SHA-256"):
         raise ValueError(f"{label} must be a 64-character lowercase hex SHA: got '{sha}'")
     return cleaned
 
+FORBIDDEN_SOURCE_EXTENSIONS = (
+    '.kt', '.java', '.gradle', '.kts', '.sh', '.py', '.c', '.cpp', '.so', '.jar', '.aar',
+)
+
+def get_git_branch(repo_dir):
+    """Retrieves current checkout branch name, supporting both symbolic refs and detached HEAD."""
+    try:
+        return subprocess.check_output(
+            ['git', 'symbolic-ref', '--short', 'HEAD'], cwd=repo_dir, stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except subprocess.CalledProcessError:
+        return subprocess.check_output(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'], cwd=repo_dir
+        ).decode().strip()
+
 def verify_commit_exists(repo_dir, sha, label):
     """Verifies that a commit object exists in the repository object store."""
     try:
@@ -189,30 +204,39 @@ def verify_commit_exists(repo_dir, sha, label):
     except subprocess.CalledProcessError:
         raise ValueError(f"{label} commit object does not exist in repository: {sha}")
 
-def verify_source_parity(android_dir, pub_head, exe_head):
+def verify_source_parity(android_dir, pub_head, exe_head, approved_paths):
     """
-    Verifies that pub_head..exe_head diff contains ONLY approved documentation files.
-    Fails closed if any source code, test code, or build configuration differs.
+    Verifies that pub_head..exe_head diff:
+    1. Matches the exact Root-approved approved_docs_delta_paths list from the SHA-pinned binding record.
+    2. Contains ONLY documentation files starting with approved prefixes and having no forbidden extensions.
+    Fails closed with SOURCE_PARITY_VIOLATION on any mismatch or unauthorized change.
     """
     diff_output = subprocess.check_output(
         ['git', 'diff', '--name-only', pub_head, exe_head],
         cwd=android_dir
     ).decode().strip()
 
-    if not diff_output:
-        return
+    actual_diff = sorted([line.strip() for line in diff_output.splitlines() if line.strip()])
+    expected_diff = sorted([p.strip() for p in approved_paths if p.strip()])
 
-    diff_files = [line.strip() for line in diff_output.splitlines() if line.strip()]
-    disallowed = []
-    for f in diff_files:
-        if not any(f.startswith(prefix) for prefix in APPROVED_DOCS_DELTA_PREFIXES):
-            disallowed.append(f)
-
-    if disallowed:
+    if actual_diff != expected_diff:
+        missing = set(expected_diff) - set(actual_diff)
+        unexpected = set(actual_diff) - set(expected_diff)
+        details = []
+        if missing:
+            details.append(f"Missing expected diff files: {sorted(missing)}")
+        if unexpected:
+            details.append(f"Unexpected diff files: {sorted(unexpected)}")
         raise RuntimeError(
-            f"SOURCE_PARITY_VIOLATION: Non-documentation files differ between publication pin "
-            f"({pub_head}) and executable pin ({exe_head}):\n  " + "\n  ".join(disallowed)
+            f"SOURCE_PARITY_VIOLATION: Actual diff does not match Root-approved delta paths:\n  "
+            + "\n  ".join(details)
         )
+
+    for f in actual_diff:
+        if not any(f.startswith(prefix) for prefix in APPROVED_DOCS_DELTA_PREFIXES):
+            raise RuntimeError(f"SOURCE_PARITY_VIOLATION: Disallowed prefix in diff file '{f}'")
+        if any(f.endswith(ext) for ext in FORBIDDEN_SOURCE_EXTENSIONS):
+            raise RuntimeError(f"SOURCE_PARITY_VIOLATION: Forbidden source code extension in diff file '{f}'")
 
 def verify_binding_record(binding_path, expected_sha, android_dir, pub_head, exe_head):
     """
@@ -224,10 +248,12 @@ def verify_binding_record(binding_path, expected_sha, android_dir, pub_head, exe
     - root_verified is True
     - peer_android_attached is True
     - peer_android_worktree matches canonical android_dir
-    - peer_android_branch matches 't3/android-qualified-basic-peer-c8dda700'
+    - peer_android_branch matches actual checkout branch from git
     - pins.android_publication_head matches pub_head
     - pins.android_executable_head matches exe_head
-    - pins.pub_vs_exe_delta matches approved 10 docs files
+    - pins.pub_vs_exe_delta matches '<N>_DOCS_ONLY_FILES' pattern
+    - pins.approved_docs_delta_paths is a non-empty list of documentation paths matching count N
+    Returns approved_docs_delta_paths list.
     """
     validate_no_symlink_components(binding_path, "Binding record path")
     canonical_binding = os.path.realpath(binding_path)
@@ -276,11 +302,15 @@ def verify_binding_record(binding_path, expected_sha, android_dir, pub_head, exe
             f"supplied '{actual_worktree}'"
         )
 
-    expected_branch = data.get('peer_android_branch', '')
-    if expected_branch != 't3/android-qualified-basic-peer-c8dda700':
+    expected_branch = data.get('peer_android_branch', '').strip()
+    if not expected_branch:
+        raise ValueError("Binding record peer_android_branch must not be empty")
+
+    actual_branch = get_git_branch(actual_worktree)
+    if actual_branch != expected_branch:
         raise ValueError(
-            f"Binding record branch mismatch: expected 't3/android-qualified-basic-peer-c8dda700', "
-            f"got '{expected_branch}'"
+            f"Binding record branch mismatch: record expects '{expected_branch}', "
+            f"actual checkout branch is '{actual_branch}'"
         )
 
     rec_pub = data.get('pins', {}).get('android_publication_head', '').lower()
@@ -290,9 +320,30 @@ def verify_binding_record(binding_path, expected_sha, android_dir, pub_head, exe
     if rec_exe != exe_head:
         raise ValueError(f"Binding record exe pin mismatch: record '{rec_exe}' != supplied '{exe_head}'")
 
-    delta = data.get('pins', {}).get('pub_vs_exe_delta', '')
-    if delta not in ('10_DOCS_ONLY_FILES', '10_DOCS_ONLY_COMMITS'):
-        raise ValueError(f"Binding record pub_vs_exe_delta invalid: '{delta}'")
+    delta = data.get('pins', {}).get('pub_vs_exe_delta', '').strip()
+    delta_match = re.match(r'^(\d+)_DOCS_ONLY_FILES$', delta)
+    if not delta_match:
+        raise ValueError(f"Binding record pub_vs_exe_delta format invalid: '{delta}' (expected '<N>_DOCS_ONLY_FILES')")
+    expected_file_count = int(delta_match.group(1))
+
+    approved_paths = data.get('pins', {}).get('approved_docs_delta_paths')
+    if not isinstance(approved_paths, list) or len(approved_paths) == 0:
+        raise ValueError("Binding record approved_docs_delta_paths must be a non-empty list of relative paths")
+    if len(approved_paths) != expected_file_count:
+        raise ValueError(
+            f"Binding record count mismatch: pub_vs_exe_delta specifies {expected_file_count} files, "
+            f"but approved_docs_delta_paths has {len(approved_paths)}"
+        )
+
+    for p in approved_paths:
+        if not isinstance(p, str) or not p.strip():
+            raise ValueError(f"Invalid path entry in approved_docs_delta_paths: {p}")
+        if not any(p.startswith(prefix) for prefix in APPROVED_DOCS_DELTA_PREFIXES):
+            raise ValueError(f"Binding record approved path '{p}' does not start with approved documentation prefix")
+        if any(p.endswith(ext) for ext in FORBIDDEN_SOURCE_EXTENSIONS):
+            raise ValueError(f"Binding record approved path '{p}' contains forbidden source extension")
+
+    return approved_paths
 
 APPROVED_PEER_OUTPUT_ARTIFACT_RELPATHS = (
     'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json',
@@ -675,11 +726,13 @@ def main():
                 "FAIL-CLOSED: Worktree checkout must not be mutated."
             )
 
-        # 7. Verify source parity between pub and exe pins (Defect 3 fix)
-        verify_source_parity(android_dir, pub_head, exe_head)
+        # 7. Verify mandatory binding record and expected SHA
+        approved_delta_paths = verify_binding_record(
+            args.binding_record, args.expected_binding_sha, android_dir, pub_head, exe_head
+        )
 
-        # 8. Verify mandatory binding record and expected SHA
-        verify_binding_record(args.binding_record, args.expected_binding_sha, android_dir, pub_head, exe_head)
+        # 8. Verify source parity between pub and exe pins against approved delta paths
+        verify_source_parity(android_dir, pub_head, exe_head, approved_delta_paths)
 
         # 9. Verify exact clean status on BOTH repos (no uncommitted or untracked changes)
         verify_exact_clean_status(backend_dir, "Backend repository")

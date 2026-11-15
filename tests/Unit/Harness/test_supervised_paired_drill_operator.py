@@ -285,16 +285,19 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=git_dir, stdout=subprocess.DEVNULL)
         base_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
 
-        # Commit 2: Docs-only change
-        docs_file = os.path.join(git_dir, 'README.md')
+        # Commit 2: Docs-only change under approved prefix
+        docs_sub = os.path.join(git_dir, 'docs')
+        os.makedirs(docs_sub, mode=0o700)
+        docs_file = os.path.join(docs_sub, 'README.md')
         with open(docs_file, 'w') as f:
             f.write('# Documentation')
-        subprocess.check_call(['git', 'add', 'README.md'], cwd=git_dir)
+        subprocess.check_call(['git', 'add', 'docs/README.md'], cwd=git_dir)
         subprocess.check_call(['git', 'commit', '-m', 'Docs'], cwd=git_dir, stdout=subprocess.DEVNULL)
         docs_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
 
+        approved_paths = ['docs/README.md']
         # Parity between base and docs head must PASS
-        operator_driver.verify_source_parity(git_dir, base_head, docs_head)
+        operator_driver.verify_source_parity(git_dir, base_head, docs_head, approved_paths)
 
         # Commit 3: Code modification
         with open(code_file, 'w') as f:
@@ -303,28 +306,75 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         subprocess.check_call(['git', 'commit', '-m', 'Code change'], cwd=git_dir, stdout=subprocess.DEVNULL)
         code_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
 
-        # Parity between base and code head must FAIL CLOSED
+        # Parity between docs_head and code_head must FAIL CLOSED
         with self.assertRaises(RuntimeError) as ctx:
-            operator_driver.verify_source_parity(git_dir, base_head, code_head)
+            operator_driver.verify_source_parity(git_dir, docs_head, code_head, ['App.kt'])
         self.assertIn("SOURCE_PARITY_VIOLATION", str(ctx.exception))
+
+    def test_verify_source_parity_mismatch_unexpected_or_missing_files(self):
+        git_dir = os.path.join(self.test_dir, 'throwaway_git_mismatch')
+        os.makedirs(git_dir, mode=0o700)
+        subprocess.check_call(['git', 'init'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=git_dir)
+        subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=git_dir)
+
+        # Commit 1: Initial base
+        init_file = os.path.join(git_dir, 'init.txt')
+        with open(init_file, 'w') as f:
+            f.write('init')
+        subprocess.check_call(['git', 'add', 'init.txt'], cwd=git_dir)
+        subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        base_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
+
+        # Commit 2: Add doc1
+        os.makedirs(os.path.join(git_dir, 'docs'), mode=0o700)
+        with open(os.path.join(git_dir, 'docs/doc1.md'), 'w') as f:
+            f.write('# Doc 1')
+        subprocess.check_call(['git', 'add', 'docs/doc1.md'], cwd=git_dir)
+        subprocess.check_call(['git', 'commit', '-m', 'Doc 1'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        head_1 = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
+
+        # 1. Missing expected diff file in actual diff
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_source_parity(git_dir, base_head, head_1, ['docs/doc1.md', 'docs/doc2.md'])
+        self.assertIn("Missing expected diff files", str(ctx.exception))
+
+        # 2. Unexpected diff file in actual diff
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_source_parity(git_dir, base_head, head_1, [])
+        self.assertIn("Unexpected diff files", str(ctx.exception))
 
     def _create_mock_binding(self, parent_mode=0o700, file_mode=0o600, overrides=None):
         parent_dir = os.path.join(self.test_dir, 'mock_binding_parent')
-        os.makedirs(parent_dir, mode=parent_mode)
+        if not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, mode=parent_mode)
+        else:
+            os.chmod(parent_dir, parent_mode)
         binding_file = os.path.join(parent_dir, 'binding.json')
 
         mock_worktree = os.path.join(self.test_dir, 'mock_android_peer')
-        os.makedirs(mock_worktree, mode=0o700)
+        if not os.path.exists(mock_worktree):
+            os.makedirs(mock_worktree, mode=0o700)
+            subprocess.check_call(['git', 'init'], cwd=mock_worktree, stdout=subprocess.DEVNULL)
+            subprocess.check_call(
+                ['git', 'symbolic-ref', 'HEAD', 'refs/heads/t3/verify-isolated-worktree'],
+                cwd=mock_worktree,
+                stdout=subprocess.DEVNULL
+            )
 
+        default_branch = "t3/verify-isolated-worktree"
         data = {
             "root_verified": True,
             "peer_android_worktree": mock_worktree,
-            "peer_android_branch": "t3/android-qualified-basic-peer-c8dda700",
+            "peer_android_branch": default_branch,
             "peer_android_attached": True,
             "pins": {
                 "android_publication_head": "c" * 40,
                 "android_executable_head": "5" * 40,
-                "pub_vs_exe_delta": "10_DOCS_ONLY_FILES"
+                "pub_vs_exe_delta": "8_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": [
+                    f"docs/evidence/doc_{i}.md" for i in range(8)
+                ]
             }
         }
         if overrides:
@@ -344,10 +394,10 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
 
     def test_binding_record_valid_passes(self):
         binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
-        # Must pass without exception
-        operator_driver.verify_binding_record(
+        approved_paths = operator_driver.verify_binding_record(
             binding_file, expected_sha, android_dir, pub_head, exe_head
         )
+        self.assertEqual(len(approved_paths), 8)
 
     def test_binding_record_missing_fails_closed(self):
         nonexistent = os.path.join(self.test_dir, 'missing_dir/binding.json')
@@ -416,14 +466,44 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
             )
         self.assertIn("parent directory insecure permissions", str(ctx.exception))
 
-    def test_binding_record_file_insecure_permissions_fails_closed(self):
-        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
-        os.chmod(binding_file, 0o644)
+    def test_binding_record_delta_count_mismatch_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"pins": {
+                "pub_vs_exe_delta": "8_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": [f"docs/evidence/doc_{i}.md" for i in range(5)]
+            }}
+        )
         with self.assertRaises(ValueError) as ctx:
             operator_driver.verify_binding_record(
                 binding_file, expected_sha, android_dir, pub_head, exe_head
             )
-        self.assertIn("permissions insecure", str(ctx.exception))
+        self.assertIn("does not match expected count 8", str(ctx.exception))
+
+    def test_binding_record_forbidden_extension_in_delta_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"pins": {
+                "pub_vs_exe_delta": "1_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": ["docs/evidence/exploit.kt"]
+            }}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("Forbidden source code extension", str(ctx.exception))
+
+    def test_binding_record_disallowed_prefix_in_delta_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"pins": {
+                "pub_vs_exe_delta": "1_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": ["unapproved/path.md"]
+            }}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("Disallowed prefix in approved delta path", str(ctx.exception))
 
 
 if __name__ == '__main__':
