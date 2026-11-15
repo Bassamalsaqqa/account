@@ -1,5 +1,7 @@
 {
-  "contract_name": "Pure QA Guard Suite Machine Manifest (Phase 8)",
+  "contract_name": "Pure QA Guard Suite Retrospective Machine Manifest (Phase 8 - Retrospective Derivation from Report)",
+  "nature": "RETROSPECTIVE_DERIVATION_FROM_REPORT",
+  "runtime_claim": "NO_RECONSTRUCTED_CONTEMPORANEOUS_OBSERVATION",
   "phase": 8,
   "execution_target_commit": "02e42b3a1ca8a4042d335b553ee8289ff077278f",
   "publication_commit": "1ac48d817c77aace17c8a2e24976eb4deefd2361",
