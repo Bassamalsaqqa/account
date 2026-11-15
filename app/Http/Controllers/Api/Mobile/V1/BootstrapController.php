@@ -40,9 +40,9 @@ final class BootstrapController extends Controller
 
         // Explicit read projection opt-in for currency_minor_units
         $includeCurrencyMinorUnits = false;
-        if ($request->has('include')) {
+        if ($request->query->has('include')) {
             $rawInclude = $request->query('include');
-            if (is_array($rawInclude) || ! is_string($rawInclude) || $rawInclude !== 'currency_minor_units') {
+            if (is_array($rawInclude) || ! is_string($rawInclude) || $rawInclude === '' || $rawInclude !== 'currency_minor_units') {
                 return MobileApiBoundary::buildErrorResponse(
                     code: 'VALIDATION_FAILED',
                     message: 'Invalid include parameter. Supported projection: currency_minor_units.',

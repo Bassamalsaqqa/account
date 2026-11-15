@@ -7,7 +7,7 @@ namespace Tests\Unit\Mobile\Contract;
 use App\Http\Controllers\Api\Mobile\V1\BootstrapController;
 use App\Models\Company;
 use App\Models\User;
-use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Support\Mobile\Contract\Revision3\Exceptions\IntentProfileValidationException;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\WireResponse;
 use Illuminate\Http\Request;
@@ -109,6 +109,26 @@ final class BootstrapMetadataContractTest extends TestCase
         $this->assertSame(422, $resArray->getStatusCode());
         $dataArray = json_decode((string) $resArray->getContent(), true);
         $this->assertSame('VALIDATION_FAILED', $dataArray['error']['code']);
+
+        // 3. Empty string include parameter rejected
+        $reqEmpty = Request::create('/api/mobile/v1/companies/01JCV8X9M2NQW3TYZ4R5S6789A/bootstrap?include=', 'GET');
+        $reqEmpty->attributes->set('mobile_company', $company);
+        $reqEmpty->attributes->set('mobile_user', $user);
+
+        $resEmpty = $controller->show($reqEmpty, '01JCV8X9M2NQW3TYZ4R5S6789A');
+        $this->assertSame(422, $resEmpty->getStatusCode());
+        $dataEmpty = json_decode((string) $resEmpty->getContent(), true);
+        $this->assertSame('VALIDATION_FAILED', $dataEmpty['error']['code']);
+
+        // 4. Bare include without value rejected
+        $reqBare = Request::create('/api/mobile/v1/companies/01JCV8X9M2NQW3TYZ4R5S6789A/bootstrap?include', 'GET');
+        $reqBare->attributes->set('mobile_company', $company);
+        $reqBare->attributes->set('mobile_user', $user);
+
+        $resBare = $controller->show($reqBare, '01JCV8X9M2NQW3TYZ4R5S6789A');
+        $this->assertSame(422, $resBare->getStatusCode());
+        $dataBare = json_decode((string) $resBare->getContent(), true);
+        $this->assertSame('VALIDATION_FAILED', $dataBare['error']['code']);
     }
 
     /**
@@ -163,30 +183,63 @@ final class BootstrapMetadataContractTest extends TestCase
      */
     public function test_v2_explicit_no_tax_rule_enforcement(): void
     {
-        // 1. Valid Explicit NoTax line definition
-        $validNoTaxLine = [
-            'product_id' => '01JCV8X9MBV4W5X6Y7Z8012345',
-            'product_unit_id' => '01JCV8X9MC6789ABCDEFGHJKMN',
-            'conversion_to_base' => '1.000000',
-            'quantity' => '1.000000',
-            'unit_price' => '10.000000',
-            'tax_rate_id' => null,
-            'tax_rate' => '0.000000',
-            'tax_inclusive' => false,
+        $context = [
+            'actor_id' => '01JCV8X9M8T1V2W3X4Y5Z67890',
+            'company_id' => '01JCV8X9M2NQW3TYZ4R5S6789A',
+            'currency_minor_units' => 2,
         ];
 
-        // 2. If tax_rate_id is null but rate is non-zero, it violates ExplicitNoTax rule
-        $invalidRateNoTax = $validNoTaxLine;
-        $invalidRateNoTax['tax_rate'] = '16.000000';
+        $validNoTaxRequest = [
+            'client_event_id' => '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+            'device_id' => '8e2b8bc6-f80c-4034-8c88-59368d1f2e10',
+            'customer_id' => '01JCV8X9M4K1P2Q3R4S5T6V7W8',
+            'warehouse_id' => '01JCV8X9M9A2B3C4D5E6F7G8H9',
+            'currency' => 'ILS',
+            'lines' => [
+                [
+                    'product_id' => '01JCV8X9M6A1B2C3D4E5F6G7H8',
+                    'product_unit_id' => '01JCV8X9MBV4W5X6Y7Z8012345',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '10.000000',
+                    'tax_rate_id' => null,
+                    'tax_rate' => '0.000000',
+                    'tax_inclusive' => false,
+                ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01JCV8X9MAJ3K4M5N6P7Q8R9S0',
+                'amount' => '10.000000',
+            ],
+        ];
 
-        // 3. If tax_rate_id is null but tax_inclusive is true, it violates ExplicitNoTax rule
-        $invalidInclusiveNoTax = $validNoTaxLine;
-        $invalidInclusiveNoTax['tax_inclusive'] = true;
+        // 1. Valid Explicit NoTax line constructs cleanly
+        $profile = OnlineSaleIntentProfile::construct($context, $validNoTaxRequest);
+        $this->assertNull($profile['lines'][0]['tax_rate_id']);
+        $this->assertSame('0.000000', $profile['lines'][0]['tax_rate']);
+        $this->assertFalse($profile['lines'][0]['tax_inclusive']);
 
-        $this->assertSame('0.000000', $validNoTaxLine['tax_rate']);
-        $this->assertFalse($validNoTaxLine['tax_inclusive']);
-        $this->assertNotSame('0.000000', $invalidRateNoTax['tax_rate']);
-        $this->assertTrue($invalidInclusiveNoTax['tax_inclusive']);
+        // 2. Non-zero rate with null tax_rate_id throws IntentProfileValidationException
+        $invalidRateRequest = $validNoTaxRequest;
+        $invalidRateRequest['lines'][0]['tax_rate'] = '16.000000';
+        try {
+            OnlineSaleIntentProfile::construct($context, $invalidRateRequest);
+            $this->fail('Expected IntentProfileValidationException was not thrown for non-zero tax_rate with null tax_rate_id');
+        } catch (IntentProfileValidationException $e) {
+            $this->assertStringContainsString("Explicit NoTax line at index 0 requires tax_rate='0.000000' and tax_inclusive=false", $e->getMessage());
+        }
+
+        // 3. tax_inclusive=true with null tax_rate_id throws IntentProfileValidationException
+        $invalidInclusiveRequest = $validNoTaxRequest;
+        $invalidInclusiveRequest['lines'][0]['tax_inclusive'] = true;
+        try {
+            OnlineSaleIntentProfile::construct($context, $invalidInclusiveRequest);
+            $this->fail('Expected IntentProfileValidationException was not thrown for tax_inclusive=true with null tax_rate_id');
+        } catch (IntentProfileValidationException $e) {
+            $this->assertStringContainsString("Explicit NoTax line at index 0 requires tax_rate='0.000000' and tax_inclusive=false", $e->getMessage());
+        }
     }
 
     /**
