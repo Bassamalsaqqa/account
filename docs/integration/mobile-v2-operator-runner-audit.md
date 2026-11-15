@@ -497,6 +497,17 @@ To resolve this cleanly without compromising safety:
 | **Diagnostics** | `partial_failure_diagnostics/partial_client_evidence.json` | `412ace7059e4128a7e6b89c07b86ed4f7a51358ce5e6f6289e603fec3409c4a3` |
 | | `partial_failure_diagnostics/partial_failure_index.json` | `bfd397f7f6baa8b38406571433eb2117fa79de63c1a83091420830107e578c44` |
 | | `partial_failure_diagnostics/TEST-...SmallTraderOnlineCashPilotSmokeTest.xml` | `62cd2b5cc38ab2a5670e4f19f950df5bc25f193bbf2f7187edac5cb125bf9e35` |
+| **Root 30-Unit Test** | `root-d43-tests-30xeg8s0/raw.log` | `b89a16b3f9a2b298a399494551816f37875d28f003dcfe0c4bf2a1ed6b901e98` |
+| **Root Offline Prewarm** | `root-d43-prewarm-c1ccdfb3b0/operator_execution.log` | `8d8199a7ab01cadcfda9a67d8156c2c7b021000b92bc83c067494269fcc8cec9` |
+| **Attempt 5 Prep** | `root-d43-pair5-prep/pairing-manifest.json` | `7475df52dffdb619d4de2175a68e75b3d8571f52060d9ea0c6918c057cd1a3d9` |
+| | `root-d43-pair5-prep/prestart.json` | `9eb800393da08ce0e100acc42641ed0413c737513a78d5ccde7cca3fdbb69957` |
+| | `root-d43-pair5-prep/live.json` | `785813354a92f245d1e7cc6fa845f19e9afcb77be65ccb910a733fcae626b6ce` |
+| **Attempt 5 Exec** | `root-d43-pair5-exec/delta_inspection.json` | `55c247c39175b494e5018fa0a42c15a88683a809c38651240c7674b907e34b4d` |
+| | `root-d43-pair5-exec/junit-test-report.xml` | `3bd7f66a4bb65da6c788f4847d934da0ccd247a40975bb0aa4e74ce3a1d89cf0` |
+| | `root-d43-pair5-exec/paired-online-cash-pilot-evidence.json` | `338a6970da313252e8e19ae944a2cd9677230c278aca513d7d617a89ab804d97` |
+| | `root-d43-pair5-exec/post_cleanup_final_witness.json` | `f9d38baddcea39fbc17b23d070570f3a680adc0845cd6ac9551648b30803a520` |
+| | `root-d43-pair5-exec/exit_metadata.json` | `0a41c5b8392bc0085cda5896f13ecba02a9b3ef6a3376e640f58f9a761aa0efb` |
+| | `root-d43-pair5-exec/operator_execution.log` | `39d3125dff57ced312c96730c3811c80f6a27cbde4c2741ab302fc57d3acc009` |
 
 ---
 
@@ -639,6 +650,87 @@ Root may directly run the reviewed, tracked unit test suite using:
 ```bash
 python3 -m unittest -v tests/Unit/Harness/test_supervised_paired_drill_operator.py
 ```
+
+---
+
+## 15. Attempt 5 Paired Financial Drill Milestone & Post-Event Reconciliation Defect Disclosure
+
+### 15.1 Milestone Summary & Telemetry Overview
+Root executed finite paired Attempt 5 using the newly bound and verified origin-fix Android peer (`t3-c2c97597-412928fbdb34e081`):
+- **30 Python Units Pass:** Root executed `python3 -m unittest -v` at `/home/t3dev/.t3/userdata/attachments/root-d43-tests-30xeg8s0/` (duration: 1.538s, 30 passed, 0 failures, raw log SHA: `b89a16b3f9a2b298a399494551816f37875d28f003dcfe0c4bf2a1ed6b901e98`). Pre/post repository file hashes matched 100%.
+- **Hermetic Offline Prewarm:** Executed at `/home/t3dev/.t3/userdata/attachments/root-d43-prewarm-c1ccdfb3b0/` (duration: 79.781s, operator log SHA: `8d8199a7ab01cadcfda9a67d8156c2c7b021000b92bc83c067494269fcc8cec9`). Retained KSP/AWT background diagnostic exceptions without fatal error.
+- **Finite Paired Attempt 5:** Prepared at `/home/t3dev/.t3/userdata/attachments/root-d43-pair5-prep/` and executed at `/home/t3dev/.t3/userdata/attachments/root-d43-pair5-exec/`.
+  - Backend Execution HEAD: `dbb31fdfeca4b536b256fbc52ecf8de7a7de4516`
+  - Android Publication HEAD: `d43d2c200b4ccce1d7075aed759f51529375d307`
+  - Android Executable HEAD: `82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd`
+  - Pairing Manifest SHA-256: `7475df52dffdb619d4de2175a68e75b3d8571f52060d9ea0c6918c057cd1a3d9`
+  - Root Prestart Approval SHA-256: `9eb800393da08ce0e100acc42641ed0413c737513a78d5ccde7cca3fdbb69957`
+  - Root Live Approval SHA-256: `785813354a92f245d1e7cc6fa845f19e9afcb77be65ccb910a733fcae626b6ce`
+  - Candidate Handoff Digest: `76573d2c6ea7fbf43b14c9fb664c80955bfbeae1c0f474b04ed1b25c50df3e89`
+  - Owned Schema Name: `accounting_p8_tmp_94e122beb3f7`
+  - Child PID: `1910479`
+  - Baseline Hash: `e2cc1649ed53d32d4936e27c0294829ebc1d1909b172887506f58ce2458f13a2`
+
+### 15.2 Client Execution & HTTP Scenarios (JVM 2/2 PASS)
+The host JVM single-use test runner executed both unit tests in 1.642s (0 failures, 0 errors, 0 skipped; JUnit report SHA: `3bd7f66a4bb65da6c788f4847d934da0ccd247a40975bb0aa4e74ce3a1d89cf0`):
+- `readiness_probe`: **PASS** (HTTP 200, 277ms).
+- `financial_cash_fresh_commit_201`: **PASS** (HTTP 201, 839ms, invoice `INV-2026-0001`).
+- `financial_cash_idempotent_replay_200`: **PASS** (HTTP 200, 64ms, byte-identical replay).
+- `financial_cash_event_status_posted`: **PASS** (HTTP 200, 66ms, status `'posted'`).
+- `financial_cash_tamper_409`: **PASS** (HTTP 409, 65ms, conflict strictly enforced).
+- Client Evidence Artifact: `paired-online-cash-pilot-evidence.json` (SHA: `338a6970da313252e8e19ae944a2cd9677230c278aca513d7d617a89ab804d97`, `overallStatus: PASS`, run ID `4e3d7e8c-acf9-4e68-89a1-c7266cdf2d8f`).
+
+### 15.3 Database Delta Inspection & Financial Graph Integrity
+Direct PDO delta inspection verified strict single-event financial integrity (`delta_inspection.json` SHA: `55c247c39175b494e5018fa0a42c15a88683a809c38651240c7674b907e34b4d`):
+- `is_canonical_delta_valid`: **true**
+- `expected_delta_one_event`: **true**
+- `gl_batches_balanced`: **true**
+- Deltas:
+  - 1 Sales Invoice (`01M7G9W2QGB2Q1YTSBZJNAAJWE`, grand total base: `58.000000`)
+  - 1 Sales Invoice Line (quantity: `1.000000`, unit price: `50.000000`, line total: `58.000000`)
+  - 1 Sales Invoice Lot Allocation (quantity base: `1.000000`)
+  - 1 Customer Payment (`01M7G9W2W2XNA98DR344JT671H`, cash, amount base: `58.000000`)
+  - 1 Customer Payment Allocation (allocated amount: `58.000000`)
+  - 1 Mobile Event Receipt (status: `'completed'`)
+  - 1 Stock Movement (quantity delta base: `-1.000000`)
+  - 2 Posting Batches with 7 GL Lines balanced (batch IDs 2 and 3)
+- Proof Event ID: `ebef3da5-abbb-4d8c-a645-ac605daf3c28`
+- Proof Evidence Digest: `4e933254720d03d037df7bc4a94e9178454d58add127f4331f52656ee2633b83`
+
+### 15.4 Post-Event Reconciliation Failure Diagnosis
+Despite JVM and delta inspection success, FULL acceptance was **NOT ACHIEVED**:
+- **Execution Failure:** Supervisor invocation of `financial-inspector-cli.php --reconcile` failed with exit code 1.
+- **Error Output:**
+  ```text
+  Reconciliation failed: Failed to snapshot caller permission team ID: Unresolvable dependency resolving [Parameter #0 [ <required> $app ]] in class Illuminate\Cache\CacheManager
+  ```
+- **Root Cause:**
+  - `DisposableFinancialPostRunInspector::runSixReconciliations` begins by snapshotting caller state before mutating the global container.
+  - When `getPermissionsTeamId()` is invoked in a standalone CLI context (`financial-inspector-cli.php`), Spatie's helper resolves `app(PermissionRegistrar::class)`.
+  - `PermissionRegistrar::__construct` requires `Illuminate\Cache\CacheManager $cacheManager`.
+  - `CacheManager::__construct($app)` requires parameter `$app`. Because the bare CLI entrypoint only loads `vendor/autoload.php` without booting a Laravel application or binding `$app` in the container, `CacheManager` resolution fails.
+  - `runSixReconciliations()` correctly caught the exception and threw a `RuntimeException` (`Failed to snapshot caller permission team ID: ...`), failing closed.
+- **Consequence:** The six post-event reconciliation queries were **NOT RUN**, and report composition / outer evidence validation were **NOT RUN**. Zero fake passes are claimed.
+
+### 15.5 Cleanup Final Witness & Declared Output Verification
+- Supervisor reaped child process `PID 1910479` via SIGTERM.
+- Schema `accounting_p8_tmp_94e122beb3f7` dropped cleanly.
+- Recorded Post-Cleanup Final Witness: `post_cleanup_final_witness.json` (SHA: `f9d38baddcea39fbc17b23d070570f3a680adc0845cd6ac9551648b30803a520`, all observations `true`).
+- Operator Pre/Post Repository Comparison:
+  - Backend and Android pre/post states matched 100% (`pre_post_matched: true`).
+  - Peer status difference was accounted for by declared output artifacts (`paired-online-cash-pilot-evidence.json`), with `drift_detected: false`.
+- Ports closed, background daemons terminated, lease released.
+- Frozen peer worktree contains owned evidence artifacts and remains untouched.
+
+### 15.6 Planned Narrow Source-Only Fix
+To resolve the CLI dependency closure cleanly before Root's next invocation:
+1. Provide a standalone bootstrap dependency closure in `financial-inspector-cli.php` prior to calling `runSixReconciliations`:
+   - Bind minimal CLI container, sessionless auth, array cache, and `PermissionRegistrar` helper.
+   - Preserve caller's existing application/team/facade instances when already bound.
+   - Never catch/ignore `getPermissionsTeamId()` exceptions to falsely claim pass.
+   - Ambience / owned PDO only, with zero weakening of economic core or flags.
+2. Add real CLI (no DB) dependency construction regression test exercising the actual standalone path.
+3. This fix will be published in a separate commit following this documentation disclosure.
 
 
 
