@@ -131,14 +131,14 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
 | `tests/Support/Harness/supervised-financial-drill.php` | `4444ed463500c7dc63383ac3c1d055534fc18dedc7643fe023a4ac6f63ae8723` | Supervisor CLI Driver |
 | `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `7fcf73a3c55940aa484464a56078506cb9faa15b22656750d88923dc3d90b3cc` | Fixture Harness |
-| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `b1cb9fd9fb92cfba57154966d83b6ec015ef5cdfd0220a69f94cf6c5a01d2177` | Post-Run Inspector |
+| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `f997ea832bc585db469e19c907d428dc85b36a8b564ea7e5da7d19c605e42d29` | Post-Run Inspector |
 | `tests/Support/Harness/financial-inspector-cli.php` | `46d4e38151d8d06f7e79aa13b3c654825b486f5b60a583420eecbcb673d42811` | Post-Run Inspector CLI |
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7` | Artisan Command |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
-| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73` | Guard Test Suite |
+| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `ece0069981e01ffb610066997d62e5dfc0fda14cbd2c9eafc0da5730f886503b` | Guard Test Suite |
 | `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `4bc72084eeea3de269386f0f0333fcd76c6b787616524d21ef6c4b90b618feac` | Python Unit Suite (43 tests) |
-| `docs/integration/mobile-v2-integration-manifest.json` | `57a8df3f90717fbd23dc62261c0f57556d6e97f4ac589b7ce30490bcb901b714` | Manifest Template |
+| `docs/integration/mobile-v2-integration-manifest.json` | `e30dc77a030a2a535930adee2447b0ed8fe1b9d5cd3c80cb1dea633eb2f2133c` | Manifest Template |
 
 ---
 

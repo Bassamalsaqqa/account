@@ -1890,8 +1890,8 @@ final class DisposableFinancialPostRunInspector
                     if (($gLine['quantity'] ?? '') !== '1.000000') {
                         $errors[] = "Canonical graph sales_invoice_line.quantity must be '1.000000', got '".($gLine['quantity'] ?? 'null')."'.";
                     }
-                    if (($gLine['unit_price'] ?? '') !== '58.000000') {
-                        $errors[] = "Canonical graph sales_invoice_line.unit_price must be '58.000000', got '".($gLine['unit_price'] ?? 'null')."'.";
+                    if (($gLine['unit_price'] ?? '') !== '50.000000') {
+                        $errors[] = "Canonical graph sales_invoice_line.unit_price must be '50.000000', got '".($gLine['unit_price'] ?? 'null')."'.";
                     }
                     if (($gLine['line_total'] ?? '') !== '58.000000') {
                         $errors[] = "Canonical graph sales_invoice_line.line_total must be '58.000000', got '".($gLine['line_total'] ?? 'null')."'.";

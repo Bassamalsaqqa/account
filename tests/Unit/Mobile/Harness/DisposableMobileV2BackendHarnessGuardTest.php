@@ -2729,7 +2729,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 'sales_invoice_id' => $invId,
                 'line_number' => 1,
                 'quantity' => '1.000000',
-                'unit_price' => '58.000000',
+                'unit_price' => '50.000000',
                 'line_total' => '58.000000',
             ],
             'sales_invoice_lot_allocation' => [
@@ -3478,7 +3478,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                         'sales_invoice_id' => 1,
                         'line_number' => 1,
                         'quantity' => '1.000000',
-                        'unit_price' => '58.000000',
+                        'unit_price' => '50.000000',
                         'line_total' => '58.000000',
                     ],
                     'sales_invoice_lot_allocation' => [
@@ -3808,6 +3808,47 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         );
         $this->assertFalse($resSm['is_valid']);
         $this->assertTrue(collect($resSm['errors'])->contains(fn ($e) => str_contains($e, "stock_movement.quantity_delta_base must be '-1.000000'")));
+    }
+
+    #[Test]
+    public function test_outer_validator_enforces_sales_invoice_line_net_unit_price_and_gross_line_total(): void
+    {
+        $goldenData = $this->getGoldenWireFixtureData();
+
+        // 1. Valid fixture with net unit_price 50.000000, gross line_total 58.000000, and payment 58.000000 is accepted
+        $validFixture = $this->createSyntheticTrustedDbReportFixture();
+        $resValid = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $validFixture['expectedPins'],
+            $validFixture['report']
+        );
+        $this->assertTrue($resValid['is_valid'], 'Valid canonical graph with net unit_price 50 and gross total 58 must pass: '.implode('; ', $resValid['errors']));
+        $this->assertSame([], $resValid['errors']);
+
+        // 2. Erroneously gross unit_price 58.000000 is rejected
+        $grossUnitPriceFixture = $this->createSyntheticTrustedDbReportFixture([
+            'delta' => [
+                'canonical_graph' => [
+                    'sales_invoice_line' => [
+                        'id' => 21,
+                        'public_id' => '01LINETEST0001',
+                        'company_id' => 1,
+                        'sales_invoice_id' => 11,
+                        'line_number' => 1,
+                        'quantity' => '1.000000',
+                        'unit_price' => '58.000000', // Incorrectly conflated with line_total
+                        'line_total' => '58.000000',
+                    ],
+                ],
+            ],
+        ]);
+        $resGross = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateOuterEvidenceJson(
+            $goldenData,
+            $grossUnitPriceFixture['expectedPins'],
+            $grossUnitPriceFixture['report']
+        );
+        $this->assertFalse($resGross['is_valid']);
+        $this->assertTrue(collect($resGross['errors'])->contains(fn ($e) => str_contains($e, "sales_invoice_line.unit_price must be '50.000000', got '58.000000'")));
     }
 
     #[Test]
