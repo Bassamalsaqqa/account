@@ -125,7 +125,7 @@ All components verified in the backend worktree at HEAD:
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
 | `tests/Support/Harness/root-operator-tool.py` | `9f6930b63dc3d267b4472b0432f392bc997f6746446c9920a1e5b012c5d3fc5c` | Tool (Python 3) |
-| `tests/Support/Harness/supervised-paired-drill-operator.py` | `3b5f951db6be83361d524183201f72a72cc84ba65167c3b728ad9d34897359bd` | Operator Driver |
+| `tests/Support/Harness/supervised-paired-drill-operator.py` | `62a28f7d4a635cf4a03539c13ddf4a0184fee248e6bcfb9cbc727cde5b7660ff` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
@@ -137,7 +137,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `8255528f48a7e0710169523cab6ec5ecb2a2eacee593391ed804d009ae9dbfc8` | Python Unit Suite (30 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `843f67ce3f2c85702f3013c8d47e2141fb1a1a7ade6c170988351270c521ff10` | Python Unit Suite (40 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
@@ -521,6 +521,12 @@ To resolve this cleanly without compromising safety:
 | | `root-cli-bootstrap-guards-0c8ncavp/argv.json` | `95f673e838fd427a37342b7db9d97b6cca291293480b2ae7ce385d4770c86210` |
 | | `root-cli-bootstrap-guards-0c8ncavp/pre.json` | `2ca9d8c7d0903ce5b43e15622eb4d9092bf74c42668ef590d6800559b312a07a` |
 | | `root-cli-bootstrap-guards-0c8ncavp/post.json` | `2ca9d8c7d0903ce5b43e15622eb4d9092bf74c42668ef590d6800559b312a07a` |
+| **Root Pure Guards 3 (PASS 6/46)** | `root-cli-bootstrap-guards-qq0icvl1/raw.log` | `284cf29f1d3d6678311bcf6ff5299635e17fd2793b1bcffffdafff70c987b01b` |
+| | `root-cli-bootstrap-guards-qq0icvl1/junit.xml` | `60d143c6b37fa7d352b6ce188fb1e3ad182d6347ef386a45be141ada70b65e97` |
+| | `root-cli-bootstrap-guards-qq0icvl1/exit.json` | `c276bd35de1a903acc5201b1119e7d3e940e93bd8732bd061ec8c10ee589c411` |
+| | `root-cli-bootstrap-guards-qq0icvl1/argv.json` | `edc97e8630ab7306086a3eb076d8b6aba10b9f65ee51c15763626df93d32c483` |
+| | `root-cli-bootstrap-guards-qq0icvl1/pre.json` | `04d0bfae274311fcde576255bde12541da6a251f599e21672b99441b6026b442` |
+| | `root-cli-bootstrap-guards-qq0icvl1/post.json` | `04d0bfae274311fcde576255bde12541da6a251f599e21672b99441b6026b442` |
 
 ---
 
@@ -763,10 +769,83 @@ To resolve the CLI dependency closure cleanly before Root's next invocation:
    - `test_run_six_reconciliations_preserves_complete_caller_context_on_denied_execution_gates()`: snapshots environment, scopes flags OFF, asserts actual first NO-EXECUTE refusal, verifies complete caller application and Spatie team `888` are intact, and restores environment in `finally`.
    - `test_create_isolated_bootstrap_application_preserves_ambient_container_identity()`: verifies that raw `Container::$instance` remains strictly unchanged immediately after `createIsolatedBootstrapApplication()` across `null`, generic `Container`, and `Application` sentinels.
    - `test_run_six_reconciliations_fails_closed_and_preserves_caller_on_deliberately_failing_registrar()`: snapshots environment, scopes flags OFF, asserts caller with deliberately failing registrar factory fails closed without masking genuine permission resolution errors and completely preserves caller config, auth, facades, container, and model connection resolver.
-5. Invariants preserved:
-   - No guard reordering or opt-in relaxation in `assertExecutionGates()`.
-   - Invalid schema input defense (`'denied_invalid_schema_name'`) retained in calls as defense-in-depth, but tests do not expect later gates when flags are OFF.
-   - Tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
+### 15.7 Root Lifecycle PASS (6/46) & Peer Baseline Artifact Solution (Applied)
+
+#### 1. Root Focused Pure Regression Milestone Execution
+- **Run ID**: `root-cli-bootstrap-guards-qq0icvl1`
+- **Commit**: `2c0e1a1925ef845608992e881d684008f18a3fb1`
+- **Exit Code**: `0`
+- **Execution Counts**: **6 tests, 46 assertions, 0 failures, 0 errors, 0 skipped (100% PASS)**.
+- **Elapsed Time**: 0.411s.
+- **Repository Invariance**: Pre/post source, HEAD, and git status hashes 100% matched across both repositories (`invariance: true`).
+- **Retained Evidence**: `/home/t3dev/.t3/userdata/attachments/root-cli-bootstrap-guards-qq0icvl1` (0700 dir, 0600 files: `raw.log`, `junit.xml`, `exit.json`, `argv.json`, `pre.json`, `post.json`).
+- **Lease Status**: Released.
+
+#### 2. Peer Baseline Prerequisite & Rejection Root Cause
+The operator clean status verification (`verify_exact_clean_status(android_dir)`) rejected the isolated `d43/82` peer worktree (`/home/t3dev/.t3/worktrees/small-trader-android/t3-c2c97597-412928fbdb34e081`) because Attempt 5's execution legitimately produced an untracked output artifact:
+`app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`
+(SHA-256: `338a6970da313252e8e19ae944a2cd9677230c278aca513d7d617a89ab804d97`, size: 3,817 bytes).
+Under Root's explicit directive:
+- Cannot delete, move, or check out the peer worktree.
+- Cannot weaken clean status with a broad wildcard allowlist.
+- Tracked file clean status must remain absolute.
+
+#### 3. Narrow Explicit Root Peer Baseline Record Architecture
+In `tests/Support/Harness/supervised-paired-drill-operator.py`:
+1. **Authoritative CLI Flags**:
+   - `--peer-baseline-record`: Path to a Root-verified peer baseline record JSON file (required if any untracked files exist in the peer repository).
+   - `--expected-peer-baseline-sha`: Expected 64-hex SHA-256 pin for the baseline record file (mandatory when `--peer-baseline-record` is supplied).
+2. **Strict Security Verification (`verify_peer_baseline_record`)**:
+   - No symlink components in record path or parent directory (`validate_no_symlink_components`).
+   - Parent directory must be mode `0700` owned by current UID (`os.getuid()`).
+   - Record file must be mode `0600` owned by current UID.
+   - Record SHA-256 must match `--expected-peer-baseline-sha` pin exactly.
+   - Requires `"root_verified": true`.
+   - Requires `"peer_android_worktree"` realpath matching `android_dir` realpath.
+   - Requires `"peer_android_head"` matching publication pin if specified.
+   - Validates that declared artifacts are in `APPROVED_PEER_OUTPUT_ARTIFACT_RELPATHS` (`app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`).
+3. **Exact Untracked Set Enforcement (`verify_peer_clean_or_baseline_status`)**:
+   - Tracked clean is absolute: Any non-untracked line in `git status --porcelain -uall` (modified, deleted, staged) triggers an immediate fail-closed `RuntimeError`.
+   - Exact untracked set matching: The set of untracked files on disk must match the declared baseline artifacts list exactly. Any extra untracked file or missing expected baseline file raises a fail-closed `RuntimeError`.
+   - Clean status protection: If the repository is completely clean but a baseline record is passed, it fails closed (expected baseline artifacts missing).
+   - Unregistered untracked protection: If untracked files are present but `--peer-baseline-record` is omitted, it fails closed.
+4. **On-Disk Artifact Security**:
+   - No symlink components in artifact path.
+   - Must be a regular file (`os.path.isfile(full_path) and not os.path.islink(full_path)`).
+   - File owner must match current UID (`os.getuid()`).
+   - File mode must be `0600` or `0644`.
+   - File size must be non-empty (`> 0`), and must match expected size if specified.
+   - SHA-256 on disk must match the declared SHA-256 pin exactly.
+5. **Pre-Child Immutable Archiving (`archive_peer_baseline_artifacts`)**:
+   - Executed immediately after `validate_secure_output_dir` and before launching any child process (`prewarm`, `prepare`, or `execute`).
+   - Copies the admitted baseline artifact to `archived_peer_baseline_<basename>` in `output_dir` using `os.O_WRONLY | os.O_CREAT | os.O_EXCL` (mode `0o600`), guaranteeing it can never overwrite an existing file.
+   - Re-verifies written SHA-256 against the pinned baseline hash.
+   - Writes index metadata to `peer_baseline_archive_metadata.json` with `O_EXCL` (0600).
+   - Indexes the archive metadata in `pre_state['peer_baseline_archive']`.
+
+#### 4. Live Path Overwrite Analysis & Recommended Minimal Route
+- **Observation**: During paired drill execution, Android's Gradle smoke test (`SmallTraderOnlineCashPilotSmokeTest`) executes in the Android worktree and writes fresh evidence to `app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`.
+- **In-Place Archiving (Route A)**: The operator archives Attempt 5's evidence to `archived_peer_baseline_paired-online-cash-pilot-evidence.json` in the fresh output directory prior to child invocation. However, the file at the live path inside `android_dir` will be overwritten by Gradle during the test run.
+- **Recommended Minimal Route to Preserve Original Live Path (Route B)**:
+  If Root's directive requires that the physical file at `app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json` inside `t3-c2c97597-412928fbdb34e081` must remain strictly untouched on disk without being overwritten in-place, the recommended minimal route is:
+  1. Leave `t3-c2c97597-412928fbdb34e081` completely frozen as the historical Attempt 5 evidence archive.
+  2. Create a fresh sibling isolated worktree (e.g. `t3-pair6-android`) branched from publication commit `d43d2c200b4ccce1d7075aed759f51529375d307` on branch `t3/verify-isolated-worktree`.
+  3. This new peer worktree starts in a 100% clean git state (no untracked files), eliminating in-place overwrite while preserving all existing evidence.
+
+#### 5. Authored Unit Tests (40 Tests Total)
+Authored 10 comprehensive throwaway fixture tests in `tests/Unit/Harness/test_supervised_paired_drill_operator.py`:
+1. `test_peer_baseline_record_admitted_when_valid`: Valid baseline record and matching untracked file admitted cleanly.
+2. `test_peer_untracked_rejected_when_baseline_record_omitted`: Untracked file rejected when baseline record is not passed.
+3. `test_peer_baseline_record_fails_on_sha_mismatch`: Tampered file content on disk fails closed.
+4. `test_peer_baseline_record_fails_on_extra_untracked_file`: Undeclared extra untracked file fails closed.
+5. `test_peer_baseline_record_fails_on_symlink_artifact`: Symlink baseline file fails closed.
+6. `test_peer_baseline_record_fails_on_modified_tracked_file`: Modified tracked file fails closed (tracked clean is absolute).
+7. `test_peer_baseline_archive_immutable_and_bytes_retained`: `O_EXCL` mode 0600 archiving and duplicate overwrite refusal verified.
+8. `test_cli_peer_baseline_args_mutual_requirement`: CLI parser verifies mutual presence of `--peer-baseline-record` and `--expected-peer-baseline-sha`.
+9. `test_peer_clean_status_with_unexpected_baseline_record_rejected`: Clean worktree rejects unexpected baseline record.
+10. `test_peer_baseline_record_rejects_unapproved_artifact_path`: Unapproved artifact path outside allowlist rejected.
+
+All tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root review.
 
 
 

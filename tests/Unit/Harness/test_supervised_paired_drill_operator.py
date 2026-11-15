@@ -569,6 +569,268 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         self.assertEqual(args.binding_record, "/tmp/test_binding.json")
         self.assertEqual(args.expected_binding_sha, "d" * 64)
 
+    def _create_mock_peer_repo_and_baseline(
+        self, untracked_files=None, modified_files=None, baseline_overrides=None,
+        record_parent_mode=0o700, record_file_mode=0o600
+    ):
+        mock_android = os.path.join(self.test_dir, 'mock_android_peer_baseline')
+        if not os.path.exists(mock_android):
+            os.makedirs(mock_android, mode=0o700)
+            subprocess.check_call(['git', 'init'], cwd=mock_android, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=mock_android)
+            subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=mock_android)
+            tracked_file = os.path.join(mock_android, 'tracked.txt')
+            with open(tracked_file, 'w') as f:
+                f.write('initial tracked content')
+            subprocess.check_call(['git', 'add', 'tracked.txt'], cwd=mock_android)
+            subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=mock_android, stdout=subprocess.DEVNULL)
+
+        if modified_files:
+            for rel_mod, mod_content in modified_files.items():
+                p = os.path.join(mock_android, rel_mod)
+                with open(p, 'w') as f:
+                    f.write(mod_content)
+
+        default_art_rel = 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json'
+        baseline_artifacts_list = []
+
+        if untracked_files is None:
+            untracked_files = {default_art_rel: '{"sample_evidence": true}'}
+
+        for rel_p, content in untracked_files.items():
+            full_p = os.path.join(mock_android, rel_p)
+            os.makedirs(os.path.dirname(full_p), mode=0o700, exist_ok=True)
+            if isinstance(content, str):
+                content_bytes = content.encode('utf-8')
+                with open(full_p, 'wb') as f:
+                    f.write(content_bytes)
+                os.chmod(full_p, 0o600)
+                sha = hashlib.sha256(content_bytes).hexdigest()
+                baseline_artifacts_list.append({
+                    "relative_path": rel_p,
+                    "sha256": sha,
+                    "size": len(content_bytes)
+                })
+
+        parent_dir = os.path.join(self.test_dir, 'mock_peer_baseline_parent')
+        os.makedirs(parent_dir, mode=record_parent_mode, exist_ok=True)
+        os.chmod(parent_dir, record_parent_mode)
+        record_file = os.path.join(parent_dir, 'baseline.json')
+
+        record_data = {
+            "root_verified": True,
+            "peer_android_worktree": mock_android,
+            "baseline_artifacts": baseline_artifacts_list
+        }
+        if baseline_overrides:
+            record_data.update(baseline_overrides)
+
+        encoded = json.dumps(record_data, indent=2).encode('utf-8')
+        with open(record_file, 'wb') as f:
+            f.write(encoded)
+        os.chmod(record_file, record_file_mode)
+
+        expected_sha = hashlib.sha256(encoded).hexdigest()
+        return mock_android, record_file, expected_sha
+
+    def test_peer_baseline_record_admitted_when_valid(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        admitted = operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertEqual(len(admitted), 1)
+        self.assertEqual(
+            admitted[0]['relative_path'],
+            'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json'
+        )
+        self.assertEqual(len(admitted[0]['sha256']), 64)
+
+    def test_peer_untracked_rejected_when_baseline_record_omitted(self):
+        android_dir, _, _ = self._create_mock_peer_repo_and_baseline()
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, None, None)
+        self.assertIn("Android repository is not in clean state", str(ctx.exception))
+        self.assertIn("no --peer-baseline-record provided", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_sha_mismatch(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        # Tamper the untracked file content on disk
+        target_file = os.path.join(android_dir, 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json')
+        with open(target_file, 'wb') as f:
+            f.write(b'{"tampered_content": true}')
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("SHA mismatch", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_extra_untracked_file(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        # Add an extra undeclared untracked file
+        extra_file = os.path.join(android_dir, 'extra_untracked.txt')
+        with open(extra_file, 'w') as f:
+            f.write('extra file')
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("Android repository untracked files do not match baseline record", str(ctx.exception))
+        self.assertIn("Extra untracked", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_symlink_artifact(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        target_file = os.path.join(android_dir, 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json')
+        real_target = os.path.join(self.test_dir, 'symlink_real_target.json')
+        with open(real_target, 'wb') as f:
+            f.write(b'{"target": true}')
+        os.remove(target_file)
+        os.symlink(real_target, target_file)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertTrue(
+            "not a regular file" in str(ctx.exception) or "symlink component" in str(ctx.exception).lower()
+        )
+
+    def test_peer_baseline_record_fails_on_modified_tracked_file(self):
+        # Untracked baseline file matches, but a tracked file is modified
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline(
+            modified_files={'tracked.txt': 'modified content here'}
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("tracked clean is absolute", str(ctx.exception))
+
+    def test_peer_baseline_archive_immutable_and_bytes_retained(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        admitted = operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertEqual(len(admitted), 1)
+
+        out_dir = os.path.join(self.test_dir, 'archive_output_test')
+        os.makedirs(out_dir, mode=0o700)
+
+        meta = operator_driver.archive_peer_baseline_artifacts(admitted, out_dir)
+        self.assertIsNotNone(meta)
+        self.assertEqual(meta['count'], 1)
+
+        archived_file = os.path.join(out_dir, 'archived_peer_baseline_paired-online-cash-pilot-evidence.json')
+        self.assertTrue(os.path.isfile(archived_file))
+        st = os.stat(archived_file)
+        self.assertEqual(st.st_mode & 0o777, 0o600)
+        self.assertEqual(operator_driver.sha256_file(archived_file), admitted[0]['sha256'])
+
+        meta_file = os.path.join(out_dir, 'peer_baseline_archive_metadata.json')
+        self.assertTrue(os.path.isfile(meta_file))
+        st_meta = os.stat(meta_file)
+        self.assertEqual(st_meta.st_mode & 0o777, 0o600)
+
+        # Calling again must FAIL CLOSED with FileExistsError (O_EXCL ensures immutable archive)
+        with self.assertRaises(FileExistsError):
+            operator_driver.archive_peer_baseline_artifacts(admitted, out_dir)
+
+    def test_cli_peer_baseline_args_mutual_requirement(self):
+        parser = operator_driver.build_parser()
+        # 1. Specifying --peer-baseline-record without --expected-peer-baseline-sha
+        argv1 = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--peer-baseline-record=/tmp/peer_baseline.json",
+            "--prewarm-only"
+        ]
+        args1 = parser.parse_args(argv1)
+        self.assertIsNotNone(args1.peer_baseline_record)
+        self.assertIsNone(args1.expected_peer_baseline_sha)
+        self.assertTrue(bool(args1.peer_baseline_record) != bool(args1.expected_peer_baseline_sha))
+
+        # 2. Specifying --expected-peer-baseline-sha without --peer-baseline-record
+        argv2 = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--expected-peer-baseline-sha=" + "e" * 64,
+            "--prewarm-only"
+        ]
+        args2 = parser.parse_args(argv2)
+        self.assertIsNone(args2.peer_baseline_record)
+        self.assertIsNotNone(args2.expected_peer_baseline_sha)
+        self.assertTrue(bool(args2.peer_baseline_record) != bool(args2.expected_peer_baseline_sha))
+
+        # 3. Specifying both succeeds
+        argv3 = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--peer-baseline-record=/tmp/peer_baseline.json",
+            "--expected-peer-baseline-sha=" + "e" * 64,
+            "--prewarm-only"
+        ]
+        args3 = parser.parse_args(argv3)
+        self.assertEqual(args3.peer_baseline_record, "/tmp/peer_baseline.json")
+        self.assertEqual(args3.expected_peer_baseline_sha, "e" * 64)
+
+    def test_peer_clean_status_with_unexpected_baseline_record_rejected(self):
+        # Status is completely clean, but a baseline record was passed expecting artifacts
+        mock_android = os.path.join(self.test_dir, 'mock_android_clean_unexpected')
+        os.makedirs(mock_android, mode=0o700)
+        subprocess.check_call(['git', 'init'], cwd=mock_android, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=mock_android)
+        subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=mock_android)
+        tracked_file = os.path.join(mock_android, 'tracked.txt')
+        with open(tracked_file, 'w') as f:
+            f.write('initial tracked content')
+        subprocess.check_call(['git', 'add', 'tracked.txt'], cwd=mock_android)
+        subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=mock_android, stdout=subprocess.DEVNULL)
+
+        # Create dummy record
+        parent_dir = os.path.join(self.test_dir, 'mock_parent_clean_unexpected')
+        os.makedirs(parent_dir, mode=0o700)
+        rec_file = os.path.join(parent_dir, 'baseline.json')
+        rec_data = {
+            "root_verified": True,
+            "peer_android_worktree": mock_android,
+            "baseline_artifacts": [{
+                "relative_path": "app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json",
+                "sha256": "a" * 64
+            }]
+        }
+        with open(rec_file, 'w') as f:
+            json.dump(rec_data, f)
+        os.chmod(rec_file, 0o600)
+        rec_sha = operator_driver.sha256_file(rec_file)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(mock_android, rec_file, rec_sha)
+        self.assertIn("Android repository status is completely clean", str(ctx.exception))
+
+    def test_peer_baseline_record_rejects_unapproved_artifact_path(self):
+        android_dir, _, _ = self._create_mock_peer_repo_and_baseline()
+        parent_dir = os.path.join(self.test_dir, 'mock_parent_unapproved_path')
+        os.makedirs(parent_dir, mode=0o700)
+        rec_file = os.path.join(parent_dir, 'baseline.json')
+        rec_data = {
+            "root_verified": True,
+            "peer_android_worktree": android_dir,
+            "baseline_artifacts": [{
+                "relative_path": "docs/unapproved_location.txt",
+                "sha256": "a" * 64
+            }]
+        }
+        with open(rec_file, 'w') as f:
+            json.dump(rec_data, f)
+        os.chmod(rec_file, 0o600)
+        rec_sha = operator_driver.sha256_file(rec_file)
+
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, rec_file, rec_sha)
+        self.assertIn("is not in approved peer output artifact allowlist", str(ctx.exception))
+
 
 if __name__ == '__main__':
     unittest.main()

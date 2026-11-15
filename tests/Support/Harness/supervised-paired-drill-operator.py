@@ -406,6 +406,256 @@ def verify_exact_clean_status(repo_dir, name):
     if status != '':
         raise RuntimeError(f"{name} is not in clean state (expected empty status):\n{status}")
 
+def verify_peer_baseline_record(record_path, expected_sha, android_dir, pub_head=None):
+    """
+    Validates Root-verified peer baseline record JSON matching security constraints:
+    - Path has no symlink components
+    - Parent directory exists, is 0700 owned by current UID, no symlinks
+    - File exists, is 0600 owned by current UID
+    - File SHA-256 matches expected_sha exactly
+    - root_verified is True
+    - peer_android_worktree matches canonical android_dir
+    - baseline_artifacts is a non-empty list of approved output artifacts
+    Returns list of baseline artifact specs.
+    """
+    validate_no_symlink_components(record_path, "Peer baseline record path")
+    canonical_record = os.path.realpath(record_path)
+    if not os.path.isfile(canonical_record):
+        raise ValueError(f"Peer baseline record file not found: {canonical_record}")
+
+    # Parent directory security check (mode 0700, UID match, no symlinks)
+    parent = os.path.dirname(canonical_record)
+    validate_no_symlink_components(parent, "Peer baseline record parent directory")
+    st_p = os.stat(parent)
+    if (st_p.st_mode & 0o777) != 0o700:
+        raise ValueError(f"Peer baseline record parent directory insecure permissions: expected 0700, got {oct(st_p.st_mode & 0o777)}")
+    current_uid = os.getuid() if hasattr(os, 'getuid') else -1
+    if current_uid != -1 and st_p.st_uid != current_uid:
+        raise ValueError(f"Peer baseline record parent directory owner mismatch: expected UID {current_uid}, got {st_p.st_uid}")
+
+    # File security check (mode 0600, UID match)
+    st = os.stat(canonical_record)
+    if (st.st_mode & 0o777) != 0o600:
+        raise ValueError(f"Peer baseline record permissions insecure: expected 0600, got {oct(st.st_mode & 0o777)}")
+    if current_uid != -1 and st.st_uid != current_uid:
+        raise ValueError(f"Peer baseline record owner mismatch: expected UID {current_uid}, got {st.st_uid}")
+
+    # Hash check vs Root's expected SHA pin
+    expected_clean_sha = validate_manifest_sha(expected_sha, "Expected peer baseline record SHA")
+    actual_sha = sha256_file(canonical_record)
+    if actual_sha != expected_clean_sha:
+        raise ValueError(
+            f"Peer baseline record SHA mismatch: expected '{expected_clean_sha}', got '{actual_sha}'."
+        )
+
+    try:
+        with open(canonical_record, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        raise ValueError(f"Failed to parse peer baseline record JSON: {e}")
+
+    if data.get('root_verified') is not True:
+        raise ValueError("Peer baseline record must specify 'root_verified': true")
+
+    declared_worktree = data.get('peer_android_worktree')
+    if not declared_worktree or os.path.realpath(declared_worktree) != os.path.realpath(android_dir):
+        raise ValueError(
+            f"Peer baseline record worktree mismatch: declared '{declared_worktree}', actual '{android_dir}'"
+        )
+
+    if pub_head and data.get('peer_android_head'):
+        rec_head = data.get('peer_android_head').strip().lower()
+        if rec_head != pub_head.lower():
+            raise ValueError(f"Peer baseline record HEAD pin mismatch: record '{rec_head}' != supplied '{pub_head}'")
+
+    artifacts = data.get('baseline_artifacts')
+    if not isinstance(artifacts, list) or len(artifacts) == 0:
+        raise ValueError("Peer baseline record must define non-empty 'baseline_artifacts' list")
+
+    for art in artifacts:
+        if not isinstance(art, dict):
+            raise ValueError("Peer baseline record artifacts must be JSON objects")
+        rel_path = art.get('relative_path')
+        if not rel_path or not isinstance(rel_path, str):
+            raise ValueError("Peer baseline artifact missing 'relative_path'")
+        if rel_path not in APPROVED_PEER_OUTPUT_ARTIFACT_RELPATHS:
+            raise ValueError(
+                f"Peer baseline artifact '{rel_path}' is not in approved peer output artifact allowlist: "
+                f"{APPROVED_PEER_OUTPUT_ARTIFACT_RELPATHS}"
+            )
+        sha = art.get('sha256')
+        if not sha or not isinstance(sha, str) or len(sha) != 64 or not all(c in '0123456789abcdef' for c in sha.lower()):
+            raise ValueError(f"Peer baseline artifact '{rel_path}' invalid sha256: '{sha}'")
+
+    return artifacts
+
+def verify_peer_clean_or_baseline_status(android_dir, baseline_record_path=None, expected_baseline_sha=None, pub_head=None):
+    """
+    Verifies that the peer Android repository status matches strict clean-or-baseline constraints:
+    1. If status is strictly empty, passes (refusing any unexpected baseline record requirement).
+    2. Any modified, deleted, staged, or renamed tracked files cause immediate failure ("tracked clean remains absolute").
+    3. If untracked files are present:
+       - Fails closed if baseline_record_path is None.
+       - Validates baseline record and expected SHA.
+       - Enforces EXACT untracked set match (no extra untracked files, no missing baseline files).
+       - Validates each baseline artifact on disk (no symlink components, regular file, current UID, mode 0600/0644, non-empty, matching SHA-256 and expected size).
+    Returns list of admitted baseline artifact dicts (or empty list if clean).
+    """
+    status = subprocess.check_output(['git', 'status', '--porcelain', '-uall'], cwd=android_dir).decode().strip()
+    current_uid = os.getuid() if hasattr(os, 'getuid') else -1
+
+    if status == '':
+        if baseline_record_path is not None:
+            raise RuntimeError(
+                "Peer baseline record was specified, but Android repository status is completely clean "
+                "(expected baseline artifacts are missing from working tree)."
+            )
+        return []
+
+    # Check for tracked file modifications - tracked clean is absolute
+    status_lines = [line.strip() for line in status.splitlines() if line.strip()]
+    non_untracked = [line for line in status_lines if not line.startswith('?? ')]
+    if non_untracked:
+        raise RuntimeError(
+            f"Android repository has modified/staged tracked files (tracked clean is absolute):\n"
+            + "\n".join(non_untracked)
+        )
+
+    # Untracked files present: require explicit baseline record
+    if not baseline_record_path:
+        raise RuntimeError(
+            f"Android repository is not in clean state (untracked files present, but no --peer-baseline-record provided):\n{status}"
+        )
+    if not expected_baseline_sha:
+        raise ValueError("--peer-baseline-record requires --expected-peer-baseline-sha")
+
+    baseline_specs = verify_peer_baseline_record(baseline_record_path, expected_baseline_sha, android_dir, pub_head=pub_head)
+
+    # Enforce EXACT untracked set match
+    actual_untracked = set(line[3:].strip() for line in status_lines)
+    expected_untracked = set(item['relative_path'] for item in baseline_specs)
+
+    if actual_untracked != expected_untracked:
+        extra = sorted(list(actual_untracked - expected_untracked))
+        missing = sorted(list(expected_untracked - actual_untracked))
+        msg = "Android repository untracked files do not match baseline record."
+        if extra:
+            msg += f" Extra untracked: {extra}."
+        if missing:
+            msg += f" Missing expected baseline: {missing}."
+        raise RuntimeError(msg)
+
+    # Secure disk validation for each baseline artifact
+    admitted = []
+    for item in baseline_specs:
+        rel_path = item['relative_path']
+        full_path = os.path.join(android_dir, rel_path)
+
+        # 1. No symlink components in path
+        validate_no_symlink_components(full_path, f"Peer baseline artifact {rel_path}")
+
+        # 2. Must be regular file and not a symlink
+        if not os.path.isfile(full_path) or os.path.islink(full_path):
+            raise RuntimeError(f"Peer baseline artifact '{rel_path}' is not a regular file")
+
+        # 3. UID check
+        st = os.stat(full_path)
+        if current_uid != -1 and st.st_uid != current_uid:
+            raise RuntimeError(
+                f"Peer baseline artifact '{rel_path}' UID mismatch: expected {current_uid}, got {st.st_uid}"
+            )
+
+        # 4. Mode check: must be 0600 or 0644
+        mode = st.st_mode & 0o777
+        if mode not in (0o600, 0o644):
+            raise RuntimeError(
+                f"Peer baseline artifact '{rel_path}' insecure mode: expected 0600 or 0644, got {oct(mode)}"
+            )
+
+        # 5. Non-empty & size check
+        if st.st_size == 0:
+            raise RuntimeError(f"Peer baseline artifact '{rel_path}' is empty (0 bytes)")
+
+        if item.get('size') is not None and st.st_size != item['size']:
+            raise RuntimeError(
+                f"Peer baseline artifact '{rel_path}' size mismatch: expected {item['size']}, got {st.st_size}"
+            )
+
+        # 6. SHA-256 match
+        actual_sha = sha256_file(full_path)
+        expected_sha = item['sha256'].lower()
+        if actual_sha != expected_sha:
+            raise RuntimeError(
+                f"Peer baseline artifact '{rel_path}' SHA mismatch: expected {expected_sha}, got {actual_sha}"
+            )
+
+        admitted.append({
+            'relative_path': rel_path,
+            'full_path': full_path,
+            'sha256': actual_sha,
+            'size': st.st_size,
+            'mode': oct(mode),
+        })
+
+    return admitted
+
+def archive_peer_baseline_artifacts(admitted_artifacts, output_dir):
+    """
+    Archives admitted peer baseline artifacts with O_EXCL to output_dir before any child execution.
+    Writes index metadata (peer_baseline_archive_metadata.json) with O_EXCL (0600).
+    Never overwrites existing files.
+    Returns metadata dict.
+    """
+    if not admitted_artifacts:
+        return None
+
+    archive_entries = []
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+
+    for art in admitted_artifacts:
+        rel_path = art['relative_path']
+        src_path = art['full_path']
+        base_name = os.path.basename(rel_path)
+        dest_filename = f"archived_peer_baseline_{base_name}"
+        dest_path = os.path.join(output_dir, dest_filename)
+
+        with open(src_path, 'rb') as f_src:
+            payload = f_src.read()
+
+        fd = os.open(dest_path, flags, 0o600)
+        with os.fdopen(fd, 'wb') as f_dst:
+            f_dst.write(payload)
+
+        # Verify archive integrity immediately
+        archived_sha = sha256_file(dest_path)
+        if archived_sha != art['sha256']:
+            raise RuntimeError(
+                f"Archived baseline artifact integrity failure: expected {art['sha256']}, got {archived_sha}"
+            )
+
+        archive_entries.append({
+            'source_relative_path': rel_path,
+            'source_full_path': src_path,
+            'archive_filename': dest_filename,
+            'archive_path': dest_path,
+            'sha256': art['sha256'],
+            'size': len(payload),
+            'archived_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        })
+
+    metadata = {
+        'count': len(archive_entries),
+        'archived_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'artifacts': archive_entries,
+    }
+
+    meta_path = os.path.join(output_dir, 'peer_baseline_archive_metadata.json')
+    meta_fd = os.open(meta_path, flags, 0o600)
+    with os.fdopen(meta_fd, 'w', encoding='utf-8') as f_meta:
+        json.dump(metadata, f_meta, indent=2)
+
+    return metadata
+
 def compare_git_states(pre_state, post_state, declared_output_artifacts=None, repo_dirs=None):
     """
     Compares pre and post git states; returns dict of drifts if any detected.
@@ -654,6 +904,8 @@ def build_parser():
     parser.add_argument("--android-exe-head", required=True, help="Root-approved peer Android executable HEAD SHA (40 hex)")
     parser.add_argument("--binding-record", required=True, help="Path to Root-verified binding JSON record (mandatory)")
     parser.add_argument("--expected-binding-sha", required=True, help="Expected 64-hex SHA-256 for Root-verified binding record (mandatory)")
+    parser.add_argument("--peer-baseline-record", default=None, help="Path to Root-verified peer baseline record JSON (required if untracked artifacts present in peer repo)")
+    parser.add_argument("--expected-peer-baseline-sha", default=None, help="Expected 64-hex SHA-256 for Root-verified peer baseline record (required when --peer-baseline-record is passed)")
     parser.add_argument("--offline", action="store_true", help="Pass --offline flag to Gradle prewarm")
     parser.add_argument("--paired-hold", type=int, default=120, help="Paired hold seconds (default: 120)")
     parser.add_argument("--timeout", type=int, default=180, help="Supervised execution timeout in seconds (default: 180)")
@@ -675,6 +927,9 @@ def build_parser():
 def main():
     parser = build_parser()
     args = parser.parse_args()
+
+    if bool(args.peer_baseline_record) != bool(args.expected_peer_baseline_sha):
+        raise ValueError("--peer-baseline-record and --expected-peer-baseline-sha must be provided together")
 
     start_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     start_monotonic = time.monotonic()
@@ -739,19 +994,30 @@ def main():
         # 8. Verify source parity between pub and exe pins against approved delta paths
         verify_source_parity(android_dir, pub_head, exe_head, approved_delta_paths)
 
-        # 9. Verify exact clean status on BOTH repos (no uncommitted or untracked changes)
+        # 9. Verify exact clean status on backend (strictly empty) and clean-or-baseline on android
         verify_exact_clean_status(backend_dir, "Backend repository")
-        verify_exact_clean_status(android_dir, "Android repository")
+        admitted_peer_baseline = verify_peer_clean_or_baseline_status(
+            android_dir,
+            baseline_record_path=args.peer_baseline_record,
+            expected_baseline_sha=args.expected_peer_baseline_sha,
+            pub_head=pub_head,
+        )
 
         # 10. Validate secure output directory (fresh, empty, 0700 UID)
         output_dir = validate_secure_output_dir(args.output_dir, backend_dir, android_dir)
         output_dir_validated = True
+
+        # Archive admitted peer baseline artifacts (O_EXCL) BEFORE any child execution
+        baseline_archive_meta = archive_peer_baseline_artifacts(admitted_peer_baseline, output_dir)
+        if baseline_archive_meta:
+            print(f"[Operator] Archived {baseline_archive_meta['count']} peer baseline artifact(s) to {output_dir} (O_EXCL)")
 
         # 11. Capture initial immutable PRE state for BOTH repos
         print(f"[Operator] Capturing initial PRE state for both repositories...")
         pre_state = {
             'backend': get_git_state(backend_dir, DECLARED_OUTPUT_ARTIFACTS.get('backend')),
             'android': get_git_state(android_dir, DECLARED_OUTPUT_ARTIFACTS.get('android')),
+            'peer_baseline_archive': baseline_archive_meta,
             'metadata': {
                 'expected_backend_head': expected_backend,
                 'expected_pub_head': pub_head,
