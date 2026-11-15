@@ -63,14 +63,13 @@
 1. **JVM Timeout**: The supervisor dispatched `./gradlew cleanTestDebugUnitTest testDebugUnitTest --no-build-cache ...` with a deadline of `76.914089202881s`. The process exceeded this deadline before returning.
 2. **KSP Activity**: KSP symbol indexing in `app/build/kspCaches/debug` was actively writing files between `14:28:28` and `14:28:35 UTC`.
 3. **Zero Test XML Generated**: `app/build/test-results` was completely empty upon termination; JUnit runner did not complete or write XML output.
-4. **Financial HTTP Outcomes UNKNOWN**: No POST requests reached the backend during the window. Outcomes are strictly UNKNOWN; no zero POST or PASS claim is asserted.
+4. **Financial HTTP Outcomes UNKNOWN**: Financial HTTP outcomes are strictly UNKNOWN; no zero POST or PASS claim is asserted.
 
 #### B. Hypotheses & Diagnostic Analysis
 1. **SourceSet Compilation vs Filter**: Gradle compiles the entire test `sourceSet` rather than compiling individual test classes per `--tests` filter. Timestamps in `app/build` show compilation tasks were executing but did not complete within the 76.91s window.
-2. **Build Configuration & Environment Differences**:
-   - `JAVA_HOME`: Explicitly set to `/home/t3dev/.local/share/android-toolchain/jdk-21.0.13+9` in `run_android_prewarm.sh`, but empty/unset in `supervised-financial-drill.php`.
-   - `ANDROID_HOME`: Explicitly exported in `run_android_prewarm.sh`, but omitted from the supervisor child environment (falling back to `local.properties`).
-   - Clean / Invalidation: `cleanTestDebugUnitTest` coupled with `--no-build-cache` and cold `--no-daemon` invocation under single-worker serial GC caused compilation tasks to rebuild from scratch.
+2. **Environment & Process Context**:
+   - Root passed `JAVA_HOME` and `ANDROID_HOME` in the environment when invoking the supervisor for Attempt 3. In PHP Symfony `Process`, child processes inherit the parent process environment by default. The explicit `$gradleEnv` array in `supervised-financial-drill.php` only supplemented specific variables; therefore, absence from that array does not prove absence from the child process.
+   - Clean / Invalidation Hypothesis: `cleanTestDebugUnitTest` coupled with `--no-build-cache` and a cold `--no-daemon` process under single-worker serial GC caused the full debug compilation and KSP DAG to rebuild, exceeding the 76.91s deadline before reaching test execution.
 
 #### C. Supervisor Logging & Preservation Deficiencies
 1. **Silent Logging Risk**: Output was collected in memory and written only after process exit; timeout discarded the buffer before it reached disk.
