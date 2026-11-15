@@ -2039,7 +2039,7 @@ class SupervisedFinancialDrillTest extends TestCase
         $outputDir = $this->tempDir . '/partial_evidence_test_out';
         mkdir($outputDir, 0700, true);
 
-        // 1. When files are absent, handles gracefully
+        // 1. When files are absent, creates valid empty diagnostic index (provenance record with mode 0600)
         $emptyResult = SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
             outputDir: $outputDir,
             evidenceFile: null,
@@ -2047,17 +2047,27 @@ class SupervisedFinancialDrillTest extends TestCase
         );
         $this->assertFalse($emptyResult['evidence_preserved']);
         $this->assertSame(0, $emptyResult['xml_count']);
-        $this->assertNull($emptyResult['index_path']);
+        $this->assertNotNull($emptyResult['index_path']);
+        $this->assertFileExists($emptyResult['index_path']);
+        $this->assertSame(0600, fileperms($emptyResult['index_path']) & 0777);
 
-        // 2. Setup mock evidence file and mock Android build xml
+        $emptyIndexData = json_decode((string) file_get_contents($emptyResult['index_path']), true);
+        $this->assertSame([], $emptyIndexData['artifacts']);
+        $this->assertSame('Mobile V2 Partial Failure Diagnostic Index', $emptyIndexData['contract_name']);
+        $this->assertArrayHasKey('unvalidated_warning', $emptyIndexData);
+        $this->assertStringContainsString('unvalidated', strtolower($emptyIndexData['unvalidated_warning']));
+
+        // 2. Setup mock candidate client evidence and multiple XML fixtures (proves ALL copied, not first only)
         $mockEvidence = $this->tempDir . '/mock-client-evidence.json';
         file_put_contents($mockEvidence, '{"partial": true}');
 
         $mockAndroidDir = $this->tempDir . '/mock_android_repo';
         $mockXmlDir = $mockAndroidDir . '/app/build/test-results/testDebugUnitTest';
         mkdir($mockXmlDir, 0700, true);
-        $mockXml = $mockXmlDir . '/TEST-SmokeTest.xml';
-        file_put_contents($mockXml, '<testsuite name="SmokeTest" tests="2"/>');
+        $mockXml1 = $mockXmlDir . '/TEST-SmokeTest.xml';
+        file_put_contents($mockXml1, '<testsuite name="SmokeTest" tests="2"/>');
+        $mockXml2 = $mockXmlDir . '/TEST-FinancialDrillTest.xml';
+        file_put_contents($mockXml2, '<testsuite name="FinancialDrillTest" tests="3"/>');
 
         $result = SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
             outputDir: $outputDir,
@@ -2066,8 +2076,9 @@ class SupervisedFinancialDrillTest extends TestCase
         );
 
         $this->assertTrue($result['evidence_preserved']);
-        $this->assertSame(1, $result['xml_count']);
+        $this->assertSame(2, $result['xml_count']);
         $this->assertNotNull($result['index_path']);
+        $this->assertFileExists($result['index_path']);
 
         $partialDir = $outputDir . '/partial_failure_diagnostics';
         $this->assertDirectoryExists($partialDir);
@@ -2076,27 +2087,75 @@ class SupervisedFinancialDrillTest extends TestCase
         // Verified canonical filenames are strictly NOT created/overwritten at root
         $this->assertFileDoesNotExist($outputDir . '/paired-online-cash-pilot-evidence.json');
         $this->assertFileDoesNotExist($outputDir . '/junit-test-report.xml');
+        $this->assertFileDoesNotExist($outputDir . '/TEST-SmokeTest.xml');
+        $this->assertFileDoesNotExist($outputDir . '/TEST-FinancialDrillTest.xml');
+        $this->assertFileDoesNotExist($outputDir . '/partial_client_evidence.json');
 
         // Preserved diagnostics exist under partial/ with 0600 permissions
         $destEvidence = $partialDir . '/partial_client_evidence.json';
-        $destXml = $partialDir . '/TEST-SmokeTest.xml';
+        $destXml1 = $partialDir . '/TEST-SmokeTest.xml';
+        $destXml2 = $partialDir . '/TEST-FinancialDrillTest.xml';
         $destIndex = $partialDir . '/partial_failure_index.json';
 
         $this->assertFileExists($destEvidence);
-        $this->assertFileExists($destXml);
+        $this->assertFileExists($destXml1);
+        $this->assertFileExists($destXml2);
         $this->assertFileExists($destIndex);
 
         $this->assertSame(0600, fileperms($destEvidence) & 0777);
-        $this->assertSame(0600, fileperms($destXml) & 0777);
+        $this->assertSame(0600, fileperms($destXml1) & 0777);
+        $this->assertSame(0600, fileperms($destXml2) & 0777);
         $this->assertSame(0600, fileperms($destIndex) & 0777);
 
         $this->assertSame('{"partial": true}', file_get_contents($destEvidence));
-        $this->assertSame('<testsuite name="SmokeTest" tests="2"/>', file_get_contents($destXml));
+        $this->assertSame('<testsuite name="SmokeTest" tests="2"/>', file_get_contents($destXml1));
+        $this->assertSame('<testsuite name="FinancialDrillTest" tests="3"/>', file_get_contents($destXml2));
 
         $indexData = json_decode((string) file_get_contents($destIndex), true);
         $this->assertSame('Mobile V2 Partial Failure Diagnostic Index', $indexData['contract_name']);
-        $this->assertTrue($indexData['artifacts']['partial_client_evidence.json']['unvalidated']);
-        $this->assertTrue($indexData['artifacts']['TEST-SmokeTest.xml']['unvalidated']);
+        $this->assertCount(3, $indexData['artifacts']);
+
+        // Check metadata for candidate client evidence
+        $evidenceArtifact = $indexData['artifacts']['partial_client_evidence.json'];
+        $this->assertSame($mockEvidence, $evidenceArtifact['source_path']);
+        $this->assertSame(hash_file('sha256', $destEvidence), $evidenceArtifact['sha256']);
+        $this->assertSame(filesize($destEvidence), $evidenceArtifact['bytes']);
+        $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', filemtime($mockEvidence)), $evidenceArtifact['mtime_utc']);
+        $this->assertTrue($evidenceArtifact['unvalidated']);
+
+        // Check metadata for both XML reports
+        $xml1Artifact = $indexData['artifacts']['TEST-SmokeTest.xml'];
+        $this->assertSame($mockXml1, $xml1Artifact['source_path']);
+        $this->assertSame(hash_file('sha256', $destXml1), $xml1Artifact['sha256']);
+        $this->assertSame(filesize($destXml1), $xml1Artifact['bytes']);
+        $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', filemtime($mockXml1)), $xml1Artifact['mtime_utc']);
+        $this->assertTrue($xml1Artifact['unvalidated']);
+
+        $xml2Artifact = $indexData['artifacts']['TEST-FinancialDrillTest.xml'];
+        $this->assertSame($mockXml2, $xml2Artifact['source_path']);
+        $this->assertSame(hash_file('sha256', $destXml2), $xml2Artifact['sha256']);
+        $this->assertSame(filesize($destXml2), $xml2Artifact['bytes']);
+        $this->assertSame(gmdate('Y-m-d\TH:i:s\Z', filemtime($mockXml2)), $xml2Artifact['mtime_utc']);
+        $this->assertTrue($xml2Artifact['unvalidated']);
+
+        // 3. Candidate file nonexistent or manifest write failures reported honestly without fake preservation
+        $nonexistentResult = SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
+            outputDir: $outputDir,
+            evidenceFile: $this->tempDir . '/nonexistent_candidate.json',
+            targetAndroidDir: null
+        );
+        $this->assertFalse($nonexistentResult['evidence_preserved']);
+        $this->assertSame(0, $nonexistentResult['xml_count']);
+
+        // Manifest write failure: directory collision at destination index path
+        $collisionDir = $this->tempDir . '/collision_output';
+        mkdir($collisionDir . '/partial_failure_diagnostics/partial_failure_index.json', 0700, true);
+        $collisionResult = SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
+            outputDir: $collisionDir,
+            evidenceFile: null,
+            targetAndroidDir: null
+        );
+        $this->assertNull($collisionResult['index_path']);
     }
 
     // ---------------------------------------------------------------------------
