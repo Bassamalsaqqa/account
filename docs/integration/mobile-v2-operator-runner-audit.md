@@ -577,6 +577,19 @@ To resolve this cleanly without compromising safety:
 | | `root-d43-case7-exec/pre_run_baseline.json` | `91477e9fa9e81a9dd0c0692f94a55f3c898a739f2c1e874d27bc364ce64e64ca` |
 | | `root-d43-case7-exec/pre.json` | `bc1ed50ec58870eb0cbba6de55707ecc30640e77083c4cd294925c73dbc37b53` |
 | | `root-d43-case7-exec/post.json` | `4e4d61ece70fb67156774ac2de911fa155527d149df4c2fc9438385cc4f7dbee` |
+| **Root Outer Validator Suite (17/114 PASS)** | `root-outer-validator-tests-rwrgq1tt/argv.json` | `b46248ca63e45b659f50d8c63b3815ae4628a152d5e94adba68415ad998ed479` |
+| | `root-outer-validator-tests-rwrgq1tt/exit.json` | `402f94f045138dabb51ce4fb45bd3850270845135f1411d31200c648270f9706` |
+| | `root-outer-validator-tests-rwrgq1tt/junit.xml` | `8ff9e34de2e3f360ab2c4af2174afb4f9e4e7d89391b9164eb76cc8a96e306ae` |
+| | `root-outer-validator-tests-rwrgq1tt/raw.log` | `b882cff0aadba0b46ea8310b91151bd27610d6b7456277b36f34721c422e9cda` |
+| | `root-outer-validator-tests-rwrgq1tt/pre.json` | `6c55beb6e167116100ac173b494a963d0c91ce89af82cab26287f541fb48fd70` |
+| | `root-outer-validator-tests-rwrgq1tt/post.json` | `6c55beb6e167116100ac173b494a963d0c91ce89af82cab26287f541fb48fd70` |
+| **Root Post-Hoc Offline Validation (Immutable Case 7)** | `root-case7-posthoc-validation-_jq5kp8q/provenance.json` | `efb5f9bc13b8819eb65d2ea00e20b9743fa12be1f4c9ee37e9e2146feb91ff42` |
+| | `root-case7-posthoc-validation-_jq5kp8q/exit.json` | `3d55c1e640a39f9515501f16be6a49731e6bd8928be799dd158704080c1ed541` |
+| | `root-case7-posthoc-validation-_jq5kp8q/outer_evidence_validation.json` | `6ac6bcf29e44d503b7843a5964a0557a6db0f7224ee434ac4fca0929d5cd1daf` |
+| | `root-case7-posthoc-validation-_jq5kp8q/argv.json` | `7c84c1d8f20c9484cf25c5808690c28c19529190c41036b2e3cef5eaa2ec9bbe` |
+| | `root-case7-posthoc-validation-_jq5kp8q/raw.log` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| | `root-case7-posthoc-validation-_jq5kp8q/pre.json` | `3b891903c35c20de9f696456800810a311f5e524037b8f6f971c90882a57ac71` |
+| | `root-case7-posthoc-validation-_jq5kp8q/post.json` | `3b891903c35c20de9f696456800810a311f5e524037b8f6f971c90882a57ac71` |
 
 ---
 
@@ -1086,6 +1099,118 @@ Supervisor outer validation (`financial-inspector-cli.php --validate-evidence ..
   - `customer_payment.amount`: `58.000000`
 - In the database schema and queries (line 485), `sales_invoice_lines.unit_price` stores the net price `50.000000`, while `line_total` stores `58.000000`. Line 1893 erroneously conflated `unit_price` with `line_total`.
 - **Standing Status**: Shared lease RELEASED. No fake full green reported; financial operations verified healthy, outer validator bug isolated.
+
+---
+
+## 18. Post-Hoc Offline Validation, Unit Verification & Advanced Probe Architecture
+
+### 18.1 Outer Validator Unit Regression Suite (17 Tests, 114 Assertions PASS)
+Root executed the focused outer validator unit test suite under commit `4dc9d6952d113c04ce0c28d423d7d500130dcbe8`:
+- **Run Directory**: `/home/t3dev/.t3/userdata/attachments/root-outer-validator-tests-rwrgq1tt`
+- **Command**: `php vendor/bin/phpunit --no-configuration --bootstrap vendor/autoload.php --stop-on-failure --stop-on-error --filter test_outer_validator_ --log-junit ... tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`
+- **Execution Counts**: **17 tests, 114 assertions, 0 failures, 0 errors, 0 skipped (100% PASS)**.
+- **Elapsed Time**: 0.645s (PHPUnit test execution time: 0.019s).
+- **Environment & Flags**: Scoped strictly OFF (`APP_ENV=testing`, `DB_PORT=1`, `PHASE8_ALLOW_DISPOSABLE_DB=0`, `MOBILE_V2_HARNESS_ENABLE=0`). Zero database connections or JVM invocations.
+- **Backend Invariance**: `pre.json` and `post.json` byte-identical (SHA-256 `6c55beb6e167116100ac173b494a963d0c91ce89af82cab26287f541fb48fd70`, `invariance: true`).
+- **Retained Evidence**: `argv.json`, `exit.json`, `junit.xml`, `raw.log`, `pre.json`, `post.json`.
+
+### 18.2 Post-Hoc Offline Validation of Immutable Case 7 Evidence (PASS)
+Root performed real CLI validation on the immutable, physically preserved Attempt 7 evidence artifacts:
+- **Run Directory**: `/home/t3dev/.t3/userdata/attachments/root-case7-posthoc-validation-_jq5kp8q`
+- **Command**:
+  ```bash
+  php tests/Support/Harness/financial-inspector-cli.php \
+    --validate-evidence=/home/t3dev/.t3/userdata/attachments/root-d43-case7-exec/paired-online-cash-pilot-evidence.json \
+    --trusted-db-report=/home/t3dev/.t3/userdata/attachments/root-d43-case7-exec/trusted_db_report.json \
+    --expected-evidence-sha=c54a85b5198e1799dbde2bdc3185361211ac835838c86593ae8dd04788b6335f \
+    --expected-db-report-sha=eb51bc1dce97a05d98cf0e473a9fa122772d5c8d0561afc91a1852fa8c85c55d \
+    --expected-backend-head=15fe4f388aeaa41e51aff780287d484d51101f4c \
+    --expected-android-pub=d43d2c200b4ccce1d7075aed759f51529375d307 \
+    --expected-android-exe=82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd \
+    --expected-handoff-digest=9ac696ec065c5d2d24944d3ba733b42d37b2fab1e6797140e57c79f9cacef6de \
+    --expected-baseline-hash=99ca761198f3fc3f5514d8df7e101bb69a9d2d0d432c3d5499d989b05fcd33ca \
+    --expected-payload-digest=11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac \
+    --expected-scope=ROOT_AUTHORIZED_PAIRED_EXECUTION \
+    --schema=accounting_p8_tmp_63886ce547ba \
+    --company-id=1 \
+    --run-id=ab436746-5e06-40d4-94cd-b8c6c44fc3e7 \
+    --expected-event-id=db442193-d21c-4900-926f-5cbf7ce25721 \
+    --output=/home/t3dev/.t3/userdata/attachments/root-case7-posthoc-validation-_jq5kp8q/outer_evidence_validation.json
+  ```
+- **Validation Result**:
+  ```json
+  {
+      "is_valid": true,
+      "errors": []
+  }
+  ```
+- **Exit Code**: `0` (elapsed 0.319s).
+- **Provenance Attestation (`provenance.json`)**:
+  - `nature`: `POSTHOC_OFFLINE_VALIDATION_OF_IMMUTABLE_CASE7`
+  - `validator_execution_head`: `4dc9d6952d113c04ce0c28d423d7d500130dcbe8`
+  - `validator_source_sha256`: `f997ea832bc585db469e19c907d428dc85b36a8b564ea7e5da7d19c605e42d29`
+  - `financial_execution_head`: `15fe4f388aeaa41e51aff780287d484d51101f4c`
+  - `original_supervisor_exit_code`: `1`
+  - `original_outer_validation_sha256`: `7aa2bc2a122dafdf55bcf536218d180b621dd639f5e3ceab79883c9afa399227`
+  - `new_financial_execution`: `false`
+- **Historical Integrity**: The original supervisor exit code 1, original outer validation failure artifact (`7aa2bc...`), and raw run logs in `root-d43-case7-exec` remain permanently unmodified. Post-hoc offline validation proves the underlying financial evidence was 100% sound and that the failure was exclusively caused by the line 1893 validator defect.
+
+### 18.3 Multi-Dimensional Provenance Pin Reference
+To prevent ambiguity across execution stages, the audit record distinguishes three separate SHA dimensions:
+1. **Financial Runtime Execution HEAD**: `15fe4f388aeaa41e51aff780287d484d51101f4c`
+   - Real runtime supervisor execution (PID 1982497, 49.809s, JVM 2/2 PASS, 6/6 reconcilers healthy, supervisor exit code 1 due to line 1893 validator bug).
+2. **Post-Hoc Validator Execution HEAD**: `4dc9d6952d113c04ce0c28d423d7d500130dcbe8`
+   - Corrected validator with net unit price `'50.000000'` expectation and guard test unit coverage.
+   - Evaluated offline against immutable Attempt 7 evidence: exit code 0 (`is_valid: true`, 0 errors).
+3. **Publication HEAD**: Commit at current origin branch (`t3/recover-cash-writer`).
+
+### 18.4 Errata Disclosure: Worker Prior Handback Commit SHA Discrepancy
+In the prior handback report, worker cited the Commit 1 hash as `545ed2db878347da69e38f1fcb78cbbd3ef7dc97` with a non-matching suffix.
+- **Authoritative Git Object SHA**: The actual full 40-character SHA of commit `545ed2d` in the git repository is:
+  `545ed2d0a0399effba687923a218a93685425519`
+- **Errata Correction**: The discrepancy was caused by an inaccurate manual string expansion in the handback text. No git history was modified or rebased; all git objects remain intact.
+
+### 18.5 Concrete SOURCE Audit: Remaining Advanced Lost ACK & Rollback Harness Gaps
+
+#### 1. Current Accepted Contract Status (PR #102)
+Under the current accepted contract (`ROOT_AUTHORIZED_PAIRED_EXECUTION`), the paired pilot enforces:
+- Exactly 5 active scenarios:
+  1. `readiness_probe` (HTTP 200)
+  2. `financial_cash_fresh_commit_201` (HTTP 201)
+  3. `financial_cash_idempotent_replay_200` (HTTP 200)
+  4. `financial_cash_event_status_posted` (HTTP 200)
+  5. `financial_cash_tamper_409` (HTTP 409)
+- Exactly 2 advanced probe scenarios:
+  6. `transport_lost_ack_recovery` (HTTP status code must be exact JSON `null`, status must be `NOT_RUN`)
+  7. `stock_permission_rollback_probes` (HTTP status code must be exact JSON `null`, status must be `NOT_RUN`)
+- Authoritative enforcement: Both `DisposableFinancialPostRunInspector::validateOuterEvidenceJson` (lines 1649-1671) and `SupervisedPairedFinancialDrill::verifyEvidenceJson` (lines 532-561) fail closed with fatal errors if either advanced probe claims any status other than `NOT_RUN`.
+
+#### 2. Advanced Lost ACK Recovery Gaps
+- **Mechanism**: Client successfully transmits an online sale event; server commits the sale, payment, and posting batches atomically, but network drops or socket times out before HTTP 201 reaches client. Client subsequently queries status or replays the commit.
+- **Harness Gaps**:
+  - `DisposableMobileV2BackendHarness.php`: Currently lacks a fault-injection transport layer or socket-level interrupt to simulate a dropped TCP connection post-commit.
+  - Client Simulation: Android peer smoke tests currently execute scenarios sequentially over an uninterrupted TLS loopback connection.
+  - Outer Validator Matrix: Hardcoded check requiring `status: 'NOT_RUN'` prevents active evaluation of lost ACK replay without failing the outer validator.
+
+#### 3. Advanced Stock / Permission Rollback Probe Gaps
+- **Mechanism**: Client attempts a sale with an unauthorized actor (permission failure) or warehouse with insufficient lot stock (business constraint failure). Server must cleanly abort/rollback without writing dangling sales invoices, payment allocations, or unbalanced posting batches. Client receives HTTP 403 or 422.
+- **Harness Gaps**:
+  - Single-Profile Constraint: `MobileV2HarnessCommand` and `mobile-v2-harness-cli.php` only seed and authorize a single synthetic intent profile from `mobile-v2-integration-manifest.json`.
+  - Inspector Delta Assumptions: `DisposableFinancialPostRunInspector::inspectDatabaseDelta()` assumes a net positive creation of exactly 1 invoice, 1 payment, 1 stock movement, and 2 posting batches. A negative rollback probe requires asserting **zero net delta** or clean reversion of temporary entities.
+  - Outer Validator Matrix: Rejects any non-`NOT_RUN` claim for `stock_permission_rollback_probes`.
+
+#### 4. Actual Entrypoints to Extend in Existing Lane Under Later Bounded Grant
+When a subsequent bounded grant is authorized by Root, the following entrypoints in the existing lane are structured to receive extension:
+1. `tests/Support/Harness/DisposableFinancialPostRunInspector.php`:
+   - Extend `validateOuterEvidenceJson()` to parameterize scenario acceptance by execution scope (e.g., admitting active probes under `ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION`).
+   - Add negative/rollback delta verification assertions in `inspectDatabaseDelta()` verifying zero leaked records on aborted transactions.
+2. `tests/Support/Harness/SupervisedPairedFinancialDrill.php`:
+   - Parameterize `$activeScenarios` and `$notRunScenarios` in `verifyEvidenceJson()` driven by the prepared manifest profile.
+3. `tests/Support/Harness/DisposableMobileV2BackendHarness.php`:
+   - Introduce secondary synthetic intent profiles for permission denial and stock exhaustion.
+4. `tests/Support/Harness/root-operator-tool.py`:
+   - Extend manifest preparation to configure advanced probe profiles under explicit Root coordination.
+
 
 
 
