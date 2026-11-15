@@ -125,7 +125,7 @@ All components verified in the backend worktree at HEAD:
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
 | `tests/Support/Harness/root-operator-tool.py` | `9f6930b63dc3d267b4472b0432f392bc997f6746446c9920a1e5b012c5d3fc5c` | Tool (Python 3) |
-| `tests/Support/Harness/supervised-paired-drill-operator.py` | `6d4462e987d0f9248b94f7e1a6104aa430f9195a869389a27dce6841903dcb53` | Operator Driver |
+| `tests/Support/Harness/supervised-paired-drill-operator.py` | `e98dbd8acd0b3ffee851e66421af037fbc61092166961ee810dc2f07060d605c` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
@@ -136,7 +136,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `00cf3bfda2464ae6509bb4db10c5ce458c55c8a0f71d03790b5226598528790f` | Python Unit Suite (12 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `ec2697543a54b95772ce74fc213b82d6e657de0acb28e4ccc3a2eed10a1951b1` | Python Unit Suite (21 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
@@ -150,10 +150,10 @@ Android Root has completed setup and verification of the dedicated T3-bound peer
 - **Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c` (clean/pub)
 - **Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
 - **Root 203 Source/Build Wrapper Hashmap SHA:** `9613771bf4701b3694d83a7e5caeee642fc4d246356f7e7520bef09fecdaf846`
-- **Publication vs. Executable Delta:** 10 docs-only commits between `c8` and `5f`.
+- **Publication vs. Executable Delta:** 10 docs-only files between `c8` and `5f`.
 - **Selection Difference Audit:** Root verified an expanded selection of **204 files** with **0 mismatch vs. `5f` git objects**. This expanded 204-file selection is distinguished from the historical 203 source/build wrapper selection.
 - **Protected Active Lane:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-7ac8b73d-abb5d6e52b3b3cf9` remains the protected active writer lane, untouched and permanently disallowed as a paired execution target.
-- **Private Binding Record:** Persisted at `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json` (SHA-256: `9819d6d20f853d33811533f49b183bf40986f21979225dce7a0f1c08c8c830ff`, mode `0600`, directory mode `0700`).
+- **Private Binding Record:** Persisted at `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json` (SHA-256: `a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c`, mode `0600`, directory mode `0700`).
 
 ---
 
@@ -165,6 +165,7 @@ When Root grants execution authority for the verified peer:
 - **Target Android Worktree:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
 - **Backend Directory:** `/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision`
 - **Binding Record:** `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json`
+- **Expected Binding SHA:** `a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c`
 
 ### 6.1 Phase B Compile-Only Prewarm Command
 ```bash
@@ -176,6 +177,7 @@ python3 tests/Support/Harness/supervised-paired-drill-operator.py \
   --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
   --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
   --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
+  --expected-binding-sha=a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c \
   --prewarm-only \
   --offline \
   --timeout=180
@@ -191,6 +193,7 @@ python3 tests/Support/Harness/supervised-paired-drill-operator.py \
   --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
   --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
   --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
+  --expected-binding-sha=a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c \
   --prepare-only \
   --paired-hold=120
 ```
@@ -206,6 +209,7 @@ python3 tests/Support/Harness/supervised-paired-drill-operator.py \
   --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
   --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
   --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
+  --expected-binding-sha=a1a932fcab6fc82e8f5907a7a046769769f78c4166622db2cff8a915babe9a3c \
   --manifest=/path/to/external/pairing-manifest.json \
   --manifest-sha=<64hex_sha> \
   --root-approval-file=/path/to/external/prestart.json \

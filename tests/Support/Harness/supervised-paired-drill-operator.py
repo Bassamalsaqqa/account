@@ -214,17 +214,59 @@ def verify_source_parity(android_dir, pub_head, exe_head):
             f"({pub_head}) and executable pin ({exe_head}):\n  " + "\n  ".join(disallowed)
         )
 
-def verify_binding_record(binding_path, android_dir, pub_head, exe_head):
-    """Validates Root-verified binding JSON record matches supplied parameters."""
+def verify_binding_record(binding_path, expected_sha, android_dir, pub_head, exe_head):
+    """
+    Validates Root-verified binding JSON record matches supplied parameters:
+    - Path has no symlink components
+    - Parent directory exists, is 0700 owned by current UID, no symlinks
+    - File exists, is 0600 owned by current UID
+    - File SHA-256 matches expected_sha exactly
+    - root_verified is True
+    - peer_android_attached is True
+    - peer_android_worktree matches canonical android_dir
+    - peer_android_branch matches 't3/android-qualified-basic-peer-c8dda700'
+    - pins.android_publication_head matches pub_head
+    - pins.android_executable_head matches exe_head
+    - pins.pub_vs_exe_delta matches approved 10 docs files
+    """
     validate_no_symlink_components(binding_path, "Binding record path")
-    if not os.path.isfile(binding_path):
-        raise ValueError(f"Binding record file not found: {binding_path}")
-    st = os.stat(binding_path)
+    canonical_binding = os.path.realpath(binding_path)
+    if not os.path.isfile(canonical_binding):
+        raise ValueError(f"Binding record file not found: {canonical_binding}")
+
+    # Parent directory security check (mode 0700, UID match, no symlinks)
+    parent = os.path.dirname(canonical_binding)
+    validate_no_symlink_components(parent, "Binding record parent directory")
+    st_p = os.stat(parent)
+    if (st_p.st_mode & 0o777) != 0o700:
+        raise ValueError(f"Binding record parent directory insecure permissions: expected 0700, got {oct(st_p.st_mode & 0o777)}")
+    current_uid = os.getuid() if hasattr(os, 'getuid') else -1
+    if current_uid != -1 and st_p.st_uid != current_uid:
+        raise ValueError(f"Binding record parent directory owner mismatch: expected UID {current_uid}, got {st_p.st_uid}")
+
+    # File security check (mode 0600, UID match)
+    st = os.stat(canonical_binding)
     if (st.st_mode & 0o777) != 0o600:
         raise ValueError(f"Binding record permissions insecure: expected 0600, got {oct(st.st_mode & 0o777)}")
+    if current_uid != -1 and st.st_uid != current_uid:
+        raise ValueError(f"Binding record owner mismatch: expected UID {current_uid}, got {st.st_uid}")
 
-    with open(binding_path, 'r') as f:
+    # Hash check vs Root's expected SHA pin
+    expected_clean_sha = validate_manifest_sha(expected_sha, "Expected binding SHA")
+    actual_sha = sha256_file(canonical_binding)
+    if actual_sha != expected_clean_sha:
+        raise ValueError(
+            f"Binding record SHA mismatch: expected '{expected_clean_sha}', got '{actual_sha}'. "
+            "Record has been modified or tampered with."
+        )
+
+    with open(canonical_binding, 'r') as f:
         data = json.load(f)
+
+    if data.get('root_verified') is not True:
+        raise ValueError("Binding record root_verified must be boolean True")
+    if data.get('peer_android_attached') is not True:
+        raise ValueError("Binding record peer_android_attached must be boolean True")
 
     expected_worktree = os.path.realpath(data.get('peer_android_worktree', ''))
     actual_worktree = os.path.realpath(android_dir)
@@ -234,12 +276,23 @@ def verify_binding_record(binding_path, android_dir, pub_head, exe_head):
             f"supplied '{actual_worktree}'"
         )
 
+    expected_branch = data.get('peer_android_branch', '')
+    if expected_branch != 't3/android-qualified-basic-peer-c8dda700':
+        raise ValueError(
+            f"Binding record branch mismatch: expected 't3/android-qualified-basic-peer-c8dda700', "
+            f"got '{expected_branch}'"
+        )
+
     rec_pub = data.get('pins', {}).get('android_publication_head', '').lower()
     rec_exe = data.get('pins', {}).get('android_executable_head', '').lower()
     if rec_pub != pub_head:
         raise ValueError(f"Binding record pub pin mismatch: record '{rec_pub}' != supplied '{pub_head}'")
     if rec_exe != exe_head:
         raise ValueError(f"Binding record exe pin mismatch: record '{rec_exe}' != supplied '{exe_head}'")
+
+    delta = data.get('pins', {}).get('pub_vs_exe_delta', '')
+    if delta not in ('10_DOCS_ONLY_FILES', '10_DOCS_ONLY_COMMITS'):
+        raise ValueError(f"Binding record pub_vs_exe_delta invalid: '{delta}'")
 
 def get_git_state(repo_dir):
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo_dir).decode().strip()
@@ -452,7 +505,8 @@ def main():
     parser.add_argument("--expected-backend-head", required=True, help="Expected backend HEAD SHA (40 hex)")
     parser.add_argument("--android-pub-head", required=True, help="Root-approved peer Android publication HEAD SHA (40 hex)")
     parser.add_argument("--android-exe-head", required=True, help="Root-approved peer Android executable HEAD SHA (40 hex)")
-    parser.add_argument("--binding-record", default=None, help="Path to Root-verified binding JSON record")
+    parser.add_argument("--binding-record", required=True, help="Path to Root-verified binding JSON record (mandatory)")
+    parser.add_argument("--expected-binding-sha", required=True, help="Expected 64-hex SHA-256 for Root-verified binding record (mandatory)")
     parser.add_argument("--offline", action="store_true", help="Pass --offline flag to Gradle prewarm")
     parser.add_argument("--paired-hold", type=int, default=120, help="Paired hold seconds (default: 120)")
     parser.add_argument("--timeout", type=int, default=180, help="Supervised execution timeout in seconds (default: 180)")
@@ -529,9 +583,8 @@ def main():
         # 7. Verify source parity between pub and exe pins (Defect 3 fix)
         verify_source_parity(android_dir, pub_head, exe_head)
 
-        # 8. Verify binding record if provided
-        if args.binding_record:
-            verify_binding_record(args.binding_record, android_dir, pub_head, exe_head)
+        # 8. Verify mandatory binding record and expected SHA
+        verify_binding_record(args.binding_record, args.expected_binding_sha, android_dir, pub_head, exe_head)
 
         # 9. Verify exact clean status on BOTH repos (no uncommitted or untracked changes)
         verify_exact_clean_status(backend_dir, "Backend repository")

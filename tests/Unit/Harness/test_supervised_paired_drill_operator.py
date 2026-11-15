@@ -16,28 +16,37 @@ Exercises all adversarial constraints and defect remediations in
 10. Pre/Post git state comparison and drift detection.
 11. Executable source parity verification on temporary throwaway git fixtures.
 12. Decoupled prepare/execute directory handshake validation.
-
-NOTE: Authored source tests. UNRUN pending Root QA grant.
+13. Strict mandatory binding record verification (parent 0700 UID, file 0600 UID, SHA pin match,
+    root_verified is True, peer_android_attached is True, canonical worktree and branch match).
 """
 
 import os
 import sys
 import json
 import time
+import signal
+import hashlib
 import shutil
 import tempfile
 import unittest
 import importlib.util
 import subprocess
+from pathlib import Path
+
+# Resolve actual repo root using Path(__file__).resolve().parents[3]
+REPO_ROOT = str(Path(__file__).resolve().parents[3])
+OPERATOR_PATH = os.path.join(REPO_ROOT, 'tests/Support/Harness/supervised-paired-drill-operator.py')
+assert os.path.isfile(OPERATOR_PATH), f"Operator driver not found at {OPERATOR_PATH}"
+
+# Verify against non-mutating git rev-parse --show-toplevel
+git_root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], cwd=REPO_ROOT).decode().strip()
+assert os.path.realpath(REPO_ROOT) == os.path.realpath(git_root), f"Repo root mismatch: {REPO_ROOT} != {git_root}"
 
 # Dynamically import the hyphenated module
-TESTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO_ROOT = os.path.dirname(TESTS_DIR)
-OPERATOR_PATH = os.path.join(REPO_ROOT, 'tests/Support/Harness/supervised-paired-drill-operator.py')
-
 spec = importlib.util.spec_from_file_location("operator_driver", OPERATOR_PATH)
 operator_driver = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(operator_driver)
+
 
 class TestSupervisedPairedDrillOperator(unittest.TestCase):
 
@@ -173,23 +182,32 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         with open(log_path, 'w') as log_f:
             operator_driver.run_supervised_child(cmd, self.test_dir, os.environ.copy(), log_f, timeout_seconds=5.0)
 
-        # Wait briefly for pid file to be written
-        for _ in range(20):
-            if os.path.isfile(pid_file):
-                break
-            time.sleep(0.05)
+        descendant_pid = None
+        try:
+            # Wait briefly for pid file to be written
+            for _ in range(40):
+                if os.path.isfile(pid_file):
+                    break
+                time.sleep(0.05)
 
-        if os.path.isfile(pid_file):
+            self.assertTrue(os.path.isfile(pid_file), "PID file not created by descendant child")
             with open(pid_file, 'r') as f:
                 descendant_pid = int(f.read().strip())
+
             # Descendant process must be killed by reap_process_group
-            # Check with kill(0)
             try:
                 os.kill(descendant_pid, 0)
                 alive = True
             except ProcessLookupError:
                 alive = False
             self.assertFalse(alive, f"Descendant process {descendant_pid} survived execution!")
+        finally:
+            if descendant_pid is not None:
+                try:
+                    os.kill(descendant_pid, 0)
+                    os.kill(descendant_pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
 
     def test_run_supervised_child_log_write_failure_propagates(self):
         class FailingLogHandle:
@@ -242,6 +260,124 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             operator_driver.verify_source_parity(git_dir, base_head, code_head)
         self.assertIn("SOURCE_PARITY_VIOLATION", str(ctx.exception))
+
+    def _create_mock_binding(self, parent_mode=0o700, file_mode=0o600, overrides=None):
+        parent_dir = os.path.join(self.test_dir, 'mock_binding_parent')
+        os.makedirs(parent_dir, mode=parent_mode)
+        binding_file = os.path.join(parent_dir, 'binding.json')
+
+        mock_worktree = os.path.join(self.test_dir, 'mock_android_peer')
+        os.makedirs(mock_worktree, mode=0o700)
+
+        data = {
+            "root_verified": True,
+            "peer_android_worktree": mock_worktree,
+            "peer_android_branch": "t3/android-qualified-basic-peer-c8dda700",
+            "peer_android_attached": True,
+            "pins": {
+                "android_publication_head": "c" * 40,
+                "android_executable_head": "5" * 40,
+                "pub_vs_exe_delta": "10_DOCS_ONLY_FILES"
+            }
+        }
+        if overrides:
+            for k, v in overrides.items():
+                if k == "pins":
+                    data["pins"].update(v)
+                else:
+                    data[k] = v
+
+        content = json.dumps(data, indent=2).encode('utf-8')
+        with open(binding_file, 'wb') as f:
+            f.write(content)
+        os.chmod(binding_file, file_mode)
+
+        expected_sha = hashlib.sha256(content).hexdigest()
+        return binding_file, expected_sha, mock_worktree, "c" * 40, "5" * 40
+
+    def test_binding_record_valid_passes(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        # Must pass without exception
+        operator_driver.verify_binding_record(
+            binding_file, expected_sha, android_dir, pub_head, exe_head
+        )
+
+    def test_binding_record_missing_fails_closed(self):
+        nonexistent = os.path.join(self.test_dir, 'missing_dir/binding.json')
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                nonexistent, "0" * 64, "/nonexistent", "c" * 40, "5" * 40
+            )
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_binding_record_tampered_sha_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        tampered_sha = "0" * 64
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, tampered_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("Binding record SHA mismatch", str(ctx.exception))
+
+    def test_binding_record_root_verified_not_true_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"root_verified": False}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("root_verified must be boolean True", str(ctx.exception))
+
+    def test_binding_record_peer_attached_not_true_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"peer_android_attached": False}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("peer_android_attached must be boolean True", str(ctx.exception))
+
+    def test_binding_record_worktree_mismatch_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        other_worktree = os.path.join(self.test_dir, 'other_worktree')
+        os.makedirs(other_worktree, mode=0o700)
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, other_worktree, pub_head, exe_head
+            )
+        self.assertIn("worktree mismatch", str(ctx.exception))
+
+    def test_binding_record_branch_mismatch_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"peer_android_branch": "wrong/branch"}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("branch mismatch", str(ctx.exception))
+
+    def test_binding_record_parent_insecure_permissions_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        parent_dir = os.path.dirname(binding_file)
+        os.chmod(parent_dir, 0o755)
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("parent directory insecure permissions", str(ctx.exception))
+
+    def test_binding_record_file_insecure_permissions_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        os.chmod(binding_file, 0o644)
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("permissions insecure", str(ctx.exception))
+
 
 if __name__ == '__main__':
     unittest.main()
