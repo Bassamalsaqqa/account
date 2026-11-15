@@ -770,6 +770,92 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
+     * Snapshots environment variables across all three stores: getenv, $_ENV, and $_SERVER.
+     *
+     * @param  list<string>  $varNames
+     * @return array<string, array{getenv: string|false, ENV: string|null, SERVER: string|null}>
+     */
+    public static function snapshotEnvironmentStores(array $varNames): array
+    {
+        $snapshot = [];
+        foreach ($varNames as $varName) {
+            $snapshot[$varName] = [
+                'getenv' => getenv($varName),
+                'ENV'    => $_ENV[$varName]    ?? null,
+                'SERVER' => $_SERVER[$varName] ?? null,
+            ];
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * Restores environment variables across all three stores: getenv/putenv, $_ENV, and $_SERVER.
+     *
+     * @param  array<string, array{getenv: string|false, ENV: string|null, SERVER: string|null}>  $savedStores
+     */
+    public static function restoreEnvironmentStores(array $savedStores): void
+    {
+        foreach ($savedStores as $varName => $stores) {
+            $origGetenv = $stores['getenv'] ?? false;
+            if ($origGetenv === false) {
+                putenv($varName);
+            } else {
+                putenv("{$varName}={$origGetenv}");
+            }
+
+            if (($stores['ENV'] ?? null) === null) {
+                unset($_ENV[$varName]);
+            } else {
+                $_ENV[$varName] = $stores['ENV'];
+            }
+
+            if (($stores['SERVER'] ?? null) === null) {
+                unset($_SERVER[$varName]);
+            } else {
+                $_SERVER[$varName] = $stores['SERVER'];
+            }
+        }
+    }
+
+    /**
+     * Executes structured cleanup while scoped credentials and testing flags remain in environment,
+     * and guarantees unconditional 3-store environment restoration in finally even if cleanup throws.
+     *
+     * @param  Process|null  $childProcess  Captured child process
+     * @param  VerifiedOwnedSnapshot|null  $snapshot  Captured owned execution snapshot
+     * @param  string  $repoRoot  Checkout repository root
+     * @param  array<string, array{getenv: string|false, ENV: string|null, SERVER: string|null}>  $parentEnvToRestore  Captured 3-store env
+     * @param  PDO|null  $adminPdo  Optional pre-connected admin PDO (or mock for unit testing)
+     * @return array{
+     *     child_reaped: bool,
+     *     schema_absent: bool,
+     *     listeners_closed: bool,
+     *     temp_cleaned: bool,
+     *     success: bool,
+     *     errors: string[]
+     * }
+     */
+    public static function executeCleanupAndRestoreEnv(
+        ?Process $childProcess,
+        ?VerifiedOwnedSnapshot $snapshot,
+        string $repoRoot,
+        array $parentEnvToRestore,
+        ?PDO $adminPdo = null
+    ): array {
+        try {
+            return self::executeExactCleanup(
+                $childProcess,
+                $snapshot,
+                $repoRoot,
+                $adminPdo
+            );
+        } finally {
+            self::restoreEnvironmentStores($parentEnvToRestore);
+        }
+    }
+
+    /**
      * Performs exact structured cleanup:
      * - Reaps child CLI process (SIGTERM then SIGKILL with actual wait loop).
      * - Requires prevalidated owned snapshot before executing ANY destructive database drop or file removal.

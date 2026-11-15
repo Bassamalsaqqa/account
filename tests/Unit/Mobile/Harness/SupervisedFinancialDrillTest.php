@@ -894,52 +894,255 @@ class SupervisedFinancialDrillTest extends TestCase
     }
 
     #[Test]
-    public function test_three_store_env_restoration_restores_all_stores_on_exception(): void
+    public function test_scoped_cleanup_and_three_store_env_restoration_lifecycle(): void
     {
-        // Verify three-store restoration invariant: getenv, $_ENV, and $_SERVER must all be restored.
-        $testVar = 'MOBILE_V2_TEST_STORE_INVARIANT_' . bin2hex(random_bytes(4));
-        $this->assertFalse(getenv($testVar));
-        $this->assertArrayNotHasKey($testVar, $_ENV);
-        $this->assertArrayNotHasKey($testVar, $_SERVER);
-
-        $storesSnapshot = [
-            'getenv' => getenv($testVar),
-            'ENV'    => $_ENV[$testVar]    ?? null,
-            'SERVER' => $_SERVER[$testVar] ?? null,
+        $repoRoot = dirname(__DIR__, 3);
+        $testDbVars = [
+            'APP_ENV',
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+            'PHASE8_TEST_DB_EMPTY_PASSWORD',
+            'PHASE8_DISPOSABLE_DB_PROOF',
+            'PHASE8_DISPOSABLE_DB_NONCE',
         ];
 
+        // Outer ambient snapshot so test runner environment is cleanly restored when test ends
+        $outerAmbient = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($testDbVars);
+
         try {
-            putenv("{$testVar}=mutated_val");
-            $_ENV[$testVar] = 'mutated_val';
-            $_SERVER[$testVar] = 'mutated_val';
-            $this->assertSame('mutated_val', getenv($testVar));
-            $this->assertSame('mutated_val', $_ENV[$testVar]);
-            $this->assertSame('mutated_val', $_SERVER[$testVar]);
-            throw new RuntimeException('SIMULATED_TEST_FAILURE');
-        } catch (RuntimeException $e) {
-            $this->assertSame('SIMULATED_TEST_FAILURE', $e->getMessage());
+            // 1. Ensure all variables start strictly unset across all 3 stores
+            foreach ($testDbVars as $var) {
+                putenv($var);
+                unset($_ENV[$var], $_SERVER[$var]);
+                $this->assertFalse(getenv($var), "Expected {$var} to start unset in getenv");
+                $this->assertArrayNotHasKey($var, $_ENV, "Expected {$var} to start unset in \$_ENV");
+                $this->assertArrayNotHasKey($var, $_SERVER, "Expected {$var} to start unset in \$_SERVER");
+            }
+
+            // 2. Snapshot the unset stores (matches production supervisor step 11)
+            $parentEnvToRestore = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($testDbVars);
+
+            // 3. Setup synthetic proof fixture and valid harness directory
+            $schemaName = 'accounting_p8_tmp_0123456789ab';
+            $proofNonce = str_repeat('a', 32);
+            $proofDir = $this->tempDir . '/proof_dir';
+            if (! is_dir($proofDir)) {
+                mkdir($proofDir, 0700, true);
+            }
+            $proofFile = $proofDir . '/proof.json';
+
+            $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+            $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+            if (! is_dir($harnessDir)) {
+                mkdir($harnessDir, 0700, true);
+            }
+
+            $proofContent = json_encode([
+                'schema' => $schemaName,
+                'host'   => '127.0.0.1',
+                'port'   => '3342',
+                'nonce'  => $proofNonce,
+            ], JSON_THROW_ON_ERROR);
+            file_put_contents($proofFile, $proofContent);
+            chmod($proofFile, 0600);
+
+            // 4. Load valid synthetic credentials and scoped flags across all three stores
+            $scopedVars = [
+                'APP_ENV'                       => 'testing',
+                'PHASE8_ALLOW_DISPOSABLE_DB'    => '1',
+                'MOBILE_V2_HARNESS_ENABLE'      => '1',
+                'PHASE8_TEST_DB_HOST'           => '127.0.0.1',
+                'PHASE8_TEST_DB_PORT'           => '3342',
+                'PHASE8_TEST_DB_USERNAME'       => 'root',
+                'PHASE8_TEST_DB_PASSWORD'       => '',
+                'PHASE8_TEST_DB_EMPTY_PASSWORD' => '1',
+                'PHASE8_DISPOSABLE_DB_PROOF'    => $proofFile,
+                'PHASE8_DISPOSABLE_DB_NONCE'    => $proofNonce,
+            ];
+            foreach ($scopedVars as $var => $val) {
+                putenv("{$var}={$val}");
+                $_ENV[$var]    = $val;
+                $_SERVER[$var] = $val;
+            }
+
+            // 5. Build valid snapshot via sole public factory fromLiveOwnership()
+            $snapshot = VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: $schemaName,
+                proofPath:  $proofFile,
+                proofNonce: $proofNonce,
+                harnessDir: $harnessDir,
+                childPid:   12345,
+                repoRoot:   $repoRoot
+            );
+
+            // 6. Mock PDO: verify port 3342 and schema absence, AND assert cleanup sees scoped credentials before restoration
+            $credentialSeenDuringCleanup = false;
+            $mockPortStmt = $this->createMock(PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturnCallback(function () use (&$credentialSeenDuringCleanup) {
+                if (getenv('PHASE8_TEST_DB_HOST') === '127.0.0.1'
+                    && ($_ENV['PHASE8_TEST_DB_HOST'] ?? null) === '127.0.0.1'
+                    && ($_SERVER['PHASE8_TEST_DB_HOST'] ?? null) === '127.0.0.1'
+                    && getenv('APP_ENV') === 'testing'
+                    && getenv('PHASE8_ALLOW_DISPOSABLE_DB') === '1'
+                ) {
+                    $credentialSeenDuringCleanup = true;
+                }
+
+                return ['port' => '3342'];
+            });
+
+            $mockSchemaStmt = $this->createMock(PDOStatement::class);
+            $mockSchemaStmt->method('fetch')->willReturn(false);
+
+            $mockPdo = $this->createMock(PDO::class);
+            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+            // 7. Execute production lifecycle cleanup and 3-store restoration helper
+            $result = SupervisedPairedFinancialDrill::executeCleanupAndRestoreEnv(
+                null,
+                $snapshot,
+                $repoRoot,
+                $parentEnvToRestore,
+                $mockPdo
+            );
+
+            // 8. Assert cleanup succeeded and observed scoped credentials before restoration
+            $this->assertTrue($credentialSeenDuringCleanup, 'Cleanup must see scoped credentials before restoration occurs');
+            $this->assertTrue($result['success']);
+            $this->assertTrue($result['schema_absent']);
+            $this->assertEmpty($result['errors']);
+
+            // 9. Assert all 3 stores are completely restored to their original unset state
+            foreach ($testDbVars as $var) {
+                $this->assertFalse(getenv($var), "Expected {$var} to be restored to false in getenv");
+                $this->assertArrayNotHasKey($var, $_ENV, "Expected {$var} to be restored to unset in \$_ENV");
+                $this->assertArrayNotHasKey($var, $_SERVER, "Expected {$var} to be restored to unset in \$_SERVER");
+            }
         } finally {
-            // Restore logic identical to supervised-financial-drill.php finally block
-            if ($storesSnapshot['getenv'] === false) {
-                putenv($testVar);
-            } else {
-                putenv("{$testVar}={$storesSnapshot['getenv']}");
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($outerAmbient);
+        }
+    }
+
+    #[Test]
+    public function test_scoped_cleanup_restores_all_stores_even_when_cleanup_throws(): void
+    {
+        $repoRoot = dirname(__DIR__, 3);
+        $testDbVars = [
+            'APP_ENV',
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+            'PHASE8_TEST_DB_EMPTY_PASSWORD',
+            'PHASE8_DISPOSABLE_DB_PROOF',
+            'PHASE8_DISPOSABLE_DB_NONCE',
+        ];
+
+        $outerAmbient = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($testDbVars);
+
+        try {
+            // 1. Ensure all variables start unset across all 3 stores
+            foreach ($testDbVars as $var) {
+                putenv($var);
+                unset($_ENV[$var], $_SERVER[$var]);
             }
-            if ($storesSnapshot['ENV'] === null) {
-                unset($_ENV[$testVar]);
-            } else {
-                $_ENV[$testVar] = $storesSnapshot['ENV'];
+
+            $parentEnvToRestore = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($testDbVars);
+
+            // 2. Setup synthetic proof fixture and valid harness directory
+            $schemaName = 'accounting_p8_tmp_0123456789ab';
+            $proofNonce = str_repeat('b', 32);
+            $proofDir = $this->tempDir . '/proof_dir_throw';
+            if (! is_dir($proofDir)) {
+                mkdir($proofDir, 0700, true);
             }
-            if ($storesSnapshot['SERVER'] === null) {
-                unset($_SERVER[$testVar]);
-            } else {
-                $_SERVER[$testVar] = $storesSnapshot['SERVER'];
+            $proofFile = $proofDir . '/proof.json';
+
+            $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+            $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+            if (! is_dir($harnessDir)) {
+                mkdir($harnessDir, 0700, true);
+            }
+
+            $proofContent = json_encode([
+                'schema' => $schemaName,
+                'host'   => '127.0.0.1',
+                'port'   => '3342',
+                'nonce'  => $proofNonce,
+            ], JSON_THROW_ON_ERROR);
+            file_put_contents($proofFile, $proofContent);
+            chmod($proofFile, 0600);
+
+            // 3. Set scoped credentials across all three stores
+            $scopedVars = [
+                'APP_ENV'                       => 'testing',
+                'PHASE8_ALLOW_DISPOSABLE_DB'    => '1',
+                'MOBILE_V2_HARNESS_ENABLE'      => '1',
+                'PHASE8_TEST_DB_HOST'           => '127.0.0.1',
+                'PHASE8_TEST_DB_PORT'           => '3342',
+                'PHASE8_TEST_DB_USERNAME'       => 'root',
+                'PHASE8_TEST_DB_PASSWORD'       => '',
+                'PHASE8_TEST_DB_EMPTY_PASSWORD' => '1',
+                'PHASE8_DISPOSABLE_DB_PROOF'    => $proofFile,
+                'PHASE8_DISPOSABLE_DB_NONCE'    => $proofNonce,
+            ];
+            foreach ($scopedVars as $var => $val) {
+                putenv("{$var}={$val}");
+                $_ENV[$var]    = $val;
+                $_SERVER[$var] = $val;
+            }
+
+            $childPid = 54321;
+            $snapshot = VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: $schemaName,
+                proofPath:  $proofFile,
+                proofNonce: $proofNonce,
+                harnessDir: $harnessDir,
+                childPid:   $childPid,
+                repoRoot:   $repoRoot
+            );
+
+            // 4. Mock child process whose signal() throws an unhandled RuntimeException during cleanup
+            $mockProcess = $this->createMock(Process::class);
+            $mockProcess->method('isRunning')->willReturn(true);
+            $mockProcess->method('getPid')->willReturn($childPid);
+            $mockProcess->method('signal')->willThrowException(new RuntimeException('SIMULATED_CHILD_SIGNAL_CRITICAL_FAILURE'));
+
+            $caught = null;
+            try {
+                SupervisedPairedFinancialDrill::executeCleanupAndRestoreEnv(
+                    $mockProcess,
+                    $snapshot,
+                    $repoRoot,
+                    $parentEnvToRestore,
+                    null
+                );
+            } catch (RuntimeException $e) {
+                $caught = $e;
+            }
+
+            $this->assertNotNull($caught);
+            $this->assertSame('SIMULATED_CHILD_SIGNAL_CRITICAL_FAILURE', $caught->getMessage());
+
+            // 5. Assert all 3 stores are STILL completely restored despite the exception thrown in cleanup
+            foreach ($testDbVars as $var) {
+                $this->assertFalse(getenv($var), "Expected {$var} in getenv to be false even after cleanup exception");
+                $this->assertArrayNotHasKey($var, $_ENV, "Expected {$var} in \$_ENV to be unset even after cleanup exception");
+                $this->assertArrayNotHasKey($var, $_SERVER, "Expected {$var} in \$_SERVER to be unset even after cleanup exception");
+            }
+        } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($outerAmbient);
+            if (isset($harnessDir) && is_dir($harnessDir)) {
+                @rmdir($harnessDir);
             }
         }
-
-        $this->assertFalse(getenv($testVar));
-        $this->assertArrayNotHasKey($testVar, $_ENV);
-        $this->assertArrayNotHasKey($testVar, $_SERVER);
     }
 
     // ---------------------------------------------------------------------------
@@ -988,14 +1191,7 @@ class SupervisedFinancialDrillTest extends TestCase
             'PHASE8_DISPOSABLE_DB_PROOF',
             'PHASE8_DISPOSABLE_DB_NONCE',
         ];
-        $savedStores = [];
-        foreach ($envVarsToScope as $var) {
-            $savedStores[$var] = [
-                'getenv' => getenv($var),
-                'ENV'    => $_ENV[$var]    ?? null,
-                'SERVER' => $_SERVER[$var] ?? null,
-            ];
-        }
+        $savedStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envVarsToScope);
 
         try {
             $scopedVars = [
@@ -1037,25 +1233,7 @@ class SupervisedFinancialDrillTest extends TestCase
                 repoRoot:   $repoRoot
             );
         } finally {
-            // Restore all three env stores unconditionally
-            foreach ($savedStores as $var => $stores) {
-                $origGetenv = $stores['getenv'];
-                if ($origGetenv === false) {
-                    putenv($var);
-                } else {
-                    putenv("{$var}={$origGetenv}");
-                }
-                if ($stores['ENV'] === null) {
-                    unset($_ENV[$var]);
-                } else {
-                    $_ENV[$var] = $stores['ENV'];
-                }
-                if ($stores['SERVER'] === null) {
-                    unset($_SERVER[$var]);
-                } else {
-                    $_SERVER[$var] = $stores['SERVER'];
-                }
-            }
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
         }
 
         return $snapshot;

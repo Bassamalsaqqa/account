@@ -227,6 +227,8 @@ $childProcess = null;
 $schemaName = null;
 $harnessDir = null;
 $snapshot = null;
+$pdo = null;
+$manifestOut = null;
 $parentEnvToRestore = [];
 $cleanupExecuted = false;
 $exitCode = 0;
@@ -396,14 +398,7 @@ try {
         'PHASE8_DISPOSABLE_DB_PROOF',
         'PHASE8_DISPOSABLE_DB_NONCE',
     ];
-    foreach ($envAllowlist as $varName) {
-        // Capture from all three env stores; getenv() is canonical for putenv-set vars.
-        $parentEnvToRestore[$varName] = [
-            'getenv' => getenv($varName),
-            'ENV'    => $_ENV[$varName]    ?? null,
-            'SERVER' => $_SERVER[$varName] ?? null,
-        ];
-    }
+    $parentEnvToRestore = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envAllowlist);
 
     // Set scoped testing flags AFTER originals are captured and AFTER both approvals are verified,
     // but BEFORE captureVerifiedOwnedSnapshot (which calls fromLiveOwnership -> assertPrimarySchema).
@@ -747,52 +742,29 @@ try {
     $manifestOut = $outputDir . '/approval_hashes_manifest.json';
     file_put_contents($manifestOut, json_encode($hashesManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
     chmod($manifestOut, 0600);
-
-    echo "\n==============================================================================\n";
-    echo "PAIRED FINANCIAL INTEGRATION DRILL COMPLETED SUCCESSFULLY\n";
-    echo "Retained Artifacts Manifest: {$manifestOut}\n";
-    echo "==============================================================================\n";
 } catch (\Throwable $e) {
     fwrite(STDERR, "\nSupervisor Error: {$e->getMessage()}\n");
     $exitCode = 1;
 } finally {
-    try {
-        if (! $cleanupExecuted) {
-            $cleanupExecuted = true;
-            $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
-                $childProcess,
-                $snapshot,
-                $repoRoot
-            );
-            if (! $cleanupResult['success']) {
-                fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', $cleanupResult['errors']) . "\n");
-                $exitCode = 1;
-            }
+    if (! $cleanupExecuted) {
+        $cleanupExecuted = true;
+        $cleanupResult = SupervisedPairedFinancialDrill::executeCleanupAndRestoreEnv(
+            $childProcess,
+            $snapshot,
+            $repoRoot,
+            $parentEnvToRestore,
+            $pdo
+        );
+        if (! $cleanupResult['success']) {
+            fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', $cleanupResult['errors']) . "\n");
+            $exitCode = 1;
         }
-    } finally {
-        // Restore all three env stores to their pre-entry originals AFTER cleanup even on exceptions.
-        // $parentEnvToRestore[$varName] is ['getenv' => string|false, 'ENV' => string|null, 'SERVER' => string|null].
-        foreach ($parentEnvToRestore as $varName => $stores) {
-            // Restore getenv/putenv store
-            $origGetenv = $stores['getenv'];
-            if ($origGetenv === false) {
-                putenv($varName);
-            } else {
-                putenv("{$varName}={$origGetenv}");
-            }
-            // Restore $_ENV
-            if ($stores['ENV'] === null) {
-                unset($_ENV[$varName]);
-            } else {
-                $_ENV[$varName] = $stores['ENV'];
-            }
-            // Restore $_SERVER
-            if ($stores['SERVER'] === null) {
-                unset($_SERVER[$varName]);
-            } else {
-                $_SERVER[$varName] = $stores['SERVER'];
-            }
-        }
+    }
+    if ($exitCode === 0 && ! $aborted && ($cleanupResult['success'] ?? false) && $manifestOut !== null) {
+        echo "\n==============================================================================\n";
+        echo "PAIRED FINANCIAL INTEGRATION DRILL COMPLETED SUCCESSFULLY\n";
+        echo "Retained Artifacts Manifest: {$manifestOut}\n";
+        echo "==============================================================================\n";
     }
     if ($aborted) {
         $exitCode = ($abortSignal === SIGINT) ? 130 : 143;
