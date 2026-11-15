@@ -753,6 +753,30 @@ try {
             fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', $cleanupResult['errors']) . "\n");
             $exitCode = 1;
         }
+
+        // Persist restricted hash-pinned POST-cleanup final witness
+        $finalWitness = SupervisedPairedFinancialDrill::persistPostCleanupFinalWitness(
+            outputDir: $outputDir,
+            backendHead: $backendHead,
+            androidPubHead: $androidPubHead,
+            androidExeHead: $androidExeHead,
+            manifestSha: $manifestSha,
+            snapshot: $snapshot,
+            cleanupResult: $cleanupResult,
+            exitCode: $exitCode
+        );
+
+        echo "  [Final Witness] Recorded POST-cleanup witness: {$finalWitness['witness_path']} (SHA: {$finalWitness['witness_sha256']})\n";
+
+        // Persist artifact index with separate final witness SHA (avoiding circular hash with pre-cleanup manifest)
+        $artifactIndex = [
+            'approval_hashes_manifest_sha256' => ($manifestOut !== null && is_file($manifestOut)) ? hash_file('sha256', $manifestOut) : null,
+            'post_cleanup_final_witness_sha256' => $finalWitness['witness_sha256'],
+            'created_at' => gmdate('Y-m-d\TH:i:s\Z'),
+        ];
+        $artifactIndexPath = $outputDir . '/post_cleanup_artifact_index.json';
+        file_put_contents($artifactIndexPath, json_encode($artifactIndex, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        chmod($artifactIndexPath, 0600);
     }
     if ($exitCode === 0 && ! $aborted && ($cleanupResult['success'] ?? false) && $manifestOut !== null) {
         echo "\n==============================================================================\n";

@@ -38,6 +38,7 @@ class SupervisedPairedFinancialDrill
     public const ALLOWED_READINESS_URL = 'https://127.0.0.1:18443/_harness/readiness';
     public const SCHEMA_REGEX = '/^accounting_p8_tmp_[a-f0-9]{12}$/D';
     public const HARNESS_DIR_REGEX = '/^v2_harness_[0-9a-f]{16}$/D';
+    public const PROOF_PARENT_DIR_REGEX = '/^p8_proof_[0-9a-f]{16}$/D';
 
     /**
      * Validates prestart Root coordination approval file.
@@ -1014,15 +1015,257 @@ class SupervisedPairedFinancialDrill
             $errors[] = 'TEMP_DIR_CLEANUP_FAILED: ' . $e->getMessage();
         }
 
-        $success = $childReaped && $schemaAbsent && $listenersClosed && $tempCleaned && empty($errors);
+        // 5. Clean separate owned p8_proof_ parent directory and verify absence
+        $proofCleanup = self::cleanOwnedProofParentDir($snapshot, $repoRoot);
+        $proofParentAbsent = $proofCleanup['proof_parent_absent'];
+        foreach ($proofCleanup['errors'] as $err) {
+            $errors[] = $err;
+        }
+
+        $success = $childReaped && $schemaAbsent && $listenersClosed && $tempCleaned && $proofParentAbsent && empty($errors);
 
         return [
             'child_reaped' => $childReaped,
             'schema_absent' => $schemaAbsent,
             'listeners_closed' => $listenersClosed,
             'temp_cleaned' => $tempCleaned,
+            'proof_parent_absent' => $proofParentAbsent,
             'success' => $success,
             'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Clean separate owned proof parent directory after child process termination.
+     * Enforces that only snapshot-proven owned proof.json + empty owned parent are removed.
+     * If directory is already absent (graceful child removal), reports proof_parent_absent=true.
+     * If foreign UID, symlink, extra unproven entries, or unsafe path: fails closed and records error.
+     *
+     * @param  VerifiedOwnedSnapshot|null  $snapshot
+     * @param  string  $repoRoot
+     * @return array{proof_parent_absent: bool, errors: list<string>}
+     */
+    public static function cleanOwnedProofParentDir(?VerifiedOwnedSnapshot $snapshot, string $repoRoot): array
+    {
+        if ($snapshot === null) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ['PROOF_CLEANUP_SKIPPED_NO_SNAPSHOT'],
+            ];
+        }
+
+        $proofParent = $snapshot->proofParentDir;
+        $errors = [];
+
+        // Graceful handling: child may have already removed proof dir during clean shutdown
+        if (! file_exists($proofParent) && ! is_dir($proofParent) && ! is_link($proofParent)) {
+            return [
+                'proof_parent_absent' => true,
+                'errors' => [],
+            ];
+        }
+
+        // Fail-closed checks on proof parent directory
+        if (is_link($proofParent)) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_SYMLINK_REJECTED: '{$proofParent}'"],
+            ];
+        }
+
+        if (! is_dir($proofParent)) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_NOT_DIRECTORY: '{$proofParent}'"],
+            ];
+        }
+
+        $baseName = basename($proofParent);
+        if (preg_match(self::PROOF_PARENT_DIR_REGEX, $baseName) !== 1) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_INVALID_NAME: '{$baseName}' does not match " . self::PROOF_PARENT_DIR_REGEX],
+            ];
+        }
+
+        $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+        if (fileowner($proofParent) !== $currentUid || fileowner($proofParent) !== $snapshot->proofParentUid) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_OWNER_MISMATCH: '{$proofParent}'"],
+            ];
+        }
+
+        $perms = fileperms($proofParent) & 0777;
+        if ($perms !== 0700) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => [sprintf("PROOF_DIR_INSECURE_PERMS: expected 0700, got %04o", $perms)],
+            ];
+        }
+
+        $realProofParent = realpath($proofParent);
+        $realRoot = realpath($repoRoot);
+        $realSysTemp = realpath(sys_get_temp_dir());
+
+        if ($realProofParent === false || $realRoot === false || $realSysTemp === false) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_RESOLVE_FAILED: '{$proofParent}'"],
+            ];
+        }
+
+        if ($realProofParent === '/' || $realProofParent === '/tmp' || $realProofParent === '/home') {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_UNSAFE_ROOT_REJECTED: '{$realProofParent}'"],
+            ];
+        }
+
+        $realRootWithSep = rtrim($realRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if ($realProofParent === $realRoot || str_starts_with($realProofParent, $realRootWithSep)) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_INSIDE_REPO_REJECTED: '{$realProofParent}'"],
+            ];
+        }
+
+        $sysTempWithSep = rtrim($realSysTemp, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if (! str_starts_with($realProofParent, $sysTempWithSep)) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_NOT_IN_SYS_TEMP: '{$realProofParent}'"],
+            ];
+        }
+
+        // Verify entries inside proof parent directory:
+        // Must contain ONLY proof.json (or be empty). Any extra entries -> FAIL CLOSED!
+        $entries = scandir($realProofParent);
+        if ($entries === false) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_SCAN_FAILED: '{$realProofParent}'"],
+            ];
+        }
+
+        $filtered = array_values(array_filter($entries, fn($e) => $e !== '.' && $e !== '..'));
+
+        foreach ($filtered as $entry) {
+            if ($entry !== 'proof.json') {
+                return [
+                    'proof_parent_absent' => false,
+                    'errors' => ["PROOF_DIR_EXTRA_ENTRIES_REJECTED: unexpected entry '{$entry}' in '{$realProofParent}'. Manual remediation required."],
+                ];
+            }
+        }
+
+        // Unlink proven proof.json if present
+        $proofJsonPath = $realProofParent . DIRECTORY_SEPARATOR . 'proof.json';
+        if (file_exists($proofJsonPath) || is_link($proofJsonPath)) {
+            if (is_link($proofJsonPath)) {
+                return [
+                    'proof_parent_absent' => false,
+                    'errors' => ["PROOF_FILE_SYMLINK_REJECTED: '{$proofJsonPath}'"],
+                ];
+            }
+            if (fileowner($proofJsonPath) !== $currentUid) {
+                return [
+                    'proof_parent_absent' => false,
+                    'errors' => ["PROOF_FILE_OWNER_MISMATCH: '{$proofJsonPath}'"],
+                ];
+            }
+            if (! @unlink($proofJsonPath)) {
+                return [
+                    'proof_parent_absent' => false,
+                    'errors' => ["PROOF_FILE_UNLINK_FAILED: '{$proofJsonPath}'"],
+                ];
+            }
+        }
+
+        // Remove empty parent directory
+        if (! @rmdir($realProofParent)) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_RMDIR_FAILED: '{$realProofParent}'"],
+            ];
+        }
+
+        $isAbsent = ! file_exists($realProofParent) && ! is_dir($realProofParent);
+
+        return [
+            'proof_parent_absent' => $isAbsent,
+            'errors' => $isAbsent ? [] : ["PROOF_DIR_STILL_EXISTS: '{$realProofParent}'"],
+        ];
+    }
+
+    /**
+     * Persist restricted hash-pinned POST-cleanup final witness record.
+     * Records exact execution pins, schema, validated owned paths, UTC timestamps,
+     * outcome, and real observed observations (no assumed true).
+     * Preserves proof evidence hash (non-secret SHA-256) rather than secret nonce.
+     *
+     * @param  string  $outputDir  Private 0700 output directory
+     * @param  string  $backendHead  Verified backend execution HEAD SHA
+     * @param  string  $androidPubHead  Verified Android publication HEAD SHA
+     * @param  string  $androidExeHead  Verified Android executable HEAD SHA
+     * @param  string  $manifestSha  Verified pairing manifest SHA-256
+     * @param  VerifiedOwnedSnapshot|null  $snapshot  Captured pre-cleanup ownership snapshot
+     * @param  array   $cleanupResult  Actual return from executeExactCleanup
+     * @param  int     $exitCode  Supervisor exit code
+     * @return array{witness_path: string, witness_sha256: string, witness_data: array}
+     */
+    public static function persistPostCleanupFinalWitness(
+        string $outputDir,
+        string $backendHead,
+        string $androidPubHead,
+        string $androidExeHead,
+        string $manifestSha,
+        ?VerifiedOwnedSnapshot $snapshot,
+        array $cleanupResult,
+        int $exitCode
+    ): array {
+        $witnessData = [
+            'contract_name' => 'Mobile V2 Post-Cleanup Final Witness',
+            'recorded_at_utc' => gmdate('Y-m-d\TH:i:s\Z'),
+            'execution_pins' => [
+                'backend_execution_head_sha' => $backendHead,
+                'peer_android_approved_head_sha' => $androidPubHead,
+                'peer_android_executable_head_sha' => $androidExeHead,
+                'manifest_sha256' => $manifestSha,
+            ],
+            'ownership_snapshot' => [
+                'schema_name' => $snapshot?->schemaName,
+                'child_pid' => $snapshot?->childPid,
+                'harness_dir' => $snapshot?->harnessDir,
+                'proof_parent_dir' => $snapshot?->proofParentDir,
+                'proof_evidence_sha256' => $snapshot?->proofSha256,
+                'verified_at' => $snapshot?->verifiedAt,
+            ],
+            'cleanup_observations' => [
+                'child_reaped' => (bool) ($cleanupResult['child_reaped'] ?? false),
+                'schema_absent' => (bool) ($cleanupResult['schema_absent'] ?? false),
+                'listeners_closed' => (bool) ($cleanupResult['listeners_closed'] ?? false),
+                'harness_absent' => (bool) ($cleanupResult['temp_cleaned'] ?? false),
+                'proof_parent_absent' => (bool) ($cleanupResult['proof_parent_absent'] ?? false),
+                'cleanup_success' => (bool) ($cleanupResult['success'] ?? false),
+                'cleanup_errors' => array_values((array) ($cleanupResult['errors'] ?? [])),
+            ],
+            'supervisor_outcome' => [
+                'exit_code' => $exitCode,
+                'overall_success' => ($exitCode === 0 && ($cleanupResult['success'] ?? false)),
+            ],
+        ];
+
+        $witnessPath = rtrim($outputDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'post_cleanup_final_witness.json';
+        file_put_contents($witnessPath, json_encode($witnessData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        chmod($witnessPath, 0600);
+
+        $witnessSha = hash_file('sha256', $witnessPath);
+
+        return [
+            'witness_path' => $witnessPath,
+            'witness_sha256' => $witnessSha,
+            'witness_data' => $witnessData,
         ];
     }
 
@@ -1203,17 +1446,23 @@ class SupervisedPairedFinancialDrill
 final class VerifiedOwnedSnapshot
 {
     /**
-     * @param  string  $schemaName  Validated schema name (accounting_p8_tmp_12hex)
-     * @param  string  $proofPath   Path to disposable DB ownership proof file (0600, uid-owned)
-     * @param  string  $proofNonce  Disposable DB ownership proof nonce (32-64 lowercase hex)
-     * @param  string  $harnessDir  Canonical realpath of owned harness dir (v2_harness_16hex in sys_get_temp_dir)
-     * @param  int     $childPid    Captured child CLI process PID (positive integer, bound before signals)
-     * @param  int     $verifiedAt  Unix timestamp when snapshot was captured and assertPrimarySchema passed
+     * @param  string  $schemaName      Validated schema name (accounting_p8_tmp_12hex)
+     * @param  string  $proofPath       Path to disposable DB ownership proof file (0600, uid-owned)
+     * @param  string  $proofNonce      Disposable DB ownership proof nonce (32-64 lowercase hex)
+     * @param  string  $proofParentDir  Canonical realpath of owned proof parent dir (p8_proof_16hex in sys_get_temp_dir)
+     * @param  string  $proofSha256     SHA-256 of proof.json file content (non-secret evidence hash)
+     * @param  int     $proofParentUid  Captured UID of proof parent directory
+     * @param  string  $harnessDir      Canonical realpath of owned harness dir (v2_harness_16hex in sys_get_temp_dir)
+     * @param  int     $childPid        Captured child CLI process PID (positive integer, bound before signals)
+     * @param  int     $verifiedAt      Unix timestamp when snapshot was captured and assertPrimarySchema passed
      */
     private function __construct(
         public readonly string $schemaName,
         public readonly string $proofPath,
         public readonly string $proofNonce,
+        public readonly string $proofParentDir,
+        public readonly string $proofSha256,
+        public readonly int $proofParentUid,
         public readonly string $harnessDir,
         public readonly int $childPid,
         public readonly int $verifiedAt,
@@ -1238,6 +1487,7 @@ final class VerifiedOwnedSnapshot
      *     then restored unconditionally in finally (zero net env side-effect).
      * 11. DisposableMariaDbSchema::assertPrimarySchema($schemaName) passes (requires APP_ENV=testing
      *     and PHASE8_ALLOW_DISPOSABLE_DB=1 to already be set by the caller before this factory is called).
+     * 12. Proof parent directory name matches /^p8_proof_[0-9a-f]{16}$/D and is a descendant of sys_get_temp_dir().
      *
      * @param  string  $schemaName  Must match /^accounting_p8_tmp_[a-f0-9]{12}$/D
      * @param  string  $proofPath   Path to disposable DB ownership proof file
@@ -1338,10 +1588,57 @@ final class VerifiedOwnedSnapshot
             }
         }
 
+        // 12. Validate proof parent directory (canonical path, UID, 0700, p8_proof_16hex regex, sys temp containment)
+        $proofParent = dirname($proofPath);
+        $realProofParent = realpath($proofParent);
+        if ($realProofParent === false) {
+            throw new RuntimeException('SNAPSHOT_PROOF_PARENT_RESOLVE_FAILED');
+        }
+
+        $proofParentBase = basename($realProofParent);
+        if (preg_match(SupervisedPairedFinancialDrill::PROOF_PARENT_DIR_REGEX, $proofParentBase) !== 1
+            || str_contains($proofParent, "\0")
+            || str_contains($proofParent, '`')
+        ) {
+            throw new RuntimeException(
+                "SNAPSHOT_INVALID_PROOF_PARENT_NAME: '{$proofParentBase}' does not match "
+                . SupervisedPairedFinancialDrill::PROOF_PARENT_DIR_REGEX
+            );
+        }
+
+        if ($realProofParent === '/' || $realProofParent === '/tmp' || $realProofParent === '/home') {
+            throw new RuntimeException("SNAPSHOT_UNSAFE_PROOF_PARENT_REFUSED: '{$realProofParent}'");
+        }
+
+        $realRootWithSep = rtrim($realRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if ($realProofParent === $realRoot || str_starts_with($realProofParent, $realRootWithSep)) {
+            throw new RuntimeException("SNAPSHOT_PROOF_PARENT_INSIDE_REPO_REFUSED: '{$realProofParent}'");
+        }
+
+        if ($realSysTemp !== false) {
+            $sysTempWithSep = rtrim($realSysTemp, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+            if (! str_starts_with($realProofParent, $sysTempWithSep)) {
+                throw new RuntimeException("SNAPSHOT_PROOF_PARENT_NOT_IN_SYS_TEMP: '{$realProofParent}'");
+            }
+        }
+
+        if (basename($proofPath) !== 'proof.json') {
+            throw new RuntimeException("SNAPSHOT_INVALID_PROOF_FILE_NAME: expected 'proof.json', got '" . basename($proofPath) . "'");
+        }
+
+        $proofSha256 = hash_file('sha256', $proofPath);
+        if ($proofSha256 === false) {
+            throw new RuntimeException('SNAPSHOT_PROOF_HASH_FAILED');
+        }
+        $proofParentUid = fileowner($realProofParent);
+
         return new self(
             schemaName: $schemaName,
             proofPath: $proofPath,
             proofNonce: $proofNonce,
+            proofParentDir: $realProofParent,
+            proofSha256: $proofSha256,
+            proofParentUid: $proofParentUid,
             harnessDir: $realHarness,
             childPid: $childPid,
             verifiedAt: time(),

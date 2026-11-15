@@ -36,6 +36,9 @@ class SupervisedFinancialDrillTest extends TestCase
 {
     private string $tempDir;
 
+    /** @var list<string> */
+    private array $extraTempDirs = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -45,6 +48,13 @@ class SupervisedFinancialDrillTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->extraTempDirs as $dir) {
+            if (is_dir($dir)) {
+                $this->removeDirectory($dir);
+            }
+        }
+        $this->extraTempDirs = [];
+
         if (is_dir($this->tempDir)) {
             $this->removeDirectory($this->tempDir);
         }
@@ -807,10 +817,9 @@ class SupervisedFinancialDrillTest extends TestCase
         mkdir($bootstrapDir, 0700, true);
 
         // Create private 0700 proof parent directory and 0600 proof file
-        $proofDir = $this->tempDir . '/proof_dir';
-        if (! is_dir($proofDir)) {
-            mkdir($proofDir, 0700, true);
-        }
+        $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+        mkdir($proofDir, 0700, true);
+        $this->extraTempDirs[] = $proofDir;
         $proofPath = $proofDir . '/proof.json';
         $proofContent = json_encode([
             'schema' => $schemaName,
@@ -931,13 +940,21 @@ class SupervisedFinancialDrillTest extends TestCase
             $this->assertTrue($cleanupResult['success'], 'Cleanup after TLS failure must succeed');
             $this->assertTrue($cleanupResult['schema_absent'], 'Schema must be verified absent');
             $this->assertTrue($cleanupResult['temp_cleaned'], 'Harness temp directory must be removed');
+            $this->assertTrue($cleanupResult['proof_parent_absent'], 'Proof parent directory must be removed');
             $this->assertEmpty($cleanupResult['errors']);
             $this->assertDirectoryDoesNotExist($harnessDir, 'Harness directory must be deleted');
+            $this->assertDirectoryDoesNotExist($proofDir, 'Proof parent directory must be deleted');
 
             // Verify parent environment was restored to pre-drill state
             $this->assertSame($origAppEnv, getenv('APP_ENV'), 'Parent APP_ENV must be restored after cleanup');
         } finally {
             SupervisedPairedFinancialDrill::restoreEnvironmentStores($parentEnvToRestore);
+            if (isset($proofPath) && is_file($proofPath)) {
+                @unlink($proofPath);
+            }
+            if (isset($proofDir) && is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
             if (is_dir($harnessDir)) {
                 @unlink($childConfigPath);
                 @unlink($caCertPath);
@@ -985,11 +1002,16 @@ class SupervisedFinancialDrillTest extends TestCase
             $this->assertTrue($result['success'], 'Pre-live cleanup with captured snapshot must succeed');
             $this->assertTrue($result['schema_absent'], 'Schema must be verified absent');
             $this->assertTrue($result['temp_cleaned'], 'Harness temp directory must be cleaned up');
+            $this->assertTrue($result['proof_parent_absent'], 'Proof parent directory must be cleaned up');
             $this->assertEmpty($result['errors'], 'Cleanup must produce zero errors');
             $this->assertDirectoryDoesNotExist($snapshot->harnessDir);
+            $this->assertDirectoryDoesNotExist($snapshot->proofParentDir);
         } finally {
             if (is_dir($snapshot->harnessDir)) {
                 $this->removeDirectory($snapshot->harnessDir);
+            }
+            if (is_dir($snapshot->proofParentDir)) {
+                $this->removeDirectory($snapshot->proofParentDir);
             }
         }
     }
@@ -1381,10 +1403,9 @@ class SupervisedFinancialDrillTest extends TestCase
             // 3. Setup synthetic proof fixture and valid harness directory
             $schemaName = 'accounting_p8_tmp_0123456789ab';
             $proofNonce = str_repeat('a', 32);
-            $proofDir = $this->tempDir . '/proof_dir';
-            if (! is_dir($proofDir)) {
-                mkdir($proofDir, 0700, true);
-            }
+            $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+            mkdir($proofDir, 0700, true);
+            $this->extraTempDirs[] = $proofDir;
             $proofFile = $proofDir . '/proof.json';
 
             $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
@@ -1467,6 +1488,7 @@ class SupervisedFinancialDrillTest extends TestCase
             $this->assertTrue($credentialSeenDuringCleanup, 'Cleanup must see scoped credentials before restoration occurs');
             $this->assertTrue($result['success']);
             $this->assertTrue($result['schema_absent']);
+            $this->assertTrue($result['proof_parent_absent']);
             $this->assertEmpty($result['errors']);
 
             // 9. Assert all 3 stores are completely restored to their original unset state
@@ -1477,6 +1499,15 @@ class SupervisedFinancialDrillTest extends TestCase
             }
         } finally {
             SupervisedPairedFinancialDrill::restoreEnvironmentStores($outerAmbient);
+            if (isset($proofFile) && is_file($proofFile)) {
+                @unlink($proofFile);
+            }
+            if (isset($proofDir) && is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
+            if (isset($harnessDir) && is_dir($harnessDir)) {
+                @rmdir($harnessDir);
+            }
         }
     }
 
@@ -1511,10 +1542,9 @@ class SupervisedFinancialDrillTest extends TestCase
             // 2. Setup synthetic proof fixture and valid harness directory
             $schemaName = 'accounting_p8_tmp_0123456789ab';
             $proofNonce = str_repeat('b', 32);
-            $proofDir = $this->tempDir . '/proof_dir_throw';
-            if (! is_dir($proofDir)) {
-                mkdir($proofDir, 0700, true);
-            }
+            $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+            mkdir($proofDir, 0700, true);
+            $this->extraTempDirs[] = $proofDir;
             $proofFile = $proofDir . '/proof.json';
 
             $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
@@ -1591,8 +1621,251 @@ class SupervisedFinancialDrillTest extends TestCase
             }
         } finally {
             SupervisedPairedFinancialDrill::restoreEnvironmentStores($outerAmbient);
+            if (isset($proofFile) && is_file($proofFile)) {
+                @unlink($proofFile);
+            }
+            if (isset($proofDir) && is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
             if (isset($harnessDir) && is_dir($harnessDir)) {
                 @rmdir($harnessDir);
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // POST-cleanup final witness and separate owned proof parent cleanup tests
+    // ---------------------------------------------------------------------------
+
+    #[Test]
+    public function test_exact_cleanup_removes_separate_owned_proof_parent_directory(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        // Verify both harness directory and separate proof parent directory exist prior to cleanup
+        $this->assertDirectoryExists($snapshot->harnessDir);
+        $this->assertDirectoryExists($snapshot->proofParentDir);
+        $this->assertFileExists($snapshot->proofPath);
+
+        $mockPortStmt = $this->createMock(PDOStatement::class);
+        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+        $mockSchemaStmt = $this->createMock(PDOStatement::class);
+        $mockSchemaStmt->method('fetch')->willReturnOnConsecutiveCalls(
+            ['SCHEMA_NAME' => $snapshot->schemaName],
+            false
+        );
+
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+        $mockPdo->expects($this->once())->method('exec')->with("DROP DATABASE IF EXISTS `{$snapshot->schemaName}`");
+
+        try {
+            $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: null,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+
+            // Assert exact cleanup removes separate proof parent directory and proven proof.json
+            $this->assertTrue($result['success'], 'Cleanup must succeed');
+            $this->assertTrue($result['proof_parent_absent'], 'Proof parent directory must be verified absent');
+            $this->assertTrue($result['temp_cleaned'], 'Harness directory must be cleaned');
+            $this->assertTrue($result['schema_absent'], 'Schema must be verified absent');
+            $this->assertEmpty($result['errors'], 'Cleanup must produce zero errors');
+
+            $this->assertDirectoryDoesNotExist($snapshot->proofParentDir, 'Separate proof parent directory must be removed');
+            $this->assertFileDoesNotExist($snapshot->proofPath, 'Proof file must be removed');
+            $this->assertDirectoryDoesNotExist($snapshot->harnessDir, 'Harness directory must be removed');
+        } finally {
+            if (is_dir($snapshot->proofParentDir)) {
+                $this->removeDirectory($snapshot->proofParentDir);
+            }
+            if (is_dir($snapshot->harnessDir)) {
+                $this->removeDirectory($snapshot->harnessDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_exact_cleanup_handles_gracefully_already_removed_proof_dir_post_kill(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        // Simulate child process that already cleanly dropped/removed its proof directory before termination
+        if (is_file($snapshot->proofPath)) {
+            unlink($snapshot->proofPath);
+        }
+        if (is_dir($snapshot->proofParentDir)) {
+            rmdir($snapshot->proofParentDir);
+        }
+        $this->assertDirectoryDoesNotExist($snapshot->proofParentDir);
+
+        $mockPortStmt = $this->createMock(PDOStatement::class);
+        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+        $mockSchemaStmt = $this->createMock(PDOStatement::class);
+        $mockSchemaStmt->method('fetch')->willReturnOnConsecutiveCalls(
+            ['SCHEMA_NAME' => $snapshot->schemaName],
+            false
+        );
+
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+        $mockPdo->expects($this->once())->method('exec')->with("DROP DATABASE IF EXISTS `{$snapshot->schemaName}`");
+
+        try {
+            $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: null,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+
+            // Cleanup must gracefully recognize already absent proof directory as absent without error
+            $this->assertTrue($result['success'], 'Cleanup must succeed when proof dir was already removed');
+            $this->assertTrue($result['proof_parent_absent'], 'Proof parent directory must be reported absent');
+            $this->assertEmpty($result['errors'], 'Must produce zero errors');
+        } finally {
+            if (is_dir($snapshot->harnessDir)) {
+                $this->removeDirectory($snapshot->harnessDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_exact_cleanup_refuses_unknown_or_insecure_proof_parent_directory(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        // Add an extra unproven entry into the proof parent directory
+        $unprovenFile = $snapshot->proofParentDir . '/foreign_entry.bin';
+        file_put_contents($unprovenFile, 'UNPROVEN_DATA');
+        chmod($unprovenFile, 0600);
+
+        try {
+            // Invoking cleanOwnedProofParentDir directly must fail closed on extra entries
+            $result = SupervisedPairedFinancialDrill::cleanOwnedProofParentDir($snapshot, $repoRoot);
+
+            $this->assertFalse($result['proof_parent_absent'], 'Must fail closed and NOT report absent');
+            $this->assertNotEmpty($result['errors']);
+            $this->assertStringContainsString('PROOF_DIR_EXTRA_ENTRIES_REJECTED', implode('; ', $result['errors']));
+            $this->assertFileExists($unprovenFile, 'Foreign entry must be preserved for manual remediation');
+            $this->assertDirectoryExists($snapshot->proofParentDir, 'Proof parent directory must NOT be removed');
+
+            // Also verify executeExactCleanup reflects the failure
+            $mockPortStmt = $this->createMock(PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+            $mockSchemaStmt = $this->createMock(PDOStatement::class);
+            $mockSchemaStmt->method('fetch')->willReturn(false);
+            $mockPdo = $this->createMock(PDO::class);
+            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+            $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: null,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+
+            $this->assertFalse($cleanupResult['success'], 'Overall cleanup must fail when proof dir has unproven entries');
+            $this->assertFalse($cleanupResult['proof_parent_absent']);
+            $this->assertStringContainsString('PROOF_DIR_EXTRA_ENTRIES_REJECTED', implode('; ', $cleanupResult['errors']));
+        } finally {
+            if (is_file($unprovenFile)) {
+                @unlink($unprovenFile);
+            }
+            if (is_dir($snapshot->proofParentDir)) {
+                $this->removeDirectory($snapshot->proofParentDir);
+            }
+            if (is_dir($snapshot->harnessDir)) {
+                $this->removeDirectory($snapshot->harnessDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_post_cleanup_final_witness_records_actual_partial_failure_nonzero(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        $outputDir = $this->tempDir . '/witness_test_dir';
+        mkdir($outputDir, 0700, true);
+
+        $backendHead = str_repeat('a', 40);
+        $androidPubHead = str_repeat('b', 40);
+        $androidExeHead = str_repeat('c', 40);
+        $manifestSha = str_repeat('d', 64);
+
+        $simulatedPartialFailureCleanup = [
+            'child_reaped' => true,
+            'schema_absent' => false,
+            'listeners_closed' => true,
+            'temp_cleaned' => true,
+            'proof_parent_absent' => true,
+            'success' => false,
+            'errors' => ["SCHEMA_LINGERING_AFTER_DROP: '{$snapshot->schemaName}'"],
+        ];
+
+        try {
+            $witnessResult = SupervisedPairedFinancialDrill::persistPostCleanupFinalWitness(
+                outputDir: $outputDir,
+                backendHead: $backendHead,
+                androidPubHead: $androidPubHead,
+                androidExeHead: $androidExeHead,
+                manifestSha: $manifestSha,
+                snapshot: $snapshot,
+                cleanupResult: $simulatedPartialFailureCleanup,
+                exitCode: 1
+            );
+
+            $this->assertFileExists($witnessResult['witness_path']);
+            $this->assertSame(hash_file('sha256', $witnessResult['witness_path']), $witnessResult['witness_sha256']);
+
+            // Verify file permissions 0600
+            $perms = fileperms($witnessResult['witness_path']) & 0777;
+            $this->assertSame(0600, $perms, 'Witness file must be 0600');
+
+            $witnessData = $witnessResult['witness_data'];
+
+            // 1. Exact execution pins
+            $this->assertSame($backendHead, $witnessData['execution_pins']['backend_execution_head_sha']);
+            $this->assertSame($androidPubHead, $witnessData['execution_pins']['peer_android_approved_head_sha']);
+            $this->assertSame($androidExeHead, $witnessData['execution_pins']['peer_android_executable_head_sha']);
+            $this->assertSame($manifestSha, $witnessData['execution_pins']['manifest_sha256']);
+
+            // 2. Ownership snapshot: nonsecret proof hash preserved, NO secret nonce
+            $this->assertSame($snapshot->schemaName, $witnessData['ownership_snapshot']['schema_name']);
+            $this->assertSame($snapshot->proofParentDir, $witnessData['ownership_snapshot']['proof_parent_dir']);
+            $this->assertSame($snapshot->proofSha256, $witnessData['ownership_snapshot']['proof_evidence_sha256']);
+            $this->assertArrayNotHasKey('proof_nonce', $witnessData['ownership_snapshot'], 'Secret proof nonce must NOT be recorded in witness');
+
+            // 3. Cleanup observations: real actual observations, no assumed true
+            $this->assertTrue($witnessData['cleanup_observations']['child_reaped']);
+            $this->assertFalse($witnessData['cleanup_observations']['schema_absent']);
+            $this->assertTrue($witnessData['cleanup_observations']['listeners_closed']);
+            $this->assertTrue($witnessData['cleanup_observations']['harness_absent']);
+            $this->assertTrue($witnessData['cleanup_observations']['proof_parent_absent']);
+            $this->assertFalse($witnessData['cleanup_observations']['cleanup_success']);
+            $this->assertContains("SCHEMA_LINGERING_AFTER_DROP: '{$snapshot->schemaName}'", $witnessData['cleanup_observations']['cleanup_errors']);
+
+            // 4. Outcome: exit code 1, overall_success false
+            $this->assertSame(1, $witnessData['supervisor_outcome']['exit_code']);
+            $this->assertFalse($witnessData['supervisor_outcome']['overall_success']);
+        } finally {
+            if (is_dir($snapshot->proofParentDir)) {
+                $this->removeDirectory($snapshot->proofParentDir);
+            }
+            if (is_dir($snapshot->harnessDir)) {
+                $this->removeDirectory($snapshot->harnessDir);
             }
         }
     }
@@ -1616,11 +1889,11 @@ class SupervisedFinancialDrillTest extends TestCase
         $schemaName = 'accounting_p8_tmp_0123456789ab';
         $proofNonce = str_repeat('a', 32);
 
-        // Create proof directory with 0700 perms and proof file with 0600 perms
-        $proofDir = $this->tempDir . '/proof_dir';
-        if (! is_dir($proofDir)) {
-            mkdir($proofDir, 0700, true);
-        }
+        // Create proof directory matching PROOF_PARENT_DIR_REGEX under sys_get_temp_dir()
+        // with 0700 perms and proof.json with 0600 perms
+        $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+        mkdir($proofDir, 0700, true);
+        $this->extraTempDirs[] = $proofDir;
         $proofFile = $proofDir . '/proof.json';
 
         // Create valid harness directory (v2_harness_16hex, 0700, outside repo, under sys_get_temp_dir)
@@ -1629,6 +1902,7 @@ class SupervisedFinancialDrillTest extends TestCase
         if (! is_dir($harnessDir)) {
             mkdir($harnessDir, 0700, true);
         }
+        $this->extraTempDirs[] = $harnessDir;
 
         // Snapshot original environment across all three stores
         $envVarsToScope = [
