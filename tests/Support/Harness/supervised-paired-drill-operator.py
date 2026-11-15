@@ -294,9 +294,17 @@ def verify_binding_record(binding_path, expected_sha, android_dir, pub_head, exe
     if delta not in ('10_DOCS_ONLY_FILES', '10_DOCS_ONLY_COMMITS'):
         raise ValueError(f"Binding record pub_vs_exe_delta invalid: '{delta}'")
 
-def get_git_state(repo_dir):
+APPROVED_PEER_OUTPUT_ARTIFACT_RELPATHS = (
+    'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json',
+)
+
+DECLARED_OUTPUT_ARTIFACTS = {
+    'android': list(APPROVED_PEER_OUTPUT_ARTIFACT_RELPATHS),
+}
+
+def get_git_state(repo_dir, declared_artifacts=None):
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo_dir).decode().strip()
-    status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=repo_dir).decode().strip()
+    status = subprocess.check_output(['git', 'status', '--porcelain', '-uall'], cwd=repo_dir).decode().strip()
     files = subprocess.check_output(['git', 'ls-files'], cwd=repo_dir).decode().splitlines()
     hashes = {}
     for rel_path in files:
@@ -304,10 +312,33 @@ def get_git_state(repo_dir):
         if os.path.isfile(full_path) and not os.path.islink(full_path):
             with open(full_path, 'rb') as f:
                 hashes[rel_path] = hashlib.sha256(f.read()).hexdigest()
+
+    # Pre-capture baseline for declared expected output artifacts (if any)
+    artifact_baseline = {}
+    if declared_artifacts:
+        for rel_artifact in declared_artifacts:
+            art_full = os.path.join(repo_dir, rel_artifact)
+            if os.path.isfile(art_full) and not os.path.islink(art_full):
+                st = os.stat(art_full)
+                artifact_baseline[rel_artifact] = {
+                    'exists': True,
+                    'sha256': sha256_file(art_full),
+                    'mtime': st.st_mtime,
+                    'size': st.st_size
+                }
+            else:
+                artifact_baseline[rel_artifact] = {
+                    'exists': False,
+                    'sha256': None,
+                    'mtime': None,
+                    'size': 0
+                }
+
     return {
         'head': head,
         'status': status,
         'sha256': hashes,
+        'declared_artifacts': artifact_baseline,
         'captured_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
@@ -319,30 +350,38 @@ def sha256_file(filepath):
     return h.hexdigest()
 
 def verify_exact_clean_status(repo_dir, name):
-    """Verifies that git status --porcelain is strictly empty (no modified or untracked files)."""
-    status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=repo_dir).decode().strip()
+    """Verifies that git status --porcelain -uall is strictly empty (no modified or untracked files)."""
+    status = subprocess.check_output(['git', 'status', '--porcelain', '-uall'], cwd=repo_dir).decode().strip()
     if status != '':
         raise RuntimeError(f"{name} is not in clean state (expected empty status):\n{status}")
 
-def compare_git_states(pre_state, post_state):
-    """Compares pre and post git states; returns dict of drifts if any detected."""
+def compare_git_states(pre_state, post_state, declared_output_artifacts=None, repo_dirs=None):
+    """
+    Compares pre and post git states; returns dict of drifts if any detected.
+    - Status differences consisting STRICTLY of newly created/updated declared output artifacts
+      are validated (non-symlink, current UID, mode 0600/0644, valid SHA-256) and accounted for.
+    - ANY other untracked file or directory difference triggers a status drift failure.
+    - ANY tracked source file hash difference triggers a tracked_hashes_drift failure.
+    - Broad wildcard allowlists are strictly rejected.
+    """
     drifts = {}
+    current_uid = os.getuid() if hasattr(os, 'getuid') else -1
+
     for repo in ['backend', 'android']:
         if repo not in pre_state or repo not in post_state:
             drifts[repo] = "Missing pre or post state record"
             continue
         pre_repo = pre_state[repo]
         post_repo = post_state[repo]
+        repo_dir = repo_dirs.get(repo) if repo_dirs else None
+
         if pre_repo['head'] != post_repo['head']:
             drifts[f"{repo}_head_drift"] = {
                 'pre': pre_repo['head'],
                 'post': post_repo['head']
             }
-        if pre_repo['status'] != post_repo['status']:
-            drifts[f"{repo}_status_drift"] = {
-                'pre': pre_repo['status'],
-                'post': post_repo['status']
-            }
+
+        # Tracked hash comparison (source code invariance)
         pre_hashes = pre_repo.get('sha256', {})
         post_hashes = post_repo.get('sha256', {})
         file_drifts = {}
@@ -354,6 +393,60 @@ def compare_git_states(pre_state, post_state):
                 }
         if file_drifts:
             drifts[f"{repo}_tracked_hashes_drift"] = file_drifts
+
+        # Status comparison with explicit declared output artifact accounting
+        if pre_repo['status'] != post_repo['status']:
+            pre_lines = set(line.strip() for line in pre_repo['status'].splitlines() if line.strip())
+            post_lines = set(line.strip() for line in post_repo['status'].splitlines() if line.strip())
+            added_status_lines = post_lines - pre_lines
+            removed_status_lines = pre_lines - post_lines
+
+            allowed_relpaths = set((declared_output_artifacts or {}).get(repo, []))
+            unaccounted_lines = []
+
+            for line in added_status_lines:
+                # Check if it's an untracked file matching a declared relative output artifact
+                if line.startswith('?? '):
+                    rel_file = line[3:].strip()
+                    if rel_file in allowed_relpaths and repo_dir:
+                        full_artifact_path = os.path.join(repo_dir, rel_file)
+                        try:
+                            # 1. No symlink components in path
+                            validate_no_symlink_components(full_artifact_path, f"{repo} output artifact")
+                            # 2. Must be a regular file
+                            if not os.path.isfile(full_artifact_path) or os.path.islink(full_artifact_path):
+                                unaccounted_lines.append(f"{line} (not a regular file)")
+                                continue
+                            # 3. Ownership check (must match current UID)
+                            st = os.stat(full_artifact_path)
+                            if current_uid != -1 and st.st_uid != current_uid:
+                                unaccounted_lines.append(f"{line} (UID mismatch: expected {current_uid}, got {st.st_uid})")
+                                continue
+                            # 4. Mode check: must be 0600 or 0644
+                            mode = st.st_mode & 0o777
+                            if mode not in (0o600, 0o644):
+                                unaccounted_lines.append(f"{line} (insecure mode: {oct(mode)})")
+                                continue
+                            # 5. Must have content
+                            if st.st_size == 0:
+                                unaccounted_lines.append(f"{line} (empty file)")
+                                continue
+                            # Artifact is verified and accounted for
+                            continue
+                        except Exception as e:
+                            unaccounted_lines.append(f"{line} ({str(e)})")
+                            continue
+                # Any other line (modified tracked file or undeclared untracked file) is unaccounted
+                unaccounted_lines.append(line)
+
+            if unaccounted_lines or removed_status_lines:
+                drifts[f"{repo}_status_drift"] = {
+                    'pre': pre_repo['status'],
+                    'post': post_repo['status'],
+                    'unaccounted_added': unaccounted_lines,
+                    'unexpected_removed': list(removed_status_lines)
+                }
+
     return drifts
 
 def is_pgid_alive(pgid):
@@ -599,8 +692,8 @@ def main():
         # 11. Capture initial immutable PRE state for BOTH repos
         print(f"[Operator] Capturing initial PRE state for both repositories...")
         pre_state = {
-            'backend': get_git_state(backend_dir),
-            'android': get_git_state(android_dir),
+            'backend': get_git_state(backend_dir, DECLARED_OUTPUT_ARTIFACTS.get('backend')),
+            'android': get_git_state(android_dir, DECLARED_OUTPUT_ARTIFACTS.get('android')),
             'metadata': {
                 'expected_backend_head': expected_backend,
                 'expected_pub_head': pub_head,
@@ -730,8 +823,8 @@ def main():
             print(f"[Operator] Capturing final POST state for both repositories...")
             try:
                 post_state = {
-                    'backend': get_git_state(backend_dir),
-                    'android': get_git_state(android_dir),
+                    'backend': get_git_state(backend_dir, DECLARED_OUTPUT_ARTIFACTS.get('backend')),
+                    'android': get_git_state(android_dir, DECLARED_OUTPUT_ARTIFACTS.get('android')),
                     'metadata': {
                         'exit_code': exit_code,
                         'timestamp': end_iso,
@@ -743,9 +836,13 @@ def main():
                 os.chmod(post_path, 0o600)
                 print(f"[Operator] Saved post.json (SHA: {sha256_file(post_path)})")
 
-                # Drift comparison (Defect 6 fix)
+                # Drift comparison with explicit declared output artifact accounting
                 if pre_state is not None:
-                    drifts = compare_git_states(pre_state, post_state)
+                    drifts = compare_git_states(
+                        pre_state, post_state,
+                        declared_output_artifacts=DECLARED_OUTPUT_ARTIFACTS,
+                        repo_dirs={'backend': backend_dir, 'android': android_dir}
+                    )
                     if drifts:
                         print(f"[Operator] ERROR: Git repository drift detected between PRE and POST states:", file=sys.stderr)
                         print(json.dumps(drifts, indent=2), file=sys.stderr)

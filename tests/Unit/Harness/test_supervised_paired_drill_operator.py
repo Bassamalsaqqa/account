@@ -136,6 +136,53 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         self.assertTrue(bool(drifts))
         self.assertIn('backend_tracked_hashes_drift', drifts)
 
+    def test_compare_git_states_allows_declared_owned_output_artifact(self):
+        mock_android = os.path.join(self.test_dir, 'mock_android_repo')
+        art_rel = 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json'
+        art_full = os.path.join(mock_android, art_rel)
+        os.makedirs(os.path.dirname(art_full), mode=0o700)
+        with open(art_full, 'w') as f:
+            f.write('{"status": "PASS"}')
+        os.chmod(art_full, 0o600)
+
+        pre = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': '', 'sha256': {}}
+        }
+        post = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': f'?? {art_rel}', 'sha256': {}}
+        }
+        drifts = operator_driver.compare_git_states(
+            pre, post,
+            declared_output_artifacts={'android': [art_rel]},
+            repo_dirs={'backend': self.test_dir, 'android': mock_android}
+        )
+        self.assertEqual(drifts, {})
+
+    def test_compare_git_states_rejects_undeclared_untracked_file(self):
+        mock_android = os.path.join(self.test_dir, 'mock_android_repo_undeclared')
+        art_rel = 'app/docs/unexpected_file.txt'
+        art_full = os.path.join(mock_android, art_rel)
+        os.makedirs(os.path.dirname(art_full), mode=0o700)
+        with open(art_full, 'w') as f:
+            f.write('unauthorized')
+
+        pre = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': '', 'sha256': {}}
+        }
+        post = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': f'?? {art_rel}', 'sha256': {}}
+        }
+        drifts = operator_driver.compare_git_states(
+            pre, post,
+            declared_output_artifacts={'android': ['app/docs/other_approved.json']},
+            repo_dirs={'backend': self.test_dir, 'android': mock_android}
+        )
+        self.assertIn('android_status_drift', drifts)
+
     def test_run_supervised_child_silent_child_timeout(self):
         log_path = os.path.join(self.test_dir, 'silent.log')
         with open(log_path, 'w') as log_f:
