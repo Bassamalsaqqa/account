@@ -34,7 +34,11 @@
    - `a29a10d610616d2c09f11017fc101672f5b2fc1c`: Present (`commit`)
    - `4a592586bab64ced5b3b101a60d0bac32380f8d2`: Present (`commit`)
    - `fd2680892a088ddb106aa66a7fe1cbc697453c71`: Present (`commit`)
-2. **Uncommitted Work**: Working tree inspection of `t3-7ac8b73d-abb5d6e52b3b3cf9` following restoration shows a clean status on `t3/android-bootstrap-tax-status-recovery`. Unstaged changes observed prior to commit were committed into `a29a10d` at 17:13:19+02:00. There is no evidence of lost owned uncommitted work.
+2. **Tracked Files vs Untracked Assets Audit**:
+   - **Tracked State**: Root-observed current tracked status is clean: ALL 203 tracked source and build files match `a29` git objects exactly (SHA map `6173250b9c5f29a3d26c87e99830588dd48c8aee8ab0dbc8956bcd8aa923a1c9`).
+   - **Untracked State**: Untracked attempt-1 evidence directory is present and preserved; user app/round2 crop/slice assets remain untracked in the worktree.
+   - **Audit Record & Scope**: Backend status inspection was recorded at 17:11:20+02:00 (identifying unstaged `StaffOnlineSaleScreen.kt` changes prior to Android root's 17:13:19 commit of `a29a10d`) and at 17:24:10+02:00. However, because untracked files and directories are present in the worktree, no claim of global worktree cleanliness is made.
+   - **Historical Loss Invariant**: Existing commit object retention is proven. However, due to the inherent risks of `git checkout --force`, historical untracked file loss (if any scratch or temporary files existed) remains unknown. No blanket "zero uncommitted work lost" claim is asserted.
 
 ---
 
@@ -42,9 +46,9 @@
 
 1. **Preservation & Quarantine**:
    - The offending runner script `run_bounded_correction_qa.py` (`cb5f92bef470d8ca0f94b92da05c106af13a8085799431d4915b8ab33b961cab`) has been byte-identically preserved in `/home/t3dev/.t3/userdata/attachments/bounded_qa_phase14_92573c56/offending_run_bounded_correction_qa.py.retained_audit` (mode `0600`).
-   - The original in `scratch/` has been renamed to `run_bounded_correction_qa.py.QUARANTINED_DO_NOT_RUN` (mode `0400`) and will never be executed again.
-2. **Runner Hardening**:
-   - Built [`scratch/supervised_qa_runner_template.py`](file:///home/t3dev/.t3/userdata/providers/antigravity/ae3fd7ec836020e26f09667472a6767e8788c43e17e5b14fc853f38a3d6610ca/antigravity-acp/brain/d09e3c0e-dd94-4a51-81ec-498602431fc2/scratch/supervised_qa_runner_template.py) (`f2b0844bb32254e3725440d3ae7ca68d2ef22ffc1785ce9307a8d01e535befbb`), strictly removing all checkout, reset, and clean commands. Any branch or status mismatch fails closed (`sys.exit(1)`) immediately before any other action.
+   - The original file in `scratch/` has been renamed to `run_bounded_correction_qa.py.QUARANTINED_DO_NOT_RUN` (mode `0400`). Note: While mode `0400` revokes write/execute bits, files remain interpreter-runnable if directly invoked; the runner is formally **quarantined and revoked**, and prohibited from use.
+2. **Runner Architecture & Standing Directives**:
+   - A candidate non-mutating template was drafted in `scratch/supervised_qa_runner_template.py` (`f2b0844bb32254e3725440d3ae7ca68d2ef22ffc1785ce9307a8d01e535befbb`). Per Root instruction, this template will **NOT** be used unchanged: any future orchestration must capture initial states of both repositories *before* any action, register post-run and exit hooks on all exceptions/timeouts, and operate exclusively within an explicit, Root-approved isolated worktree.
 3. **Android Lane Reservation**:
    - `t3-7ac8b73d-abb5d6e52b3b3cf9` is acknowledged as the active `a29` Android lane and is strictly excluded from all backend prewarm or paired drill execution.
    - Any historical peer runs will be bound to an isolated, Root-approved worktree.
