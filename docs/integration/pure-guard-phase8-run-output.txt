@@ -1,0 +1,15 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /tmp/pure_guard_qa_run_phase8_muUKdBvT/phpunit_pure_guard.xml
+
+...............................................................  63 / 128 ( 49%)
+.......................................N.......N.[Cleanup] Lingering schema 'accounting_p8_tmp_0123456789ab' detected; executing admin DROP DATABASE...
+NN.....N...... 126 / 128 ( 98%)
+N[Cleanup] Sending SIGTERM to child process (PID 54321, matches snapshot)...
+N                                                              128 / 128 (100%)
+
+Time: 00:02.933, Memory: 32.50 MB
+
+OK, but there were issues!
+Tests: 128, Assertions: 669, PHPUnit Notices: 7.
