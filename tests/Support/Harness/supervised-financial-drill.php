@@ -49,10 +49,20 @@ $rootApprovalFile = null;
 $rootLiveApprovalFile = null;
 $androidRepoDir = null;
 $customOutputDir = null;
+$expectedScope = SupervisedPairedFinancialDrill::REQUIRED_SCOPE;
 
 foreach (array_slice($argvList, 1) as $arg) {
     if ($arg === '--execute') {
         $isExecute = true;
+    } elseif (str_starts_with($arg, '--expected-scope=')) {
+        $parsedScope = substr($arg, 17);
+        if (! in_array($parsedScope, SupervisedPairedFinancialDrill::ALLOWED_SCOPES, true)) {
+            fwrite(STDERR, "Error: Invalid expected scope '{$parsedScope}'.\n");
+            exit(1);
+        }
+        $expectedScope = $parsedScope;
+    } elseif ($arg === '--advanced-probes') {
+        $expectedScope = SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE;
     } elseif (str_starts_with($arg, '--android-pub-head=')) {
         $androidPubHead = substr($arg, 19);
     } elseif (str_starts_with($arg, '--android-exe-head=')) {
@@ -192,7 +202,8 @@ try {
         $backendHead,
         $androidPubHead,
         $androidExeHead,
-        $repoRoot
+        $repoRoot,
+        $expectedScope
     );
     $androidPubHead = $approval['android_publication_head'];
     $androidExeHead = $approval['android_executable_head'];
@@ -458,7 +469,8 @@ try {
         $childProcess,
         $deadline,
         $checkAborted,
-        45.0
+        45.0,
+        $expectedScope
     );
     echo "  Root Live Gate       : GRANTED (witnessed SHA: {$rootApprovedHandoffSha})\n";
 
@@ -713,7 +725,7 @@ try {
         '--expected-backend-head=' . $backendHead,
         '--expected-handoff-digest=' . $candidateHandoffSha,
         '--expected-event-id=' . $expectedEventId,
-        '--expected-scope=' . SupervisedPairedFinancialDrill::REQUIRED_SCOPE,
+        '--expected-scope=' . $expectedScope,
         '--output=' . $trustedDbReportFile,
     ];
     $composeProc = new Process($composeCmd, $repoRoot, $inspectorEnv, null, $reportTimeout);
@@ -735,7 +747,7 @@ try {
         '--expected-handoff-digest=' . $candidateHandoffSha,
         '--expected-baseline-hash=' . $canonicalBaselineHash,
         '--expected-payload-digest=' . $canonicalPayloadDigest,
-        '--expected-scope=' . SupervisedPairedFinancialDrill::REQUIRED_SCOPE,
+        '--expected-scope=' . $expectedScope,
         '--schema=' . $schemaName,
         '--company-id=' . $companyId,
         '--run-id=' . $witnessedRunId,

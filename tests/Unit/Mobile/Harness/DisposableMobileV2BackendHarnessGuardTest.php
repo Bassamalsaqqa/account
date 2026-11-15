@@ -4681,59 +4681,137 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $harness->configureLostAckSuppression(['enabled' => false]);
         $this->assertNull($harness->getLostAckSuppression());
 
-        // 3. Invalid UUID throws
+        // 3. Wrong scope throws
         try {
             $harness->configureLostAckSuppression([
                 'enabled' => true,
+                'scope' => 'WRONG_SCOPE',
+                'root_grant' => 'ADVANCED_LOST_ACK_PROBE',
+                'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'target_schema' => 'accounting_p8_tmp_0123456789ab',
+                'target_nonce' => str_repeat('a', 64),
+                'target_uid' => function_exists('posix_getuid') ? posix_getuid() : getmyuid(),
+            ]);
+            $this->fail('Expected InvalidArgumentException for invalid scope');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString("Lost ACK suppression requires scope 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION'", $e->getMessage());
+        }
+
+        // 4. Wrong root_grant throws
+        try {
+            $harness->configureLostAckSuppression([
+                'enabled' => true,
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'root_grant' => 'WRONG_GRANT',
+                'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'target_schema' => 'accounting_p8_tmp_0123456789ab',
+                'target_nonce' => str_repeat('a', 64),
+                'target_uid' => function_exists('posix_getuid') ? posix_getuid() : getmyuid(),
+            ]);
+            $this->fail('Expected InvalidArgumentException for invalid root_grant');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString("Lost ACK suppression requires root_grant 'ADVANCED_LOST_ACK_PROBE'", $e->getMessage());
+        }
+
+        // 5. Invalid UUID throws
+        try {
+            $harness->configureLostAckSuppression([
+                'enabled' => true,
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'root_grant' => 'ADVANCED_LOST_ACK_PROBE',
                 'target_event_id' => 'not-a-uuid',
                 'target_schema' => 'accounting_p8_tmp_0123456789ab',
-                'target_nonce' => 'test-nonce-123',
-                'target_uid' => 1000,
+                'target_nonce' => str_repeat('a', 64),
+                'target_uid' => function_exists('posix_getuid') ? posix_getuid() : getmyuid(),
             ]);
             $this->fail('Expected InvalidArgumentException for non-UUID target_event_id');
         } catch (\InvalidArgumentException $e) {
             $this->assertStringContainsString('target_event_id must be valid UUID', $e->getMessage());
         }
 
-        // 4. Invalid schema throws
+        // 6. Invalid schema regex throws
         try {
             $harness->configureLostAckSuppression([
                 'enabled' => true,
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'root_grant' => 'ADVANCED_LOST_ACK_PROBE',
                 'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
                 'target_schema' => 'invalid_schema_name',
-                'target_nonce' => 'test-nonce-123',
-                'target_uid' => 1000,
+                'target_nonce' => str_repeat('a', 64),
+                'target_uid' => function_exists('posix_getuid') ? posix_getuid() : getmyuid(),
             ]);
             $this->fail('Expected InvalidArgumentException for invalid target_schema regex');
         } catch (\InvalidArgumentException $e) {
             $this->assertStringContainsString('target_schema must match disposable schema regex', $e->getMessage());
         }
 
-        // 5. Empty nonce throws
+        // 7. Non-64-hex nonce throws
         try {
             $harness->configureLostAckSuppression([
                 'enabled' => true,
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'root_grant' => 'ADVANCED_LOST_ACK_PROBE',
                 'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
                 'target_schema' => 'accounting_p8_tmp_0123456789ab',
-                'target_nonce' => '   ',
-                'target_uid' => 1000,
+                'target_nonce' => 'short-nonce',
+                'target_uid' => function_exists('posix_getuid') ? posix_getuid() : getmyuid(),
             ]);
-            $this->fail('Expected InvalidArgumentException for empty target_nonce');
+            $this->fail('Expected InvalidArgumentException for non-64-hex target_nonce');
         } catch (\InvalidArgumentException $e) {
-            $this->assertStringContainsString('target_nonce must be a non-empty string', $e->getMessage());
+            $this->assertStringContainsString('target_nonce must be 64-hex SHA-256 string', $e->getMessage());
         }
 
-        // 6. Valid config accepted
+        // 8. Mismatched UID throws
+        try {
+            $harness->configureLostAckSuppression([
+                'enabled' => true,
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'root_grant' => 'ADVANCED_LOST_ACK_PROBE',
+                'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'target_schema' => 'accounting_p8_tmp_0123456789ab',
+                'target_nonce' => str_repeat('a', 64),
+                'target_uid' => 9999999,
+            ]);
+            $this->fail('Expected InvalidArgumentException for mismatched target_uid');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('target_uid mismatch', $e->getMessage());
+        }
+
+        // 9. Valid config accepted
+        $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
         $validConfig = [
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'root_grant' => 'ADVANCED_LOST_ACK_PROBE',
             'enabled' => true,
             'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
             'target_schema' => 'accounting_p8_tmp_0123456789ab',
-            'target_nonce' => 'valid-nonce-abc',
-            'target_uid' => 1000,
-            'witness_path' => '/tmp/lost_ack_witness.json',
+            'target_nonce' => str_repeat('a', 64),
+            'target_uid' => $currentUid,
         ];
         $harness->configureLostAckSuppression($validConfig);
         $this->assertSame($validConfig, $harness->getLostAckSuppression());
+    }
+
+    #[Test]
+    public function test_harness_simulated_fault_stage_configuration_and_validation(): void
+    {
+        $harness = new \Tests\Support\Harness\DisposableMobileV2BackendHarness();
+        $this->assertNull($harness->getSimulatedFaultStage());
+
+        // Valid stages
+        foreach (['after_draft', 'after_posting', 'after_payment', 'after_composite_completion'] as $stage) {
+            $harness->configureSimulatedFaultStage($stage);
+            $this->assertSame($stage, $harness->getSimulatedFaultStage());
+        }
+
+        // Reset to null
+        $harness->configureSimulatedFaultStage(null);
+        $this->assertNull($harness->getSimulatedFaultStage());
+
+        // Invalid stage throws
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Unsupported simulated fault stage 'invalid_stage'.");
+        $harness->configureSimulatedFaultStage('invalid_stage');
     }
 
     #[Test]
@@ -4744,9 +4822,23 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'clientPublicationHead' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
             'clientExecutableHead' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
             'expectedPayloadDigest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+            'expectedSourcePins' => [
+                'source_fixture_sha256' => str_repeat('1', 64),
+                'guard_test_sha256' => str_repeat('2', 64),
+                'cli_command_sha256' => str_repeat('3', 64),
+                'cli_runner_sha256' => str_repeat('4', 64),
+            ],
         ];
 
-        // 1. Missing / wrong contract version rejected
+        // 1. Rejects null or empty expectedPins
+        $resEmptyPins = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            ['contract_version' => 'v2_advanced_probe_evidence_v1'],
+            []
+        );
+        $this->assertFalse($resEmptyPins['is_valid']);
+        $this->assertTrue(collect($resEmptyPins['errors'])->contains(fn ($e) => str_contains($e, 'expectedPins array is required')));
+
+        // 2. Missing / wrong contract version rejected
         $badVersion = [
             'contract_version' => 'wrong_version',
             'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
@@ -4758,7 +4850,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertFalse($resVersion['is_valid']);
         $this->assertTrue(collect($resVersion['errors'])->contains(fn ($e) => str_contains($e, "contract_version must be 'v2_advanced_probe_evidence_v1'")));
 
-        // 2. Wrong scope rejected
+        // 3. Wrong scope rejected
         $badScope = [
             'contract_version' => 'v2_advanced_probe_evidence_v1',
             'scope' => 'ROOT_AUTHORIZED_PAIRED_EXECUTION',
@@ -4772,13 +4864,55 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_advanced_probe_outer_validator_rejects_unverified_commit_in_lost_ack_evidence(): void
+    public function test_advanced_probe_outer_validator_rejects_unverified_commit_or_truthy_strings(): void
     {
         $expectedPins = [
             'backendExecutionHead' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
             'clientPublicationHead' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
             'clientExecutableHead' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
             'expectedPayloadDigest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+            'expectedSourcePins' => [
+                'source_fixture_sha256' => str_repeat('1', 64),
+                'guard_test_sha256' => str_repeat('2', 64),
+                'cli_command_sha256' => str_repeat('3', 64),
+                'cli_runner_sha256' => str_repeat('4', 64),
+            ],
+        ];
+
+        $reconciliationsHealthy = [
+            'stock_movement_matches_lines' => true,
+            'invoice_balance_matches_payments' => true,
+            'gl_batches_balanced' => true,
+            'receipt_matches_intent' => true,
+            'zero_stock_drift' => true,
+            'document_sequence_continuous' => true,
+        ];
+
+        $makeValidProbes = fn () => [
+            [
+                'probe_name' => 'permission_denial',
+                'client_event_id' => 'a1234567-888f-4890-90bf-1f05f416a19a',
+                'expected_http_status' => 403,
+                'actual_http_status' => 403,
+                'economic_delta_zero' => true,
+                'reconciliations' => $reconciliationsHealthy,
+            ],
+            [
+                'probe_name' => 'insufficient_stock',
+                'client_event_id' => 'b1234567-888f-4890-90bf-1f05f416a19a',
+                'expected_http_status' => 422,
+                'actual_http_status' => 422,
+                'economic_delta_zero' => true,
+                'reconciliations' => $reconciliationsHealthy,
+            ],
+            [
+                'probe_name' => 'controlled_fault_after_posting',
+                'client_event_id' => 'c1234567-888f-4890-90bf-1f05f416a19a',
+                'expected_http_status' => 500,
+                'actual_http_status' => 500,
+                'economic_delta_zero' => true,
+                'reconciliations' => $reconciliationsHealthy,
+            ],
         ];
 
         $payload = [
@@ -4787,6 +4921,12 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'backend_head' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
             'android_publication_head' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
             'android_executable_head' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
+            'source_pins' => [
+                'source_fixture_sha256' => str_repeat('1', 64),
+                'guard_test_sha256' => str_repeat('2', 64),
+                'cli_command_sha256' => str_repeat('3', 64),
+                'cli_runner_sha256' => str_repeat('4', 64),
+            ],
             'scenarios' => [
                 ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
                 ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201],
@@ -4798,38 +4938,53 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             ],
             'lost_ack_recovery_evidence' => [
                 'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                'network_witness_state' => 'UNRUN_AWAITING_REAL_NETWORK_WITNESS',
                 'target_client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
                 'server_commit_verified_before_suppression' => false, // UNVERIFIED! Must fail closed!
                 'suppression_witness_file' => '/tmp/lost_ack_witness.json',
                 'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
                 'recovery_http_status' => 200,
-                'receipt_status' => 'completed',
+                'receipt_status' => 'posted',
                 'matching_payload_digest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
                 'sales_invoice_public_id' => '01M7GJCCHWVFF30PTHQYZDRYYC',
                 'customer_payment_public_id' => '01M7GJCCPQTT2RXJGA499E66D3',
             ],
             'rollback_probes_evidence' => [
-                'probes_count' => 1,
-                'probes' => [
-                    [
-                        'probe_name' => 'permission_denial',
-                        'client_event_id' => 'a1234567-888f-4890-90bf-1f05f416a19a',
-                        'expected_http_status' => 403,
-                        'actual_http_status' => 403,
-                        'economic_delta_zero' => true,
-                        'reconciliations_healthy' => true,
-                        'issue_count' => 0,
-                    ],
-                ],
+                'probes_count' => 3,
+                'probes' => $makeValidProbes(),
             ],
         ];
 
+        // 1. Unverified commit rejected
         $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
             $payload,
             $expectedPins
         );
         $this->assertFalse($res['is_valid']);
-        $this->assertTrue(collect($res['errors'])->contains(fn ($e) => str_contains($e, 'server_commit_verified_before_suppression must be true')));
+        $this->assertTrue(collect($res['errors'])->contains(fn ($e) => str_contains($e, 'server_commit_verified_before_suppression must be boolean true')));
+
+        // 2. Truthy string "true" in server_commit_verified_before_suppression strictly rejected
+        $payloadTruthy = $payload;
+        $payloadTruthy['lost_ack_recovery_evidence']['server_commit_verified_before_suppression'] = 'true';
+        $resTruthy = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            $payloadTruthy,
+            $expectedPins
+        );
+        $this->assertFalse($resTruthy['is_valid']);
+        $this->assertTrue(collect($resTruthy['errors'])->contains(fn ($e) => str_contains($e, 'server_commit_verified_before_suppression must be boolean true')));
+
+        // 3. Truthy string "true" in probe economic_delta_zero strictly rejected
+        $payloadProbeTruthy = $payload;
+        $payloadProbeTruthy['lost_ack_recovery_evidence']['server_commit_verified_before_suppression'] = true;
+        $probesTruthy = $makeValidProbes();
+        $probesTruthy[0]['economic_delta_zero'] = 'true'; // string "true"!
+        $payloadProbeTruthy['rollback_probes_evidence']['probes'] = $probesTruthy;
+        $resProbeTruthy = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            $payloadProbeTruthy,
+            $expectedPins
+        );
+        $this->assertFalse($resProbeTruthy['is_valid']);
+        $this->assertTrue(collect($resProbeTruthy['errors'])->contains(fn ($e) => str_contains($e, 'economic_delta_zero must be boolean true')));
     }
 
     #[Test]
@@ -4840,6 +4995,21 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'clientPublicationHead' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
             'clientExecutableHead' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
             'expectedPayloadDigest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
+            'expectedSourcePins' => [
+                'source_fixture_sha256' => str_repeat('1', 64),
+                'guard_test_sha256' => str_repeat('2', 64),
+                'cli_command_sha256' => str_repeat('3', 64),
+                'cli_runner_sha256' => str_repeat('4', 64),
+            ],
+        ];
+
+        $reconciliationsHealthy = [
+            'stock_movement_matches_lines' => true,
+            'invoice_balance_matches_payments' => true,
+            'gl_batches_balanced' => true,
+            'receipt_matches_intent' => true,
+            'zero_stock_drift' => true,
+            'document_sequence_continuous' => true,
         ];
 
         // 1. Non-zero delta rejected
@@ -4849,6 +5019,12 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'backend_head' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
             'android_publication_head' => 'd43d2c200b4ccce1d7075aed759f51529375d307',
             'android_executable_head' => '82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd',
+            'source_pins' => [
+                'source_fixture_sha256' => str_repeat('1', 64),
+                'guard_test_sha256' => str_repeat('2', 64),
+                'cli_command_sha256' => str_repeat('3', 64),
+                'cli_runner_sha256' => str_repeat('4', 64),
+            ],
             'scenarios' => [
                 ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
                 ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201],
@@ -4860,27 +5036,43 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             ],
             'lost_ack_recovery_evidence' => [
                 'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                'network_witness_state' => 'UNRUN_AWAITING_REAL_NETWORK_WITNESS',
                 'target_client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
                 'server_commit_verified_before_suppression' => true,
                 'suppression_witness_file' => '/tmp/lost_ack_witness.json',
                 'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
                 'recovery_http_status' => 200,
-                'receipt_status' => 'completed',
+                'receipt_status' => 'posted',
                 'matching_payload_digest' => '11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac',
                 'sales_invoice_public_id' => '01M7GJCCHWVFF30PTHQYZDRYYC',
                 'customer_payment_public_id' => '01M7GJCCPQTT2RXJGA499E66D3',
             ],
             'rollback_probes_evidence' => [
-                'probes_count' => 1,
+                'probes_count' => 3,
                 'probes' => [
                     [
-                        'probe_name' => 'insufficient_stock',
+                        'probe_name' => 'permission_denial',
                         'client_event_id' => 'a1234567-888f-4890-90bf-1f05f416a19a',
+                        'expected_http_status' => 403,
+                        'actual_http_status' => 403,
+                        'economic_delta_zero' => true,
+                        'reconciliations' => $reconciliationsHealthy,
+                    ],
+                    [
+                        'probe_name' => 'insufficient_stock',
+                        'client_event_id' => 'b1234567-888f-4890-90bf-1f05f416a19a',
                         'expected_http_status' => 422,
                         'actual_http_status' => 422,
                         'economic_delta_zero' => false, // FAILED: lingering leaked entities!
-                        'reconciliations_healthy' => true,
-                        'issue_count' => 0,
+                        'reconciliations' => $reconciliationsHealthy,
+                    ],
+                    [
+                        'probe_name' => 'controlled_fault_after_posting',
+                        'client_event_id' => 'c1234567-888f-4890-90bf-1f05f416a19a',
+                        'expected_http_status' => 500,
+                        'actual_http_status' => 500,
+                        'economic_delta_zero' => true,
+                        'reconciliations' => $reconciliationsHealthy,
                     ],
                 ],
             ],
@@ -4891,12 +5083,29 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $expectedPins
         );
         $this->assertFalse($resBadDelta['is_valid']);
-        $this->assertTrue(collect($resBadDelta['errors'])->contains(fn ($e) => str_contains($e, 'failed economic_delta_zero check')));
+        $this->assertTrue(collect($resBadDelta['errors'])->contains(fn ($e) => str_contains($e, "Rollback probe 'insufficient_stock' economic_delta_zero must be boolean true")));
+
+        // 2. Unhealthy reconciler rejected
+        $payloadUnhealthy = $payloadBadDelta;
+        $payloadUnhealthy['rollback_probes_evidence']['probes'][1]['economic_delta_zero'] = true;
+        $payloadUnhealthy['rollback_probes_evidence']['probes'][1]['reconciliations']['zero_stock_drift'] = false; // Stock drift!
+
+        $resUnhealthy = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson(
+            $payloadUnhealthy,
+            $expectedPins
+        );
+        $this->assertFalse($resUnhealthy['is_valid']);
+        $this->assertTrue(collect($resUnhealthy['errors'])->contains(fn ($e) => str_contains($e, "reconciliations 'zero_stock_drift' must be boolean true")));
     }
 
     #[Test]
-    public function test_assert_rollback_zero_delta_detects_any_leaked_row(): void
+    public function test_assert_rollback_zero_delta_detects_any_leaked_row_and_fails_closed(): void
     {
+        // 1. Fails closed on empty array
+        $resEmpty = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta([], []);
+        $this->assertFalse($resEmpty['is_zero_delta']);
+        $this->assertTrue(collect($resEmpty['errors'])->contains(fn ($e) => str_contains($e, 'metrics array cannot be empty')));
+
         $baseline = [
             'sales_invoices' => 10,
             'sales_invoice_lines' => 15,
@@ -4907,26 +5116,57 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'stock_movements' => 20,
             'posting_batches' => 12,
             'posting_lines' => 36,
+            'document_sequence_next_number' => 101,
+            'inventory_balance_quantity_base' => '500.000000',
+            'row_fingerprint_sha256' => str_repeat('c', 64),
         ];
 
-        // 1. Identical counts -> zero delta PASS
+        // 2. Identical counts -> zero delta PASS
         $resZero = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $baseline);
         $this->assertTrue($resZero['is_zero_delta']);
         $this->assertSame([], $resZero['errors']);
 
-        // 2. Leaked invoice -> FAIL
+        // 3. Leaked invoice -> FAIL
         $leakedInv = $baseline;
         $leakedInv['sales_invoices'] = 11;
         $resInv = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $leakedInv);
         $this->assertFalse($resInv['is_zero_delta']);
         $this->assertTrue(collect($resInv['errors'])->contains(fn ($e) => str_contains($e, "Rollback entity 'sales_invoices' delta must be 0, got 1")));
 
-        // 3. Leaked stock movement -> FAIL
+        // 4. Leaked stock movement -> FAIL
         $leakedSm = $baseline;
         $leakedSm['stock_movements'] = 21;
         $resSm = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $leakedSm);
         $this->assertFalse($resSm['is_zero_delta']);
         $this->assertTrue(collect($resSm['errors'])->contains(fn ($e) => str_contains($e, "Rollback entity 'stock_movements' delta must be 0, got 1")));
+
+        // 5. Sequence leak -> FAIL
+        $leakedSeq = $baseline;
+        $leakedSeq['document_sequence_next_number'] = 102;
+        $resSeq = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $leakedSeq);
+        $this->assertFalse($resSeq['is_zero_delta']);
+        $this->assertTrue(collect($resSeq['errors'])->contains(fn ($e) => str_contains($e, 'Document sequence leaked')));
+
+        // 6. Stock quantity mutation -> FAIL
+        $mutatedStock = $baseline;
+        $mutatedStock['inventory_balance_quantity_base'] = '499.000000';
+        $resStock = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $mutatedStock);
+        $this->assertFalse($resStock['is_zero_delta']);
+        $this->assertTrue(collect($resStock['errors'])->contains(fn ($e) => str_contains($e, 'Inventory stock quantity mutated')));
+
+        // 7. Row fingerprint mismatch -> FAIL
+        $mismatchedFp = $baseline;
+        $mismatchedFp['row_fingerprint_sha256'] = str_repeat('d', 64);
+        $resFp = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $mismatchedFp);
+        $this->assertFalse($resFp['is_zero_delta']);
+        $this->assertTrue(collect($resFp['errors'])->contains(fn ($e) => str_contains($e, 'Row fingerprint mismatch')));
+
+        // 8. Non-integer metric type -> FAIL
+        $badType = $baseline;
+        $badType['sales_invoices'] = '10'; // string instead of int
+        $resType = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $badType);
+        $this->assertFalse($resType['is_zero_delta']);
+        $this->assertTrue(collect($resType['errors'])->contains(fn ($e) => str_contains($e, "Post-probe metric 'sales_invoices' must be integer, got string.")));
     }
 
     #[Test]

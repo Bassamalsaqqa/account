@@ -34,6 +34,11 @@ class SupervisedPairedFinancialDrill
 {
     public const DEFAULT_HOLD_SECONDS = 120;
     public const REQUIRED_SCOPE = 'ROOT_AUTHORIZED_PAIRED_EXECUTION';
+    public const REQUIRED_ADVANCED_SCOPE = 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION';
+    public const ALLOWED_SCOPES = [
+        self::REQUIRED_SCOPE,
+        self::REQUIRED_ADVANCED_SCOPE,
+    ];
     public const REQUIRED_LIFECYCLE_GRANT = 'FINANCIAL_PAIRED_RUN';
     public const ALLOWED_READINESS_URL = 'https://127.0.0.1:18443/_harness/readiness';
     public const SCHEMA_REGEX = '/^accounting_p8_tmp_[a-f0-9]{12}$/D';
@@ -70,7 +75,8 @@ class SupervisedPairedFinancialDrill
         string $expectedBackendHead,
         ?string $cliPubHead,
         ?string $cliExeHead,
-        string $repoRoot
+        string $repoRoot,
+        string $expectedScope = self::REQUIRED_SCOPE
     ): array {
         self::assertSecureFilePermissions($filePath, 'PRESTART_APPROVAL');
 
@@ -128,6 +134,11 @@ class SupervisedPairedFinancialDrill
             throw new RuntimeException("PRESTART_APPROVAL_CWD_MISMATCH: expected {$realRoot}, got " . ($data['cwd'] ?? ''));
         }
 
+        $scope = (string) ($data['scope'] ?? self::REQUIRED_SCOPE);
+        if (! in_array($scope, self::ALLOWED_SCOPES, true) || $scope !== $expectedScope) {
+            throw new RuntimeException("PRESTART_APPROVAL_SCOPE_MISMATCH: expected {$expectedScope}, got '{$scope}'");
+        }
+
         return [
             'root_coordination_granted' => true,
             'manifest_sha256' => $appManifestSha,
@@ -136,6 +147,7 @@ class SupervisedPairedFinancialDrill
             'android_executable_head' => $appExeHead,
             'cwd' => $realRoot,
             'expires_at' => $data['expires_at'],
+            'scope' => $scope,
         ];
     }
 
@@ -171,7 +183,8 @@ class SupervisedPairedFinancialDrill
         Process $childProcess,
         float $deadline,
         callable $checkAborted,
-        float $maxWaitSeconds = 45.0
+        float $maxWaitSeconds = 45.0,
+        string $expectedScope = self::REQUIRED_SCOPE
     ): string {
         $startWait = microtime(true);
         $effectiveMaxWait = min($maxWaitSeconds, max(1.0, $deadline - microtime(true) - 25.0));
@@ -197,7 +210,8 @@ class SupervisedPairedFinancialDrill
             $pubHead,
             $exeHead,
             $manifestSha,
-            $schemaName
+            $schemaName,
+            $expectedScope
         );
     }
 
@@ -213,6 +227,7 @@ class SupervisedPairedFinancialDrill
      * @param  string  $exeHead  Verified Android executable HEAD
      * @param  string  $manifestSha  Verified manifest SHA
      * @param  string  $schemaName  Owned schema name
+     * @param  string  $expectedScope  Expected Root approval scope
      * @return string The Root-approved handoff SHA-256
      *
      * @throws RuntimeException
@@ -225,7 +240,8 @@ class SupervisedPairedFinancialDrill
         string $pubHead,
         string $exeHead,
         string $manifestSha,
-        string $schemaName
+        string $schemaName,
+        string $expectedScope = self::REQUIRED_SCOPE
     ): string {
         self::assertSecureFilePermissions($filePath, 'LIVE_ROOT_APPROVAL');
 
@@ -253,8 +269,8 @@ class SupervisedPairedFinancialDrill
 
         // Scope enforcement
         $scope = (string) ($data['scope'] ?? '');
-        if ($scope !== self::REQUIRED_SCOPE) {
-            throw new RuntimeException("LIVE_ROOT_APPROVAL_SCOPE_MISMATCH: expected " . self::REQUIRED_SCOPE . ", got '{$scope}'");
+        if (! in_array($scope, self::ALLOWED_SCOPES, true) || $scope !== $expectedScope) {
+            throw new RuntimeException("LIVE_ROOT_APPROVAL_SCOPE_MISMATCH: expected {$expectedScope}, got '{$scope}'");
         }
 
         // Schema name enforcement

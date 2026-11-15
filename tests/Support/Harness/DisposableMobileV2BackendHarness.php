@@ -237,23 +237,34 @@ final class DisposableMobileV2BackendHarness
      *     target_event_id: string,
      *     target_schema: string,
      *     target_nonce: string,
-     *     target_uid: int,
-     *     witness_path?: string
+     *     scope: string,
+     *     root_grant: string,
+     *     enabled: bool,
+     *     target_event_id: string,
+     *     target_schema: string,
+     *     target_nonce: string,
+     *     target_uid: int
      * }|null
      */
     private ?array $lostAckSuppression = null;
+
+    /**
+     * Optional simulated fault stage for controlled rollback probes.
+     */
+    private ?string $simulatedFaultStage = null;
 
     /**
      * Configures single-response test-transport suppression for advanced lost-ACK testing.
      * Defaults to null (default-deny).
      *
      * @param array{
+     *     scope: string,
+     *     root_grant: string,
      *     enabled: bool,
      *     target_event_id: string,
      *     target_schema: string,
      *     target_nonce: string,
-     *     target_uid: int,
-     *     witness_path?: string
+     *     target_uid: int
      * }|null $config
      */
     public function configureLostAckSuppression(?array $config): void
@@ -264,17 +275,49 @@ final class DisposableMobileV2BackendHarness
             return;
         }
 
+        if (($config['scope'] ?? '') !== 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
+            throw new \InvalidArgumentException("Lost ACK suppression requires scope 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION'.");
+        }
+        if (($config['root_grant'] ?? '') !== 'ADVANCED_LOST_ACK_PROBE') {
+            throw new \InvalidArgumentException("Lost ACK suppression requires root_grant 'ADVANCED_LOST_ACK_PROBE'.");
+        }
         if (! preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', (string) ($config['target_event_id'] ?? ''))) {
             throw new \InvalidArgumentException("Lost ACK target_event_id must be valid UUID, got '".($config['target_event_id'] ?? 'null')."'.");
         }
         if (! preg_match('/^accounting_p8_tmp_[0-9a-f]{12}$/', (string) ($config['target_schema'] ?? ''))) {
             throw new \InvalidArgumentException("Lost ACK target_schema must match disposable schema regex, got '".($config['target_schema'] ?? 'null')."'.");
         }
-        if (trim((string) ($config['target_nonce'] ?? '')) === '') {
-            throw new \InvalidArgumentException('Lost ACK target_nonce must be a non-empty string.');
+        if (! preg_match('/^[0-9a-fA-F]{64}$/', (string) ($config['target_nonce'] ?? ''))) {
+            throw new \InvalidArgumentException('Lost ACK target_nonce must be 64-hex SHA-256 string.');
+        }
+        $expectedUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+        if ((int) ($config['target_uid'] ?? -1) !== $expectedUid) {
+            throw new \InvalidArgumentException("Lost ACK target_uid mismatch: expected current process UID {$expectedUid}.");
         }
 
         $this->lostAckSuppression = $config;
+    }
+
+    /**
+     * Configures test-only simulated fault stage for controlled rollback probes.
+     */
+    public function configureSimulatedFaultStage(?string $stage): void
+    {
+        if ($stage === null) {
+            $this->simulatedFaultStage = null;
+
+            return;
+        }
+        $allowed = ['after_draft', 'after_posting', 'after_payment', 'after_composite_completion'];
+        if (! in_array($stage, $allowed, true)) {
+            throw new \InvalidArgumentException("Unsupported simulated fault stage '{$stage}'.");
+        }
+        $this->simulatedFaultStage = $stage;
+    }
+
+    public function getSimulatedFaultStage(): ?string
+    {
+        return $this->simulatedFaultStage;
     }
 
     /**
@@ -1174,6 +1217,10 @@ if (\$routeResult !== null) {
         \\App\\Support\\Mobile\\Receipt\\FinancialExecutionAdapterInterface::class,
         \\Tests\\Support\\QualifiedCashFinancialExecutionAdapter::class
     );
+
+    if (! empty(\$config['simulated_fault_stage'])) {
+        \\App\\Actions\\Sales\\ExecuteImmediateOnlineCashSaleAction::\$simulatedFaultStage = (string) \$config['simulated_fault_stage'];
+    }
 });
 
 \$kernel = \$app->make(\\Illuminate\\Contracts\\Http\\Kernel::class);
@@ -1185,6 +1232,8 @@ if (\$routeResult !== null) {
 \$suppression = \$config['lost_ack_suppression'] ?? null;
 if (is_array(\$suppression)
     && ! empty(\$suppression['enabled'])
+    && (\$suppression['scope'] ?? '') === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION'
+    && (\$suppression['root_grant'] ?? '') === 'ADVANCED_LOST_ACK_PROBE'
     && (\$response->getStatusCode() === 201)
     && (string) (\$config['harness_nonce'] ?? '') === (string) (\$suppression['target_nonce'] ?? '')
     && (string) (\$config['schema_name'] ?? '') === (string) (\$suppression['target_schema'] ?? '')
@@ -1202,20 +1251,37 @@ if (is_array(\$suppression)
     }
 
     if (\$reqEventId !== null && hash_equals((string) \$suppression['target_event_id'], (string) \$reqEventId)) {
-        \$witnessPath = (string) (\$suppression['witness_path'] ?? (\$bootstrapDir.'/lost_ack_suppression_witness.json'));
-        if (! file_exists(\$witnessPath)) {
-            file_put_contents(\$witnessPath, json_encode([
-                'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
-                'timestamp' => microtime(true),
-                'client_event_id' => \$reqEventId,
-                'schema_name' => \$config['schema_name'],
-                'harness_nonce' => \$config['harness_nonce'],
-                'response_status_code_before_suppression' => 201,
-                'server_commit_verified' => true,
-            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            chmod(\$witnessPath, 0600);
-            \$kernel->terminate(\$request, \$response);
-            exit(0);
+        // Verify real DB commit via PDO before suppression: record must exist with invoice and payment
+        /** @var object{id: int|string, status: string, sales_invoice_id: mixed, customer_payment_id: mixed}|null \$receiptRow */
+        \$receiptRow = \\Illuminate\\Support\\Facades\\DB::selectOne(
+            'SELECT `id`, `status`, `sales_invoice_id`, `customer_payment_id` FROM `mobile_event_receipts` WHERE `client_event_id` = ? LIMIT 1',
+            [\$reqEventId]
+        );
+        if (\$receiptRow !== null
+            && \$receiptRow->status === 'completed'
+            && \$receiptRow->sales_invoice_id !== null
+            && \$receiptRow->customer_payment_id !== null
+        ) {
+            \$witnessPath = \$bootstrapDir.'/lost_ack_suppression_witness.json';
+            \$fp = @fopen(\$witnessPath, 'x'); // atomic O_CREAT | O_EXCL
+            if (\$fp !== false) {
+                \$witnessData = [
+                    'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                    'network_witness_state' => 'UNRUN_AWAITING_REAL_NETWORK_WITNESS',
+                    'timestamp' => microtime(true),
+                    'client_event_id' => \$reqEventId,
+                    'schema_name' => \$config['schema_name'],
+                    'response_status_code_before_suppression' => 201,
+                    'server_commit_verified_via_pdo' => true,
+                    'sales_invoice_id' => (int) \$receiptRow->sales_invoice_id,
+                    'customer_payment_id' => (int) \$receiptRow->customer_payment_id,
+                ];
+                fwrite(\$fp, json_encode(\$witnessData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                fclose(\$fp);
+                chmod(\$witnessPath, 0600);
+                \$kernel->terminate(\$request, \$response);
+                exit(0);
+            }
         }
     }
 }
@@ -1993,6 +2059,9 @@ PHP;
         ];
         if ($this->lostAckSuppression !== null) {
             $childConfigPayload['lost_ack_suppression'] = $this->lostAckSuppression;
+        }
+        if ($this->simulatedFaultStage !== null) {
+            $childConfigPayload['simulated_fault_stage'] = $this->simulatedFaultStage;
         }
         file_put_contents($childConfigPath, json_encode($childConfigPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         chmod($childConfigPath, 0600);

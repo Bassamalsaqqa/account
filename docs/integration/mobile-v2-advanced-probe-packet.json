@@ -1,0 +1,66 @@
+{
+  "protocol": "MOBILE_V2_ADVANCED_PROBE_PROTOCOL",
+  "contract_version": "v2_advanced_probe_evidence_v1",
+  "scope": "ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION",
+  "status": "SOURCE_ONLY_AWAITING_ROOT_GRANT",
+  "endpoints": {
+    "submit_online_cash_sale": {
+      "method": "POST",
+      "route": "/api/mobile/v2/companies/{companyId}/sales/online-cash",
+      "headers": {
+        "Authorization": "Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "expected_success_code": 201
+    },
+    "lookup_event_status": {
+      "method": "GET",
+      "route": "/api/mobile/v2/companies/{companyId}/offline-events/{clientEventId}/status",
+      "headers": {
+        "Authorization": "Bearer {token}",
+        "Accept": "application/json"
+      },
+      "expected_success_code": 200,
+      "expected_response_status": "posted"
+    }
+  },
+  "schema_constraints": {
+    "database_schema_pattern": "^accounting_p8_tmp_[0-9a-f]{12}$",
+    "harness_nonce_pattern": "^[0-9a-fA-F]{64}$",
+    "client_event_id_pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+  },
+  "lost_ack_recovery_protocol": {
+    "step_1_submit": "Execute POST /api/mobile/v2/companies/{companyId}/sales/online-cash with target client_event_id. Server executes transaction, commits to MariaDB (receipt status=completed with invoice and payment IDs). In test harness, transport boundary intercepts wire response after commit.",
+    "step_2_transport_witness": "Harness creates atomic 0600 witness and terminates HTTP request without wire response. In accordance with Root review, this network socket drop is declared UNRUN until verified with live network witness.",
+    "step_3_recovery": "Client observes socket drop/timeout. Client MUST NOT resubmit a fresh POST. Client executes GET /api/mobile/v2/companies/{companyId}/offline-events/{clientEventId}/status.",
+    "step_4_assert": "Client asserts HTTP 200, status='posted', non-null matching invoice_id, payment_id, and identical server_canonical_digest matching original intent."
+  },
+  "rollback_probes_protocol": {
+    "required_probes": [
+      {
+        "probe_name": "permission_denial",
+        "action": "POST /api/mobile/v2/companies/{companyId}/sales/online-cash using fresh client_event_id with unpermitted user token",
+        "expected_http_status": 403,
+        "expected_code": "FORBIDDEN"
+      },
+      {
+        "probe_name": "insufficient_stock",
+        "action": "POST /api/mobile/v2/companies/{companyId}/sales/online-cash using fresh client_event_id requesting quantity exceeding warehouse balance",
+        "expected_http_status": 422,
+        "expected_code": "VALIDATION_FAILED"
+      },
+      {
+        "probe_name": "controlled_fault_after_posting",
+        "action": "POST /api/mobile/v2/companies/{companyId}/sales/online-cash using fresh client_event_id under test harness simulatedFaultStage='after_posting'",
+        "expected_http_status": 500
+      }
+    ],
+    "verification_rules": {
+      "metric_delta": "Assert all 9 accounting row counts have strictly zero net delta (pre-probe == post-probe)",
+      "sequence_delta": "Assert document_sequence_next_number is unchanged (no sequence gap)",
+      "stock_quantity": "Assert inventory_balance_quantity_base is untouched",
+      "reconciliations": "Assert all 6 reconciliation services (accounting, inventory, sales, payables, money, phase7) pass with 0 issues"
+    }
+  }
+}

@@ -42,6 +42,8 @@ def get_default_repo_dir():
 
 DEFAULT_REPO_DIR = get_default_repo_dir()
 REQUIRED_SCOPE = 'ROOT_AUTHORIZED_PAIRED_EXECUTION'
+REQUIRED_ADVANCED_SCOPE = 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION'
+ALLOWED_SCOPES = [REQUIRED_SCOPE, REQUIRED_ADVANCED_SCOPE]
 
 def validate_no_symlink_components(path, label="Path"):
     """Validates that no component in the path is a symlink."""
@@ -158,8 +160,11 @@ def make_live_approval_json(
     handoff_path,
     whole_handoff_sha256,
     repo_dir,
-    expires_seconds=300
+    expires_seconds=300,
+    scope=REQUIRED_SCOPE
 ):
+    if scope not in ALLOWED_SCOPES:
+        raise ValueError(f"Invalid scope '{scope}', expected one of {ALLOWED_SCOPES}")
     exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=expires_seconds)
     return {
         'root_live_handoff_approved': True,
@@ -172,7 +177,7 @@ def make_live_approval_json(
         'expires_at': exp.isoformat(),
         'handoff_path': handoff_path,
         'whole_handoff_sha256': whole_handoff_sha256,
-        'scope': REQUIRED_SCOPE,
+        'scope': scope,
         'schema_name': schema_name
     }
 
@@ -345,8 +350,11 @@ def cmd_prepare(args):
         f'--manifest={manifest_path}',
         f'--manifest-sha={manifest_sha}',
         f'--android-repo-dir={android_dir}',
-        f'--output-dir={run_dir}'
+        f'--output-dir={run_dir}',
+        f'--expected-scope={scope}'
     ]
+    if getattr(args, 'advanced_probes', False):
+        cmd.append('--advanced-probes')
     argv_path = os.path.join(run_dir, 'argv.json')
     with open(argv_path, 'w') as f:
         json.dump(cmd, f, indent=2)
@@ -380,6 +388,10 @@ def cmd_record_live(args):
     pub_head = prestart['android_publication_head']
     exe_head = prestart['android_executable_head']
     repo_dir = prestart.get('cwd', DEFAULT_REPO_DIR)
+    scope = prestart.get('scope', REQUIRED_SCOPE)
+    if scope not in ALLOWED_SCOPES:
+        print(f"Error: invalid scope '{scope}' in prestart.json, must be one of {ALLOWED_SCOPES}", file=sys.stderr)
+        sys.exit(1)
 
     live_data = make_live_approval_json(
         manifest_sha=manifest_sha,
@@ -390,7 +402,8 @@ def cmd_record_live(args):
         handoff_path=args.handoff_path,
         whole_handoff_sha256=args.handoff_sha,
         repo_dir=repo_dir,
-        expires_seconds=args.expires or 300
+        expires_seconds=args.expires or 300,
+        scope=scope
     )
 
     live_path = os.path.join(run_dir, 'live.json')
