@@ -538,4 +538,126 @@ All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qu
 - **Lease Status**: **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
 - **DOCS ONLY Publish**: No source edits applied during or after DB execution.
 
+---
+
+### 12. Phase 6 Disposable MariaDB Qualification Attempt (PASSED / QUALIFIED)
+
+**Date**: 2026-11-15T09:11:26+02:00  
+**Branch**: `t3/recover-cash-writer`  
+**Execution HEAD**: `bef066c49c89b4518b5732ed57086896aba0ffa9`  
+**PR**: [https://github.com/Bassamalsaqqa/account/pull/102](https://github.com/Bassamalsaqqa/account/pull/102)  
+**Execution Lease**: `ONE EXCLUSIVE OWNED 3342 Phase 6 attempt` (NOW RELEASED)  
+**Outcome**: **`QUALIFIED`** (Exit code: 0, Elapsed time: 6.5274s, All invariants and gates satisfied)  
+**Teardown**: Owned schema dropped (`accounting_p8_tmp_e5b20c48a5ec`), independent absence verified (`ABSENCE_CONFIRMED`)
+
+#### 12.1 Invariant & Source Integrity Verification (PRE & POST)
+All 11 monitored source components were cryptographically verified before and after execution. Pre- and post-hashes are strictly identical:
+
+| Source Component | File Path | SHA-256 Digest | State |
+| :--- | :--- | :--- | :--- |
+| **Qualification Runner** | `tests/Support/Harness/disposable-db-qualification-runner.php` | `a72614e3d0a46260105d4fb23a56b1d81eb4a9da4e795d70a8a12c6fc16d97f6` | Verified Stable |
+| **Financial Post-Run Inspector** | `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `8de004b766b01b845e93f0477da397b5e492e9a7888806b5c1546e3bc8c79249` | Verified Stable |
+| **Mobile V2 Backend Harness** | `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `271eb8c30e1d86a636fb8eaab46b7426fbcf84f8d009f8ad7b18d5d6bf43f12c` | Verified Stable |
+| **Disposable MariaDB Schema** | `tests/Support/DisposableMariaDbSchema.php` | `ac69d1e6f0875eff250ce1fd688f47fbb95162dcd081f33f889ebf1fc184c352` | Verified Stable |
+| **Client Handoff Schema** | `docs/integration/mobile-v2-client-handoff-schema.json` | `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275` | Verified Stable |
+| **Golden Manifest** | `tests/Support/Harness/fixtures/golden-provenance-manifest.json` | `2135861348655859da9ef4f232cbb1b3ba87debce0b9806340df62bce0476f08` | Verified Stable |
+| **Golden Wire Fixture** | `tests/Support/Harness/fixtures/synthetic-financial-golden-wire.json` | `25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6` | Verified Stable |
+| **Golden Wrapper Fixture** | `tests/Support/Harness/fixtures/synthetic-financial-golden-wrapper.json` | `7458f05b57fe149beec9e26ebec77015b45f2acfcc428687f10c216f80f1592d` | Verified Stable |
+| **Integration Manifest** | `docs/integration/mobile-v2-integration-manifest.json` | `c53ccd90bca5dbe34b7ab6191f332a8e8b84de0869e8b060623d980e2759f78a` | Verified Stable |
+| **CreateCompanyAction** | `app/Actions/Company/CreateCompanyAction.php` | `fa2f38cb99780e4c635c7a3f72d77c8832265c9aaacf366a8ee88853ceff26b5` | Verified Stable |
+| **Financial Inspector CLI** | `tests/Support/Harness/financial-inspector-cli.php` | `6d19eff2c1ef978ad045465e67a8e7b05cf0bc76994332df53aeb305ea40c38b` | Verified Stable |
+
+- **Production Code Immutability**: `git diff 6981511405d7bcd04cd8f8a09e64443ce0aaf47e -- app routes config composer.lock` => **0 bytes** (clean).
+- **Working Tree State**: `git status --porcelain` => clean before execution.
+
+#### 12.2 Verification Results & Gate Progression
+1. **Pre-Checks (4 of 4 PASSED)**:
+   - `proof_refusal`: **PASS** (`Disposable schema ownership proof is required. Use the isolated runner.`)
+   - `invalid_schema_refusal`: **PASS** (`Inspector refused: invalid disposable schema name 'invalid_schema_name'.`)
+   - `child_env_propagation`: **PASS** (`Synthetic child process validated testSettings and assertPrimarySchema under explicit environment without DB socket.`)
+   - `isolated_dependency_preflight`: **PASS** (`Bounded no-DB dependency construction preflight validated CompanyContext sessionless auth, array cache, and all 6 reconciliation service resolutions without DB socket.`)
+2. **Schema Lifecycle & Migrations**:
+   - Schema created: `accounting_p8_tmp_e5b20c48a5ec` on `127.0.0.1:3342`.
+   - Full migrations executed cleanly in ~3.2 seconds via Symfony process with propagated credentials: **PASS**.
+3. **Canonical Foundation Fixture**:
+   - `CreateCompanyAction` created canonical `company_id = 1` with initial roles and permissions: **PASS**.
+4. **Statement Timeout Verification**:
+   - `DisposableFinancialPostRunInspector::configureStatementTimeout($dedicatedPdo, 5)` verified: **PASS**.
+5. **Server-Enforced Read-Only Denial (`read_only_proof: VERIFIED`)**:
+   - `server_version`: `"10.11.18-MariaDB-0+deb12u1"`
+   - Ordinary InnoDB probe table `_disposable_ro_probe` created and initial value `(1, 'initial')` inserted: **PASS**.
+   - `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`: **PASS** (`transaction_start_success: true`).
+   - Probe read within snapshot returned `'initial'`: **PASS**.
+   - Attempted `UPDATE _disposable_ro_probe SET val = 'mutated' WHERE id = 1`:
+     - Driver rejection: `errorInfo[1] === 1792` AND `SQLSTATE errorInfo[0] === '25006'` (**VERIFIED EXACT SERVER CODES**).
+     - Message: `"SQLSTATE[25006]: Read only sql transaction: 1792 Cannot execute statement in a READ ONLY transaction"`.
+   - Row value verified inside transaction after denial: returned `'initial'`: **PASS**.
+   - Transaction rolled back; row value verified via independent query: returned `'initial'`: **PASS**.
+   - Probe table dropped cleanly: **PASS**.
+6. **Ambient Connection Sentinel (`sentinel_report: VERIFIED`)**:
+   - `sentinel_installed`: `true`
+   - `status`: `"VERIFIED"`
+   - `ambient_connection_attempts`: `0`
+   - `attempt_contexts`: `[]`
+   - `owned_pdo_verified`: `true`
+   - `owned_pdo_database`: `"accounting_p8_tmp_e5b20c48a5ec"`
+   - `owned_pdo_port`: `3342`
+   - Zero ambient connection dials attempted during entire execution.
+7. **Pre-Reconciliation Baseline Captured (`pre_baseline`)**:
+   - `company_id`: 1
+   - `schema_name`: `"accounting_p8_tmp_e5b20c48a5ec"`
+   - `sales_invoices`: 0
+   - `sales_invoice_lines`: 0
+   - `sales_invoice_lot_allocations`: 0
+   - `customer_payments`: 0
+   - `customer_payment_allocations`: 0
+   - `mobile_event_receipts`: 0
+   - `stock_movements`: 0 (qty sum exact `"0.000000"`)
+   - `posting_batches`: 0
+   - `posting_lines`: 0
+   - `document_sequences`: all 12 document sequences initialized to 1.
+8. **Post-Reconciliation Baseline Captured (`post_baseline`)**:
+   - Captured under dedicated read-only transaction on port 3342.
+   - All entity counts, max IDs, and sequences identical to pre-baseline.
+9. **Baseline Comparison (`baseline_comparison: VERIFIED`)**:
+   - `status`: `"VERIFIED"`
+   - `strictly_equal`: `true`
+   - `stock_movements_qty_sum_is_zero`: `true`
+   - `zero_deltas_verified`: `true`
+10. **Six Canonical Financial Reconcilers (`six_reconcilers_status: VERIFIED`)**:
+    - `all_healthy`: `true`
+    - `AccountingReconciliationService`: healthy: `true`, issue_count: `0`
+    - `InventoryReconciliationService`: healthy: `true`, issue_count: `0`
+    - `SalesReconciliationService`: healthy: `true`, issue_count: `0`
+    - `PayablesReconciliationService`: healthy: `true`, issue_count: `0`
+    - `MoneyReconciliationService`: healthy: `true`, issue_count: `0`
+    - `Phase7ReconciliationService`: healthy: `true`, issue_count: `0`
+
+#### 12.3 Teardown & Independent Absence Verification
+1. **Internal Synchronous Teardown**:
+   - The runner's `finally` block dropped `accounting_p8_tmp_e5b20c48a5ec`.
+   - `cleanup_verified`: `true`.
+2. **External Watchdog Independent Absence Query**:
+   - Executed `SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'accounting_p8_tmp_e5b20c48a5ec'` against MariaDB port 3342.
+   - Returned `0` rows (**`ABSENCE_CONFIRMED`**). Zero schema leakage.
+3. **Process Hierarchy**:
+   - Subprocess PID `1537080` cleanly exited and was reaped in `6.5274s`. Zero dangling processes.
+
+#### 12.4 Phase 6 Retained Artifacts & Hashes
+All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qualification_phase6_5e5dee2f/` (dir `0700`, files `0600`):
+- `admin_credentials.json`: `bab71f831ab1d27c91376f79e221a1f118355b21f9d61f39e26709e3bf9219e8`
+- `pre_source_hashes.json`: `5f1c017bed56b20a10cf7ec88537293f349a01637dfa084dbec2e8ccd428fb01`
+- `post_source_hashes.json`: `5f1c017bed56b20a10cf7ec88537293f349a01637dfa084dbec2e8ccd428fb01`
+- `raw_stderr.log`: `50dad3df674609306e6fdbfa0a9805de674dba96af21dff68da5546f588932eb`
+- `raw_stdout.log`: `9f3d27e5d64c489f4f89fcf5a4f42ccb63d7e7f3b99b1d7078ffb97d027de60c`
+- `runner_output.json`: `9f3d27e5d64c489f4f89fcf5a4f42ccb63d7e7f3b99b1d7078ffb97d027de60c`
+- `watchdog_audit.json`: `697651df5d3819ac352c3cc038a96505f24f7c333dcb169efe2fabb74772bc9f`
+- `watchdog_runner_phase6.py`: `ad85d3f03d5e727b878aab7124efa61bf4b050dd01be3bc808288cbca04d480b`
+
+#### 12.5 Stand Down & Lease Release
+- **Lease Status**: **RELEASED IMMEDIATELY**. Port 3342 has zero active connections and zero leftover schemas.
+- **Peer Coordination**: Android root reserved NEXT short policy compile lease; backend stands down and yields execution window.
+- **Next Operational Milestone**: Metadata G1/G2 (currency minor units bootstrap resolver & catalog tax selectedTaxRate.calculation authority) design planned for implementation without DB lease conflict.
+
+
 
