@@ -233,3 +233,86 @@ All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qu
 3. **Lease Status**:
    - **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
 
+---
+
+### 9. Phase 3 Bounded Qualification Attempt & Outcome (`8f28e4c8297512462a7eea16f4044959828c7d24`)
+
+**Execution Date**: 2026-11-15T07:45:23+02:00  
+**Branch**: `t3/recover-cash-writer`  
+**Execution HEAD**: `8f28e4c8297512462a7eea16f4044959828c7d24`  
+**Lease**: `ONE exclusive owned 3342 phase3 attempt` (RELEASED IMMEDIATELY)  
+**Outcome**: `FAILED` (Exit code: 1, Stop on FIRST failure, NO autofix/retry)  
+**Elapsed Runtime**: `6.0263s` (Subprocess PID: `1495557`)  
+**Teardown**: Owned schema dropped, independent absence verified (`ABSENCE_CONFIRMED`)
+
+#### 9.1 Invariant & Source Integrity Verification (PRE & POST)
+Pre- and post-execution source hashes match strictly across all components:
+- `tests/Support/Harness/disposable-db-qualification-runner.php`: `2d78f831ffd92bdb08a390f7e07e0283d116af03f0af45f94a6bce2355273e73`
+- `tests/Support/Harness/DisposableFinancialPostRunInspector.php`: `4f419bef5aed7352230b1d54934a40f6cabebb912eb8ed771604473869954550`
+- `tests/Support/Harness/DisposableMobileV2BackendHarness.php`: `271eb8c30e1d86a636fb8eaab46b7426fbcf84f8d009f8ad7b18d5d6bf43f12c`
+- `tests/Support/DisposableMariaDbSchema.php`: `ac69d1e6f0875eff250ce1fd688f47fbb95162dcd081f33f889ebf1fc184c352`
+- `docs/integration/mobile-v2-client-handoff-schema.json`: `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275`
+- `tests/Support/Harness/fixtures/golden-provenance-manifest.json`: `2135861348655859da9ef4f232cbb1b3ba87debce0b9806340df62bce0476f08`
+- `tests/Support/Harness/fixtures/synthetic-financial-golden-wire.json`: `25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6`
+- `tests/Support/Harness/fixtures/synthetic-financial-golden-wrapper.json`: `7458f05b57fe149beec9e26ebec77015b45f2acfcc428687f10c216f80f1592d`
+- `docs/integration/mobile-v2-integration-manifest.json`: `c53ccd90bca5dbe34b7ab6191f332a8e8b84de0869e8b060623d980e2759f78a`
+- `app/Actions/Company/CreateCompanyAction.php`: `fa2f38cb99780e4c635c7a3f72d77c8832265c9aaacf366a8ee88853ceff26b5`
+- **Working Tree State**: Clean (`git status --porcelain` empty).
+- **Production Diff**: `git diff 6981511405d7bcd04cd8f8a09e64443ce0aaf47e -- app routes config composer.lock` => 0 bytes.
+
+#### 9.2 Execution Trajectory & Steps Passed
+1. **Pre-checks**:
+   - `proof_refusal`: **PASS** (`Disposable schema ownership proof is required. Use the isolated runner.`)
+   - `invalid_schema_refusal`: **PASS** (`Inspector refused: invalid disposable schema name 'invalid_schema_name'.`)
+   - `child_env_propagation`: **PASS** (`Synthetic child process validated testSettings and assertPrimarySchema under explicit environment without DB socket.`)
+2. **Schema Creation & Migration Lifecycle**:
+   - Schema created: `accounting_p8_tmp_d8d550da625b` on `127.0.0.1:3342`.
+   - Explicit environment propagation: child process received administrative credentials via `DisposableMariaDbSchema::environment()`.
+   - Schema migrations (`artisan migrate --force`): **PASS** (completed cleanly in ~5 seconds).
+3. **Canonical Foundation Fixture**:
+   - `CreateCompanyAction` executed under owned connection: created `company_id = 1` cleanly.
+   - Permissions and roles established.
+4. **Ambient Connection Sentinel**:
+   - Ambient connections poisoned to `127.0.0.1:1` / `poison_sentinel_unconnectable`.
+   - Interceptor installed; **0** ambient dials recorded (`ambient_connection_attempts: 0`).
+5. **Dedicated Read-Only Connection**:
+   - Dedicated PDO connected to `accounting_p8_tmp_d8d550da625b` on port `3342`.
+   - Disposable probe table `_disposable_ro_probe` created and populated.
+   - Read-only transaction initiated: `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`.
+
+#### 9.3 First Failure Encountered (`PROCESS` Privilege Required for `innodb_trx`)
+- The query `SELECT trx_is_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()` failed with:
+  ```
+  SQLSTATE[42000]: Syntax error or access violation: 1227 Access denied; you need (at least one of) the PROCESS privilege(s) for this operation
+  ```
+- **Root Cause**: In MariaDB, accessing `information_schema.innodb_trx` requires the global `PROCESS` privilege. The user `test_runner` has database-level privileges on `accounting_p8_tmp_%` and schema administrative rights, but does not have the global `PROCESS` privilege granted on the server.
+- **Truthful Status Reporting**:
+  - `read_only_proof.status` evaluated strictly to **`FAILED`** (addressing prior false-positive `VERIFIED` label).
+  - `baseline_comparison.status` evaluated to **`NOT_RUN`**.
+  - `six_reconcilers_status` evaluated to **`NOT_RUN`**.
+- **Enforcement**: STOP ON FIRST FAILURE enforced immediately. `qualification_status = "FAILED"`, `exit_code = 1`. No retry, no autofix, no secondary queries during attempt.
+
+#### 9.4 Teardown & Absence Verification
+1. **Internal Synchronous Teardown**:
+   - The runner's `finally` block dropped `accounting_p8_tmp_d8d550da625b`.
+2. **External Watchdog Independent Absence Query**:
+   - Executed `SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'accounting_p8_tmp_d8d550da625b'` against MariaDB port 3342.
+   - Returned `0` rows (**`ABSENCE_CONFIRMED`**). Zero schema leakage.
+3. **Process Hierarchy**:
+   - Subprocess PID 1495557 and all migration workers cleanly exited and were reaped. Zero dangling processes.
+
+#### 9.5 Phase 3 Retained Artifacts & Hashes
+All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qualification_phase3_e1ac90f7/` (dir `0700`, files `0600`):
+- `admin_credentials.json`: `bab71f831ab1d27c91376f79e221a1f118355b21f9d61f39e26709e3bf9219e8`
+- `pre_source_hashes.json`: `e85820504f2970ce51cb109fcf3bd3a8da3f4036c0e2750298165c37bb3653d8`
+- `post_source_hashes.json`: `e85820504f2970ce51cb109fcf3bd3a8da3f4036c0e2750298165c37bb3653d8`
+- `raw_stderr.log`: `a6706a16e8465d12db88de03416f9793e9e61bcdcb72da0b8778168b10228928`
+- `raw_stdout.log`: `0e13d1c0e1b9b05db292575c553cdf3929e636242524fda4e56ee6e8e1fb4d15`
+- `runner_output.json`: `0e13d1c0e1b9b05db292575c553cdf3929e636242524fda4e56ee6e8e1fb4d15`
+- `watchdog_audit.json`: `5f3b5cf13e1c3e0b87901783db06a9df8267bad479bcc975c1ccc7ded66e1b45`
+- `watchdog_runner_phase3.py`: `57505f86cc18d7cda812d60da81d95d6ce489a6a546f24c194d24fd1cde0979d`
+
+#### 9.6 Stand Down & Lease Release
+- **Lease Status**: **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
+- **DOCS ONLY Publish**: No unrequested source fixes bundled into docs handback. Root next source fix separately.
+
