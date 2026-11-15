@@ -421,3 +421,121 @@ All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qu
 - **Lease Status**: **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
 - **DOCS ONLY Publish**: No unrequested source fixes bundled into docs handback. Root next source fix separately.
 
+---
+
+### 11. Phase 5 Qualification Attempt (Exact Commit `2fbfb43f4db5c02f88a36d1c4b25d97073b44d8f`)
+
+- **Execution Date**: 2026-11-15T08:56:37+02:00
+- **Runner Script**: `tests/Support/Harness/disposable-db-qualification-runner.php` (`16223c02d6265a95f2227baa9d8efea1ddb08ee6f1601ab9e3533dba30ef170d`)
+- **Inspector Script**: `tests/Support/Harness/DisposableFinancialPostRunInspector.php` (`4d8b4069e499402adbe211f918d764c48a76f13d38745a6f441668252cd291e1`)
+- **Watchdog Script**: `/home/t3dev/.t3/userdata/attachments/p8_db_qualification_phase5_7d6d8dc5/watchdog_runner_phase5.py` (`5ddfdfa53a16b71f51561cf5b3f139a4b757c624bb6a044a40e17710f1fb6353`)
+- **Runtime Environment**:
+  - Target Host: `127.0.0.1`, Target Port: `3342`
+  - Owned Schema Name: `accounting_p8_tmp_29d4f3bd3b2e`
+  - Bounded Watchdog: Hard limit 200.0s + 15.0s grace (Runner internal timeout limit: 180s)
+  - Actual Watchdog Duration: `7.3297s` (Subprocess PID: `1529811`)
+  - Exit Code: `1` (**FAILED** — STOP ON FIRST FAILURE)
+  - Schema Cleanup: **VERIFIED ABSENT** (internal runner drop + external watchdog confirmation `ABSENCE_CONFIRMED`)
+
+#### 11.1 Source Files & PRE/POST Hash Verification
+All 11 source and manifest files were hashed before runner invocation and after execution. Pre-run and post-run hashes are 100% strictly identical (`hashes_strictly_equal: true`):
+
+| File Path | SHA256 Hash | Status |
+| :--- | :--- | :--- |
+| `tests/Support/Harness/disposable-db-qualification-runner.php` | `16223c02d6265a95f2227baa9d8efea1ddb08ee6f1601ab9e3533dba30ef170d` | Verified Stable |
+| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `4d8b4069e499402adbe211f918d764c48a76f13d38745a6f441668252cd291e1` | Verified Stable |
+| `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `271eb8c30e1d86a636fb8eaab46b7426fbcf84f8d009f8ad7b18d5d6bf43f12c` | Verified Stable |
+| `tests/Support/DisposableMariaDbSchema.php` | `ac69d1e6f0875eff250ce1fd688f47fbb95162dcd081f33f889ebf1fc184c352` | Verified Stable |
+| `docs/integration/mobile-v2-client-handoff-schema.json` | `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275` | Verified Stable |
+| `tests/Support/Harness/fixtures/golden-provenance-manifest.json` | `2135861348655859da9ef4f232cbb1b3ba87debce0b9806340df62bce0476f08` | Verified Stable |
+| `tests/Support/Harness/fixtures/synthetic-financial-golden-wire.json` | `25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6` | Verified Stable |
+| `tests/Support/Harness/fixtures/synthetic-financial-golden-wrapper.json` | `7458f05b57fe149beec9e26ebec77015b45f2acfcc428687f10c216f80f1592d` | Verified Stable |
+| `docs/integration/mobile-v2-integration-manifest.json` | `c53ccd90bca5dbe34b7ab6191f332a8e8b84de0869e8b060623d980e2759f78a` | Verified Stable |
+| `app/Actions/Company/CreateCompanyAction.php` | `fa2f38cb99780e4c635c7a3f72d77c8832265c9aaacf366a8ee88853ceff26b5` | Verified Stable |
+| `tests/Support/Harness/financial-inspector-cli.php` | `6d19eff2c1ef978ad045465e67a8e7b05cf0bc76994332df53aeb305ea40c38b` | Verified Stable |
+
+#### 11.2 Verification Results & Gate Progression
+1. **Pre-Checks (4 of 4 PASSED)**:
+   - `proof_refusal`: **PASS** (`Disposable schema ownership proof is required. Use the isolated runner.`)
+   - `invalid_schema_refusal`: **PASS** (`Inspector refused: invalid disposable schema name 'invalid_schema_name'.`)
+   - `child_env_propagation`: **PASS** (`Synthetic child process validated testSettings and assertPrimarySchema under explicit environment without DB socket.`)
+   - `isolated_dependency_preflight`: **PASS** (`Bounded no-DB dependency construction preflight validated CompanyContext sessionless auth, array cache, and all 6 reconciliation service resolutions without DB socket.`)
+2. **Schema Lifecycle & Migrations**:
+   - Schema created: `accounting_p8_tmp_29d4f3bd3b2e` on `127.0.0.1:3342`.
+   - Full migrations executed cleanly in ~3 seconds via Symfony process with propagated credentials: **PASS**.
+3. **Canonical Foundation Fixture**:
+   - `CreateCompanyAction` created canonical `company_id = 1` with initial roles and permissions: **PASS**.
+4. **Statement Timeout Verification**:
+   - `DisposableFinancialPostRunInspector::configureStatementTimeout($dedicatedPdo, 5)` verified: **PASS**.
+5. **Server-Enforced Read-Only Denial (`read_only_proof: VERIFIED`)**:
+   - `server_version`: `"10.11.18-MariaDB-0+deb12u1"`
+   - Ordinary InnoDB probe table `_disposable_ro_probe` created and initial value `(1, 'initial')` inserted: **PASS**.
+   - `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`: **PASS** (`transaction_start_success: true`).
+   - Probe read within snapshot returned `'initial'`: **PASS**.
+   - Attempted `UPDATE _disposable_ro_probe SET val = 'mutated' WHERE id = 1`:
+     - Driver rejection: `errorInfo[1] === 1792` AND `SQLSTATE errorInfo[0] === '25006'` (**VERIFIED EXACT SERVER CODES**).
+     - Message: `"SQLSTATE[25006]: Read only sql transaction: 1792 Cannot execute statement in a READ ONLY transaction"`.
+   - Row value verified inside transaction after denial: returned `'initial'`: **PASS**.
+   - Transaction rolled back; row value verified via independent query: returned `'initial'`: **PASS**.
+   - Probe table dropped cleanly: **PASS**.
+6. **Pre-Reconciliation Baseline Captured**:
+   - Full baseline query executed cleanly across all entities for `company_id = 1`:
+     - `sales_invoices`: 0
+     - `sales_invoice_lines`: 0
+     - `sales_invoice_lot_allocations`: 0
+     - `customer_payments`: 0
+     - `customer_payment_allocations`: 0
+     - `mobile_event_receipts`: 0
+     - `stock_movements`: 0 (qty sum exact `"0.000000"`)
+     - `posting_batches`: 0
+     - `posting_lines`: 0
+     - `document_sequences`: all 12 sequence keys initialized to next number 1.
+
+#### 11.3 First Failure Encountered: Ambient Connection Sentinel Interception
+- At Step 11 (`runSixReconciliations`), the Ambient Connection Sentinel intercepted an unauthorized connection dial:
+  ```
+  Ambient connection intercepted by sentinel: [DB::connection('mysql')]
+  ```
+- **Sentinel Report**:
+  - `sentinel_installed`: `true`
+  - `status`: `"VERIFIED"`
+  - `ambient_connection_attempts`: `1`
+  - `attempt_contexts`: `["DB::connection('mysql')"]`
+- **Root Cause Analysis**:
+  - Inside `bindIsolatedContainerServices()`, `$existingConfig = $app->bound('config') ? $app->make('config')->all() : [];` was merged via `array_replace_recursive($defaults, $existingConfig)`.
+  - Because `$existingConfig` from the runner's pre-boot environment contained `'database' => ['default' => 'mysql']`, `array_replace_recursive()` caused `'mysql'` to overwrite `'disposable_inspector'`.
+  - When the reconciliation services resolved connections via `DB::connection()`, it resolved the ambient default connection `'mysql'` rather than the isolated `'disposable_inspector'`, which was immediately and properly trapped by `AmbientConnectionSentinel`.
+- **Truthful Status Reporting**:
+  - `read_only_proof.status`: **`VERIFIED`** (all server write-denial conditions satisfied).
+  - `pre_baseline`: Populated with actual zero-delta metrics.
+  - `post_baseline`: `null`.
+  - `baseline_comparison.status`: **`NOT_RUN`**.
+  - `six_reconcilers_status`: **`NOT_RUN`**.
+  - `six_reconciler_results`: `null`.
+- **Enforcement**: STOP ON FIRST FAILURE enforced immediately. `qualification_status = "FAILED"`, `exit_code = 1`. Zero autofix or mid-run retry attempted.
+
+#### 11.4 Teardown & Independent Absence Verification
+1. **Internal Synchronous Teardown**:
+   - The runner's `finally` block dropped `accounting_p8_tmp_29d4f3bd3b2e`.
+2. **External Watchdog Independent Absence Query**:
+   - Executed `SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'accounting_p8_tmp_29d4f3bd3b2e'` against MariaDB port 3342.
+   - Returned `0` rows (**`ABSENCE_CONFIRMED`**). Zero schema leakage.
+3. **Process Hierarchy**:
+   - Subprocess PID `1529811` cleanly exited and was reaped in `7.3297s`. Zero dangling processes.
+
+#### 11.5 Phase 5 Retained Artifacts & Hashes
+All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qualification_phase5_7d6d8dc5/` (dir `0700`, files `0600`):
+- `admin_credentials.json`: `bab71f831ab1d27c91376f79e221a1f118355b21f9d61f39e26709e3bf9219e8`
+- `pre_source_hashes.json`: `e7e86c21873283766fe9d6808aac539ca26c07a2d2dd03bd4cb1a49575d49058`
+- `post_source_hashes.json`: `e7e86c21873283766fe9d6808aac539ca26c07a2d2dd03bd4cb1a49575d49058`
+- `raw_stderr.log`: `527a613a2caa9541e7cf6e1d1a2be9806b0e2da76ad8e07ed554993558db5222`
+- `raw_stdout.log`: `21f46d7259d5f6c4d5f96f62e1044e385f89798e3e670e0702ccb6c32983db2b`
+- `runner_output.json`: `21f46d7259d5f6c4d5f96f62e1044e385f89798e3e670e0702ccb6c32983db2b`
+- `watchdog_audit.json`: `8c3dd537bde76929728a816e2ce3e7b8937333faf3f160380d28e3d2c6feef3c`
+- `watchdog_runner_phase5.py`: `5ddfdfa53a16b71f51561cf5b3f139a4b757c624bb6a044a40e17710f1fb6353`
+
+#### 11.6 Stand Down & Lease Release
+- **Lease Status**: **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
+- **DOCS ONLY Publish**: No source edits applied during or after DB execution.
+
+
