@@ -379,12 +379,11 @@ try {
     $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
     $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
 
-    // 11. AFTER BOTH approvals verified: snapshot parent env allowlist from ALL THREE stores BEFORE
-    //     any mutation (including before loadSecureBootstrapCredentials, which calls putenv for
-    //     host/port/user/password/proof).  The allowlist covers all vars the loader may set plus the
-    //     scoped testing flags (APP_ENV, PHASE8_ALLOW_DISPOSABLE_DB, MOBILE_V2_HARNESS_ENABLE).
-    //     Capturing originals here ensures the finally block restores the exact pre-entry ambient state
-    //     even if the loader throws, preventing ambient production DSN leakage on exception paths.
+    // 11. AFTER BOTH approvals verified: snapshot parent env allowlist from ALL THREE stores
+    //     (getenv + $_ENV + $_SERVER) BEFORE any mutation, including before the loader and before
+    //     the scoped setters below.  The allowlist covers every var the loader may set plus the
+    //     scoped testing flags.  Capturing here ensures the finally block restores the exact
+    //     pre-entry ambient state on any exception path, preventing ambient production DSN leakage.
     $envAllowlist = [
         'APP_ENV',
         'MOBILE_V2_HARNESS_ENABLE',
@@ -398,7 +397,27 @@ try {
         'PHASE8_DISPOSABLE_DB_NONCE',
     ];
     foreach ($envAllowlist as $varName) {
-        $parentEnvToRestore[$varName] = getenv($varName);
+        // Capture from all three env stores; getenv() is canonical for putenv-set vars.
+        $parentEnvToRestore[$varName] = [
+            'getenv' => getenv($varName),
+            'ENV'    => $_ENV[$varName]    ?? null,
+            'SERVER' => $_SERVER[$varName] ?? null,
+        ];
+    }
+
+    // Set scoped testing flags AFTER originals are captured and AFTER both approvals are verified,
+    // but BEFORE captureVerifiedOwnedSnapshot (which calls fromLiveOwnership -> assertPrimarySchema).
+    // assertPrimarySchema refuses if APP_ENV != 'testing' or PHASE8_ALLOW_DISPOSABLE_DB != '1'.
+    // These putenvs target only the supervisor parent process environment; they are restored in finally.
+    $scopedPreCaptureVars = [
+        'APP_ENV'                 => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+    ];
+    foreach ($scopedPreCaptureVars as $varName => $varVal) {
+        putenv("{$varName}={$varVal}");
+        $_ENV[$varName]    = $varVal;
+        $_SERVER[$varName] = $varVal;
     }
 
     // Load bootstrap credentials (this calls putenv for host/port/user/password/proof internally;
@@ -408,9 +427,8 @@ try {
     $proofNonce = $creds['proof_nonce'];
 
     // Capture immutable owned snapshot: 6-arg signature (schema, proof, nonce, harness, childPid, repoRoot).
-    // Must be called AFTER both prestart + live approvals verified and AFTER env originals are captured.
-    // captureVerifiedOwnedSnapshot has zero net env side-effect (snapshots/restores proof vars internally).
-    // Returns typed VerifiedOwnedSnapshot via fromLiveOwnership; raw array bypass refused by executeExactCleanup.
+    // fromLiveOwnership inside performs ALL validation (schema/proof/nonce/harness/uid/path/assertPrimarySchema).
+    // APP_ENV=testing and PHASE8_ALLOW_DISPOSABLE_DB=1 are now set; assertPrimarySchema will pass.
     $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
         $schemaName,
         $proofPath,
@@ -420,15 +438,15 @@ try {
         $repoRoot
     );
 
-    // Construct explicit inspectorEnv array with testing flags and testing DB creds
+    // Construct explicit inspectorEnv array with testing flags and testing DB creds (subprocess env)
     $inspectorEnv = array_merge($_ENV, [
-        'APP_ENV' => 'testing',
-        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'APP_ENV'                    => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE'   => '1',
         'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-        'PHASE8_TEST_DB_HOST' => $creds['host'],
-        'PHASE8_TEST_DB_PORT' => $creds['port'],
-        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
-        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
+        'PHASE8_TEST_DB_HOST'        => $creds['host'],
+        'PHASE8_TEST_DB_PORT'        => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME'    => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD'    => $creds['password'],
         'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
         'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
     ]);
@@ -436,24 +454,24 @@ try {
         $inspectorEnv['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
     }
 
-    // Apply scoped putenv mutations AFTER snapshot of originals and AFTER captureVerifiedOwnedSnapshot
-    $scopedParentVars = [
-        'APP_ENV' => 'testing',
-        'MOBILE_V2_HARNESS_ENABLE' => '1',
-        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-        'PHASE8_TEST_DB_HOST' => $creds['host'],
-        'PHASE8_TEST_DB_PORT' => $creds['port'],
-        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
-        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
+    // Apply remaining scoped putenv mutations (host/port/user/password/proof) for parent process
+    $scopedPostCaptureVars = [
+        'PHASE8_TEST_DB_HOST'        => $creds['host'],
+        'PHASE8_TEST_DB_PORT'        => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME'    => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD'    => $creds['password'],
         'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
         'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
     ];
     if ($creds['password'] === '') {
-        $scopedParentVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+        $scopedPostCaptureVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
     }
-    foreach ($scopedParentVars as $varName => $varVal) {
+    foreach ($scopedPostCaptureVars as $varName => $varVal) {
         putenv("{$varName}={$varVal}");
+        $_ENV[$varName]    = $varVal;
+        $_SERVER[$varName] = $varVal;
     }
+
 
     // Connect proof PDO and resolve integer company_id (DB inspection strictly AFTER approvals)
     $pdo = DisposableFinancialPostRunInspector::assertExecutionGates($schemaName);
@@ -738,23 +756,42 @@ try {
     fwrite(STDERR, "\nSupervisor Error: {$e->getMessage()}\n");
     $exitCode = 1;
 } finally {
-    foreach ($parentEnvToRestore as $varName => $origVal) {
-        if ($origVal === false) {
-            putenv($varName);
-        } else {
-            putenv("{$varName}={$origVal}");
+    try {
+        if (! $cleanupExecuted) {
+            $cleanupExecuted = true;
+            $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                $childProcess,
+                $snapshot,
+                $repoRoot
+            );
+            if (! $cleanupResult['success']) {
+                fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', $cleanupResult['errors']) . "\n");
+                $exitCode = 1;
+            }
         }
-    }
-    if (! $cleanupExecuted) {
-        $cleanupExecuted = true;
-        $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
-            $childProcess,
-            $snapshot,
-            $repoRoot
-        );
-        if (! $cleanupResult['success']) {
-            fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', $cleanupResult['errors']) . "\n");
-            $exitCode = 1;
+    } finally {
+        // Restore all three env stores to their pre-entry originals AFTER cleanup even on exceptions.
+        // $parentEnvToRestore[$varName] is ['getenv' => string|false, 'ENV' => string|null, 'SERVER' => string|null].
+        foreach ($parentEnvToRestore as $varName => $stores) {
+            // Restore getenv/putenv store
+            $origGetenv = $stores['getenv'];
+            if ($origGetenv === false) {
+                putenv($varName);
+            } else {
+                putenv("{$varName}={$origGetenv}");
+            }
+            // Restore $_ENV
+            if ($stores['ENV'] === null) {
+                unset($_ENV[$varName]);
+            } else {
+                $_ENV[$varName] = $stores['ENV'];
+            }
+            // Restore $_SERVER
+            if ($stores['SERVER'] === null) {
+                unset($_SERVER[$varName]);
+            } else {
+                $_SERVER[$varName] = $stores['SERVER'];
+            }
         }
     }
     if ($aborted) {

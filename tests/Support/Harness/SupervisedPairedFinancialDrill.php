@@ -321,24 +321,18 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
-     * Captures an immutable, verified owned execution snapshot while live proof and processes exist.
-     * Enforces schema regex, proof file verification, DisposableMariaDbSchema::assertPrimarySchema,
-     * owned temporary directory permissions, and child PID mapping.
+     * Thin delegator that calls VerifiedOwnedSnapshot::fromLiveOwnership().
+     * All validation (schema regex, proof file, nonce, harness dir, UID, path, assertPrimarySchema,
+     * sys_get_temp_dir containment, positive child PID) lives inside the value object factory.
+     * The only caller concern retained here is the proof-vars env snapshot/restore around
+     * assertPrimarySchema, which is an execution-context responsibility.
      *
      * @param  string  $schemaName  Exact schema name (must match SCHEMA_REGEX)
-     * @param  string  $proofPath  Path to disposable DB ownership proof file
+     * @param  string  $proofPath   Path to disposable DB ownership proof file
      * @param  string  $proofNonce  Disposable DB ownership proof nonce
      * @param  string  $harnessDir  Owned temporary directory path
-     * @param  int  $childPid  Child CLI process PID
-     * @param  string  $repoRoot  Checkout root directory
-     * @return array{
-     *     schema_name: string,
-     *     proof_path: string,
-     *     proof_nonce: string,
-     *     harness_dir: string,
-     *     child_pid: int,
-     *     verified_at: int
-     * }
+     * @param  int     $childPid    Child CLI process PID (positive integer)
+     * @param  string  $repoRoot    Checkout root directory
      *
      * @throws RuntimeException
      */
@@ -350,74 +344,13 @@ class SupervisedPairedFinancialDrill
         int $childPid,
         string $repoRoot
     ): VerifiedOwnedSnapshot {
-        if (preg_match(self::SCHEMA_REGEX, $schemaName) !== 1 || str_contains($schemaName, "\0") || str_contains($schemaName, '`')) {
-            throw new RuntimeException("SNAPSHOT_INVALID_SCHEMA_NAME: '{$schemaName}' does not match required pattern " . self::SCHEMA_REGEX);
-        }
-
-        if ($childPid <= 0) {
-            throw new RuntimeException("SNAPSHOT_INVALID_CHILD_PID: must be positive integer, got {$childPid}");
-        }
-
-        self::assertSecureFilePermissions($proofPath, 'SNAPSHOT_PROOF');
-        if (preg_match('/^[0-9a-f]{32,64}$/', $proofNonce) !== 1) {
-            throw new RuntimeException('SNAPSHOT_INVALID_PROOF_NONCE');
-        }
-
-        self::assertSecureDirectoryPermissions($harnessDir, 'SNAPSHOT_HARNESS_DIR');
-        $baseName = basename($harnessDir);
-        if (preg_match(self::HARNESS_DIR_REGEX, $baseName) !== 1 || str_contains($harnessDir, "\0") || str_contains($harnessDir, '`')) {
-            throw new RuntimeException("SNAPSHOT_INVALID_HARNESS_DIR_NAME: '{$baseName}' does not match " . self::HARNESS_DIR_REGEX);
-        }
-
-        $realHarness = realpath($harnessDir);
-        $realRoot = realpath($repoRoot);
-        if ($realHarness === false || $realRoot === false) {
-            throw new RuntimeException('SNAPSHOT_CANONICAL_PATH_RESOLVE_FAILED');
-        }
-
-        if ($realHarness === '/' || $realHarness === '/tmp' || $realHarness === '/home') {
-            throw new RuntimeException("SNAPSHOT_UNSAFE_HARNESS_DIR_REFUSED: '{$realHarness}'");
-        }
-        if ($realHarness === $realRoot || str_starts_with($realHarness, $realRoot . '/')) {
-            throw new RuntimeException("SNAPSHOT_HARNESS_DIR_INSIDE_REPO_REFUSED: '{$realHarness}'");
-        }
-
-        $realSysTemp = realpath(sys_get_temp_dir());
-        if ($realSysTemp !== false && ! str_starts_with($realHarness, $realSysTemp)) {
-            throw new RuntimeException("SNAPSHOT_HARNESS_DIR_NOT_IN_SYS_TEMP: '{$realHarness}'");
-        }
-
-        // Snapshot original env values for the three proof vars BEFORE any mutation.
-        // assertPrimarySchema reads these via getenv(); we set them, run the assertion,
-        // then restore originals in finally so this method has zero net env side-effect.
-        $proofVarNames = ['PHASE8_DISPOSABLE_DB_PROOF', 'PHASE8_DISPOSABLE_DB_NONCE', 'PHASE8_ALLOW_DISPOSABLE_DB'];
-        $savedEnv = [];
-        foreach ($proofVarNames as $varName) {
-            $savedEnv[$varName] = getenv($varName);
-        }
-        try {
-            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofPath}");
-            putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
-            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
-            DisposableMariaDbSchema::assertPrimarySchema($schemaName);
-        } finally {
-            // Restore originals unconditionally
-            foreach ($savedEnv as $varName => $origVal) {
-                if ($origVal === false) {
-                    putenv($varName);
-                } else {
-                    putenv("{$varName}={$origVal}");
-                }
-            }
-        }
-
         return VerifiedOwnedSnapshot::fromLiveOwnership(
             schemaName: $schemaName,
             proofPath: $proofPath,
             proofNonce: $proofNonce,
-            harnessDir: $realHarness,
+            harnessDir: $harnessDir,
             childPid: $childPid,
-            verifiedAt: time()
+            repoRoot: $repoRoot
         );
     }
 
@@ -873,27 +806,41 @@ class SupervisedPairedFinancialDrill
         $tempCleaned = true;
 
         // 1. Terminate and reap child process
+        // PID bind check: verify the live process PID matches the captured snapshot PID BEFORE any signal.
+        // This prevents sending SIGTERM/SIGKILL to a recycled PID that was never the captured child.
         if ($childProcess !== null && $childProcess->isRunning()) {
-            fwrite(STDERR, "[Cleanup] Sending SIGTERM to child process (PID " . $childProcess->getPid() . ")...\n");
-            $childProcess->signal(SIGTERM);
+            if ($snapshot !== null) {
+                $livePid = $childProcess->getPid();
+                if ($livePid !== $snapshot->childPid) {
+                    $errors[] = "CLEANUP_PID_MISMATCH: live process PID {$livePid} does not match captured snapshot PID {$snapshot->childPid}. No signals sent.";
+                    $childReaped = false;
+                } else {
+                    fwrite(STDERR, "[Cleanup] Sending SIGTERM to child process (PID {$livePid}, matches snapshot)...\n");
+                    $childProcess->signal(SIGTERM);
 
-            $waitStart = microtime(true);
-            while ($childProcess->isRunning() && (microtime(true) - $waitStart) < 5.0) {
-                usleep(100000);
-            }
+                    $waitStart = microtime(true);
+                    while ($childProcess->isRunning() && (microtime(true) - $waitStart) < 5.0) {
+                        usleep(100000);
+                    }
 
-            if ($childProcess->isRunning()) {
-                fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
-                $childProcess->signal(SIGKILL);
-                $killStart = microtime(true);
-                while ($childProcess->isRunning() && (microtime(true) - $killStart) < 2.0) {
-                    usleep(100000);
+                    if ($childProcess->isRunning()) {
+                        fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
+                        $childProcess->signal(SIGKILL);
+                        $killStart = microtime(true);
+                        while ($childProcess->isRunning() && (microtime(true) - $killStart) < 2.0) {
+                            usleep(100000);
+                        }
+                    }
+
+                    if ($childProcess->isRunning()) {
+                        $childReaped = false;
+                        $errors[] = 'CHILD_PROCESS_NOT_REAPED';
+                    }
                 }
-            }
-
-            if ($childProcess->isRunning()) {
+            } else {
+                // No snapshot: cannot verify PID, do not send signals to an unverified process.
+                $errors[] = 'CLEANUP_CHILD_SKIP_NO_SNAPSHOT: child process running but no snapshot for PID verification; no signals sent.';
                 $childReaped = false;
-                $errors[] = 'CHILD_PROCESS_NOT_REAPED';
             }
         }
 
@@ -1064,29 +1011,28 @@ class SupervisedPairedFinancialDrill
 }
 
 /**
- * Immutable, test-only owned execution snapshot.
+ * Immutable owned execution snapshot value object.
  *
- * Production code must obtain instances exclusively via {@see fromLiveOwnership()},
- * which is called only by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot()
- * after all pre-conditions are satisfied (assertPrimarySchema passed, schema regex matched,
- * harness dir is canonical v2_harness_16hex under sys_get_temp_dir(), positive child PID).
+ * The ONLY way to obtain an instance is via {@see fromLiveOwnership()}, which performs all
+ * validation inline: schema regex, proof file permissions, proof nonce format, harness
+ * directory permissions and UID, canonical path resolution, sys_get_temp_dir containment,
+ * positive child PID, and DisposableMariaDbSchema::assertPrimarySchema.
  *
- * {@see _internal_create()} is a test-only escape hatch retained exclusively to let unit
- * tests exercise executeExactCleanup()'s OWN independent defense logic (e.g. malformed
- * schema rejection, foreign DB port rejection, schema lingering after DROP).  It makes NO
- * validation claims and must NEVER be used to construct a snapshot that is intended to
- * represent a real, proven, live-ownership scenario.  Using it outside cleanup-defense
- * unit tests is a misuse of the testing seam.
+ * There is exactly ONE constructor (private) and ONE public factory method.  No escape hatch,
+ * no @internal bypass, no test-only seam.  Tests that need to exercise executeExactCleanup()
+ * defense logic (malformed schema rejection, foreign DB port, schema lingering) must do so via
+ * fromLiveOwnership() with a valid synthetic proof fixture and mocked admin PDO, or must assert
+ * that fromLiveOwnership() itself refuses invalid inputs before cleanup is ever reached.
  */
 final class VerifiedOwnedSnapshot
 {
     /**
-     * @param  string  $schemaName  Verified schema name (accounting_p8_tmp_12hex)
-     * @param  string  $proofPath   Path to disposable DB ownership proof file
-     * @param  string  $proofNonce  Disposable DB ownership proof nonce (32-64 hex)
-     * @param  string  $harnessDir  Realpath of owned temp dir (v2_harness_16hex under sys_get_temp_dir)
-     * @param  int     $childPid    Captured child CLI process PID (positive integer)
-     * @param  int     $verifiedAt  Unix timestamp when snapshot was captured
+     * @param  string  $schemaName  Validated schema name (accounting_p8_tmp_12hex)
+     * @param  string  $proofPath   Path to disposable DB ownership proof file (0600, uid-owned)
+     * @param  string  $proofNonce  Disposable DB ownership proof nonce (32-64 lowercase hex)
+     * @param  string  $harnessDir  Canonical realpath of owned harness dir (v2_harness_16hex in sys_get_temp_dir)
+     * @param  int     $childPid    Captured child CLI process PID (positive integer, bound before signals)
+     * @param  int     $verifiedAt  Unix timestamp when snapshot was captured and assertPrimarySchema passed
      */
     private function __construct(
         public readonly string $schemaName,
@@ -1098,18 +1044,33 @@ final class VerifiedOwnedSnapshot
     ) {}
 
     /**
-     * Sole validated public factory for production use.
+     * Sole public validated factory.  Performs ALL pre-condition checks inline; there is no other
+     * constructor path.  Callers must supply an APP_ENV=testing + PHASE8_ALLOW_DISPOSABLE_DB=1
+     * environment (via prior putenv) so that assertPrimarySchema does not refuse.
      *
-     * Called only by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot() after all
-     * pre-conditions are externally verified.  No bypass path exists; this is the single point
-     * of authority for creating a VerifiedOwnedSnapshot that may be passed to executeExactCleanup().
+     * Validations performed (in order):
+     * 1. Schema name matches /^accounting_p8_tmp_[a-f0-9]{12}$/D and contains no NUL/backtick.
+     * 2. childPid is a positive integer.
+     * 3. proofPath is a non-symlink 0600 file owned by the current UID under a 0700 parent.
+     * 4. proofNonce matches /^[0-9a-f]{32,64}$/.
+     * 5. harnessDir is a non-symlink 0700 directory owned by the current UID.
+     * 6. basename(harnessDir) matches /^v2_harness_[0-9a-f]{16}$/D and contains no NUL/backtick.
+     * 7. realpath(harnessDir) resolves and is not /, /tmp, or /home.
+     * 8. realpath(harnessDir) is not inside repoRoot.
+     * 9. realpath(harnessDir) is a descendant of sys_get_temp_dir().
+     * 10. PHASE8_DISPOSABLE_DB_PROOF/NONCE/ALLOW env vars are saved, set for assertPrimarySchema,
+     *     then restored unconditionally in finally (zero net env side-effect).
+     * 11. DisposableMariaDbSchema::assertPrimarySchema($schemaName) passes (requires APP_ENV=testing
+     *     and PHASE8_ALLOW_DISPOSABLE_DB=1 to already be set by the caller before this factory is called).
      *
-     * @param  string  $schemaName  Must match SupervisedPairedFinancialDrill::SCHEMA_REGEX
-     * @param  string  $proofPath   Path to ownership proof file
+     * @param  string  $schemaName  Must match /^accounting_p8_tmp_[a-f0-9]{12}$/D
+     * @param  string  $proofPath   Path to disposable DB ownership proof file
      * @param  string  $proofNonce  Ownership proof nonce (32-64 lowercase hex)
-     * @param  string  $harnessDir  Canonical realpath of owned harness directory
+     * @param  string  $harnessDir  Owned harness directory path
      * @param  int     $childPid    Positive integer child CLI process PID
-     * @param  int     $verifiedAt  Unix timestamp of snapshot capture
+     * @param  string  $repoRoot    Checkout root directory (for containment check)
+     *
+     * @throws RuntimeException
      */
     public static function fromLiveOwnership(
         string $schemaName,
@@ -1117,53 +1078,97 @@ final class VerifiedOwnedSnapshot
         string $proofNonce,
         string $harnessDir,
         int $childPid,
-        int $verifiedAt
+        string $repoRoot
     ): self {
-        return new self(
-            schemaName: $schemaName,
-            proofPath: $proofPath,
-            proofNonce: $proofNonce,
-            harnessDir: $harnessDir,
-            childPid: $childPid,
-            verifiedAt: $verifiedAt,
-        );
-    }
+        // 1. Schema name
+        if (preg_match(SupervisedPairedFinancialDrill::SCHEMA_REGEX, $schemaName) !== 1
+            || str_contains($schemaName, "\0")
+            || str_contains($schemaName, '`')
+        ) {
+            throw new RuntimeException(
+                "SNAPSHOT_INVALID_SCHEMA_NAME: '{$schemaName}' does not match required pattern "
+                . SupervisedPairedFinancialDrill::SCHEMA_REGEX
+            );
+        }
 
-    /**
-     * Test-only seam for exercising executeExactCleanup()'s OWN independent defense logic.
-     *
-     * This factory exists exclusively so unit tests can construct snapshots with deliberately
-     * invalid or synthetic field values (e.g. a malformed schema name, a wrong DB port, or a
-     * non-existent harness directory) in order to verify that executeExactCleanup() rejects
-     * them through its own independent guards — not because the snapshot was validated here.
-     *
-     * USAGE CONSTRAINTS:
-     * - Must only be called from tests that exercise executeExactCleanup() cleanup defense logic.
-     * - Must NOT be used to claim that an instance represents real, proven, live ownership.
-     * - Performs NO schema regex validation, NO proof file verification, NO assertPrimarySchema,
-     *   NO harness directory checks, and NO child PID validation.
-     * - Instances created here carry no ownership proof and must not be treated as authoritative.
-     *
-     * If you are tempted to call this outside a cleanup-defense unit test, you are bypassing the
-     * validated factory and creating a real security hole.  Use captureVerifiedOwnedSnapshot()
-     * instead, which delegates exclusively to fromLiveOwnership() after full pre-condition checks.
-     */
-    public static function _internal_create(
-        string $schemaName,
-        string $proofPath,
-        string $proofNonce,
-        string $harnessDir,
-        int $childPid,
-        int $verifiedAt
-    ): self {
+        // 2. Child PID
+        if ($childPid <= 0) {
+            throw new RuntimeException("SNAPSHOT_INVALID_CHILD_PID: must be positive integer, got {$childPid}");
+        }
+
+        // 3. Proof file permissions (0600, uid-owned, no symlink, 0700 parent)
+        SupervisedPairedFinancialDrill::assertSecureFilePermissions($proofPath, 'SNAPSHOT_PROOF');
+
+        // 4. Proof nonce format
+        if (preg_match('/^[0-9a-f]{32,64}$/', $proofNonce) !== 1) {
+            throw new RuntimeException('SNAPSHOT_INVALID_PROOF_NONCE');
+        }
+
+        // 5. Harness directory permissions (0700, uid-owned, no symlink)
+        SupervisedPairedFinancialDrill::assertSecureDirectoryPermissions($harnessDir, 'SNAPSHOT_HARNESS_DIR');
+
+        // 6. Harness directory basename
+        $baseName = basename($harnessDir);
+        if (preg_match(SupervisedPairedFinancialDrill::HARNESS_DIR_REGEX, $baseName) !== 1
+            || str_contains($harnessDir, "\0")
+            || str_contains($harnessDir, '`')
+        ) {
+            throw new RuntimeException(
+                "SNAPSHOT_INVALID_HARNESS_DIR_NAME: '{$baseName}' does not match "
+                . SupervisedPairedFinancialDrill::HARNESS_DIR_REGEX
+            );
+        }
+
+        // 7. Canonical path resolution and unsafe root rejection
+        $realHarness = realpath($harnessDir);
+        $realRoot = realpath($repoRoot);
+        if ($realHarness === false || $realRoot === false) {
+            throw new RuntimeException('SNAPSHOT_CANONICAL_PATH_RESOLVE_FAILED');
+        }
+        if ($realHarness === '/' || $realHarness === '/tmp' || $realHarness === '/home') {
+            throw new RuntimeException("SNAPSHOT_UNSAFE_HARNESS_DIR_REFUSED: '{$realHarness}'");
+        }
+
+        // 8. Harness dir must not be inside repo
+        if ($realHarness === $realRoot || str_starts_with($realHarness, $realRoot . '/')) {
+            throw new RuntimeException("SNAPSHOT_HARNESS_DIR_INSIDE_REPO_REFUSED: '{$realHarness}'");
+        }
+
+        // 9. Harness dir must be under sys_get_temp_dir
+        $realSysTemp = realpath(sys_get_temp_dir());
+        if ($realSysTemp !== false && ! str_starts_with($realHarness, $realSysTemp)) {
+            throw new RuntimeException("SNAPSHOT_HARNESS_DIR_NOT_IN_SYS_TEMP: '{$realHarness}'");
+        }
+
+        // 10 + 11. Proof-vars env snapshot, assertPrimarySchema, restore
+        // Caller must have set APP_ENV=testing and PHASE8_ALLOW_DISPOSABLE_DB=1 before this call.
+        $proofVarNames = ['PHASE8_DISPOSABLE_DB_PROOF', 'PHASE8_DISPOSABLE_DB_NONCE', 'PHASE8_ALLOW_DISPOSABLE_DB'];
+        $savedEnv = [];
+        foreach ($proofVarNames as $varName) {
+            $savedEnv[$varName] = getenv($varName);
+        }
+        try {
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofPath}");
+            putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            DisposableMariaDbSchema::assertPrimarySchema($schemaName);
+        } finally {
+            foreach ($savedEnv as $varName => $origVal) {
+                if ($origVal === false) {
+                    putenv($varName);
+                } else {
+                    putenv("{$varName}={$origVal}");
+                }
+            }
+        }
+
         return new self(
             schemaName: $schemaName,
             proofPath: $proofPath,
             proofNonce: $proofNonce,
-            harnessDir: $harnessDir,
+            harnessDir: $realHarness,
             childPid: $childPid,
-            verifiedAt: $verifiedAt,
+            verifiedAt: time(),
         );
     }
 }
-

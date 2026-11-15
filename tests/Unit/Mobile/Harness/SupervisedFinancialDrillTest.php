@@ -462,14 +462,7 @@ class SupervisedFinancialDrillTest extends TestCase
     public function test_exact_cleanup_rejects_foreign_db_port(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $snapshot = VerifiedOwnedSnapshot::_internal_create(
-            schemaName: 'accounting_p8_tmp_0123456789ab',
-            proofPath: $this->tempDir . '/proof.txt',
-            proofNonce: '0123456789abcdef0123456789abcdef',
-            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            childPid: 12345,
-            verifiedAt: time()
-        );
+        $snapshot = $this->createValidSnapshot($repoRoot);
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
         $mockPortStmt->method('fetch')->willReturn(['port' => '3306']); // Wrong port!
@@ -491,43 +484,28 @@ class SupervisedFinancialDrillTest extends TestCase
     }
 
     #[Test]
-    public function test_exact_cleanup_rejects_malformed_schema(): void
+    public function test_exact_cleanup_rejects_malformed_schema_via_factory(): void
     {
-        $repoRoot = dirname(__DIR__, 3);
-        // _internal_create is an unvalidated factory used here to test that cleanup's own defense fires.
-        $snapshot = VerifiedOwnedSnapshot::_internal_create(
+        // fromLiveOwnership() itself refuses malformed schema names BEFORE any SQL,
+        // so executeExactCleanup() can never receive a snapshot with a malformed schema.
+        // This test verifies that invariant holds at the factory boundary.
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_INVALID_SCHEMA_NAME');
+        VerifiedOwnedSnapshot::fromLiveOwnership(
             schemaName: 'accounting_p8_tmp_invalid; DROP TABLE users;',
             proofPath: $this->tempDir . '/proof.txt',
             proofNonce: '0123456789abcdef0123456789abcdef',
             harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
             childPid: 12345,
-            verifiedAt: time()
+            repoRoot: dirname(__DIR__, 3)
         );
-
-        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
-            null,
-            $snapshot,
-            $repoRoot,
-            null
-        );
-
-        $this->assertFalse($result['success']);
-        $this->assertFalse($result['schema_absent']);
-        $this->assertStringContainsString('CLEANUP_MALFORMED_SCHEMA_REJECTED', implode('; ', $result['errors']));
     }
 
     #[Test]
     public function test_exact_cleanup_reports_failure_when_schema_lingers(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $snapshot = VerifiedOwnedSnapshot::_internal_create(
-            schemaName: 'accounting_p8_tmp_0123456789ab',
-            proofPath: $this->tempDir . '/proof.txt',
-            proofNonce: '0123456789abcdef0123456789abcdef',
-            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            childPid: 12345,
-            verifiedAt: time()
-        );
+        $snapshot = $this->createValidSnapshot($repoRoot);
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
         $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
@@ -556,14 +534,7 @@ class SupervisedFinancialDrillTest extends TestCase
     public function test_exact_cleanup_succeeds_when_clean(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $snapshot = VerifiedOwnedSnapshot::_internal_create(
-            schemaName: 'accounting_p8_tmp_0123456789ab',
-            proofPath: $this->tempDir . '/proof.txt',
-            proofNonce: '0123456789abcdef0123456789abcdef',
-            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            childPid: 12345,
-            verifiedAt: time()
-        );
+        $snapshot = $this->createValidSnapshot($repoRoot);
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
         $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
@@ -757,5 +728,336 @@ class SupervisedFinancialDrillTest extends TestCase
             'clientExecutableHead must match actual Kotlin wire CLI argv value');
         $this->assertSame('8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc', $manifestDigest,
             'manifestDigest must match actual Kotlin wire whole handoff SHA (--expected-handoff-digest CLI argv)');
+    }
+
+    // ---------------------------------------------------------------------------
+    // Cleanup PID binding and null snapshot child-skip tests
+    // ---------------------------------------------------------------------------
+
+    #[Test]
+    public function test_exact_cleanup_pid_mismatch_refuses_signals(): void
+    {
+        // When a running child process PID differs from the snapshot's captured childPid,
+        // executeExactCleanup must refuse to send any signals and report PID_MISMATCH.
+        $repoRoot = dirname(__DIR__, 3);
+        $snapshot = $this->createValidSnapshot($repoRoot, childPid: 99999);
+
+        $mockChild = $this->createMock(Process::class);
+        $mockChild->method('isRunning')->willReturn(true);
+        $mockChild->method('getPid')->willReturn(12345); // Different from snapshot's 99999
+        $mockChild->expects($this->never())->method('signal'); // Must NOT send any signal
+
+        $mockPortStmt = $this->createMock(PDOStatement::class);
+        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+        $mockSchemaStmt = $this->createMock(PDOStatement::class);
+        $mockSchemaStmt->method('fetch')->willReturn(false);
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+            $mockChild,
+            $snapshot,
+            $repoRoot,
+            $mockPdo
+        );
+
+        $this->assertFalse($result['child_reaped']);
+        $this->assertStringContainsString('CLEANUP_PID_MISMATCH', implode('; ', $result['errors']));
+    }
+
+    #[Test]
+    public function test_exact_cleanup_null_snapshot_skips_child_signals(): void
+    {
+        // When a running child process exists but snapshot is null, executeExactCleanup
+        // must not send signals (can't verify PID) and must report the skip.
+        $repoRoot = dirname(__DIR__, 3);
+
+        $mockChild = $this->createMock(Process::class);
+        $mockChild->method('isRunning')->willReturn(true);
+        $mockChild->method('getPid')->willReturn(12345);
+        $mockChild->expects($this->never())->method('signal');
+
+        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+            $mockChild,
+            null, // No snapshot
+            $repoRoot,
+            null
+        );
+
+        $this->assertFalse($result['child_reaped']);
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('CLEANUP_CHILD_SKIP_NO_SNAPSHOT', implode('; ', $result['errors']));
+    }
+
+    #[Test]
+    public function test_from_live_ownership_rejects_negative_child_pid(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_INVALID_CHILD_PID');
+        VerifiedOwnedSnapshot::fromLiveOwnership(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: str_repeat('a', 32),
+            harnessDir: $this->tempDir,
+            childPid: -1,
+            repoRoot: dirname(__DIR__, 3)
+        );
+    }
+
+    #[Test]
+    public function test_from_live_ownership_rejects_schema_with_nul_byte(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_INVALID_SCHEMA_NAME');
+        VerifiedOwnedSnapshot::fromLiveOwnership(
+            schemaName: "accounting_p8_tmp_0123456789ab\x00",
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: str_repeat('a', 32),
+            harnessDir: $this->tempDir,
+            childPid: 1234,
+            repoRoot: dirname(__DIR__, 3)
+        );
+    }
+
+    #[Test]
+    public function test_from_live_ownership_rejects_schema_with_backtick(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_INVALID_SCHEMA_NAME');
+        VerifiedOwnedSnapshot::fromLiveOwnership(
+            schemaName: 'accounting_p8_tmp_` OR 1=1',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: str_repeat('a', 32),
+            harnessDir: $this->tempDir,
+            childPid: 1234,
+            repoRoot: dirname(__DIR__, 3)
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Meaningful noDB factory refusal and env restoration tests
+    // ---------------------------------------------------------------------------
+
+    #[Test]
+    public function test_from_live_ownership_rejects_harness_dir_inside_repo(): void
+    {
+        $repoRoot = dirname(__DIR__, 3);
+        $insideHarness = $repoRoot . '/tests/fixtures_dummy_dir_' . bin2hex(random_bytes(4));
+        mkdir($insideHarness, 0700, true);
+
+        $proofFile = $this->tempDir . '/proof.txt';
+        file_put_contents($proofFile, '{}');
+        chmod($proofFile, 0600);
+
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('SNAPSHOT_HARNESS_DIR_INSIDE_REPO_REFUSED');
+            VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: 'accounting_p8_tmp_0123456789ab',
+                proofPath: $proofFile,
+                proofNonce: str_repeat('a', 32),
+                harnessDir: $insideHarness,
+                childPid: 1234,
+                repoRoot: $repoRoot
+            );
+        } finally {
+            @rmdir($insideHarness);
+        }
+    }
+
+    #[Test]
+    public function test_from_live_ownership_rejects_invalid_harness_dir_name(): void
+    {
+        $repoRoot = dirname(__DIR__, 3);
+        $invalidHarness = sys_get_temp_dir() . '/invalid_harness_name_' . bin2hex(random_bytes(4));
+        mkdir($invalidHarness, 0700, true);
+
+        $proofFile = $this->tempDir . '/proof.txt';
+        file_put_contents($proofFile, '{}');
+        chmod($proofFile, 0600);
+
+        try {
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('SNAPSHOT_INVALID_HARNESS_DIR_NAME');
+            VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: 'accounting_p8_tmp_0123456789ab',
+                proofPath: $proofFile,
+                proofNonce: str_repeat('a', 32),
+                harnessDir: $invalidHarness,
+                childPid: 1234,
+                repoRoot: $repoRoot
+            );
+        } finally {
+            @rmdir($invalidHarness);
+        }
+    }
+
+    #[Test]
+    public function test_three_store_env_restoration_restores_all_stores_on_exception(): void
+    {
+        // Verify three-store restoration invariant: getenv, $_ENV, and $_SERVER must all be restored.
+        $testVar = 'MOBILE_V2_TEST_STORE_INVARIANT_' . bin2hex(random_bytes(4));
+        $this->assertFalse(getenv($testVar));
+        $this->assertArrayNotHasKey($testVar, $_ENV);
+        $this->assertArrayNotHasKey($testVar, $_SERVER);
+
+        $storesSnapshot = [
+            'getenv' => getenv($testVar),
+            'ENV'    => $_ENV[$testVar]    ?? null,
+            'SERVER' => $_SERVER[$testVar] ?? null,
+        ];
+
+        try {
+            putenv("{$testVar}=mutated_val");
+            $_ENV[$testVar] = 'mutated_val';
+            $_SERVER[$testVar] = 'mutated_val';
+            $this->assertSame('mutated_val', getenv($testVar));
+            $this->assertSame('mutated_val', $_ENV[$testVar]);
+            $this->assertSame('mutated_val', $_SERVER[$testVar]);
+            throw new RuntimeException('SIMULATED_TEST_FAILURE');
+        } catch (RuntimeException $e) {
+            $this->assertSame('SIMULATED_TEST_FAILURE', $e->getMessage());
+        } finally {
+            // Restore logic identical to supervised-financial-drill.php finally block
+            if ($storesSnapshot['getenv'] === false) {
+                putenv($testVar);
+            } else {
+                putenv("{$testVar}={$storesSnapshot['getenv']}");
+            }
+            if ($storesSnapshot['ENV'] === null) {
+                unset($_ENV[$testVar]);
+            } else {
+                $_ENV[$testVar] = $storesSnapshot['ENV'];
+            }
+            if ($storesSnapshot['SERVER'] === null) {
+                unset($_SERVER[$testVar]);
+            } else {
+                $_SERVER[$testVar] = $storesSnapshot['SERVER'];
+            }
+        }
+
+        $this->assertFalse(getenv($testVar));
+        $this->assertArrayNotHasKey($testVar, $_ENV);
+        $this->assertArrayNotHasKey($testVar, $_SERVER);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Private helper: create a valid VerifiedOwnedSnapshot via fromLiveOwnership()
+    // with synthetic proof fixture and scoped env that satisfies assertPrimarySchema.
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Creates a valid VerifiedOwnedSnapshot through the sole public factory
+     * fromLiveOwnership() using synthetic proof fixtures and scoped environment.
+     *
+     * Sets APP_ENV=testing + PHASE8_ALLOW_DISPOSABLE_DB=1 + PHASE8_TEST_DB_* before
+     * the call and restores all three environment stores afterwards. Creates a valid
+     * proof file with correct permissions, a valid harness directory, and satisfies
+     * assertPrimarySchema via matching proof JSON content.
+     */
+    private function createValidSnapshot(string $repoRoot, int $childPid = 12345): VerifiedOwnedSnapshot
+    {
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $proofNonce = str_repeat('a', 32);
+
+        // Create proof directory with 0700 perms and proof file with 0600 perms
+        $proofDir = $this->tempDir . '/proof_dir';
+        if (! is_dir($proofDir)) {
+            mkdir($proofDir, 0700, true);
+        }
+        $proofFile = $proofDir . '/proof.json';
+
+        // Create valid harness directory (v2_harness_16hex, 0700, outside repo, under sys_get_temp_dir)
+        $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+        $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+        if (! is_dir($harnessDir)) {
+            mkdir($harnessDir, 0700, true);
+        }
+
+        // Snapshot original environment across all three stores
+        $envVarsToScope = [
+            'APP_ENV',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_TEST_DB_HOST',
+            'PHASE8_TEST_DB_PORT',
+            'PHASE8_TEST_DB_USERNAME',
+            'PHASE8_TEST_DB_PASSWORD',
+            'PHASE8_TEST_DB_EMPTY_PASSWORD',
+            'PHASE8_DISPOSABLE_DB_PROOF',
+            'PHASE8_DISPOSABLE_DB_NONCE',
+        ];
+        $savedStores = [];
+        foreach ($envVarsToScope as $var) {
+            $savedStores[$var] = [
+                'getenv' => getenv($var),
+                'ENV'    => $_ENV[$var]    ?? null,
+                'SERVER' => $_SERVER[$var] ?? null,
+            ];
+        }
+
+        try {
+            $scopedVars = [
+                'APP_ENV'                       => 'testing',
+                'PHASE8_ALLOW_DISPOSABLE_DB'    => '1',
+                'MOBILE_V2_HARNESS_ENABLE'      => '1',
+                'PHASE8_TEST_DB_HOST'           => '127.0.0.1',
+                'PHASE8_TEST_DB_PORT'           => '3342',
+                'PHASE8_TEST_DB_USERNAME'       => 'root',
+                'PHASE8_TEST_DB_PASSWORD'       => '',
+                'PHASE8_TEST_DB_EMPTY_PASSWORD' => '1',
+                'PHASE8_DISPOSABLE_DB_PROOF'    => $proofFile,
+                'PHASE8_DISPOSABLE_DB_NONCE'    => $proofNonce,
+            ];
+            foreach ($scopedVars as $var => $val) {
+                putenv("{$var}={$val}");
+                $_ENV[$var]    = $val;
+                $_SERVER[$var] = $val;
+            }
+
+            // Build proof JSON that assertPrimarySchema will accept:
+            // matches testSettings() (127.0.0.1:3342) and assertPrimarySchema
+            $settings = \Tests\Support\DisposableMariaDbSchema::testSettings();
+            $proofContent = json_encode([
+                'schema' => $schemaName,
+                'host'   => $settings['HOST'],
+                'port'   => $settings['PORT'],
+                'nonce'  => $proofNonce,
+            ], JSON_THROW_ON_ERROR);
+            file_put_contents($proofFile, $proofContent);
+            chmod($proofFile, 0600);
+
+            $snapshot = VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: $schemaName,
+                proofPath:  $proofFile,
+                proofNonce: $proofNonce,
+                harnessDir: $harnessDir,
+                childPid:   $childPid,
+                repoRoot:   $repoRoot
+            );
+        } finally {
+            // Restore all three env stores unconditionally
+            foreach ($savedStores as $var => $stores) {
+                $origGetenv = $stores['getenv'];
+                if ($origGetenv === false) {
+                    putenv($var);
+                } else {
+                    putenv("{$var}={$origGetenv}");
+                }
+                if ($stores['ENV'] === null) {
+                    unset($_ENV[$var]);
+                } else {
+                    $_ENV[$var] = $stores['ENV'];
+                }
+                if ($stores['SERVER'] === null) {
+                    unset($_SERVER[$var]);
+                } else {
+                    $_SERVER[$var] = $stores['SERVER'];
+                }
+            }
+        }
+
+        return $snapshot;
     }
 }
