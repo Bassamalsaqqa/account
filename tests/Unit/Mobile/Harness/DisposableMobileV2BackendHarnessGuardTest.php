@@ -4436,7 +4436,132 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
         }
     }
+
+    #[Test]
+    public function test_create_isolated_bootstrap_application_preserves_ambient_container_identity(): void
+    {
+        $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
+        $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+
+        try {
+            // (a) Null sentinel: ambient Container::$instance must remain null
+            \Illuminate\Container\Container::setInstance(null);
+            $this->assertNull((new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+
+            $isolatedApp1 = \Tests\Support\Harness\DisposableFinancialPostRunInspector::createIsolatedBootstrapApplication();
+            $this->assertNull(
+                (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue(),
+                'Raw global Container::$instance must remain null immediately after createIsolatedBootstrapApplication.'
+            );
+            $this->assertInstanceOf(\Illuminate\Foundation\Application::class, $isolatedApp1);
+            $isolatedApp1->flush();
+
+            // (b) Generic Container sentinel: ambient Container::$instance must remain generic sentinel
+            $genericSentinel = new \Illuminate\Container\Container();
+            \Illuminate\Container\Container::setInstance($genericSentinel);
+            $this->assertSame($genericSentinel, (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+
+            $isolatedApp2 = \Tests\Support\Harness\DisposableFinancialPostRunInspector::createIsolatedBootstrapApplication();
+            $this->assertSame(
+                $genericSentinel,
+                (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue(),
+                'Raw global Container::$instance must remain generic sentinel immediately after createIsolatedBootstrapApplication.'
+            );
+            $isolatedApp2->flush();
+
+            // (c) Application sentinel: ambient Container::$instance must remain Application sentinel
+            $appDir = dirname(__DIR__, 4);
+            $appSentinel = new \Illuminate\Foundation\Application($appDir);
+            \Illuminate\Container\Container::setInstance($appSentinel);
+            $this->assertSame($appSentinel, (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+
+            $isolatedApp3 = \Tests\Support\Harness\DisposableFinancialPostRunInspector::createIsolatedBootstrapApplication();
+            $this->assertSame(
+                $appSentinel,
+                (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue(),
+                'Raw global Container::$instance must remain Application sentinel immediately after createIsolatedBootstrapApplication.'
+            );
+            $isolatedApp3->flush();
+            $appSentinel->flush();
+        } finally {
+            \Illuminate\Container\Container::setInstance($prevContainer);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
+        }
+    }
+
+    #[Test]
+    public function test_run_six_reconciliations_fails_closed_and_preserves_caller_on_deliberately_failing_registrar(): void
+    {
+        $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
+        $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+        $prevResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
+
+        $appDir = dirname(__DIR__, 4);
+        $callerApp = new \Illuminate\Foundation\Application($appDir);
+        $callerApp['env'] = 'testing';
+
+        $configRepo = new \Illuminate\Config\Repository([
+            'failing_registrar_key' => 'failing_registrar_val_456',
+        ]);
+        $callerApp->instance('config', $configRepo);
+
+        $customAuth = new \stdClass();
+        $callerApp->instance('auth', $customAuth);
+
+        $customResolver = new class implements \Illuminate\Database\ConnectionResolverInterface {
+            public function connection($name = null): mixed { throw new \RuntimeException('Resolver connection not used.'); }
+            public function getDefaultConnection(): string { return 'dummy'; }
+            public function setDefaultConnection($name): void {}
+        };
+        \Illuminate\Database\Eloquent\Model::setConnectionResolver($customResolver);
+
+        // Bind deliberately failing registrar factory
+        $callerApp->bind(\Spatie\Permission\PermissionRegistrar::class, function () {
+            throw new \RuntimeException('Deliberate registrar factory resolution failure.');
+        });
+
+        try {
+            \Illuminate\Container\Container::setInstance($callerApp);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($callerApp);
+
+            // Resolve config facade to cache resolved instance
+            $this->assertSame('failing_registrar_val_456', \Illuminate\Support\Facades\Config::get('failing_registrar_key'));
+            $facadeResolvedRef = new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'resolvedInstance');
+            $this->assertArrayHasKey('config', $facadeResolvedRef->getValue());
+
+            // Invoke runSixReconciliations: must fail closed without masking the error
+            try {
+                \Tests\Support\Harness\DisposableFinancialPostRunInspector::runSixReconciliations(
+                    1,
+                    'denied_invalid_schema_name'
+                );
+                $this->fail('Expected runSixReconciliations to fail closed on failing registrar factory.');
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('Failed to snapshot caller permission team ID: Deliberate registrar factory resolution failure.', $e->getMessage());
+            }
+
+            // Assert exact caller context is preserved despite early failure
+            $this->assertSame($callerApp, (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
+            $this->assertSame($callerApp, (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
+            $this->assertSame('failing_registrar_val_456', $callerApp->make('config')->get('failing_registrar_key'));
+            $this->assertSame($customAuth, $callerApp->make('auth'));
+            $this->assertSame($customResolver, \Illuminate\Database\Eloquent\Model::getConnectionResolver());
+            $this->assertArrayHasKey('config', $facadeResolvedRef->getValue());
+        } finally {
+            if ($prevResolver !== null) {
+                \Illuminate\Database\Eloquent\Model::setConnectionResolver($prevResolver);
+            } else {
+                \Illuminate\Database\Eloquent\Model::unsetConnectionResolver();
+            }
+            \Illuminate\Container\Container::setInstance($prevContainer);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
+        }
+    }
 }
+
 
 
 

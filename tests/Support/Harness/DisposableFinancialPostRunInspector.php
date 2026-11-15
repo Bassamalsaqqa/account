@@ -997,19 +997,24 @@ final class DisposableFinancialPostRunInspector
     }
 
     /**
-    /**
      * Creates an isolated minimal Application container with sessionless auth,
-     * array cache, and singleton PermissionRegistrar, without mutating the ambient global container.
+     * array cache, and singleton PermissionRegistrar, restoring the ambient global container.
      */
     public static function createIsolatedBootstrapApplication(): \Illuminate\Foundation\Application
     {
-        $appDir = dirname(__DIR__, 3);
-        $app = new \Illuminate\Foundation\Application($appDir);
-        $app['env'] = 'testing';
+        $rawContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
 
-        self::bindIsolatedContainerServices($app);
+        try {
+            $appDir = dirname(__DIR__, 3);
+            $app = new \Illuminate\Foundation\Application($appDir);
+            $app['env'] = 'testing';
 
-        return $app;
+            self::bindIsolatedContainerServices($app);
+
+            return $app;
+        } finally {
+            \Illuminate\Container\Container::setInstance($rawContainer);
+        }
     }
 
     /**
@@ -1091,41 +1096,40 @@ final class DisposableFinancialPostRunInspector
         // 4. Capture exact original model connection resolver
         $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
 
-        // 5. Snapshot caller permission team state BEFORE any mutation
-        $hasSnapshottedTeamId = false;
-        $previousTeamId = null;
-        $bareBootstrapApp = null;
-
-        if (function_exists('getPermissionsTeamId')) {
-            try {
-                if ($previousGlobalContainer instanceof \Illuminate\Foundation\Application) {
-                    // Caller is an existing Application: snapshot team ID using caller's application
-                    // without mutating caller's container bindings or facades.
-                    $previousTeamId = getPermissionsTeamId();
-                    $hasSnapshottedTeamId = true;
-                } else {
-                    // Bare CLI context (Container::$instance is null or bare generic Container):
-                    // Establish an isolated temporary bootstrap container to resolve registrar
-                    // without treating it as caller application and without mutating original global state.
-                    $bareBootstrapApp = self::createIsolatedBootstrapApplication();
-                    $registrar = $bareBootstrapApp->make(\Spatie\Permission\PermissionRegistrar::class);
-                    $previousTeamId = $registrar->getPermissionsTeamId();
-                    $hasSnapshottedTeamId = true;
-                }
-            } catch (\Throwable $e) {
-                // Fail-closed before changing global state
-                throw new \RuntimeException('Failed to snapshot caller permission team ID: '.$e->getMessage(), previous: $e);
-            }
-        }
-
         $pdo = null;
         $app = null;
         $manager = null;
+        $bareBootstrapApp = null;
+        $hasSnapshottedTeamId = false;
+        $previousTeamId = null;
         $results = [];
         $allHealthy = true;
         $primaryException = null;
 
         try {
+            // 5. Snapshot caller permission team state WITHIN outer restoration try/finally
+            if (function_exists('getPermissionsTeamId')) {
+                try {
+                    if ($previousGlobalContainer instanceof \Illuminate\Foundation\Application) {
+                        // Caller is an existing Application: snapshot team ID using caller's application
+                        // without mutating caller's container bindings or facades.
+                        $previousTeamId = getPermissionsTeamId();
+                        $hasSnapshottedTeamId = true;
+                    } else {
+                        // Bare CLI context (Container::$instance is null or bare generic Container):
+                        // Establish an isolated temporary bootstrap container to resolve registrar
+                        // without treating it as caller application and without mutating original global state.
+                        $bareBootstrapApp = self::createIsolatedBootstrapApplication();
+                        $registrar = $bareBootstrapApp->make(\Spatie\Permission\PermissionRegistrar::class);
+                        $previousTeamId = $registrar->getPermissionsTeamId();
+                        $hasSnapshottedTeamId = true;
+                    }
+                } catch (\Throwable $e) {
+                    // Do not mask genuine permission resolution errors; fail-closed
+                    throw new \RuntimeException('Failed to snapshot caller permission team ID: '.$e->getMessage(), previous: $e);
+                }
+            }
+
             $pdo = self::assertExecutionGates($expectedSchemaName);
             $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
             $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
