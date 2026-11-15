@@ -35,13 +35,7 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 6,
-      "description": "Authoritative minor units (0..6) of base_currency resolved via CurrencyMinorUnitsResolver::resolveForCompany()."
-    },
-    "base_currency_minor_units": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 6,
-      "description": "Authoritative minor units (0..6) of base_currency resolved via CurrencyMinorUnitsResolver::resolveForCompany()."
+      "description": "Authoritative minor units (0..6) of base_currency resolved via CurrencyMinorUnitsResolver::resolveForCompany() when requested via ?include=currency_minor_units."
     },
     "walk_in_customer_id": {
       "type": "string",

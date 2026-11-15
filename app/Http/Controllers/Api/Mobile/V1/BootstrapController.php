@@ -38,7 +38,21 @@ final class BootstrapController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        return CatalogSnapshot::withConsistentRead(function () use ($company, $user): JsonResponse {
+        // Explicit read projection opt-in for currency_minor_units
+        $includeCurrencyMinorUnits = false;
+        if ($request->has('include')) {
+            $rawInclude = $request->query('include');
+            if (is_array($rawInclude) || ! is_string($rawInclude) || $rawInclude !== 'currency_minor_units') {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Invalid include parameter. Supported projection: currency_minor_units.',
+                    status: 422
+                );
+            }
+            $includeCurrencyMinorUnits = true;
+        }
+
+        return CatalogSnapshot::withConsistentRead(function () use ($company, $user, $includeCurrencyMinorUnits): JsonResponse {
             // Determine configured company mobile settings
             /** @var CompanyMobileSetting|null $setting */
             $setting = CompanyMobileSetting::where('company_id', $company->id)->first();
@@ -150,16 +164,19 @@ final class BootstrapController extends Controller
                 );
             }
 
-            // G1: Authoritative currency minor units resolution (same authority as V2 cash)
-            try {
-                $currencyMinorUnits = app(CurrencyMinorUnitsResolver::class)
-                    ->resolveForCompany($company, $baseCurrencyCode);
-            } catch (InvalidArgumentException $e) {
-                return MobileApiBoundary::buildErrorResponse(
-                    code: 'CONTRACT_INCOMPATIBLE',
-                    message: 'Company base currency minor units cannot be resolved: '.$e->getMessage(),
-                    status: 409
-                );
+            // G1: Authoritative currency minor units resolution (explicit projection opt-in only)
+            $currencyMinorUnits = null;
+            if ($includeCurrencyMinorUnits) {
+                try {
+                    $currencyMinorUnits = app(CurrencyMinorUnitsResolver::class)
+                        ->resolveForCompany($company, $baseCurrencyCode);
+                } catch (InvalidArgumentException $e) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'CONTRACT_INCOMPATIBLE',
+                        message: 'Company base currency minor units cannot be resolved: '.$e->getMessage(),
+                        status: 409
+                    );
+                }
             }
 
             // 5. Staff role and permissions
@@ -224,12 +241,10 @@ final class BootstrapController extends Controller
                 ->values()
                 ->all();
 
-            $response = response()->json([
+            $payload = [
                 'company_id' => $company->public_id,
                 'company_name' => (string) $company->displayName(),
                 'base_currency' => $company->base_currency_code,
-                'currency_minor_units' => $currencyMinorUnits,
-                'base_currency_minor_units' => $currencyMinorUnits,
                 'walk_in_customer_id' => $walkInCustomer->public_id,
                 'staff' => [
                     'id' => $user->public_id,
@@ -256,7 +271,13 @@ final class BootstrapController extends Controller
                     'availability' => 'unavailable',
                 ],
                 'catalog_snapshot_version' => CatalogSnapshot::computeVersion($company),
-            ], 200, [
+            ];
+
+            if ($includeCurrencyMinorUnits && $currencyMinorUnits !== null) {
+                $payload['currency_minor_units'] = $currencyMinorUnits;
+            }
+
+            $response = response()->json($payload, 200, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
                 'Pragma' => 'no-cache',

@@ -1,9 +1,9 @@
 # Mobile Read Metadata Contract: G1 Currency Minor Units & G2 Selected Tax Lookup
 
-**Date**: 2026-11-15T09:22:00+02:00  
-**Status**: Concrete Source Specification & Field Contract  
-**Deliverables**: G1 (Bootstrap `currency_minor_units`) & G2 (Catalog Tax Authority & Selected Tax Lookup)  
-**Scope**: Read-Only Metadata Controller Patch + Contract Schemas + Android Coordination  
+**Date**: 2026-11-15T09:27:00+02:00  
+**Status**: Concrete Proposed Additive Contract & Field Specification  
+**Deliverables**: G1 (Bootstrap `currency_minor_units` Read Projection) & G2 (Catalog Tax Authority & Selected Tax Lookup Contract)  
+**Scope**: Read-Only Metadata Controller Patch + Contract Schemas + Android Coordination Plan  
 
 ---
 
@@ -11,37 +11,62 @@
 
 This document defines the authoritative read-metadata specification for Mobile V1 Bootstrap and Product Catalog endpoints, addressing findings G1 and G2:
 1. **Economic Core Immutability**: All financial transaction actions (`app/Actions/Sales/*`, `app/Actions/Company/*`), domain calculators (`app/Domain/Sales/*`), routes (`routes/*`), configuration (`config/*`), and dependencies (`composer.lock`) remain strictly frozen.
-2. **Approved Metadata Controller Scope**: Changes to production PHP source are strictly isolated to `app/Http/Controllers/Api/Mobile/V1/BootstrapController.php` under the approved read-only metadata controller exception.
-3. **Zero Inferred Defaults**: No hardcoded currency scales (no guessing 2); no false tax assertions (`tax_inclusive: false` must not be invented for unassigned catalog items).
-4. **No Server Quote Endpoints**: Tax calculation rules ride strictly on `bootstrap.taxes[].calculation` authority; no new preview or quote endpoints are invented.
+2. **Approved Metadata Controller Scope**: Production PHP edits are strictly isolated to [`app/Http/Controllers/Api/Mobile/V1/BootstrapController.php`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Http/Controllers/Api/Mobile/V1/BootstrapController.php) under the approved read-only metadata controller exception.
+3. **No Unrequested Aliases**: The `base_currency_minor_units` alias has been completely removed from source, schema, and documentation. Only the canonical single field `currency_minor_units` is supported.
+4. **Zero Inferred Defaults**: No hardcoded currency scales (no guessing 2); no false tax assertions (`tax_inclusive: false` must not be invented for unassigned catalog items).
 
 ---
 
-### 2. G1: V1 Bootstrap `currency_minor_units` Resolution
+### 2. G1: V1 Bootstrap Explicit Read Projection Opt-In
 
-#### 2.1 Resolution Authority
+#### 2.1 Explicit Read Projection Selector (`?include=currency_minor_units`)
+To prevent breaking existing Android clients that enforce a strict 12-key whitelist (`BootstrapResponse.ALLOWED_KEYS`), the new field is gated behind an explicit read projection selector:
 - **Endpoint**: `GET /api/mobile/v1/companies/{companyId}/bootstrap`
-- **Controller**: [`App\Http\Controllers\Api\Mobile\V1\BootstrapController`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Http/Controllers/Api/Mobile/V1/BootstrapController.php)
-- **Authoritative Resolver**: [`App\Services\Money\CurrencyMinorUnitsResolver::resolveForCompany($company, $baseCurrencyCode)`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Services/Money/CurrencyMinorUnitsResolver.php)
-  - This is the exact same authority utilized by V2 Online Cash Sales and financial document posting actions.
+- **Query Parameter**: `include=currency_minor_units` (read metadata selector ONLY; grants no financial authority or capabilities).
+- **Controller Implementation**:
+  - Captured outside closure before consistent read snapshot:
+    ```php
+    $includeCurrencyMinorUnits = false;
+    if ($request->has('include')) {
+        $rawInclude = $request->query('include');
+        if (is_array($rawInclude) || ! is_string($rawInclude) || $rawInclude !== 'currency_minor_units') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Invalid include parameter. Supported projection: currency_minor_units.',
+                status: 422
+            );
+        }
+        $includeCurrencyMinorUnits = true;
+    }
+    ```
+  - **Absent `include` parameter**:
+    - Returns the exact byte/key-compatible old 12-field response.
+    - Zero extra keys emitted; does NOT invoke the resolver; preserves existing error semantics.
+  - **Exact `include=currency_minor_units`**:
+    - Resolves single `currency_minor_units` via `App\Services\Money\CurrencyMinorUnitsResolver::resolveForCompany($company, $baseCurrencyCode)`.
+    - Returns standard 12 fields plus `'currency_minor_units' => $currencyMinorUnits`.
+  - **Unknown / Malformed `include` parameter**:
+    - Immediately rejected with HTTP 422 `VALIDATION_FAILED` (`Invalid include parameter. Supported projection: currency_minor_units.`), consistent with existing V1 controllers (`ProductController`). No silent broad field expansion.
+
+#### 2.2 Authoritative Resolution & Fail-Closed Error Contract
+When `include=currency_minor_units` is requested:
+- Resolver: [`App\Services\Money\CurrencyMinorUnitsResolver::resolveForCompany($company, $baseCurrencyCode)`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Services/Money/CurrencyMinorUnitsResolver.php)
   - Sourced directly from master `currencies` table and qualified against tenant `company_currencies`.
   - Precision scale must be an integer within `0..6`.
-
-#### 2.2 Error Handling & Fail-Closed Behavior
-If `resolveForCompany` throws `InvalidArgumentException` (e.g. currency unknown, master inactive, disabled for tenant, or invalid scale):
-```php
-try {
-    $currencyMinorUnits = app(CurrencyMinorUnitsResolver::class)
-        ->resolveForCompany($company, $baseCurrencyCode);
-} catch (InvalidArgumentException $e) {
-    return MobileApiBoundary::buildErrorResponse(
-        code: 'CONTRACT_INCOMPATIBLE',
-        message: 'Company base currency minor units cannot be resolved: '.$e->getMessage(),
-        status: 409
-    );
-}
-```
-- Returns standard HTTP 409 with error code `CONTRACT_INCOMPATIBLE`.
+- If the company's base currency is missing from currencies master, globally inactive, not enabled in `company_currencies`, or scale is not in 0..6, `resolveForCompany` throws `InvalidArgumentException`.
+- The controller catches `InvalidArgumentException` and fails closed immediately with HTTP 409 code `CONTRACT_INCOMPATIBLE`:
+  ```php
+  try {
+      $currencyMinorUnits = app(CurrencyMinorUnitsResolver::class)
+          ->resolveForCompany($company, $baseCurrencyCode);
+  } catch (InvalidArgumentException $e) {
+      return MobileApiBoundary::buildErrorResponse(
+          code: 'CONTRACT_INCOMPATIBLE',
+          message: 'Company base currency minor units cannot be resolved: '.$e->getMessage(),
+          status: 409
+      );
+  }
+  ```
 - **Never falls back or guesses 2**.
 
 #### 2.3 Wire Schema Contract
@@ -52,51 +77,56 @@ try {
     "type": "integer",
     "minimum": 0,
     "maximum": 6,
-    "description": "Authoritative minor units (0..6) of base_currency resolved via CurrencyMinorUnitsResolver::resolveForCompany()."
-  },
-  "base_currency_minor_units": {
-    "type": "integer",
-    "minimum": 0,
-    "maximum": 6,
-    "description": "Authoritative minor units (0..6) of base_currency resolved via CurrencyMinorUnitsResolver::resolveForCompany()."
+    "description": "Authoritative minor units (0..6) of base_currency resolved via CurrencyMinorUnitsResolver::resolveForCompany() when requested via ?include=currency_minor_units."
   }
   ```
-- **Optional in Schema**: Kept out of the `required` array. This preserves 100% backward compatibility with existing test fixtures (e.g. `golden-bootstrap.json`) and legacy client parsers.
+- **Schema-Optional**: Kept outside the `required` array. When `include` is absent, the payload contains only the 12 required keys. When `include=currency_minor_units` is requested, the payload contains the 12 required keys plus `currency_minor_units`. Both conform 100% to the schema.
 
-#### 2.4 Android Consumer Gap Audit (Read-Only)
-- **Observed Gap**: In Android's `com.example.data.mobile.readclient.BootstrapResponse`, `ALLOWED_KEYS` is a strict whitelist:
-  ```kotlin
-  private val ALLOWED_KEYS = setOf(
-      "company_id", "company_name", "base_currency", "walk_in_customer_id",
-      "staff", "device_lease", "default_warehouse", "approved_cash_account",
-      "units", "taxes", "offline_policy", "catalog_snapshot_version"
-  )
-  ```
-  Any unrecognized key triggers `checkAllowedKeys()`, throwing `CanonicalSerializationException`.
-- **Current Workaround**: In `com.example.ui.staff.sale.StaffOnlineSaleAuthorityResolution.resolve()`, Android currently reports missing contract:
-  `"V1 Bootstrap lacks currency_minor_units (required for OnlineSaleContext scale validation)"` unless an explicit `currencyMinorUnitsOverride` is passed.
-- **Coordination Contract for Android Peer**:
-  1. Add `"currency_minor_units"` (and/or `"base_currency_minor_units"`) to `BootstrapResponse.ALLOWED_KEYS`.
-  2. Map property `val currencyMinorUnits: Int? = null` in `BootstrapResponse`.
-  3. In `StaffOnlineSaleAuthorityResolution.resolve()`, resolve authoritative scale as:
+#### 2.4 Android Consumer Coordination Plan
+- **Current Android State**:
+  - `com.example.data.mobile.readclient.BootstrapResponse.ALLOWED_KEYS` whitelist enforces exactly 12 keys.
+  - Calling `/bootstrap` without query parameters remains 100% functional and backward-compatible.
+- **Coordination Steps for Android Peer Agent**:
+  1. Update `BootstrapResponse.ALLOWED_KEYS` to include `"currency_minor_units"`.
+  2. Add optional property `val currencyMinorUnits: Int? = null` in `BootstrapResponse`.
+  3. When requesting bootstrap for Online Cash Sales, pass query parameter `?include=currency_minor_units`.
+  4. In `StaffOnlineSaleAuthorityResolution.resolve()`, resolve authoritative scale as:
      `bootstrap?.currencyMinorUnits ?: currencyMinorUnitsOverride`.
+  5. Backend makes zero edits to Android (`DO NOTeditAndroid` rule observed).
 
 ---
 
 ### 3. G2: Product Catalog Tax Authority & Selected Tax Lookup
 
-#### 3.1 Catalog Tax Truthfulness (No Invented Defaults)
+#### 3.1 Truthful Catalog Tax Representation
 - **Endpoint**: `GET /api/mobile/v1/companies/{companyId}/products`
 - **Controller**: [`App\Http\Controllers\Api\Mobile\V1\ProductController`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Http/Controllers/Api/Mobile/V1/ProductController.php)
-- **Current Database Reality**: Products in catalog do not currently have assigned tax domain associations; `tax_rate_id` and `tax_rate` are returned as `null`.
-- **Contract Enforcement**:
+- **Database Reality**: Catalog products do not currently have assigned tax domain associations; `tax_rate_id` and `tax_rate` are returned as `null`.
+- **Zero Invented Defaults**:
   - **DO NOT emit `tax_inclusive: false`** on catalog items. Falsely claiming `tax_inclusive: false` implies an assigned tax rate with an exclusive calculation, violating domain truth.
   - Catalog items maintain paired tax nullability:
     `(tax_rate_id === null && tax_rate === null) || (tax_rate_id !== null && tax_rate !== null)`.
-  - If a catalog product is unassigned, `tax_inclusive` is strictly `null` (unresolved).
+  - For unassigned catalog products, tax inclusive status is explicitly `null` (unresolved).
   - Only when a product has an actual assigned tax relation in the database is `tax_inclusive` populated (derived from `tax_rate.calculation === 'inclusive'`).
 
-#### 3.2 Bootstrap Tax Rate Authority
+#### 3.2 Canonical V2 ExplicitNoTax Rule
+- Sourced from [`app/Support/Mobile/Contract/Revision3/OnlineSaleIntentProfile.php:545-551`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Support/Mobile/Contract/Revision3/OnlineSaleIntentProfile.php#L545-L551):
+  ```php
+  $taxRateId = $line['tax_rate_id'];
+  if ($taxRateId === null) {
+      if ($line['tax_rate'] !== '0.000000' || $line['tax_inclusive'] !== false) {
+          throw new IntentProfileValidationException(
+              "Explicit NoTax line at index {$idx} requires tax_rate='0.000000' and tax_inclusive=false"
+          );
+      }
+  }
+  ```
+- **Rule Invariants**:
+  - `tax_rate_id: null` is permitted on a sales line **ONLY** when `tax_rate: "0.000000"` and `tax_inclusive: false` are chosen intentionally under company domain policy or grants (e.g. tax-exempt sale).
+  - This rule is **NOT inferred from unassigned catalog products**.
+  - The client must provide an explicit choice: either an explicit selected tax or an explicit NoTax selection.
+
+#### 3.3 Bootstrap Tax Rate Authority & Selected Tax Lookup
 - **Endpoint**: `GET /api/mobile/v1/companies/{companyId}/bootstrap`
 - The `taxes` array provides all active company taxes:
   ```json
@@ -109,32 +139,16 @@ try {
     "is_default": true
   }
   ```
-- **Authoritative Calculation Field**: `calculation` is strictly enum `["inclusive", "exclusive"]`, sourced from `TaxRate::CALC_INCLUSIVE` / `TaxRate::CALC_EXCLUSIVE`.
-
-#### 3.3 Selected Tax Lookup Contract (No Server Quote Endpoint)
-When a product has `tax_rate_id === null` (unassigned):
-1. **Client Selection**:
-   The staff UI flags the line as unassigned (`tax_rate_id: null, tax_inclusive: null`) and requires the user to select an applicable tax from `bootstrap.taxes` (or pre-selects the default tax if `is_default: true`).
-2. **Deterministic Lookup**:
-   The client matches the selected `tax_rate_id` against `bootstrap.taxes`:
-   - `tax_rate_id = selectedTax.id`
-   - `tax_rate = selectedTax.rate`
-   - `tax_inclusive = (selectedTax.calculation === "inclusive")`
-3. **Dispatch to V2 Wire**:
-   When building the raw wire line item for `POST /api/mobile/v2/companies/{companyId}/sales/online-cash`, the resolved parameters are submitted:
-   ```json
-   {
-     "product_id": "01JCV8X9MBV4W5X6Y7Z8012345",
-     "product_unit_id": "01JCV8X9MC6789ABCDEFGHJKMN",
-     "conversion_to_base": "1.000000",
-     "quantity": "2.000000",
-     "unit_price": "25.000000",
-     "tax_rate_id": "01JCV8X9MDPTRSVWXYZ0123456",
-     "tax_rate": "16.000000",
-     "tax_inclusive": false
-   }
-   ```
-4. **No Preview / Quote Endpoint**: Both client local estimates and server validation use the exact same calculation authority via `SalesLineCalculator`, eliminating the need for a `/quote` or `/tax-preview` endpoint.
+- **Authority**: `calculation` is strictly enum `["inclusive", "exclusive"]`, sourced from `TaxRate::CALC_INCLUSIVE` / `TaxRate::CALC_EXCLUSIVE`.
+- **Default Tax**: `is_default: true` is purely a UI suggestion, not an authoritative assignment.
+- **Client Selected Tax Lookup**:
+  - When staff selects a product with `tax_rate_id === null`, the client UI requires selection of an applicable tax from `bootstrap.taxes` (or an explicit NoTax choice).
+  - The client matches the selected `tax_rate_id` against `bootstrap.taxes`:
+    - `tax_rate_id = selectedTax.id`
+    - `tax_rate = selectedTax.rate`
+    - `tax_inclusive = (selectedTax.calculation === "inclusive")`
+  - The client submits the resolved line parameters on the V2 online cash sales wire.
+- **Implementation Distinction**: Kotlin does not share PHP's `SalesLineCalculator` code, and no server quote contract is proved. Clients and backend maintain separate, independently qualified arithmetic implementations conforming to shared canonical test vectors.
 
 ---
 
@@ -142,8 +156,9 @@ When a product has `tax_rate_id === null` (unassigned):
 
 | Gate / Component | Target | Status |
 | :--- | :--- | :--- |
-| **`BootstrapController.php`** | `resolveForCompany` + fail-closed 409 | Verified via `php -l` |
-| **`bootstrap-response.json`** | Optional `currency_minor_units` (0..6) | Validated via `Draft202012Validator` |
-| **`WireResponse::accepts`** | Backward-compatible + strict bounds | Unit tested in `BootstrapMetadataContractTest.php` |
-| **Core Immutability** | `git diff 6981511405d7bcd04cd8f8a09e64443ce0aaf47e -- app` | 33 lines only in approved `BootstrapController.php` |
+| **`BootstrapController.php`** | `?include=currency_minor_units` opt-in + failclosed 409 | Verified via `php -l` |
+| **Parameter Validation** | Unknown include rejected with 422 `VALIDATION_FAILED` | Verified in unit test + `php -r` |
+| **`bootstrap-response.json`** | Optional `currency_minor_units`, alias removed | Validated via `Draft202012Validator` |
+| **`BootstrapMetadataContractTest.php`** | Exercises controller, projection opt-in, resolver | Syntax verified clean via `php -l` |
+| **Core Immutability** | `git diff 6981511405d7bcd04cd8f8a09e64443ce0aaf47e -- app` | Only 45 lines in `BootstrapController.php` |
 | **Lease Discipline** | No DB / No PHPUnit during Android lease | Strictly observed (0 DB queries, 0 PHPUnit runs) |
