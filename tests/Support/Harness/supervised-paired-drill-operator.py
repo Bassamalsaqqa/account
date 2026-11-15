@@ -382,7 +382,8 @@ def reap_process_group(proc, pgid, grace_seconds=2.0):
 
     grace_end = time.monotonic() + grace_seconds
     while time.monotonic() < grace_end:
-        if not is_pgid_alive(pgid) and proc.poll() is not None:
+        proc.poll()
+        if proc.poll() is not None and not is_pgid_alive(pgid):
             break
         time.sleep(0.05)
 
@@ -393,6 +394,7 @@ def reap_process_group(proc, pgid, grace_seconds=2.0):
             pass
         kill_wait_end = time.monotonic() + 1.0
         while time.monotonic() < kill_wait_end:
+            proc.poll()
             if not is_pgid_alive(pgid):
                 break
             time.sleep(0.05)

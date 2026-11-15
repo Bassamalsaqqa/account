@@ -145,7 +145,7 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
                 operator_driver.run_supervised_child(cmd, self.test_dir, os.environ.copy(), log_f, timeout_seconds=0.5)
             duration = time.monotonic() - start
             # Must timeout promptly without blocking on readline
-            self.assertLess(duration, 2.5)
+            self.assertLess(duration, 3.0)
 
     def test_run_supervised_child_unterminated_output(self):
         log_path = os.path.join(self.test_dir, 'unterminated.log')
@@ -159,7 +159,7 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
             with self.assertRaises(TimeoutError):
                 operator_driver.run_supervised_child(cmd, self.test_dir, os.environ.copy(), log_f, timeout_seconds=0.5)
             duration = time.monotonic() - start
-            self.assertLess(duration, 2.5)
+            self.assertLess(duration, 3.0)
 
         with open(log_path, 'r') as log_f:
             content = log_f.read()

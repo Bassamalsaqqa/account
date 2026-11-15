@@ -125,7 +125,7 @@ All components verified in the backend worktree at HEAD:
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
 | `tests/Support/Harness/root-operator-tool.py` | `9f6930b63dc3d267b4472b0432f392bc997f6746446c9920a1e5b012c5d3fc5c` | Tool (Python 3) |
-| `tests/Support/Harness/supervised-paired-drill-operator.py` | `e98dbd8acd0b3ffee851e66421af037fbc61092166961ee810dc2f07060d605c` | Operator Driver |
+| `tests/Support/Harness/supervised-paired-drill-operator.py` | `e674a620ddd8d3441beea9a995cf72d1b43d22a4b1bd6172cc11c470e3e4e418` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
@@ -136,7 +136,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `ec2697543a54b95772ce74fc213b82d6e657de0acb28e4ccc3a2eed10a1951b1` | Python Unit Suite (21 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `197d966e8bd515b912b3d30a234eb39c1fd56b005f96b7775e6c294b18983cd0` | Python Unit Suite (21 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
