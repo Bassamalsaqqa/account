@@ -483,7 +483,7 @@ final class BootstrapTest extends TestCase
         $this->assertArrayNotHasKey('base_currency_minor_units', $data);
     }
 
-    public function test_bootstrap_optin_include_projects_authoritative_currency_minor_units_for_ils_and_jod(): void
+    public function test_bootstrap_optin_include_projects_authoritative_currency_minor_units_for_ils_jod_and_zero_scale(): void
     {
         // 1. ILS company (scale = 2)
         $tokenIls = $this->issueToken();
@@ -591,6 +591,100 @@ final class BootstrapTest extends TestCase
         $this->assertSame(3, $expectedJodUnits);
         $this->assertSame($expectedJodUnits, $dataJod['currency_minor_units']);
         $this->assertCount(13, array_keys($dataJod));
+
+        // 3. JPY company (scale = 0)
+        DB::table('currencies')->updateOrInsert(
+            ['code' => 'JPY'],
+            ['name' => 'Japanese Yen', 'symbol' => '¥', 'minor_units' => 0, 'active' => true, 'created_at' => now(), 'updated_at' => now()]
+        );
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        $jpyCompany = Company::factory()->create([
+            'name_ar' => 'شركة الين للتجارة',
+            'name_en' => 'Japan Yen Trading Co',
+            'base_currency_code' => 'JPY',
+            'status' => 'active',
+        ]);
+        $this->user->companies()->attach($jpyCompany->id, ['status' => 'active', 'is_owner' => false]);
+        app(CompanyRoleService::class)->seedCompanyRoles($jpyCompany);
+        setPermissionsTeamId($jpyCompany->id);
+        $this->user->assignRole('Cashier');
+
+        $jpyLedger = LedgerAccount::create([
+            'company_id' => $jpyCompany->id,
+            'code' => '1012',
+            'name_ar' => 'صندوق ين',
+            'name_en' => 'JPY Cash Box',
+            'account_type' => LedgerAccount::TYPE_ASSET,
+            'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+            'is_control' => false,
+            'is_system' => false,
+            'active' => true,
+        ]);
+
+        $jpyCash = MoneyAccount::create([
+            'company_id' => $jpyCompany->id,
+            'account_type' => 'cash',
+            'name_ar' => 'صندوق رئيسي ين',
+            'name_en' => 'Main Cash JPY',
+            'currency_code' => 'JPY',
+            'ledger_account_id' => $jpyLedger->id,
+            'is_active' => true,
+            'created_by' => $this->user->id,
+        ]);
+
+        $jpyWarehouse = Warehouse::create([
+            'company_id' => $jpyCompany->id,
+            'code' => 'WH-JPY',
+            'name_ar' => 'مستودع طوكيو',
+            'name_en' => 'Tokyo Warehouse',
+            'active' => true,
+            'is_default' => true,
+            'created_by' => $this->user->id,
+        ]);
+
+        $jpyCustomer = Customer::create([
+            'company_id' => $jpyCompany->id,
+            'code' => 'CUST-JPY',
+            'name_ar' => 'عميل طوكيو',
+            'name_en' => 'Tokyo Customer',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        CompanyMobileSetting::create([
+            'company_id' => $jpyCompany->id,
+            'walk_in_customer_id' => $jpyCustomer->id,
+            'approved_cash_account_id' => $jpyCash->id,
+            'default_warehouse_id' => $jpyWarehouse->id,
+            'default_tax_rate_id' => null,
+            'offline_policy_enabled' => false,
+            'offline_cash_only' => true,
+            'max_offline_hours' => 12,
+            'max_offline_sales_count' => 50,
+            'max_offline_total_amount' => 5000,
+            'catalog_snapshot_version' => 'snap-jpy-v1',
+        ]);
+
+        $tokenJpy = $this->issueToken($jpyCompany);
+        $responseJpy = $this->withHeader('Authorization', "Bearer {$tokenJpy}")
+            ->getJson("/api/mobile/v1/companies/{$jpyCompany->public_id}/bootstrap?include=currency_minor_units");
+
+        $responseJpy->assertStatus(200);
+
+        $validatorJpy = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validatorJpy->setInput($responseJpy->getContent())->run();
+        $this->assertTrue($validatorJpy->isSuccessful(), $validatorJpy->getErrorOutput());
+
+        $dataJpy = $responseJpy->json();
+        $this->assertArrayHasKey('currency_minor_units', $dataJpy);
+        $this->assertArrayNotHasKey('base_currency_minor_units', $dataJpy);
+
+        $expectedJpyUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany($jpyCompany, 'JPY');
+        $this->assertSame(0, $expectedJpyUnits);
+        $this->assertSame(0, $dataJpy['currency_minor_units']);
+        $this->assertSame($expectedJpyUnits, $dataJpy['currency_minor_units']);
+        $this->assertCount(13, array_keys($dataJpy));
 
         // Restore permission team id
         setPermissionsTeamId($this->company->id);

@@ -52,10 +52,12 @@ final class BootstrapMetadataContractTest extends TestCase
     {
         $fixture = json_decode(file_get_contents(base_path('docs/integration/mobile-v1/fixtures/golden-bootstrap.json')));
 
-        // 1. Single currency_minor_units accepted when projected
-        $optedIn = clone $fixture;
-        $optedIn->currency_minor_units = 2;
-        $this->assertTrue(WireResponse::accepts($optedIn, 'bootstrap-response'));
+        // 1. Single currency_minor_units accepted when projected (0, 2, 3, 6 supported scales)
+        foreach ([0, 2, 3, 6] as $scale) {
+            $optedIn = clone $fixture;
+            $optedIn->currency_minor_units = $scale;
+            $this->assertTrue(WireResponse::accepts($optedIn, 'bootstrap-response'));
+        }
 
         // 2. Unrequested base_currency_minor_units alias is completely removed and rejected by schema
         $withAlias = clone $fixture;
