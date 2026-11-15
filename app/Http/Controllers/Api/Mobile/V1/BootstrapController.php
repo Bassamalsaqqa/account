@@ -16,6 +16,7 @@ use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\CatalogSnapshot;
 use App\Support\Mobile\WireResponse;
 use Brick\Math\BigDecimal;
@@ -23,6 +24,7 @@ use Brick\Math\RoundingMode;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 final class BootstrapController extends Controller
 {
@@ -148,6 +150,18 @@ final class BootstrapController extends Controller
                 );
             }
 
+            // G1: Authoritative currency minor units resolution (same authority as V2 cash)
+            try {
+                $currencyMinorUnits = app(CurrencyMinorUnitsResolver::class)
+                    ->resolveForCompany($company, $baseCurrencyCode);
+            } catch (InvalidArgumentException $e) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'CONTRACT_INCOMPATIBLE',
+                    message: 'Company base currency minor units cannot be resolved: '.$e->getMessage(),
+                    status: 409
+                );
+            }
+
             // 5. Staff role and permissions
             $roleName = $user->roles()->where('roles.company_id', $company->id)->value('name');
             $role = match (strtolower((string) $roleName)) {
@@ -214,6 +228,8 @@ final class BootstrapController extends Controller
                 'company_id' => $company->public_id,
                 'company_name' => (string) $company->displayName(),
                 'base_currency' => $company->base_currency_code,
+                'currency_minor_units' => $currencyMinorUnits,
+                'base_currency_minor_units' => $currencyMinorUnits,
                 'walk_in_customer_id' => $walkInCustomer->public_id,
                 'staff' => [
                     'id' => $user->public_id,
