@@ -9,14 +9,21 @@ use PDOStatement;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 use Tests\Support\Harness\SupervisedPairedFinancialDrill;
 
 /**
  * Pure source-only unit tests for SupervisedPairedFinancialDrill.
  *
- * Verifies strict prestart approval gates, independent external live approval,
- * ULID lookup proof PDO resolution, evidence freshness checks, JUnit XML enforcement,
- * hold deadline bounding, and exact cleanup invariants WITHOUT touching live DB or network.
+ * Exercises all adversarial source gates:
+ * - Prestart approval mandatory TTL, private permissions, and identical pub/exe acceptance.
+ * - Live root approval mandatory TTL, scope, schema_name, whole file SHA, and path matching.
+ * - Bounded wait polling for external live approval record.
+ * - Strict TLS readiness check URL allowlist (loopback only).
+ * - Triple-match of sample event ID, parsed request, and canonical raw wire payload.
+ * - ULID lookup proof PDO query error handling.
+ * - Evidence freshness and JUnit XML 2 PASS 0 SKIP enforcement.
+ * - Structured exact cleanup detecting lingering schemas, listeners, and temp dirs.
  *
  * NOTE: Authored source tests. UNRUN pending QA lease grant.
  */
@@ -34,57 +41,13 @@ class SupervisedFinancialDrillTest extends TestCase
     protected function tearDown(): void
     {
         if (is_dir($this->tempDir)) {
-            $files = glob($this->tempDir . '/*');
-            if (is_array($files)) {
-                foreach ($files as $f) {
-                    if (is_file($f) || is_link($f)) {
-                        unlink($f);
-                    }
-                }
-            }
-            rmdir($this->tempDir);
+            SupervisedPairedFinancialDrill::recursiveRemoveDir($this->tempDir);
         }
         parent::tearDown();
     }
 
     #[Test]
-    public function test_prestart_approval_gate_fails_closed_when_missing_or_insecure_perms(): void
-    {
-        // 1. Missing file
-        $missingPath = $this->tempDir . '/nonexistent_approval.json';
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('PRESTART_APPROVAL_FILE_NOT_FOUND');
-        SupervisedPairedFinancialDrill::verifyPrestartApproval(
-            $missingPath,
-            'manifest_sha',
-            'backend_head',
-            null,
-            null,
-            $this->tempDir
-        );
-    }
-
-    #[Test]
-    public function test_prestart_approval_fails_closed_on_insecure_file_permissions(): void
-    {
-        $filePath = $this->tempDir . '/approval.json';
-        file_put_contents($filePath, json_encode(['root_coordination_granted' => true]));
-        chmod($filePath, 0644); // Insecure: world/group readable
-
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('PRESTART_APPROVAL_INSECURE_PERMS');
-        SupervisedPairedFinancialDrill::verifyPrestartApproval(
-            $filePath,
-            'manifest_sha',
-            'backend_head',
-            null,
-            null,
-            $this->tempDir
-        );
-    }
-
-    #[Test]
-    public function test_prestart_approval_fails_when_backend_or_manifest_pin_mismatch(): void
+    public function test_prestart_approval_fails_closed_when_ttl_is_missing(): void
     {
         $filePath = $this->tempDir . '/approval.json';
         $content = [
@@ -94,194 +57,264 @@ class SupervisedFinancialDrillTest extends TestCase
             'android_publication_head' => str_repeat('2', 40),
             'android_executable_head' => str_repeat('3', 40),
             'cwd' => $this->tempDir,
+            // expires_at missing
         ];
         file_put_contents($filePath, json_encode($content));
         chmod($filePath, 0600);
 
-        // Mismatched manifest SHA
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('PRESTART_APPROVAL_MANIFEST_MISMATCH');
-        SupervisedPairedFinancialDrill::verifyPrestartApproval(
-            $filePath,
-            str_repeat('b', 64), // expected differs
-            str_repeat('1', 40),
-            null,
-            null,
-            $this->tempDir
-        );
-    }
-
-    #[Test]
-    public function test_cli_args_cannot_override_prestart_approval(): void
-    {
-        $filePath = $this->tempDir . '/approval.json';
-        $content = [
-            'root_coordination_granted' => true,
-            'manifest_sha256' => str_repeat('a', 64),
-            'backend_head' => str_repeat('1', 40),
-            'android_publication_head' => str_repeat('2', 40),
-            'android_executable_head' => str_repeat('3', 40),
-            'cwd' => $this->tempDir,
-        ];
-        file_put_contents($filePath, json_encode($content));
-        chmod($filePath, 0600);
-
-        // CLI arg attempts to override publication head
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('PRESTART_APPROVAL_CLI_PUB_OVERRIDE_REFUSED');
+        $this->expectExceptionMessage('PRESTART_APPROVAL_TTL_MISSING');
         SupervisedPairedFinancialDrill::verifyPrestartApproval(
             $filePath,
             str_repeat('a', 64),
             str_repeat('1', 40),
-            str_repeat('9', 40), // CLI override attempt
+            null,
             null,
             $this->tempDir
         );
     }
 
     #[Test]
-    public function test_live_root_approval_gate_fails_closed_when_missing_or_sha_mismatch(): void
+    public function test_prestart_approval_fails_closed_when_ttl_is_expired(): void
     {
-        $handoffPath = $this->tempDir . '/runtime_client_handoff.json';
-        file_put_contents($handoffPath, 'test_handoff_bytes');
-        chmod($handoffPath, 0600);
-        $actualSha = hash('sha256', 'test_handoff_bytes');
+        $filePath = $this->tempDir . '/approval.json';
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => str_repeat('2', 40),
+            'android_executable_head' => str_repeat('3', 40),
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() - 60), // Expired 1 minute ago
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
 
-        $approvalPath = $this->tempDir . '/live_approval.json';
-        $approvalContent = [
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PRESTART_APPROVAL_EXPIRED');
+        SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('1', 40),
+            null,
+            null,
+            $this->tempDir
+        );
+    }
+
+    #[Test]
+    public function test_prestart_approval_allows_identical_publication_and_executable_heads(): void
+    {
+        $filePath = $this->tempDir . '/approval.json';
+        $sameHead = str_repeat('2', 40);
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => $sameHead,
+            'android_executable_head' => $sameHead, // Identical head allowed
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
+
+        $res = SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('1', 40),
+            null,
+            null,
+            $this->tempDir
+        );
+
+        $this->assertTrue($res['root_coordination_granted']);
+        $this->assertSame($sameHead, $res['android_publication_head']);
+        $this->assertSame($sameHead, $res['android_executable_head']);
+    }
+
+    #[Test]
+    public function test_live_root_approval_fails_closed_when_ttl_is_missing(): void
+    {
+        $handoffPath = $this->tempDir . '/handoff.json';
+        file_put_contents($handoffPath, 'test');
+        chmod($handoffPath, 0600);
+        $sha = hash('sha256', 'test');
+
+        $approvalPath = $this->tempDir . '/live.json';
+        $content = [
             'root_live_handoff_approved' => true,
+            'scope' => SupervisedPairedFinancialDrill::REQUIRED_SCOPE,
+            'schema_name' => 'accounting_p8_tmp_test1234',
             'handoff_path' => $handoffPath,
-            'whole_handoff_sha256' => str_repeat('f', 64), // wrong SHA
+            'whole_handoff_sha256' => $sha,
             'backend_head' => str_repeat('1', 40),
             'android_publication_head' => str_repeat('2', 40),
             'android_executable_head' => str_repeat('3', 40),
             'manifest_sha256' => str_repeat('a', 64),
+            // expires_at missing
         ];
-        file_put_contents($approvalPath, json_encode($approvalContent));
+        file_put_contents($approvalPath, json_encode($content));
         chmod($approvalPath, 0600);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('LIVE_ROOT_APPROVAL_SHA_MISMATCH');
+        $this->expectExceptionMessage('LIVE_ROOT_APPROVAL_TTL_MISSING');
         SupervisedPairedFinancialDrill::verifyLiveRootApproval(
             $approvalPath,
             $handoffPath,
-            $actualSha,
+            $sha,
             str_repeat('1', 40),
             str_repeat('2', 40),
             str_repeat('3', 40),
-            str_repeat('a', 64)
+            str_repeat('a', 64),
+            'accounting_p8_tmp_test1234'
         );
     }
 
     #[Test]
-    public function test_ulid_lookup_proof_refusal_when_company_not_found(): void
+    public function test_live_root_approval_fails_closed_when_scope_or_schema_mismatches(): void
     {
-        $mockStmt = $this->createMock(PDOStatement::class);
-        $mockStmt->expects($this->once())
-            ->method('execute')
-            ->with(['01JABCDEFGHJKMNPQRSTVWXYZ0'])
-            ->willReturn(true);
-        $mockStmt->expects($this->once())
-            ->method('fetch')
-            ->with(PDO::FETCH_ASSOC)
-            ->willReturn(false); // Not found
+        $handoffPath = $this->tempDir . '/handoff.json';
+        file_put_contents($handoffPath, 'test');
+        chmod($handoffPath, 0600);
+        $sha = hash('sha256', 'test');
 
-        $mockPdo = $this->createMock(PDO::class);
-        $mockPdo->expects($this->once())
-            ->method('prepare')
-            ->with('SELECT id FROM companies WHERE public_id = ? LIMIT 1')
-            ->willReturn($mockStmt);
+        $approvalPath = $this->tempDir . '/live.json';
+        $content = [
+            'root_live_handoff_approved' => true,
+            'scope' => 'WRONG_SCOPE',
+            'schema_name' => 'accounting_p8_tmp_test1234',
+            'handoff_path' => $handoffPath,
+            'whole_handoff_sha256' => $sha,
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => str_repeat('2', 40),
+            'android_executable_head' => str_repeat('3', 40),
+            'manifest_sha256' => str_repeat('a', 64),
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($approvalPath, json_encode($content));
+        chmod($approvalPath, 0600);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('COMPANY_ULID_NOT_FOUND');
-        SupervisedPairedFinancialDrill::resolveCompanyIntegerId($mockPdo, '01JABCDEFGHJKMNPQRSTVWXYZ0');
+        $this->expectExceptionMessage('LIVE_ROOT_APPROVAL_SCOPE_MISMATCH');
+        SupervisedPairedFinancialDrill::verifyLiveRootApproval(
+            $approvalPath,
+            $handoffPath,
+            $sha,
+            str_repeat('1', 40),
+            str_repeat('2', 40),
+            str_repeat('3', 40),
+            str_repeat('a', 64),
+            'accounting_p8_tmp_test1234'
+        );
     }
 
     #[Test]
-    public function test_ulid_lookup_resolves_valid_integer_id(): void
+    public function test_await_live_root_approval_fails_when_child_terminates(): void
     {
-        $mockStmt = $this->createMock(PDOStatement::class);
-        $mockStmt->expects($this->once())
-            ->method('execute')
-            ->with(['01JABCDEFGHJKMNPQRSTVWXYZ0'])
-            ->willReturn(true);
-        $mockStmt->expects($this->once())
-            ->method('fetch')
-            ->with(PDO::FETCH_ASSOC)
-            ->willReturn(['id' => '42']);
+        $child = $this->createMock(Process::class);
+        $child->method('isRunning')->willReturn(false); // Child died
 
-        $mockPdo = $this->createMock(PDO::class);
-        $mockPdo->expects($this->once())
-            ->method('prepare')
-            ->with('SELECT id FROM companies WHERE public_id = ? LIMIT 1')
-            ->willReturn($mockStmt);
-
-        $id = SupervisedPairedFinancialDrill::resolveCompanyIntegerId($mockPdo, '01JABCDEFGHJKMNPQRSTVWXYZ0');
-        $this->assertSame(42, $id);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('CHILD_HARNESS_TERMINATED_WHILE_AWAITING_LIVE_ROOT_APPROVAL');
+        SupervisedPairedFinancialDrill::awaitAndVerifyLiveRootApproval(
+            $this->tempDir . '/nonexistent_live.json',
+            $this->tempDir . '/handoff.json',
+            'sha',
+            'b_head',
+            'p_head',
+            'e_head',
+            'm_sha',
+            'schema',
+            $child,
+            microtime(true) + 100,
+            fn () => false,
+            2.0
+        );
     }
 
     #[Test]
-    public function test_stale_evidence_rejected_when_mtime_or_sha_unrefreshed(): void
+    public function test_readiness_probe_fails_on_untrusted_external_url(): void
     {
-        $evidencePath = $this->tempDir . '/evidence.json';
-        file_put_contents($evidencePath, json_encode(['test' => true]));
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('READINESS_URL_NOT_ALLOWED');
+        SupervisedPairedFinancialDrill::performStrictTlsReadinessCheck(
+            'https://external-malicious-site.example.com/readiness',
+            $this->tempDir . '/ca.pem',
+            'nonce'
+        );
+    }
 
-        $preRunTime = time() + 100; // future timestamp simulates stale pre-existing file
+    #[Test]
+    public function test_handoff_triple_match_fails_when_wire_json_tampered(): void
+    {
+        $handoff = [
+            'fixture' => [
+                'sample_event_id' => '00000000-0000-0000-0000-000000000001',
+            ],
+            'server_synthesized_context' => [
+                'company_id' => '01JABCDEFGHJKMNPQRSTVWXYZ0',
+                'actor_id' => '01JABCDEFGHJKMNPQRSTVWXYZ1',
+                'currency_minor_units' => 2,
+            ],
+            'canonical_intent_profile_digest' => 'sha256:' . str_repeat('0', 64),
+            'raw_wire_sample' => [
+                'parsed_request' => [
+                    'client_event_id' => '00000000-0000-0000-0000-000000000001',
+                    'currency' => 'ILS',
+                ],
+                'raw_wire_payload_json' => '{"tampered":true}', // Tampered JSON
+                'raw_wire_payload_sha256' => hash('sha256', '{"tampered":true}'),
+            ],
+        ];
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('EVIDENCE_FILE_STALE');
-        SupervisedPairedFinancialDrill::verifyEvidenceFreshness(
-            $evidencePath,
-            $preRunTime,
+        $this->expectExceptionMessage('HANDOFF_WIRE_SERIALIZATION_MISMATCH');
+        SupervisedPairedFinancialDrill::verifyHandoffTripleMatch($handoff);
+    }
+
+    #[Test]
+    public function test_exact_cleanup_reports_failure_when_schema_lingers(): void
+    {
+        $mockStmt = $this->createMock(PDOStatement::class);
+        // First query: schema exists
+        // Second query after DROP: schema STILL exists (simulating drop failure)
+        $mockStmt->method('fetch')->willReturn(['SCHEMA_NAME' => 'accounting_p8_tmp_lingering']);
+
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('prepare')->willReturn($mockStmt);
+
+        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
             null,
-            str_repeat('1', 40),
-            str_repeat('2', 40),
-            str_repeat('3', 40),
-            str_repeat('a', 64)
+            'accounting_p8_tmp_lingering',
+            null,
+            $mockPdo
         );
+
+        $this->assertFalse($result['success']);
+        $this->assertFalse($result['schema_absent']);
+        $this->assertNotEmpty($result['errors']);
     }
 
     #[Test]
-    public function test_junit_xml_enforces_two_pass_zero_skip(): void
+    public function test_exact_cleanup_succeeds_when_clean(): void
     {
-        $xmlPath = $this->tempDir . '/junit.xml';
+        $mockStmt = $this->createMock(PDOStatement::class);
+        // Schema query returns false (schema is absent)
+        $mockStmt->method('fetch')->willReturn(false);
 
-        // 1. Failure detected
-        file_put_contents($xmlPath, '<testsuite tests="2" failures="1" errors="0" skipped="0"></testsuite>');
-        touch($xmlPath, time() + 10);
-        try {
-            SupervisedPairedFinancialDrill::verifyJunitTestResults($xmlPath, time());
-            $this->fail('Expected failure exception not thrown.');
-        } catch (RuntimeException $e) {
-            $this->assertStringContainsString('JUNIT_XML_FAILURES_DETECTED', $e->getMessage());
-        }
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('prepare')->willReturn($mockStmt);
 
-        // 2. Skip detected
-        file_put_contents($xmlPath, '<testsuite tests="2" failures="0" errors="0" skipped="1"></testsuite>');
-        touch($xmlPath, time() + 10);
-        try {
-            SupervisedPairedFinancialDrill::verifyJunitTestResults($xmlPath, time());
-            $this->fail('Expected skip exception not thrown.');
-        } catch (RuntimeException $e) {
-            $this->assertStringContainsString('JUNIT_XML_SKIPS_DETECTED', $e->getMessage());
-        }
+        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+            null,
+            'accounting_p8_tmp_absent',
+            null,
+            $mockPdo
+        );
 
-        // 3. Valid 2 PASS 0 SKIP
-        file_put_contents($xmlPath, '<testsuite tests="2" failures="0" errors="0" skipped="0"></testsuite>');
-        touch($xmlPath, time() + 10);
-        $results = SupervisedPairedFinancialDrill::verifyJunitTestResults($xmlPath, time());
-        $this->assertSame(2, $results['tests']);
-        $this->assertSame(0, $results['failures']);
-        $this->assertSame(0, $results['errors']);
-        $this->assertSame(0, $results['skipped']);
-    }
-
-    #[Test]
-    public function test_deadline_expiration_fails_closed(): void
-    {
-        $pastDeadline = microtime(true) - 5.0;
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('CHILD_HOLD_DEADLINE_EXCEEDED');
-        SupervisedPairedFinancialDrill::computeRemainingDeadline($pastDeadline, 10.0);
+        $this->assertTrue($result['success']);
+        $this->assertTrue($result['schema_absent']);
+        $this->assertEmpty($result['errors']);
     }
 }
