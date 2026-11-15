@@ -12,9 +12,10 @@ declare(strict_types=1);
  * - Real pcntl_alarm deadline with availability and ALL handler registrations checked before DB/bootstrap
  * - Asynchronous signal handlers throw controlled exceptions; no exit() inside signal handlers
  * - Subprocess migration bounded and reaped before owned schema drop
- * - Controlled pre-check refusals (proven before real queries):
+ * - Controlled pre-check refusals & regressions (proven before real queries):
  *     1. Missing/unproven schema ownership proof refusal
  *     2. Invalid schema name refusal
+ *     3. Synthetic no-DB child process environment propagation regression (testSettings + assertPrimarySchema)
  * - Poisoned ambient Laravel connection sentinel active DURING baseline & reconciler calls
  * - Minimal canonical foundation fixture via CreateCompanyAction ONLY (delta 0)
  * - Dedicated read-only PDO connection:
@@ -27,8 +28,9 @@ declare(strict_types=1);
  *     - DisposableFinancialPostRunInspector::captureBaseline()
  *     - Assert $postBaseline === $preBaseline (100% strictly equal)
  *     - Assert delta 0 across all financial entities
- * - Finally teardown: drop schema and verify database absence
+ * - Finally teardown: drop schema and verify database absence via exact query
  * - Cleanup failure or execution abort NEVER reports QUALIFIED or exits 0
+ * - Unreached phases strictly emit NOT_RUN / null without false literals
  * - Preserves raw actual pre/post baseline JSON, 6 reconciler results JSON, sentinel report, and timeout metrics
  */
 
@@ -43,6 +45,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
 use Tests\Support\Harness\DisposableFinancialPostRunInspector;
 
@@ -149,13 +152,23 @@ function loadSecureAdministrativeCredentials(string $filePath): array
         throw new \RuntimeException("ADMIN_CONFIG_INVALID_SCHEMA: '{$schema}'");
     }
 
-    // Populate environment variables for DisposableMariaDbSchema::testSettings()
+    // Populate environment variables for DisposableMariaDbSchema::testSettings() across all runtime interfaces
     putenv("PHASE8_TEST_DB_HOST={$host}");
     putenv("PHASE8_TEST_DB_PORT={$port}");
     putenv("PHASE8_TEST_DB_USERNAME={$user}");
     putenv("PHASE8_TEST_DB_PASSWORD={$pass}");
+    $_ENV['PHASE8_TEST_DB_HOST'] = $host;
+    $_ENV['PHASE8_TEST_DB_PORT'] = $port;
+    $_ENV['PHASE8_TEST_DB_USERNAME'] = $user;
+    $_ENV['PHASE8_TEST_DB_PASSWORD'] = $pass;
+    $_SERVER['PHASE8_TEST_DB_HOST'] = $host;
+    $_SERVER['PHASE8_TEST_DB_PORT'] = $port;
+    $_SERVER['PHASE8_TEST_DB_USERNAME'] = $user;
+    $_SERVER['PHASE8_TEST_DB_PASSWORD'] = $pass;
     if ($pass === '') {
         putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+        $_ENV['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+        $_SERVER['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
     }
 
     return [
@@ -360,10 +373,19 @@ $schemaName = null;
 $cliCacheDir = null;
 $companyId = null;
 
+// Phase tracking variables to prevent false observations of unreached steps
+$sentinelInstalled = false;
+$observedDedicatedPdoDatabase = null;
+$observedDedicatedPdoPort = null;
+$observedDedicatedPdoVerified = false;
+$innodbTrxReadOnlyObserved = null;
+$mutationDeniedObserved = false;
+$denialMessageObserved = null;
+$denialCodeObserved = null;
+
 $preBaseline = null;
 $postBaseline = null;
 $reconciliationReport = null;
-$readOnlyProof = [];
 
 // Arm the bounded alarm deadline
 pcntl_alarm($timeout);
@@ -394,7 +416,7 @@ try {
         throw new \RuntimeException("Disposable MariaDB port must be 3342, got '{$settings['PORT']}'.");
     }
 
-    // 4. Controlled Negative Pre-checks (PROVE BEFORE REAL QUERIES)
+    // 4. Controlled Negative Pre-checks & Regressions (PROVE BEFORE REAL QUERIES)
 
     // Pre-check 1: Missing/unproven schema ownership proof refusal
     $refusedProof = false;
@@ -420,7 +442,7 @@ try {
         throw new \RuntimeException('Pre-check failed: DisposableMariaDbSchema did not refuse unproven schema.');
     }
     $preChecks['proof_refusal'] = [
-        'passed' => true,
+        'status' => 'PASS',
         'message' => $proofRefusalMessage,
     ];
 
@@ -437,9 +459,69 @@ try {
         throw new \RuntimeException('Pre-check failed: DisposableFinancialPostRunInspector did not refuse invalid schema name.');
     }
     $preChecks['invalid_schema_refusal'] = [
-        'passed' => true,
+        'status' => 'PASS',
         'message' => $invalidSchemaMessage,
     ];
+
+    // Pre-check 3: Synthetic child process environment propagation regression (no DB socket)
+    $syntheticProofPath = tempnam(sys_get_temp_dir(), 'p8_synth_proof_');
+    if ($syntheticProofPath === false) {
+        throw new \RuntimeException('Failed to create synthetic proof file.');
+    }
+    chmod($syntheticProofPath, 0600);
+    $syntheticNonce = bin2hex(random_bytes(16));
+    $syntheticSchema = 'accounting_p8_tmp_0123456789ab';
+    file_put_contents($syntheticProofPath, json_encode([
+        'schema' => $syntheticSchema,
+        'host' => '127.0.0.1',
+        'port' => '3342',
+        'nonce' => $syntheticNonce,
+    ], JSON_THROW_ON_ERROR));
+
+    $childScript = tempnam(sys_get_temp_dir(), 'p8_synth_child_');
+    if ($childScript === false) {
+        unlink($syntheticProofPath);
+        throw new \RuntimeException('Failed to create synthetic child script.');
+    }
+    chmod($childScript, 0600);
+    $autoloadPath = var_export(dirname(__DIR__, 3).'/vendor/autoload.php', true);
+    $schemaEsc = var_export($syntheticSchema, true);
+    file_put_contents($childScript, '<?php
+    require '.$autoloadPath.';
+    $settings = \Tests\Support\DisposableMariaDbSchema::testSettings();
+    if ($settings["HOST"] !== "127.0.0.1" || $settings["PORT"] !== "3342" || $settings["USERNAME"] !== "dummy_user") {
+        throw new \RuntimeException("Child testSettings mismatch");
+    }
+    \Tests\Support\DisposableMariaDbSchema::assertPrimarySchema('.$schemaEsc.');
+    echo "SYNTHETIC_CHILD_PROPAGATION_OK";
+    ');
+
+    $syntheticEnv = [
+        'APP_ENV' => 'testing',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        'PHASE8_TEST_DB_HOST' => '127.0.0.1',
+        'PHASE8_TEST_DB_PORT' => '3342',
+        'PHASE8_TEST_DB_USERNAME' => 'dummy_user',
+        'PHASE8_TEST_DB_PASSWORD' => 'dummy_pass',
+        'PHASE8_DISPOSABLE_DB_PROOF' => $syntheticProofPath,
+        'PHASE8_DISPOSABLE_DB_NONCE' => $syntheticNonce,
+    ];
+
+    try {
+        $proc = new Process([PHP_BINARY, $childScript], dirname(__DIR__, 3), $syntheticEnv);
+        $proc->setTimeout(10)->mustRun();
+        $childOut = $proc->getOutput();
+        if (! str_contains($childOut, 'SYNTHETIC_CHILD_PROPAGATION_OK')) {
+            throw new \RuntimeException('Synthetic child propagation did not output expected marker.');
+        }
+        $preChecks['child_env_propagation'] = [
+            'status' => 'PASS',
+            'message' => 'Synthetic child process validated testSettings and assertPrimarySchema under explicit environment without DB socket.',
+        ];
+    } finally {
+        @unlink($syntheticProofPath);
+        @unlink($childScript);
+    }
 
     // 5. Isolated Laravel Pre-boot with Ambient Poisoning
     $cliCacheDir = sys_get_temp_dir().'/cli_qual_cache_'.bin2hex(random_bytes(6));
@@ -451,6 +533,11 @@ try {
         'APP_ENV' => 'testing',
         'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
         'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'PHASE8_TEST_DB_HOST' => $settings['HOST'],
+        'PHASE8_TEST_DB_PORT' => $settings['PORT'],
+        'PHASE8_TEST_DB_USERNAME' => $settings['USERNAME'],
+        'PHASE8_TEST_DB_PASSWORD' => $settings['PASSWORD'],
+        'DB_URL' => '',
         'DB_CONNECTION' => 'mysql',
         'DB_HOST' => '127.0.0.1',
         'DB_PORT' => '1', // Ambient poisoned port
@@ -463,6 +550,9 @@ try {
         'APP_PACKAGES_CACHE' => $cliCacheDir.'/packages.php',
         'APP_ROUTES_CACHE' => $cliCacheDir.'/routes-v7.php',
     ];
+    if ($settings['PASSWORD'] === '' || getenv('PHASE8_TEST_DB_EMPTY_PASSWORD') === '1') {
+        $isolatedEnv['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+    }
 
     foreach ($isolatedEnv as $k => $v) {
         putenv("{$k}={$v}");
@@ -551,6 +641,7 @@ try {
         AmbientConnectionSentinel::intercept("DB::connection('{$name}')");
     });
     DB::purge();
+    $sentinelInstalled = true;
 
     // 9. Dedicated Read-Only PDO, Documented MariaDB Read-Only Proof & Server Denial
     $dedicatedDsn = "mysql:host={$settings['HOST']};port={$settings['PORT']};dbname={$schemaName};charset=utf8mb4";
@@ -562,11 +653,12 @@ try {
     DisposableFinancialPostRunInspector::configureStatementTimeout($dedicatedPdo, 5);
 
     $identityRow = $dedicatedPdo->query('SELECT DATABASE() AS db, @@port AS port')->fetch(PDO::FETCH_ASSOC);
-    if (! is_array($identityRow) || ($identityRow['db'] ?? '') !== $schemaName) {
-        throw new \RuntimeException("Dedicated PDO DB mismatch: expected '{$schemaName}', got '".($identityRow['db'] ?? 'null')."'.");
-    }
-    if ((string) ($identityRow['port'] ?? '') !== '3342') {
-        throw new \RuntimeException("Dedicated PDO port mismatch: expected 3342, got '".($identityRow['port'] ?? 'null')."'.");
+    $observedDedicatedPdoDatabase = (string) ($identityRow['db'] ?? '');
+    $observedDedicatedPdoPort = (int) ($identityRow['port'] ?? 0);
+    $observedDedicatedPdoVerified = ($observedDedicatedPdoDatabase === $schemaName && $observedDedicatedPdoPort === 3342);
+
+    if (! $observedDedicatedPdoVerified) {
+        throw new \RuntimeException("Dedicated PDO DB mismatch: expected '{$schemaName}'@3342, got '{$observedDedicatedPdoDatabase}'@{$observedDedicatedPdoPort}.");
     }
 
     // Create temporary probe table under owned schema to test server-enforced mutation denial
@@ -581,6 +673,7 @@ try {
     $stmtTrx = $dedicatedPdo->query('SELECT trx_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
     $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
     $innodbTrxReadOnly = isset($trxRow['trx_read_only']) ? (int) $trxRow['trx_read_only'] : null;
+    $innodbTrxReadOnlyObserved = $innodbTrxReadOnly;
     if ($innodbTrxReadOnly !== 1) {
         throw new \RuntimeException('Documented MariaDB innodb_trx observation failed: trx_read_only is not 1 (got '.($innodbTrxReadOnly ?? 'null').').');
     }
@@ -596,6 +689,10 @@ try {
         $denialMessage = $e->getMessage();
         $denialSqlState = (string) $e->getCode();
     }
+    $mutationDeniedObserved = $mutationDenied;
+    $denialMessageObserved = $denialMessage;
+    $denialCodeObserved = $denialSqlState;
+
     if (! $mutationDenied) {
         throw new \RuntimeException('Read-only enforcement failure: MariaDB server permitted UPDATE inside READ ONLY transaction!');
     }
@@ -603,13 +700,6 @@ try {
     if (! str_contains($denialMessage, '1792') && ! str_contains($denialMessage, 'READ ONLY') && $denialSqlState !== '25006') {
         throw new \RuntimeException("Unexpected mutation rejection (not READ ONLY denial): [{$denialSqlState}] {$denialMessage}");
     }
-
-    $readOnlyProof = [
-        'innodb_trx_read_only' => $innodbTrxReadOnly,
-        'probe_mutation_denied' => true,
-        'denial_sqlstate' => $denialSqlState,
-        'denial_message' => $denialMessage,
-    ];
 
     $dedicatedPdo->rollBack();
     // Drop probe table cleanly
@@ -694,17 +784,17 @@ try {
         pcntl_alarm(0);
     }
 
-    // 15. Drop Owned Schema and Assert Complete Absence
+    // 15. Drop Owned Schema and Assert Complete Absence via Exact Query
     if ($schema instanceof DisposableMariaDbSchema) {
         try {
             $adminPdo = $schema->getAdminPdo();
             $schema->drop();
-            $checkStmt = $adminPdo->prepare('SHOW DATABASES LIKE ?');
+            $checkStmt = $adminPdo->prepare('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?');
             $checkStmt->execute([$schemaName]);
             $remaining = $checkStmt->fetchColumn();
             if ($remaining !== false && $remaining !== null) {
                 $cleanupVerified = false;
-                $errors[] = "Schema '{$schemaName}' still visible in SHOW DATABASES after drop.";
+                $errors[] = "Schema '{$schemaName}' still visible in SCHEMATA after drop.";
             } else {
                 $cleanupVerified = true;
             }
@@ -764,20 +854,37 @@ $outputReport = [
     ],
     'pre_checks' => $preChecks,
     'sentinel_report' => [
-        'ambient_connection_attempts' => AmbientConnectionSentinel::$attemptCount,
-        'attempt_contexts' => AmbientConnectionSentinel::$attemptContexts,
-        'owned_pdo_verified' => true,
-        'owned_pdo_database' => $schemaName,
-        'owned_pdo_port' => 3342,
+        'status' => $sentinelInstalled ? ($observedDedicatedPdoVerified ? 'VERIFIED' : 'FAILED') : 'NOT_RUN',
+        'sentinel_installed' => $sentinelInstalled,
+        'ambient_connection_attempts' => $sentinelInstalled ? AmbientConnectionSentinel::$attemptCount : null,
+        'attempt_contexts' => $sentinelInstalled ? AmbientConnectionSentinel::$attemptContexts : [],
+        'owned_pdo_verified' => $observedDedicatedPdoVerified,
+        'owned_pdo_database' => $observedDedicatedPdoDatabase,
+        'owned_pdo_port' => $observedDedicatedPdoPort,
     ],
-    'read_only_proof' => $readOnlyProof,
+    'read_only_proof' => $observedDedicatedPdoVerified ? [
+        'status' => 'VERIFIED',
+        'innodb_trx_read_only' => $innodbTrxReadOnlyObserved,
+        'probe_mutation_denied' => $mutationDeniedObserved,
+        'denial_sqlstate' => $denialCodeObserved,
+        'denial_message' => $denialMessageObserved,
+    ] : [
+        'status' => 'NOT_RUN',
+    ],
     'pre_baseline' => $preBaseline,
     'post_baseline' => $postBaseline,
-    'baseline_comparison' => [
-        'strictly_equal' => ($postBaseline !== null && $preBaseline !== null && $postBaseline === $preBaseline),
-        'stock_movements_qty_sum_is_zero' => ($postBaseline !== null && BigDecimal::of((string) ($postBaseline['stock_movements_qty_sum'] ?? '0'))->isZero()),
+    'baseline_comparison' => ($postBaseline !== null && $preBaseline !== null) ? [
+        'status' => 'VERIFIED',
+        'strictly_equal' => ($postBaseline === $preBaseline),
+        'stock_movements_qty_sum_is_zero' => BigDecimal::of((string) ($postBaseline['stock_movements_qty_sum'] ?? '0'))->isZero(),
         'zero_deltas_verified' => $executionSuccess,
+    ] : [
+        'status' => 'NOT_RUN',
+        'strictly_equal' => false,
+        'stock_movements_qty_sum_is_zero' => false,
+        'zero_deltas_verified' => false,
     ],
+    'six_reconcilers_status' => $reconciliationReport !== null ? 'VERIFIED' : 'NOT_RUN',
     'six_reconciler_results' => $reconciliationReport,
     'cleanup_verified' => $cleanupVerified,
     'errors' => $errors,

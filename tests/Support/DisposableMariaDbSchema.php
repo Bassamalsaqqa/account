@@ -165,16 +165,31 @@ final class DisposableMariaDbSchema
             $this->proofPath = $path;
         }
 
-        return [
+        $env = [
             'PHASE8_DISPOSABLE_DB_PROOF' => $this->proofPath,
             'PHASE8_DISPOSABLE_DB_NONCE' => $this->proofNonce,
-            'APP_ENV' => 'testing', 'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-            'DB_URL' => '', 'DB_CONNECTION' => 'mysql', 'DB_HOST' => $this->settings['HOST'],
-            'DB_PORT' => $this->settings['PORT'], 'DB_USERNAME' => $this->settings['USERNAME'],
-            'DB_PASSWORD' => $this->settings['PASSWORD'], 'DB_DATABASE' => $name,
-            'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array',
+            'APP_ENV' => 'testing',
+            'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+            'PHASE8_TEST_DB_HOST' => $this->settings['HOST'],
+            'PHASE8_TEST_DB_PORT' => $this->settings['PORT'],
+            'PHASE8_TEST_DB_USERNAME' => $this->settings['USERNAME'],
+            'PHASE8_TEST_DB_PASSWORD' => $this->settings['PASSWORD'],
+            'DB_URL' => '',
+            'DB_CONNECTION' => 'mysql',
+            'DB_HOST' => $this->settings['HOST'],
+            'DB_PORT' => $this->settings['PORT'],
+            'DB_USERNAME' => $this->settings['USERNAME'],
+            'DB_PASSWORD' => $this->settings['PASSWORD'],
+            'DB_DATABASE' => $name,
+            'CACHE_STORE' => 'array',
+            'SESSION_DRIVER' => 'array',
             'APP_CONFIG_CACHE' => sys_get_temp_dir().DIRECTORY_SEPARATOR.$name.'_nonexistent_config.php',
         ];
+        if ($this->settings['PASSWORD'] === '' || getenv('PHASE8_TEST_DB_EMPTY_PASSWORD') === '1') {
+            $env['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+        }
+
+        return $env;
     }
 
     public function migrate(): void
