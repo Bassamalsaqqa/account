@@ -10,6 +10,7 @@ Root remains the sole independent witness:
 - Root inspects candidate handoff exposed in child supervisor stdout.
 - Subcommand `record-live-approval` writes live.json with ALL exact required fields
   including `root_live_handoff_approved: true`.
+- Zero worktree mutations: NEVER executes git checkout, reset, or clean.
 """
 
 import os
@@ -21,10 +22,30 @@ import datetime
 import argparse
 import subprocess
 
-DEFAULT_REPO_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-PUB_HEAD = 'b0d5965e7dc5d0e483880afa0bf3ca6a025ee3e6'
-EXE_HEAD = '360ce78408f09ecff451381e595a4ffe2f116969'
+def get_default_repo_dir():
+    # 4 dirname levels: Harness -> Support -> tests -> repo root
+    candidate = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    try:
+        git_root = subprocess.check_output(
+            ['git', 'rev-parse', '--show-toplevel'],
+            cwd=os.path.dirname(os.path.abspath(__file__))
+        ).decode().strip()
+        if os.path.isdir(git_root):
+            return git_root
+    except Exception:
+        pass
+    return candidate
+
+DEFAULT_REPO_DIR = get_default_repo_dir()
 REQUIRED_SCOPE = 'ROOT_AUTHORIZED_PAIRED_EXECUTION'
+
+def assert_not_protected_worktree(path):
+    norm = os.path.normpath(os.path.abspath(path))
+    if '7ac8' in norm or 't3-7ac8b73d' in norm:
+        raise ValueError(
+            f"Protected active Android lane path refusal ({norm}). "
+            "Paired execution requires an isolated, Root-approved worktree."
+        )
 
 def get_git_state(repo_dir):
     head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo_dir).decode().strip()
@@ -50,14 +71,14 @@ def sha256_file(filepath):
             h.update(chunk)
     return h.hexdigest()
 
-def make_prestart_json(manifest_sha, backend_head, repo_dir, expires_seconds=600):
+def make_prestart_json(manifest_sha, backend_head, pub_head, exe_head, repo_dir, expires_seconds=600):
     exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=expires_seconds)
     return {
         'root_coordination_granted': True,
         'manifest_sha256': manifest_sha,
         'backend_head': backend_head,
-        'android_publication_head': PUB_HEAD,
-        'android_executable_head': EXE_HEAD,
+        'android_publication_head': pub_head,
+        'android_executable_head': exe_head,
         'cwd': repo_dir,
         'expires_at': exp.isoformat()
     }
@@ -65,6 +86,8 @@ def make_prestart_json(manifest_sha, backend_head, repo_dir, expires_seconds=600
 def make_live_approval_json(
     manifest_sha,
     backend_head,
+    pub_head,
+    exe_head,
     schema_name,
     handoff_path,
     whole_handoff_sha256,
@@ -77,8 +100,8 @@ def make_live_approval_json(
         'root_coordination_granted': True,
         'manifest_sha256': manifest_sha,
         'backend_head': backend_head,
-        'android_publication_head': PUB_HEAD,
-        'android_executable_head': EXE_HEAD,
+        'android_publication_head': pub_head,
+        'android_executable_head': exe_head,
         'cwd': repo_dir,
         'expires_at': exp.isoformat(),
         'handoff_path': handoff_path,
@@ -87,7 +110,7 @@ def make_live_approval_json(
         'schema_name': schema_name
     }
 
-def prepare_manifest(output_dir, backend_head, repo_dir, pub_head=PUB_HEAD, exe_head=EXE_HEAD):
+def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir):
     template_path = os.path.join(repo_dir, 'docs/integration/mobile-v2-integration-manifest.json')
     with open(template_path, 'r') as f:
         manifest = json.load(f)
@@ -110,15 +133,53 @@ def cmd_prepare(args):
     run_dir = os.path.abspath(args.output_dir)
     android_dir = os.path.abspath(args.android_dir)
 
+    # Validate Android path - reject active protected lanes immediately
+    try:
+        assert_not_protected_worktree(android_dir)
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not os.path.isdir(android_dir):
+        print(f"ERROR: Android repo directory not found: {android_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    pub_head = args.android_pub_head.strip().lower()
+    exe_head = args.android_exe_head.strip().lower()
+    if len(pub_head) != 40 or len(exe_head) != 40:
+        print("ERROR: --android-pub-head and --android-exe-head must be 40-character hex SHAs", file=sys.stderr)
+        sys.exit(1)
+
+    # Read Android HEAD and verify against expected pub pin (read-only)
+    try:
+        actual_android_head = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=android_dir
+        ).decode().strip()
+    except Exception as e:
+        print(f"ERROR: Failed to read Android repo HEAD: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if actual_android_head != pub_head:
+        print(f"ERROR: Android repository HEAD ({actual_android_head}) does not match expected publication pin ({pub_head})", file=sys.stderr)
+        print("FAIL-CLOSED: Worktree checkout must not be mutated. Provide a worktree at the expected publication pin.", file=sys.stderr)
+        sys.exit(1)
+
     os.makedirs(run_dir, mode=0o700, exist_ok=True)
     os.chmod(run_dir, 0o700)
 
     backend_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo_dir).decode().strip()
     print(f"[Prepare] Target Directory: {run_dir}")
     print(f"[Prepare] Backend HEAD:     {backend_head}")
+    print(f"[Prepare] Android Dir:      {android_dir}")
+    print(f"[Prepare] Android Pub HEAD: {pub_head}")
+    print(f"[Prepare] Android Exe HEAD: {exe_head}")
 
-    # 1. Capture PRE state
-    pre_state = {'backend': get_git_state(repo_dir)}
+    # 1. Capture PRE state for BOTH repositories before any other action
+    pre_state = {
+        'backend': get_git_state(repo_dir),
+        'android': get_git_state(android_dir),
+    }
     pre_path = os.path.join(run_dir, 'pre.json')
     with open(pre_path, 'w') as f:
         json.dump(pre_state, f, indent=2)
@@ -126,11 +187,18 @@ def cmd_prepare(args):
     print(f"[Prepare] Wrote pre.json (SHA: {sha256_file(pre_path)})")
 
     # 2. Prepare pairing manifest with both pub and exe pins
-    manifest_path, manifest_sha = prepare_manifest(run_dir, backend_head, repo_dir)
+    manifest_path, manifest_sha = prepare_manifest(run_dir, backend_head, pub_head, exe_head, repo_dir)
     print(f"[Prepare] Wrote pairing-manifest.json (SHA: {manifest_sha})")
 
     # 3. Write prestart approval
-    prestart_data = make_prestart_json(manifest_sha, backend_head, repo_dir, expires_seconds=args.expires)
+    prestart_data = make_prestart_json(
+        manifest_sha,
+        backend_head,
+        pub_head,
+        exe_head,
+        repo_dir,
+        expires_seconds=args.expires
+    )
     prestart_path = os.path.join(run_dir, 'prestart.json')
     with open(prestart_path, 'w') as f:
         json.dump(prestart_data, f, indent=2)
@@ -145,8 +213,8 @@ def cmd_prepare(args):
         '--execute',
         f'--root-approval-file={prestart_path}',
         f'--root-live-approval-file={live_path}',
-        f'--android-pub-head={PUB_HEAD}',
-        f'--android-exe-head={EXE_HEAD}',
+        f'--android-pub-head={pub_head}',
+        f'--android-exe-head={exe_head}',
         f'--paired-hold-seconds={args.paired_hold}',
         f'--manifest={manifest_path}',
         f'--manifest-sha={manifest_sha}',
@@ -183,11 +251,15 @@ def cmd_record_live(args):
 
     manifest_sha = prestart['manifest_sha256']
     backend_head = prestart['backend_head']
+    pub_head = prestart['android_publication_head']
+    exe_head = prestart['android_executable_head']
     repo_dir = prestart.get('cwd', DEFAULT_REPO_DIR)
 
     live_data = make_live_approval_json(
         manifest_sha=manifest_sha,
         backend_head=backend_head,
+        pub_head=pub_head,
+        exe_head=exe_head,
         schema_name=args.schema,
         handoff_path=args.handoff_path,
         whole_handoff_sha256=args.handoff_sha,
@@ -207,6 +279,16 @@ def cmd_post_log(args):
     repo_dir = os.path.abspath(args.repo_dir)
     run_dir = os.path.abspath(args.output_dir)
     post_state = {'backend': get_git_state(repo_dir)}
+
+    if args.android_dir:
+        android_dir = os.path.abspath(args.android_dir)
+        try:
+            assert_not_protected_worktree(android_dir)
+            if os.path.isdir(android_dir):
+                post_state['android'] = get_git_state(android_dir)
+        except Exception as e:
+            print(f"[Post] Warning: Could not capture Android state: {e}", file=sys.stderr)
+
     post_path = os.path.join(run_dir, 'post.json')
     with open(post_path, 'w') as f:
         json.dump(post_state, f, indent=2)
@@ -220,6 +302,8 @@ def main():
     p_prepare = subparsers.add_parser("prepare", help="Prepare drill directory, pre.json, pairing-manifest.json, prestart.json, argv.json")
     p_prepare.add_argument("--repo-dir", default=DEFAULT_REPO_DIR, help="Backend repository directory")
     p_prepare.add_argument("--android-dir", required=True, help="Android repository directory")
+    p_prepare.add_argument("--android-pub-head", required=True, help="Root-approved peer Android publication HEAD SHA")
+    p_prepare.add_argument("--android-exe-head", required=True, help="Root-approved peer Android executable HEAD SHA")
     p_prepare.add_argument("--output-dir", required=True, help="Target drill output directory (0700)")
     p_prepare.add_argument("--expires", type=int, default=600, help="Prestart approval TTL in seconds (default: 600)")
     p_prepare.add_argument("--paired-hold", type=int, default=120, help="Paired hold seconds (default: 120)")
@@ -235,6 +319,7 @@ def main():
 
     p_post = subparsers.add_parser("post-log", help="Capture post.json after drill execution")
     p_post.add_argument("--repo-dir", default=DEFAULT_REPO_DIR, help="Backend repository directory")
+    p_post.add_argument("--android-dir", default=None, help="Android repository directory (optional)")
     p_post.add_argument("--output-dir", required=True, help="Target drill directory")
     p_post.set_defaults(func=cmd_post_log)
 

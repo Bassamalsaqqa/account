@@ -872,6 +872,21 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
+     * Asserts that a specified directory path is not an active/protected development worktree lane.
+     * Rejects any path matching protected patterns (e.g. t3-7ac8b73d / *7ac8*).
+     *
+     * @param string $path Target worktree directory path
+     * @throws RuntimeException
+     */
+    public static function assertNotProtectedWorktree(string $path): void
+    {
+        $normalized = str_replace('\\', '/', $path);
+        if (str_contains($normalized, '7ac8') || str_contains($normalized, 't3-7ac8b73d')) {
+            throw new RuntimeException("PROTECTED_WORKTREE_REFUSED: Active development lane '{$path}' must not be targeted for paired drills. An isolated, Root-approved worktree is required.");
+        }
+    }
+
+    /**
      * Snapshots environment variables across all three stores: getenv, $_ENV, and $_SERVER.
      *
      * @param  list<string>  $varNames

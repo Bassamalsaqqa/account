@@ -29,6 +29,8 @@ use Tests\Support\Harness\VerifiedOwnedSnapshot;
  * - Android evidence freshness with exact 25ae Kotlin golden fixture, rejecting alias mutations (run_id, metadata, handoffDigest).
  * - Evidence scenario enforcement (exact 7 items: 5 PASS, 2 NOT_RUN with null httpStatusCode).
  * - Structured cleanup: mandatory prevalidated owned snapshot, foreign DB port (3306) rejection, and exact schema absence verification.
+ * - Root prestart CLI pub/exe override rejection and 40-hex SHA validation.
+ * - Protected active Android worktree refusal (*7ac8* / t3-7ac8b73d) and clean isolated path acceptance.
  *
  * NOTE: Authored source tests. UNRUN pending QA lease grant.
  */
@@ -165,6 +167,142 @@ class SupervisedFinancialDrillTest extends TestCase
         $this->assertTrue($res['root_coordination_granted']);
         $this->assertSame($sameHead, $res['android_publication_head']);
         $this->assertSame($sameHead, $res['android_executable_head']);
+    }
+
+    #[Test]
+    public function test_prestart_approval_fails_closed_when_cli_pub_override_mismatches(): void
+    {
+        $filePath = $this->tempDir . '/approval.json';
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => str_repeat('2', 40),
+            'android_executable_head' => str_repeat('3', 40),
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PRESTART_APPROVAL_CLI_PUB_OVERRIDE_REFUSED');
+
+        SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('1', 40),
+            str_repeat('9', 40),
+            null,
+            $this->tempDir
+        );
+    }
+
+    #[Test]
+    public function test_prestart_approval_fails_closed_when_cli_exe_override_mismatches(): void
+    {
+        $filePath = $this->tempDir . '/approval.json';
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => str_repeat('2', 40),
+            'android_executable_head' => str_repeat('3', 40),
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PRESTART_APPROVAL_CLI_EXE_OVERRIDE_REFUSED');
+
+        SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('1', 40),
+            null,
+            str_repeat('8', 40),
+            $this->tempDir
+        );
+    }
+
+    #[Test]
+    public function test_prestart_approval_fails_closed_when_pub_head_is_invalid(): void
+    {
+        $filePath = $this->tempDir . '/approval.json';
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => 'invalid-head-non-hex',
+            'android_executable_head' => str_repeat('3', 40),
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PRESTART_APPROVAL_INVALID_PUB_HEAD');
+
+        SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('1', 40),
+            null,
+            null,
+            $this->tempDir
+        );
+    }
+
+    #[Test]
+    public function test_prestart_approval_fails_closed_when_exe_head_is_invalid(): void
+    {
+        $filePath = $this->tempDir . '/approval.json';
+        $content = [
+            'root_coordination_granted' => true,
+            'manifest_sha256' => str_repeat('a', 64),
+            'backend_head' => str_repeat('1', 40),
+            'android_publication_head' => str_repeat('2', 40),
+            'android_executable_head' => 'short-sha',
+            'cwd' => $this->tempDir,
+            'expires_at' => date('c', time() + 3600),
+        ];
+        file_put_contents($filePath, json_encode($content));
+        chmod($filePath, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PRESTART_APPROVAL_INVALID_EXE_HEAD');
+
+        SupervisedPairedFinancialDrill::verifyPrestartApproval(
+            $filePath,
+            str_repeat('a', 64),
+            str_repeat('1', 40),
+            null,
+            null,
+            $this->tempDir
+        );
+    }
+
+    #[Test]
+    public function test_assert_not_protected_worktree_rejects_active_lane(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('PROTECTED_WORKTREE_REFUSED');
+
+        SupervisedPairedFinancialDrill::assertNotProtectedWorktree(
+            '/home/t3dev/.t3/worktrees/small-trader-android/t3-7ac8b73d-abb5d6e52b3b3cf9'
+        );
+    }
+
+    #[Test]
+    public function test_assert_not_protected_worktree_accepts_clean_isolated_path(): void
+    {
+        SupervisedPairedFinancialDrill::assertNotProtectedWorktree(
+            '/home/t3dev/.t3/worktrees/small-trader-android/t3-c8dda700-isolated'
+        );
+        $this->assertTrue(true);
     }
 
     #[Test]

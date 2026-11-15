@@ -69,6 +69,7 @@ foreach (array_slice($argvList, 1) as $arg) {
         $rootLiveApprovalFile = substr($arg, 26);
     } elseif (str_starts_with($arg, '--android-repo-dir=')) {
         $androidRepoDir = substr($arg, 19);
+        SupervisedPairedFinancialDrill::assertNotProtectedWorktree($androidRepoDir);
     } elseif (str_starts_with($arg, '--output-dir=')) {
         $customOutputDir = substr($arg, 13);
     } elseif ($arg === '--help' || $arg === '-h') {
@@ -507,6 +508,7 @@ try {
 
     // 12. Execute Android Test Under Host JVM (Strictly 7 Approved Env Vars, Bounded Timeout)
     $targetAndroidDir = $androidRepoDir ?? $repoRoot . '/../android';
+    SupervisedPairedFinancialDrill::assertNotProtectedWorktree($targetAndroidDir);
     if (! is_dir($targetAndroidDir)) {
         throw new \RuntimeException("Android repo directory not found at '{$targetAndroidDir}'.");
     }
