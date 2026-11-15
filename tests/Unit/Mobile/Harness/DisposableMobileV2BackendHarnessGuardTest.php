@@ -1559,18 +1559,17 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'product_unit_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
             'tax_rate_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
             'cash_account_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+            'sample_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
         ];
 
-        $rawWireSample = [
-            'raw_wire_payload_json' => '{"sample":true}',
-            'raw_wire_payload_sha256' => hash('sha256', '{"sample":true}'),
-            'parsed_request' => [
-                'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
-                'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
-                'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
-                'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
-                'currency' => 'ILS',
-                'lines' => [[
+        $sampleRequest = [
+            'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'currency' => 'ILS',
+            'lines' => [
+                [
                     'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
                     'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
                     'conversion_to_base' => '1.000000',
@@ -1579,13 +1578,13 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                     'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
                     'tax_rate' => '16.000000',
                     'tax_inclusive' => false,
-                ]],
-                'payment' => [
-                    'settlement_mode' => 'full',
-                    'payment_method' => 'cash',
-                    'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
-                    'amount' => '58.000000',
                 ],
+            ],
+            'payment' => [
+                'settlement_mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                'amount' => '58.000000',
             ],
         ];
 
@@ -1595,17 +1594,29 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'currency_minor_units' => 2,
         ];
 
+        // Authoritatively serialize wire JSON using CanonicalJsonSerializer
+        $rawWireJson = CanonicalJsonSerializer::serialize($sampleRequest);
+        $rawWireSample = [
+            'raw_wire_payload_json' => $rawWireJson,
+            'raw_wire_payload_sha256' => hash('sha256', $rawWireJson),
+            'parsed_request' => $sampleRequest,
+        ];
+
+        // Authoritatively compute canonical intent profile digest
+        $profile = OnlineSaleIntentProfile::construct($serverContext, $sampleRequest);
+        $canonicalDigest = OnlineSaleIntentProfile::computeDigest($profile);
+
         $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
             runtimePins: $runtimePins,
             fixture: $fixture,
-            credentialsPath: '/tmp/test_credentials.json',
+            credentialsPath: '/tmp/test/runtime_credentials.json',
             rawWireSample: $rawWireSample,
             serverContext: $serverContext,
-            canonicalDigest: str_repeat('a', 64),
+            canonicalDigest: $canonicalDigest,
             handoffScope: DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY,
             lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
-            createdAt: now()->toIso8601String(),
-            expiresAt: now()->addHours(1)->toIso8601String(),
+            createdAt: '2026-11-14T17:00:00+02:00',
+            expiresAt: '2026-11-14T18:00:00+02:00',
         );
 
         // Assert G1 tree is admitted

@@ -843,7 +843,7 @@ class SupervisedFinancialDrillTest extends TestCase
     public function test_from_live_ownership_rejects_harness_dir_inside_repo(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $insideHarness = $repoRoot . '/tests/fixtures_dummy_dir_' . bin2hex(random_bytes(4));
+        $insideHarness = $repoRoot . '/tests/v2_harness_' . bin2hex(random_bytes(8));
         mkdir($insideHarness, 0700, true);
 
         $proofFile = $this->tempDir . '/proof.txt';
