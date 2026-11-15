@@ -2033,6 +2033,51 @@ class SupervisedFinancialDrillTest extends TestCase
         }
     }
 
+    #[Test]
+    public function test_preserve_available_partial_failure_evidence(): void
+    {
+        $outputDir = $this->tempDir . '/partial_evidence_test_out';
+        mkdir($outputDir, 0700, true);
+
+        // 1. When files are absent, handles gracefully
+        $emptyResult = SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
+            outputDir: $outputDir,
+            evidenceFile: null,
+            targetAndroidDir: null
+        );
+        $this->assertFalse($emptyResult['evidence_preserved']);
+        $this->assertFalse($emptyResult['xml_preserved']);
+
+        // 2. Setup mock evidence file and mock Android build xml
+        $mockEvidence = $this->tempDir . '/mock-client-evidence.json';
+        file_put_contents($mockEvidence, '{"partial": true}');
+
+        $mockAndroidDir = $this->tempDir . '/mock_android_repo';
+        $mockXmlDir = $mockAndroidDir . '/app/build/test-results/testDebugUnitTest';
+        mkdir($mockXmlDir, 0700, true);
+        $mockXml = $mockXmlDir . '/TEST-SmokeTest.xml';
+        file_put_contents($mockXml, '<testsuite name="SmokeTest" tests="2"/>');
+
+        $result = SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
+            outputDir: $outputDir,
+            evidenceFile: $mockEvidence,
+            targetAndroidDir: $mockAndroidDir
+        );
+
+        $this->assertTrue($result['evidence_preserved']);
+        $this->assertTrue($result['xml_preserved']);
+        $this->assertFileExists($outputDir . '/paired-online-cash-pilot-evidence.json');
+        $this->assertFileExists($outputDir . '/junit-test-report.xml');
+
+        $evidencePerms = fileperms($outputDir . '/paired-online-cash-pilot-evidence.json') & 0777;
+        $xmlPerms = fileperms($outputDir . '/junit-test-report.xml') & 0777;
+        $this->assertSame(0600, $evidencePerms);
+        $this->assertSame(0600, $xmlPerms);
+
+        $this->assertSame('{"partial": true}', file_get_contents($outputDir . '/paired-online-cash-pilot-evidence.json'));
+        $this->assertSame('<testsuite name="SmokeTest" tests="2"/>', file_get_contents($outputDir . '/junit-test-report.xml'));
+    }
+
     // ---------------------------------------------------------------------------
     // Private helper: create a valid VerifiedOwnedSnapshot via fromLiveOwnership()
     // with synthetic proof fixture and scoped env that satisfies assertPrimarySchema.

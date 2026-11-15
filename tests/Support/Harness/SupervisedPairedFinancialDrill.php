@@ -630,6 +630,76 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
+     * Preserves any available partial client evidence or JUnit XML test reports
+     * in the private output directory upon drill completion or failure, setting mode 0600.
+     * This ensures raw diagnostics are never lost even on JVM timeout or assertion failure.
+     * Note: Calling this does NOT validate freshness or claim test success.
+     *
+     * @param  string  $outputDir  Private output directory
+     * @param  string|null  $evidenceFile  Path to candidate client evidence JSON
+     * @param  string|null  $targetAndroidDir  Path to Android repository checkout
+     * @return array{evidence_preserved: bool, xml_preserved: bool, evidence_path: ?string, xml_path: ?string}
+     */
+    public static function preserveAvailablePartialFailureEvidence(
+        string $outputDir,
+        ?string $evidenceFile = null,
+        ?string $targetAndroidDir = null
+    ): array {
+        $result = [
+            'evidence_preserved' => false,
+            'xml_preserved' => false,
+            'evidence_path' => null,
+            'xml_path' => null,
+        ];
+
+        if (! is_dir($outputDir)) {
+            return $result;
+        }
+
+        // 1. Partial client evidence JSON
+        $retainedEvidencePath = $outputDir . '/paired-online-cash-pilot-evidence.json';
+        if (! is_file($retainedEvidencePath) && $evidenceFile !== null && is_file($evidenceFile)) {
+            if (@copy($evidenceFile, $retainedEvidencePath)) {
+                @chmod($retainedEvidencePath, 0600);
+                $result['evidence_preserved'] = true;
+                $result['evidence_path'] = $retainedEvidencePath;
+            }
+        } elseif (is_file($retainedEvidencePath)) {
+            @chmod($retainedEvidencePath, 0600);
+            $result['evidence_preserved'] = true;
+            $result['evidence_path'] = $retainedEvidencePath;
+        }
+
+        // 2. Partial JUnit XML test report
+        $retainedXmlPath = $outputDir . '/junit-test-report.xml';
+        if (! is_file($retainedXmlPath) && $targetAndroidDir !== null && is_dir($targetAndroidDir)) {
+            $possibleXmlDirs = [
+                $targetAndroidDir . '/app/build/test-results/testDebugUnitTest',
+                $targetAndroidDir . '/build/test-results/testDebugUnitTest',
+            ];
+            foreach ($possibleXmlDirs as $d) {
+                if (is_dir($d)) {
+                    $files = glob($d . '/*.xml');
+                    if (! empty($files) && is_file($files[0])) {
+                        if (@copy($files[0], $retainedXmlPath)) {
+                            @chmod($retainedXmlPath, 0600);
+                            $result['xml_preserved'] = true;
+                            $result['xml_path'] = $retainedXmlPath;
+                            break;
+                        }
+                    }
+                }
+            }
+        } elseif (is_file($retainedXmlPath)) {
+            @chmod($retainedXmlPath, 0600);
+            $result['xml_preserved'] = true;
+            $result['xml_path'] = $retainedXmlPath;
+        }
+
+        return $result;
+    }
+
+    /**
      * Checks remaining child deadline. Fails closed if expired or below safe minimum.
      *
      * @param  float  $deadline  Deadline timestamp in float seconds

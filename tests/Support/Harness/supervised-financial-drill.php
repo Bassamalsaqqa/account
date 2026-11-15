@@ -557,14 +557,30 @@ try {
     echo "\nExecuting Android client under host JVM (timeout: {$gradleTimeout}s)...\n";
     $gradleProc = new Process($gradleCmd, $targetAndroidDir, $gradleEnv, null, $gradleTimeout);
 
-    $rawGradleOutput = '';
-    $gradleProc->run(function ($type, $buffer) use (&$rawGradleOutput): void {
-        $rawGradleOutput .= $buffer;
-    });
-
     $rawLogPath = $outputDir . '/raw_android_test_output.log';
-    file_put_contents($rawLogPath, $rawGradleOutput);
-    chmod($rawLogPath, 0600);
+    $rawLogHandle = @fopen($rawLogPath, 'wb');
+    if ($rawLogHandle !== false) {
+        @chmod($rawLogPath, 0600);
+    }
+
+    $rawGradleOutput = '';
+    try {
+        $gradleProc->run(function ($type, $buffer) use (&$rawGradleOutput, $rawLogHandle): void {
+            $rawGradleOutput .= $buffer;
+            if ($rawLogHandle !== false) {
+                @fwrite($rawLogHandle, $buffer);
+                @fflush($rawLogHandle);
+            }
+        });
+    } finally {
+        if ($rawLogHandle !== false) {
+            @fclose($rawLogHandle);
+            $rawLogHandle = false;
+        }
+        if (is_file($rawLogPath)) {
+            @chmod($rawLogPath, 0600);
+        }
+    }
 
     if (! $gradleProc->isSuccessful()) {
         throw new \RuntimeException("Android test execution failed with exit code " . $gradleProc->getExitCode() . ".");
@@ -748,6 +764,17 @@ try {
 } finally {
     if (! $cleanupExecuted) {
         $cleanupExecuted = true;
+
+        // Preserve any available partial evidence/XML in outputDir even on failure (never claiming fresh PASS)
+        try {
+            SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
+                outputDir: $outputDir,
+                evidenceFile: $evidenceFile ?? null,
+                targetAndroidDir: $targetAndroidDir ?? null
+            );
+        } catch (\Throwable $preserveThrowable) {
+            fwrite(STDERR, "\n[Evidence Preservation Note] Failed to copy partial evidence: " . $preserveThrowable->getMessage() . "\n");
+        }
 
         // Compute signal exit code BEFORE cleanup and witness persistence so that
         // the witness accurately records the true abort status.
