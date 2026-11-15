@@ -1257,6 +1257,57 @@ final class DisposableFinancialPostRunInspector
     }
 
     /**
+     * Canonicalizes raw baseline metrics into the authoritative deterministic schema.
+     *
+     * @param  int  $companyId
+     * @param  string  $schemaName
+     * @param  array<string, mixed>  $baseline
+     * @return array<string, mixed>
+     */
+    public static function canonicalizeBaselineMetrics(int $companyId, string $schemaName, array $baseline): array
+    {
+        return [
+            'company_id' => $companyId,
+            'schema_name' => $schemaName,
+            'sales_invoices' => (int) ($baseline['sales_invoices'] ?? 0),
+            'sales_invoices_max_id' => (int) ($baseline['sales_invoices_max_id'] ?? 0),
+            'sales_invoice_lines' => (int) ($baseline['sales_invoice_lines'] ?? 0),
+            'sales_invoice_lines_max_id' => (int) ($baseline['sales_invoice_lines_max_id'] ?? 0),
+            'sales_invoice_lot_allocations' => (int) ($baseline['sales_invoice_lot_allocations'] ?? 0),
+            'sales_invoice_lot_allocations_max_id' => (int) ($baseline['sales_invoice_lot_allocations_max_id'] ?? 0),
+            'customer_payments' => (int) ($baseline['customer_payments'] ?? 0),
+            'customer_payments_max_id' => (int) ($baseline['customer_payments_max_id'] ?? 0),
+            'customer_payment_allocations' => (int) ($baseline['customer_payment_allocations'] ?? 0),
+            'customer_payment_allocations_max_id' => (int) ($baseline['customer_payment_allocations_max_id'] ?? 0),
+            'mobile_event_receipts' => (int) ($baseline['mobile_event_receipts'] ?? 0),
+            'mobile_event_receipts_max_id' => (int) ($baseline['mobile_event_receipts_max_id'] ?? 0),
+            'stock_movements' => (int) ($baseline['stock_movements'] ?? 0),
+            'stock_movements_max_id' => (int) ($baseline['stock_movements_max_id'] ?? 0),
+            'stock_movements_qty_sum' => (string) ($baseline['stock_movements_qty_sum'] ?? '0.000000'),
+            'posting_batches' => (int) ($baseline['posting_batches'] ?? 0),
+            'posting_batches_max_id' => (int) ($baseline['posting_batches_max_id'] ?? 0),
+            'posting_lines' => (int) ($baseline['posting_lines'] ?? 0),
+            'posting_lines_max_id' => (int) ($baseline['posting_lines_max_id'] ?? 0),
+            'document_sequences' => $baseline['document_sequences'] ?? [],
+        ];
+    }
+
+    /**
+     * Computes the authoritative canonical baseline metrics SHA-256 hash.
+     *
+     * @param  int  $companyId
+     * @param  string  $schemaName
+     * @param  array<string, mixed>  $baseline
+     * @return string 64-hex SHA-256 hash
+     */
+    public static function computeCanonicalBaselineHash(int $companyId, string $schemaName, array $baseline): string
+    {
+        $canonical = self::canonicalizeBaselineMetrics($companyId, $schemaName, $baseline);
+
+        return hash('sha256', (string) json_encode($canonical, JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
      * Composes a complete, bounded, deterministic Trusted DB Inspection Report
      * from verified baseline, delta, and reconciliation results.
      * Generates a root-pinnable canonical report digest over deterministic metrics.
@@ -1292,30 +1343,11 @@ final class DisposableFinancialPostRunInspector
         }
 
         // Canonical baseline metrics hash
-        $canonicalBaseline = [
-            'company_id' => (int) $metadata['companyId'],
-            'schema_name' => (string) $metadata['schemaName'],
-            'sales_invoices' => (int) ($baseline['sales_invoices'] ?? 0),
-            'sales_invoices_max_id' => (int) ($baseline['sales_invoices_max_id'] ?? 0),
-            'sales_invoice_lines' => (int) ($baseline['sales_invoice_lines'] ?? 0),
-            'sales_invoice_lines_max_id' => (int) ($baseline['sales_invoice_lines_max_id'] ?? 0),
-            'sales_invoice_lot_allocations' => (int) ($baseline['sales_invoice_lot_allocations'] ?? 0),
-            'sales_invoice_lot_allocations_max_id' => (int) ($baseline['sales_invoice_lot_allocations_max_id'] ?? 0),
-            'customer_payments' => (int) ($baseline['customer_payments'] ?? 0),
-            'customer_payments_max_id' => (int) ($baseline['customer_payments_max_id'] ?? 0),
-            'customer_payment_allocations' => (int) ($baseline['customer_payment_allocations'] ?? 0),
-            'customer_payment_allocations_max_id' => (int) ($baseline['customer_payment_allocations_max_id'] ?? 0),
-            'mobile_event_receipts' => (int) ($baseline['mobile_event_receipts'] ?? 0),
-            'mobile_event_receipts_max_id' => (int) ($baseline['mobile_event_receipts_max_id'] ?? 0),
-            'stock_movements' => (int) ($baseline['stock_movements'] ?? 0),
-            'stock_movements_max_id' => (int) ($baseline['stock_movements_max_id'] ?? 0),
-            'stock_movements_qty_sum' => (string) ($baseline['stock_movements_qty_sum'] ?? '0.000000'),
-            'posting_batches' => (int) ($baseline['posting_batches'] ?? 0),
-            'posting_batches_max_id' => (int) ($baseline['posting_batches_max_id'] ?? 0),
-            'posting_lines' => (int) ($baseline['posting_lines'] ?? 0),
-            'posting_lines_max_id' => (int) ($baseline['posting_lines_max_id'] ?? 0),
-            'document_sequences' => $baseline['document_sequences'] ?? [],
-        ];
+        $canonicalBaseline = self::canonicalizeBaselineMetrics(
+            (int) $metadata['companyId'],
+            (string) $metadata['schemaName'],
+            $baseline
+        );
         $baselineHash = hash('sha256', (string) json_encode($canonicalBaseline, JSON_UNESCAPED_SLASHES));
 
         $isDeltaValid = (bool) ($deltaResult['is_canonical_delta_valid'] ?? false);

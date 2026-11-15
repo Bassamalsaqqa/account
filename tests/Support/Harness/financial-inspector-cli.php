@@ -12,6 +12,7 @@ use Tests\Support\Harness\DisposableFinancialPostRunInspector;
 $argvList = $_SERVER['argv'] ?? [];
 
 $isBaseline = false;
+$isComputeBaselineHash = false;
 $isInspectDelta = false;
 $isReconcile = false;
 $isComposeTrustedReport = false;
@@ -39,6 +40,8 @@ $expectedScope = null;
 foreach ($argvList as $arg) {
     if ($arg === '--baseline' || $arg === '--capture-baseline') {
         $isBaseline = true;
+    } elseif ($arg === '--compute-baseline-hash') {
+        $isComputeBaselineHash = true;
     } elseif ($arg === '--inspect-delta') {
         $isInspectDelta = true;
     } elseif ($arg === '--reconcile') {
@@ -105,9 +108,37 @@ if ($credentialsFile !== null) {
 }
 
 // Default NO-EXECUTE: If no valid action flag is provided, exit non-zero without touching DB.
-if (! $isBaseline && ! $isInspectDelta && ! $isReconcile && ! $isComposeTrustedReport && $evidenceFile === null) {
-    fwrite(STDERR, "Error: Inspector defaults to NO-EXECUTE. Specify --baseline, --inspect-delta, --reconcile, --compose-trusted-report, or --validate-evidence=<file>.\n");
+if (! $isBaseline && ! $isComputeBaselineHash && ! $isInspectDelta && ! $isReconcile && ! $isComposeTrustedReport && $evidenceFile === null) {
+    fwrite(STDERR, "Error: Inspector defaults to NO-EXECUTE. Specify --baseline, --compute-baseline-hash, --inspect-delta, --reconcile, --compose-trusted-report, or --validate-evidence=<file>.\n");
     exit(1);
+}
+
+// Action 0: Compute Canonical Baseline Hash (pure computation, zero DB access)
+if ($isComputeBaselineHash) {
+    if ($baselineFile === null || ! is_file($baselineFile)) {
+        fwrite(STDERR, "Error: --compute-baseline-hash requires valid --baseline-file=<path>.\n");
+        exit(1);
+    }
+    if ($schemaName === null || $schemaName === '') {
+        fwrite(STDERR, "Error: --compute-baseline-hash requires --schema=<string>.\n");
+        exit(1);
+    }
+    if ($companyId === null || $companyId <= 0) {
+        fwrite(STDERR, "Error: --compute-baseline-hash requires --company-id=<int>.\n");
+        exit(1);
+    }
+    $baselineData = json_decode((string) file_get_contents($baselineFile), true);
+    if (! is_array($baselineData)) {
+        fwrite(STDERR, "Error: Baseline file does not contain valid JSON.\n");
+        exit(1);
+    }
+    $hash = DisposableFinancialPostRunInspector::computeCanonicalBaselineHash($companyId, $schemaName, $baselineData);
+    if ($outputFile !== null) {
+        file_put_contents($outputFile, $hash."\n");
+    } else {
+        fwrite(STDOUT, $hash."\n");
+    }
+    exit(0);
 }
 
 // Action 1: Pure Evidence JSON Validation (zero DB access)
