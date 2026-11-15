@@ -49,6 +49,12 @@ spec = importlib.util.spec_from_file_location("operator_driver", OPERATOR_PATH)
 operator_driver = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(operator_driver)
 
+ROOT_TOOL_PATH = os.path.join(REPO_ROOT, 'tests/Support/Harness/root-operator-tool.py')
+assert os.path.isfile(ROOT_TOOL_PATH), f"Root operator tool not found at {ROOT_TOOL_PATH}"
+spec_tool = importlib.util.spec_from_file_location("root_operator_tool", ROOT_TOOL_PATH)
+root_operator_tool = importlib.util.module_from_spec(spec_tool)
+spec_tool.loader.exec_module(root_operator_tool)
+
 
 class TestSupervisedPairedDrillOperator(unittest.TestCase):
 
@@ -839,6 +845,71 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             operator_driver.verify_peer_clean_or_baseline_status(android_dir, rec_file, rec_sha)
         self.assertIn("is not in approved peer output artifact allowlist", str(ctx.exception))
+
+    def test_prepare_manifest_refuses_mismatched_template_source_pin_without_writing_manifest_or_approval(self):
+        # Create a throwaway output directory
+        out_dir = os.path.join(self.test_dir, 'prepare_pin_mismatch_test')
+        os.makedirs(out_dir, mode=0o700)
+
+        # Read genuine template and tamper one of the 4 source pins (guard_test_sha256)
+        template_source_path = os.path.join(REPO_ROOT, 'docs/integration/mobile-v2-integration-manifest.json')
+        with open(template_source_path, 'r') as f:
+            template_data = json.load(f)
+
+        tampered_data = dict(template_data)
+        tampered_data['guard_test_sha256'] = 'f' * 64
+
+        tampered_template_path = os.path.join(self.test_dir, 'tampered_manifest_template.json')
+        with open(tampered_template_path, 'w') as f:
+            json.dump(tampered_data, f)
+        os.chmod(tampered_template_path, 0o600)
+
+        backend_head = 'a' * 40
+        pub_head = 'b' * 40
+        exe_head = 'c' * 40
+
+        # Must raise ValueError on stale/mismatched template pin BEFORE writing manifest or approval
+        with self.assertRaises(ValueError) as ctx:
+            root_operator_tool.prepare_manifest(
+                out_dir,
+                backend_head,
+                pub_head,
+                exe_head,
+                REPO_ROOT,
+                template_path=tampered_template_path
+            )
+        self.assertIn("Source pin mismatch vs manifest template", str(ctx.exception))
+        self.assertIn("Guard test", str(ctx.exception))
+
+        # Critical: Assert that NEITHER pairing-manifest.json NOR prestart.json was written
+        pairing_manifest_file = os.path.join(out_dir, 'pairing-manifest.json')
+        prestart_file = os.path.join(out_dir, 'prestart.json')
+        self.assertFalse(os.path.exists(pairing_manifest_file), "pairing-manifest.json must not be written on pin mismatch")
+        self.assertFalse(os.path.exists(prestart_file), "prestart.json must not be written on pin mismatch")
+
+    def test_prepare_manifest_succeeds_when_template_source_pins_match(self):
+        out_dir = os.path.join(self.test_dir, 'prepare_pin_match_test')
+        os.makedirs(out_dir, mode=0o700)
+
+        backend_head = 'a' * 40
+        pub_head = 'b' * 40
+        exe_head = 'c' * 40
+
+        manifest_path, manifest_sha = root_operator_tool.prepare_manifest(
+            out_dir,
+            backend_head,
+            pub_head,
+            exe_head,
+            REPO_ROOT
+        )
+        self.assertTrue(os.path.isfile(manifest_path))
+        self.assertEqual(len(manifest_sha), 64)
+        with open(manifest_path, 'r') as f:
+            prepared = json.load(f)
+        self.assertEqual(prepared['backend_execution_head_sha'], backend_head)
+        self.assertEqual(prepared['peer_android_approved_head_sha'], pub_head)
+        self.assertEqual(prepared['peer_android_executable_head_sha'], exe_head)
+        self.assertEqual(prepared['status'], root_operator_tool.REQUIRED_SCOPE)
 
 
 if __name__ == '__main__':

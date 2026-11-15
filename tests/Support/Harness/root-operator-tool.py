@@ -176,10 +176,43 @@ def make_live_approval_json(
         'schema_name': schema_name
     }
 
-def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir):
-    template_path = os.path.join(repo_dir, 'docs/integration/mobile-v2-integration-manifest.json')
+REQUIRED_SOURCE_PINS = [
+    ('source_fixture_sha256', 'tests/Support/Harness/DisposableMobileV2BackendHarness.php', 'Source fixture'),
+    ('guard_test_sha256', 'tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php', 'Guard test'),
+    ('cli_command_sha256', 'tests/Support/Harness/MobileV2HarnessCommand.php', 'CLI command'),
+    ('cli_runner_sha256', 'tests/Support/Harness/mobile-v2-harness-cli.php', 'CLI runner'),
+]
+
+def verify_template_source_pins(manifest_data, repo_dir):
+    """
+    Verifies that the four template source pins match actual on-disk source hashes.
+    Fails closed if the manifest template is stale, unreviewed, or tampered.
+    Never auto-refreshes silently against unreviewed source.
+    """
+    for pin_key, rel_path, label in REQUIRED_SOURCE_PINS:
+        full_path = os.path.join(repo_dir, rel_path)
+        validate_no_symlink_components(full_path, f"Template source pin target {rel_path}")
+        if not os.path.isfile(full_path):
+            raise RuntimeError(f"Source pin target not found: {rel_path}")
+        actual_sha = sha256_file(full_path)
+        template_sha = manifest_data.get(pin_key)
+        if not template_sha:
+            raise ValueError(f"Manifest template is missing required source pin: '{pin_key}'")
+        if actual_sha != template_sha:
+            raise ValueError(
+                f"Source pin mismatch vs manifest template for {label} ({rel_path}): "
+                f"manifest template has '{template_sha}', but actual source hash is '{actual_sha}'"
+            )
+
+def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir, template_path=None):
+    if template_path is None:
+        template_path = os.path.join(repo_dir, 'docs/integration/mobile-v2-integration-manifest.json')
+    validate_no_symlink_components(template_path, "Manifest template path")
     with open(template_path, 'r') as f:
         manifest = json.load(f)
+
+    # Validate source pins BEFORE modifying or writing pairing-manifest.json / prestart approvals
+    verify_template_source_pins(manifest, repo_dir)
 
     manifest['backend_execution_head_sha'] = backend_head
     manifest['peer_android_approved_head_sha'] = pub_head
@@ -274,7 +307,11 @@ def cmd_prepare(args):
         print(f"[Prepare] Wrote pre.json (SHA: {sha256_file(pre_path)})")
 
     # 2. Prepare pairing manifest with both pub and exe pins
-    manifest_path, manifest_sha = prepare_manifest(run_dir, backend_head, pub_head, exe_head, repo_dir)
+    try:
+        manifest_path, manifest_sha = prepare_manifest(run_dir, backend_head, pub_head, exe_head, repo_dir)
+    except (ValueError, RuntimeError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
     print(f"[Prepare] Wrote pairing-manifest.json (SHA: {manifest_sha})")
 
     # 3. Write prestart approval

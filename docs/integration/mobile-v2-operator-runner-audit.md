@@ -124,7 +124,7 @@ All components verified in the backend worktree at HEAD:
 
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
-| `tests/Support/Harness/root-operator-tool.py` | `9f6930b63dc3d267b4472b0432f392bc997f6746446c9920a1e5b012c5d3fc5c` | Tool (Python 3) |
+| `tests/Support/Harness/root-operator-tool.py` | `1743d7f2b1c33d54edb7b6bfefd5cb6ec8022f301f3f4b08d7e680e71bb72906` | Tool (Python 3) |
 | `tests/Support/Harness/supervised-paired-drill-operator.py` | `62a28f7d4a635cf4a03539c13ddf4a0184fee248e6bcfb9cbc727cde5b7660ff` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
@@ -137,8 +137,8 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `1a4042ccf8c11ad7c42a05496bd205fac9ab751ff266f2f8038e5b8501f4c19d` | Python Unit Suite (41 tests) |
-| `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `4bc72084eeea3de269386f0f0333fcd76c6b787616524d21ef6c4b90b618feac` | Python Unit Suite (43 tests) |
+| `docs/integration/mobile-v2-integration-manifest.json` | `57a8df3f90717fbd23dc62261c0f57556d6e97f4ac589b7ce30490bcb901b714` | Manifest Template |
 
 ---
 
@@ -537,6 +537,26 @@ To resolve this cleanly without compromising safety:
 | | `root-peer-baseline-tests-637e0hae/argv.json` | `9dcf016d8008f963206c81ccc1d7fd66a1d770b39aa3a05b2040aa24ffd44633` |
 | | `root-peer-baseline-tests-637e0hae/pre.json` | `3e1ed88b25fe54756b4715a05f7e5f041c4395a1b1fecd3908da1c8aeb59025b` |
 | | `root-peer-baseline-tests-637e0hae/post.json` | `3e1ed88b25fe54756b4715a05f7e5f041c4395a1b1fecd3908da1c8aeb59025b` |
+| **Root Peer Baseline Tests 3 (41 PASS 100%)** | `root-peer-baseline-tests-5ffzs54_/raw.log` | `005657729f8a89d1ecfc9b7a8644dc45ccf6f3c5a28570be0b471435441d02db` |
+| | `root-peer-baseline-tests-5ffzs54_/exit.json` | `ed4b371d6ad6a203a8caa2b12242a920b48f8b1daf223f4860d2ea9fa299fbc1` |
+| | `root-peer-baseline-tests-5ffzs54_/argv.json` | `9dcf016d8008f963206c81ccc1d7fd66a1d770b39aa3a05b2040aa24ffd44633` |
+| | `root-peer-baseline-tests-5ffzs54_/pre.json` | `1f19c78217936fb49a76c3bd08b1cea65732f22086310c04e40bd5f6c024fe3b` |
+| | `root-peer-baseline-tests-5ffzs54_/post.json` | `1f19c78217936fb49a76c3bd08b1cea65732f22086310c04e40bd5f6c024fe3b` |
+| **Root Case 6 Binding (Verified)** | `peer_binding_d43_case6_verified/binding.json` | `e296b0be56f0ccebd37adbb7f7c6a45bc0f170beacdd72e60dbf560bd046fe6a` |
+| **Root Case 6 Prewarm (SUCCESS 41.983s / operator 43.338s)** | `root-d43-case6-prewarm/operator_execution.log` | `12e209b4834f48f2ecedd3870f8ed99ce7f5c8bf1a2c4920ff8fa2bf73247408` |
+| | `root-d43-case6-prewarm/exit_metadata.json` | `76331ecf00233b18a499e0854dff308236187208bc1b2671ad18c17cc20993c8` |
+| | `root-d43-case6-prewarm/argv.json` | `cd1e7eb44dbdac930a7903a15800a9006d70ee1eaed32d1131e2a1edc49fcb7e` |
+| | `root-d43-case6-prewarm/pre.json` | `2507f37df6748d7f169ae3cc46f497ab77f9b08d067f183004cf9ad59b0b2bb9` |
+| | `root-d43-case6-prewarm/post.json` | `26b42844e88e08d21422106d140a0ea3e1554142147f74c08a08045a41e5451f` |
+| **Root Case 6 Preparation** | `root-d43-case6-prep/pairing-manifest.json` | `a1f01a06482962ff5b475996a1a5bd284e6ba7d8f5f3999a4d2e57dfdb7dbdd5` |
+| | `root-d43-case6-prep/prestart.json` | `65f0e7cc44f33145cd222722e442c4482bb14acab38faeeabccc091541475a24` |
+| | `root-d43-case6-prep/argv.json` | `e44dbc555d01a6a146078bd8838d746c7478e095f01b5caa8467b06159b9ff90` |
+| | `root-d43-case6-prep/pre.json` | `becc28dba2184e702632cdc01d18be0ed8af8511ac451df4fc80aaa4577743e5` |
+| **Root Case 6 Execution (Prestartup Refusal)** | `root-d43-case6-exec/operator_execution.log` | `fed8f6bad8348a0b666e0b1e0ab977e3ca0dd05d0e0b0790e44229c550dee7f0` |
+| | `root-d43-case6-exec/exit_metadata.json` | `865a67c9a7d20b86cfe6b99922bf913c5518ac2e561184e85cb6bf41fa0ed4fa` |
+| | `root-d43-case6-exec/argv.json` | `15d091c4d6804722cd24c7cf29f28433b7a6dff53e762e791e0c19bc8ab54711` |
+| | `root-d43-case6-exec/pre.json` | `dcec88087b48810b8b8f5b79c974de2224ac7424489cf2f3ecf85db57bc6075c` |
+| | `root-d43-case6-exec/post.json` | `7f7c41cc2ded4c5bba72af5df4083a84801efe84ea837bdfd559ecf14bb68c9e` |
 
 ---
 
@@ -883,7 +903,83 @@ Authored 11 comprehensive throwaway fixture tests in `tests/Unit/Harness/test_su
   - Remediated by narrowing `test_peer_baseline_record_fails_on_symlink_artifact` to expect exact `ValueError` with `"contains a symlink component"`.
   - Security helper preserved without alteration; exception catching is exact (no broad `Exception` or tuples).
   - Comprehensive inspection of all remaining unit tests confirmed exact exception types, error texts, and guard ordering match their invoked helpers.
-  - All 41 tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root review.
+
+#### 8. Root Execution `root-peer-baseline-tests-5ffzs54_` (100% PASS: 41/41)
+- **Run ID**: `root-peer-baseline-tests-5ffzs54_`
+- **Commit**: `89b5998380b014917988ae5da8cb6b851c5d8be2`
+- **Command**: `python3 -B -m unittest -f tests/Unit/Harness/test_supervised_paired_drill_operator.py`
+- **Exit Code**: `0` (100% PASS)
+- **Results**: Ran 41 tests in 1.696s (**41 PASS, 0 failures, 0 errors, 0 skipped**).
+- **Elapsed Time**: 2.067s.
+- **Repository Invariance**: Pre/post source, HEAD, and git status hashes 100% matched in backend repository (`invariance: true`; pure backend execution, Android worktree untouched).
+- **Retained Evidence**: `/home/t3dev/.t3/userdata/attachments/root-peer-baseline-tests-5ffzs54_` (0700 dir, 0600 files: `raw.log`, `exit.json`, `argv.json`, `pre.json`, `post.json`).
+
+---
+
+## 16. Attempt 6 Paired Financial Drill Preflight, Template Pin Stale Refusal & Preparation Guard
+
+### 16.1 T3-Bound Verified Peer Android Worktree & Binding Provenance
+- **Peer Android Worktree Path**: `/home/t3dev/.t3/worktrees/small-trader-android/t3-389ae354-cb580f901287f02b`
+- **Git Heads**: Publication HEAD `d43d2c200b4ccce1d7075aed759f51529375d307`, Executable HEAD `82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd`.
+- **Branch**: `verify-worktree-parity` (clean worktree status, 0 uncommitted/untracked files).
+- **Tree Verification**: Canonical 203 files SHA-256 `7daf6967a6951506ad47d4fa65d5b141020ddb4d97e29e5033c7b3d94c41e918`; all 622 tree map Root-verified.
+- **Root Binding Record**: `/home/t3dev/.t3/userdata/attachments/peer_binding_d43_case6_verified/binding.json` (SHA-256 `e296b0be56f0ccebd37adbb7f7c6a45bc0f170beacdd72e60dbf560bd046fe6a`).
+- **Historical Attempt 5 Peer Preservation**: The earlier Attempt 5 peer worktree (`t3-c2c97597-412928fbdb34e081`) and its untracked evidence JSON (`app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`) remain 100% physically untouched on disk.
+
+### 16.2 Compliant Offline Prewarm Execution
+- **Output Directory**: `/home/t3dev/.t3/userdata/attachments/root-d43-case6-prewarm`
+- **Command**: `paired-drill-prewarm.sh --android-repo-dir=... --android-pub-head=... --android-exe-head=... --offline`
+- **Exit Code**: `0`
+- **Timing**: Prewarm script duration 41.983s; total operator duration 43.338s.
+- **Repository Invariance**: Pre/post source, HEAD, and git status hashes 100% matched across both backend and Android repositories (`invariance: true`, zero drift).
+- **Retained Evidence**: `/home/t3dev/.t3/userdata/attachments/root-d43-case6-prewarm` (`operator_execution.log`, `exit_metadata.json`, `argv.json`, `pre.json`, `post.json`).
+
+### 16.3 Case 6 Preparation & Prestartup Refusal
+- **Preparation Directory**: `/home/t3dev/.t3/userdata/attachments/root-d43-case6-prep`
+  - Wrote `pairing-manifest.json` (SHA-256 `a1f01a06482962ff5b475996a1a5bd284e6ba7d8f5f3999a4d2e57dfdb7dbdd5`) and `prestart.json`.
+- **Execution Directory**: `/home/t3dev/.t3/userdata/attachments/root-d43-case6-exec`
+- **Command**: `php tests/Support/Harness/supervised-financial-drill.php --execute ...`
+- **Execution Duration**: 1.425s (STOP, exit code 1).
+- **Failure Point**: `supervised-financial-drill.php` line 144:
+  ```
+  Error: Source pins mismatch vs manifest template.
+  ```
+- **Execution Stage**: Prestartup security gate check BEFORE output directory setup, harness construction, database provisioning, or JVM startup.
+- **Financial Status**: **0 transactions processed**. No invoices, posting batches, cash movements, allocations, or receipts were created.
+- **Repository Invariance**: Pre/post states matched 100% across both repositories (`invariance: true`, zero drift).
+- **Retained Evidence**:
+  - Prep: `/home/t3dev/.t3/userdata/attachments/root-d43-case6-prep` (`pairing-manifest.json`, `prestart.json`, `argv.json`, `pre.json`).
+  - Exec: `/home/t3dev/.t3/userdata/attachments/root-d43-case6-exec` (`operator_execution.log`, `exit_metadata.json`, `argv.json`, `pre.json`, `post.json`).
+
+### 16.4 Root Cause Analysis
+The supervisor CLI driver (`supervised-financial-drill.php` lines 133-146) validates four source files on disk against the pins declared in the manifest template:
+1. `DisposableMobileV2BackendHarness.php` &rarr; `source_fixture_sha256` (`7fcf73a3c55940aa484464a56078506cb9faa15b22656750d88923dc3d90b3cc`, MATCH)
+2. `DisposableMobileV2BackendHarnessGuardTest.php` &rarr; `guard_test_sha256` (`79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73`, MISMATCH)
+3. `MobileV2HarnessCommand.php` &rarr; `cli_command_sha256` (`0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7`, MATCH)
+4. `mobile-v2-harness-cli.php` &rarr; `cli_runner_sha256` (`70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075`, MATCH)
+
+When CLI regressions were added to `DisposableMobileV2BackendHarnessGuardTest.php`, its actual file hash became `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73`. However, the manifest template `docs/integration/mobile-v2-integration-manifest.json` line 16 still retained the older pin `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda`. The supervisor driver correctly refused execution.
+
+### 16.5 Prior Exact Runtime Scopes Attested
+1. **Python Unit Test Suite**: 41 tests, 41 PASS (100% OK in `root-peer-baseline-tests-5ffzs54_`, exit code 0, elapsed 2.067s, backend repository invariance attested).
+2. **PHP Pure Lifecycle Suite**: 6 tests, 46 assertions PASS (100% OK in `root-cli-bootstrap-guards-qq0icvl1`, exit code 0, elapsed 0.411s, pure backend repository invariance attested; Android worktree not touched in that run).
+
+### 16.6 Source-Only Remediation & Preparation Guard Architecture
+1. **Manifest Template Pin Update**:
+   - In `docs/integration/mobile-v2-integration-manifest.json`, updated `guard_test_sha256` to exact reviewed file hash `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73`.
+   - Inspected all other 3 source pins: `source_fixture_sha256`, `cli_command_sha256`, and `cli_runner_sha256` match current disk hashes 100%. No other changes made to manifest template.
+2. **Preparation Validation in `root-operator-tool.py`**:
+   - Added `REQUIRED_SOURCE_PINS` constant defining the four authoritative source files and manifest keys.
+   - Implemented `verify_template_source_pins(manifest_data, repo_dir)`: validates that each source file exists (without symlink components), computes its SHA-256 hash on disk, and verifies that the template declares the exact matching pin.
+   - Integrated into `prepare_manifest()`: executes BEFORE modifying manifest or writing `pairing-manifest.json` and `prestart.json`. If any template pin is stale or mismatched, preparation fails closed immediately (`ValueError`) and exits non-zero without writing approvals. Never auto-refreshes silently against unreviewed source.
+   - Existing runtime manifest guard in `supervised-financial-drill.php` remains strictly enforced.
+3. **Authored Unit Tests (43 Tests Total)**:
+   - Added `test_prepare_manifest_refuses_mismatched_template_source_pin_without_writing_manifest_or_approval`: uses throwaway fixture with tampered source pin to verify fail-closed `ValueError` and confirms that neither `pairing-manifest.json` nor `prestart.json` is written to output directory.
+   - Added `test_prepare_manifest_succeeds_when_template_source_pins_match`: verifies valid manifest template generates mode `0600` `pairing-manifest.json` with correct runtime pins and scope.
+   - All tests marked authored and unrun (`testsAUTHOREDUNRUN`) pending Root review.
+4. **Preservation & Stand-Down**:
+   - Historical Attempt 5 peer worktree and evidence JSON physically untouched.
+   - No retry or test execution by writer. Shared lease RELEASED.
 
 
 
