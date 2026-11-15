@@ -136,7 +136,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7` | Artisan Command |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
-| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `ca116d8f62bdc80a20403e9d99d2042cf7c23091fd9124e95392543549516fdb` | Guard Test Suite |
+| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73` | Guard Test Suite |
 | `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `8255528f48a7e0710169523cab6ec5ecb2a2eacee593391ed804d009ae9dbfc8` | Python Unit Suite (30 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
@@ -515,6 +515,12 @@ To resolve this cleanly without compromising safety:
 | | `root-cli-bootstrap-guards-85ckbcbk/argv.json` | `8f58a892904efaa547073d5aea1b15d81ef94afa3525c4715eadf5f5a0b0e4a6` |
 | | `root-cli-bootstrap-guards-85ckbcbk/pre.json` | `7e61d7b8f94c353cc68d59718a2dd2b48c961dc52b1e98fd299c427fca024ad0` |
 | | `root-cli-bootstrap-guards-85ckbcbk/post.json` | `7e61d7b8f94c353cc68d59718a2dd2b48c961dc52b1e98fd299c427fca024ad0` |
+| **Root Pure Guards 2 (Retained)** | `root-cli-bootstrap-guards-0c8ncavp/raw.log` | `180adb777bf1f9189d632f415c864a7f2a8175d0326bc396e09c979fd7a877cc` |
+| | `root-cli-bootstrap-guards-0c8ncavp/junit.xml` | `f7105f904fce95fbd17cf1d20b1c11ae79e1eda0c97d95d9b7d99c081fc76f04` |
+| | `root-cli-bootstrap-guards-0c8ncavp/exit.json` | `967e0509e075eb67815d7b3b764c789aed91348025e15e8efe5e2e7d1a87b59f` |
+| | `root-cli-bootstrap-guards-0c8ncavp/argv.json` | `95f673e838fd427a37342b7db9d97b6cca291293480b2ae7ce385d4770c86210` |
+| | `root-cli-bootstrap-guards-0c8ncavp/pre.json` | `2ca9d8c7d0903ce5b43e15622eb4d9092bf74c42668ef590d6800559b312a07a` |
+| | `root-cli-bootstrap-guards-0c8ncavp/post.json` | `2ca9d8c7d0903ce5b43e15622eb4d9092bf74c42668ef590d6800559b312a07a` |
 
 ---
 
@@ -729,13 +735,20 @@ Despite JVM and delta inspection success, FULL acceptance was **NOT ACHIEVED**:
 - Ports closed, background daemons terminated, lease released.
 - Frozen peer worktree contains owned evidence artifacts and remains untouched.
 
-### 15.6 Narrow Source-Only Fix (Applied)
+### 15.6 Narrow Source-Only Fix & Guard Alignment (Applied)
 To resolve the CLI dependency closure cleanly before Root's next invocation:
-1. Documented Root's focused pure regression execution (`root-cli-bootstrap-guards-85ckbcbk`, exit code 1):
+1. Documented Root's focused pure regression execution 1 (`root-cli-bootstrap-guards-85ckbcbk`, exit code 1):
    - Executed: 2 tests, 12 assertions, 1 PASS, 1 FAIL.
    - Retained evidence: `raw.log` (`a9c93a17...`), `junit.xml` (`7297d71c...`), `exit.json` (`417b8c47...`), `argv.json` (`8f58a892...`), `pre.json`/`post.json` (`7e61d7b8...`, pre/post zero drift matched).
    - Root cause identified: In bare CLI context, `PermissionRegistrar::__construct` calls global `config()` helpers (lines 57-60). Calling `$bareBootstrapApp->make(PermissionRegistrar::class)` while global `Container::$instance` was null caused `config()` to throw `Target class [config] does not exist`, failing before reaching `assertExecutionGates`.
-2. Corrected caller context preservation lifecycle in `DisposableFinancialPostRunInspector`:
+2. Documented Root's focused pure regression execution 2 (`root-cli-bootstrap-guards-0c8ncavp`, exit code 1):
+   - Executed: 2 tests, 12 assertions, 1 PASS, 1 FAIL.
+   - Retained evidence: `raw.log` (`180adb77...`), `junit.xml` (`f7105f90...`), `exit.json` (`967e0509...`), `argv.json` (`95f673e8...`), `pre.json`/`post.json` (`2ca9d8c7...`, pre/post zero drift matched).
+   - Observations:
+     - Test 1 (`test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db`) passed cleanly (9 assertions), proving bare dependency closure is fully resolved.
+     - Test 2 (`test_run_six_reconciliations_restores_bare_context_on_denied_execution_gates`) reached the actual first execution gate in `assertExecutionGates()`: `'Inspector refused: defaults to NO-EXECUTE. Set MOBILE_V2_HARNESS_ENABLE=1 under explicit Root coordination.'`.
+     - Assertion failure: test expected `'invalid disposable schema name'`, but ambient execution flags were `MOBILE_V2_HARNESS_ENABLE=0` and `PHASE8_ALLOW_DISPOSABLE_DB=0`, causing Gate 1 to trigger before schema regex evaluation (Gate 3).
+3. Corrected caller context preservation lifecycle in `DisposableFinancialPostRunInspector`:
    - `createIsolatedBootstrapApplication()` captures raw `Container::$instance` before `Application::__construct` (which calls `registerBaseBindings` -> `static::setInstance($this)`) and restores it unconditionally in its own `finally`, returning a fully configured isolated application without leaking ambient container mutations.
    - For bare CLI contexts (`Container::$instance` is `null` or a generic Container), scopes the isolated temporary bootstrap container as the active global container and facade application while resolving `PermissionRegistrar` (satisfying global `config()` helpers in `PermissionRegistrar::__construct`), with guaranteed immediate restoration in `finally` back to exact original global container (`null` or generic) and facade application (`null`).
    - Encompasses the caller permission snapshot and bootstrap phase within `runSixReconciliations()` outer `try { ... } finally { ... }` block, guaranteeing that any exception during caller team snapshotting or registrar dependency resolution does not bypass exact container (`Container::$instance`), facade (`Facade::$app`), cached resolved instances (`Facade::$resolvedInstance`), or Eloquent model connection resolver restoration.
@@ -744,14 +757,16 @@ To resolve the CLI dependency closure cleanly before Root's next invocation:
    - Strict fail-closed exception handling around `getPermissionsTeamId()` retained unchanged (no exception masking or skipping).
    - In `finally`, unconditionally restores exact previous global container (including `null`), facade application (including `null`), resolved facade instances, model connection resolver, and caller permission team ID (only on existing caller Application).
    - Flushes both isolated execution application and temporary bare bootstrap application.
-3. Authored 6 comprehensive real no-DB regression tests in `DisposableMobileV2BackendHarnessGuardTest.php`:
-   - `test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db()`: asserts real `CacheManager` with parameter `$app` and Spatie `PermissionRegistrar` resolution without exceptions, enforcing isolation defaults (`cache.default = 'array'`, `database.default = 'disposable_inspector'`) and restoring `null` facade application.
+4. Aligned all denied-execution-gate lifecycle tests in `DisposableMobileV2BackendHarnessGuardTest.php`:
+   - `test_run_six_reconciliations_restores_bare_context_on_denied_execution_gates()`: snapshots environment via `SupervisedPairedFinancialDrill::snapshotEnvironmentStores`, explicitly scopes flags OFF (`MOBILE_V2_HARNESS_ENABLE=0`, `PHASE8_ALLOW_DISPOSABLE_DB=0`), asserts actual first NO-EXECUTE refusal (`'Inspector refused: defaults to NO-EXECUTE. Set MOBILE_V2_HARNESS_ENABLE=1 under explicit Root coordination.'`), verifies bare context is fully restored in `finally`, and restores environment in `finally`.
+   - `test_run_six_reconciliations_preserves_partially_configured_caller_application_on_failure()`: snapshots environment, scopes flags OFF, asserts actual first NO-EXECUTE refusal, verifies caller application (config, auth, cache, Spatie team `777`, resolved facades) is completely preserved, and restores environment in `finally`.
+   - `test_run_six_reconciliations_preserves_complete_caller_context_on_denied_execution_gates()`: snapshots environment, scopes flags OFF, asserts actual first NO-EXECUTE refusal, verifies complete caller application and Spatie team `888` are intact, and restores environment in `finally`.
    - `test_create_isolated_bootstrap_application_preserves_ambient_container_identity()`: verifies that raw `Container::$instance` remains strictly unchanged immediately after `createIsolatedBootstrapApplication()` across `null`, generic `Container`, and `Application` sentinels.
-   - `test_run_six_reconciliations_restores_bare_context_on_denied_execution_gates()`: verifies that when called from a bare CLI context (`null` container, `null` facade app) with denied execution gates, the bare context is fully and cleanly restored in `finally` and execution gates reject invalid schema name.
-   - `test_run_six_reconciliations_preserves_partially_configured_caller_application_on_failure()`: verifies that a real caller `Application` configured with custom config, auth, cache, resolved facades, and non-null Spatie team ID (`777`) remains 100% unchanged across execution gate failure.
-   - `test_run_six_reconciliations_preserves_complete_caller_context_on_denied_execution_gates()`: verifies complete caller application context and team ID (`888`) remain intact across execution gate failure.
-   - `test_run_six_reconciliations_fails_closed_and_preserves_caller_on_deliberately_failing_registrar()`: verifies that a caller with a deliberately failing registrar factory fails closed without masking genuine permission resolution errors and completely preserves caller config, auth, facades, container, and model connection resolver.
-4. Tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
+   - `test_run_six_reconciliations_fails_closed_and_preserves_caller_on_deliberately_failing_registrar()`: snapshots environment, scopes flags OFF, asserts caller with deliberately failing registrar factory fails closed without masking genuine permission resolution errors and completely preserves caller config, auth, facades, container, and model connection resolver.
+5. Invariants preserved:
+   - No guard reordering or opt-in relaxation in `assertExecutionGates()`.
+   - Invalid schema input defense (`'denied_invalid_schema_name'`) retained in calls as defense-in-depth, but tests do not expect later gates when flags are OFF.
+   - Tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
 
 
 

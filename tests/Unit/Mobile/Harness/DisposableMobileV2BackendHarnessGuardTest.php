@@ -4294,8 +4294,21 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     {
         $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
         $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+        $savedEnvStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores([
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+        ]);
 
         try {
+            // Explicitly scope flags OFF: defaults to NO-EXECUTE
+            putenv('MOBILE_V2_HARNESS_ENABLE=0');
+            $_ENV['MOBILE_V2_HARNESS_ENABLE'] = '0';
+            $_SERVER['MOBILE_V2_HARNESS_ENABLE'] = '0';
+
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=0');
+            $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+            $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+
             // 1. Establish bare context: container and facades cleared
             \Illuminate\Container\Container::setInstance(null);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
@@ -4304,7 +4317,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $this->assertNull((new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
             $this->assertNull((new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
 
-            // 2. Invoke actual runSixReconciliations with denied execution gates (invalid schema name)
+            // 2. Invoke actual runSixReconciliations with denied execution gates (flags OFF + invalid schema name)
             try {
                 \Tests\Support\Harness\DisposableFinancialPostRunInspector::runSixReconciliations(
                     1,
@@ -4312,13 +4325,17 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 );
                 $this->fail('Expected runSixReconciliations to fail closed on denied execution gates.');
             } catch (\RuntimeException $e) {
-                $this->assertStringContainsString('invalid disposable schema name', $e->getMessage());
+                $this->assertStringContainsString(
+                    'Inspector refused: defaults to NO-EXECUTE. Set MOBILE_V2_HARNESS_ENABLE=1 under explicit Root coordination.',
+                    $e->getMessage()
+                );
             }
 
             // 3. Assert bare context is fully restored in finally
             $this->assertNull((new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
             $this->assertNull((new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
         } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedEnvStores);
             \Illuminate\Container\Container::setInstance($prevContainer);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
@@ -4330,6 +4347,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     {
         $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
         $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+        $savedEnvStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores([
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+        ]);
 
         $appDir = dirname(__DIR__, 4);
         $callerApp = new \Illuminate\Foundation\Application($appDir);
@@ -4361,6 +4382,15 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $callerApp->make(\Spatie\Permission\PermissionRegistrar::class)->setPermissionsTeamId(777);
 
         try {
+            // Explicitly scope flags OFF: defaults to NO-EXECUTE
+            putenv('MOBILE_V2_HARNESS_ENABLE=0');
+            $_ENV['MOBILE_V2_HARNESS_ENABLE'] = '0';
+            $_SERVER['MOBILE_V2_HARNESS_ENABLE'] = '0';
+
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=0');
+            $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+            $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+
             \Illuminate\Container\Container::setInstance($callerApp);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($callerApp);
@@ -4380,7 +4410,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 );
                 $this->fail('Expected runSixReconciliations to fail closed on denied execution gates.');
             } catch (\RuntimeException $e) {
-                $this->assertStringContainsString('invalid disposable schema name', $e->getMessage());
+                $this->assertStringContainsString(
+                    'Inspector refused: defaults to NO-EXECUTE. Set MOBILE_V2_HARNESS_ENABLE=1 under explicit Root coordination.',
+                    $e->getMessage()
+                );
             }
 
             // Assert caller context is completely preserved and unchanged
@@ -4392,6 +4425,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $this->assertSame(777, getPermissionsTeamId());
             $this->assertArrayHasKey('config', $facadeResolvedRef->getValue());
         } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedEnvStores);
             \Illuminate\Container\Container::setInstance($prevContainer);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
@@ -4403,6 +4437,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     {
         $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
         $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
+        $savedEnvStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores([
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+        ]);
 
         $appDir = dirname(__DIR__, 4);
         $completeApp = new \Illuminate\Foundation\Application($appDir);
@@ -4411,6 +4449,15 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $completeApp->make(\Spatie\Permission\PermissionRegistrar::class)->setPermissionsTeamId(888);
 
         try {
+            // Explicitly scope flags OFF: defaults to NO-EXECUTE
+            putenv('MOBILE_V2_HARNESS_ENABLE=0');
+            $_ENV['MOBILE_V2_HARNESS_ENABLE'] = '0';
+            $_SERVER['MOBILE_V2_HARNESS_ENABLE'] = '0';
+
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=0');
+            $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+            $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+
             \Illuminate\Container\Container::setInstance($completeApp);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($completeApp);
@@ -4424,13 +4471,17 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 );
                 $this->fail('Expected runSixReconciliations to fail closed on denied execution gates.');
             } catch (\RuntimeException $e) {
-                $this->assertStringContainsString('invalid disposable schema name', $e->getMessage());
+                $this->assertStringContainsString(
+                    'Inspector refused: defaults to NO-EXECUTE. Set MOBILE_V2_HARNESS_ENABLE=1 under explicit Root coordination.',
+                    $e->getMessage()
+                );
             }
 
             $this->assertSame($completeApp, (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue());
             $this->assertSame($completeApp, (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue());
             $this->assertSame(888, getPermissionsTeamId());
         } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedEnvStores);
             \Illuminate\Container\Container::setInstance($prevContainer);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
@@ -4496,6 +4547,10 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $prevContainer = (new \ReflectionProperty(\Illuminate\Container\Container::class, 'instance'))->getValue();
         $prevFacadeApp = (new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'app'))->getValue();
         $prevResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
+        $savedEnvStores = SupervisedPairedFinancialDrill::snapshotEnvironmentStores([
+            'MOBILE_V2_HARNESS_ENABLE',
+            'PHASE8_ALLOW_DISPOSABLE_DB',
+        ]);
 
         $appDir = dirname(__DIR__, 4);
         $callerApp = new \Illuminate\Foundation\Application($appDir);
@@ -4522,6 +4577,15 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         });
 
         try {
+            // Explicitly scope flags OFF: defaults to NO-EXECUTE
+            putenv('MOBILE_V2_HARNESS_ENABLE=0');
+            $_ENV['MOBILE_V2_HARNESS_ENABLE'] = '0';
+            $_SERVER['MOBILE_V2_HARNESS_ENABLE'] = '0';
+
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=0');
+            $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+            $_SERVER['PHASE8_ALLOW_DISPOSABLE_DB'] = '0';
+
             \Illuminate\Container\Container::setInstance($callerApp);
             \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($callerApp);
@@ -4550,6 +4614,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $this->assertSame($customResolver, \Illuminate\Database\Eloquent\Model::getConnectionResolver());
             $this->assertArrayHasKey('config', $facadeResolvedRef->getValue());
         } finally {
+            SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedEnvStores);
             if ($prevResolver !== null) {
                 \Illuminate\Database\Eloquent\Model::setConnectionResolver($prevResolver);
             } else {
