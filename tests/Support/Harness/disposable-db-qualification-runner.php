@@ -529,6 +529,84 @@ try {
         @unlink($childScript);
     }
 
+    // Pre-check 4: Bounded no-DB dependency construction test & isolated service resolution preflight
+    $preflightScript = tempnam(sys_get_temp_dir(), 'p8_dep_preflight_');
+    if ($preflightScript === false) {
+        throw new \RuntimeException('Failed to create preflight script.');
+    }
+    chmod($preflightScript, 0600);
+    $autoloadPath = var_export(dirname(__DIR__, 3).'/vendor/autoload.php', true);
+    $appRootEsc = var_export(dirname(__DIR__, 3), true);
+    file_put_contents($preflightScript, '<?php
+    require '.$autoloadPath.';
+    $app = new \Illuminate\Foundation\Application('.$appRootEsc.');
+    $app["env"] = "testing";
+    $permConfig = file_exists('.$appRootEsc.'."/config/permission.php") ? require '.$appRootEsc.'."/config/permission.php" : [];
+    $config = new \Illuminate\Config\Repository([
+        "permission" => $permConfig,
+        "cache" => [
+            "default" => "array",
+            "stores" => [
+                "array" => ["driver" => "array", "serialize" => false],
+            ],
+        ],
+    ]);
+    $app->instance("config", $config);
+
+    $guard = new \Illuminate\Auth\RequestGuard(fn () => null, new \Illuminate\Http\Request());
+    $auth = new class($guard) implements \Illuminate\Contracts\Auth\Factory {
+        public function __construct(private \Illuminate\Contracts\Auth\Guard $guard) {}
+        public function guard($name = null): \Illuminate\Contracts\Auth\Guard { return $this->guard; }
+        public function shouldUse($name): void {}
+        public function __call(string $method, array $args): mixed { return $this->guard->{$method}(...$args); }
+    };
+    $app->instance("auth", $auth);
+    $app->instance(\Illuminate\Contracts\Auth\Factory::class, $auth);
+    $app->instance(\Illuminate\Contracts\Auth\Guard::class, $guard);
+
+    $cacheManager = new \Illuminate\Cache\CacheManager($app);
+    $app->instance("cache", $cacheManager);
+    $app->instance(\Illuminate\Contracts\Cache\Factory::class, $cacheManager);
+    $app->singleton(\Spatie\Permission\PermissionRegistrar::class);
+
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+
+    $context = $app->make(\App\Support\Tenancy\CompanyContext::class);
+    $context->clearSessionless();
+
+    $services = [
+        \App\Services\Accounting\AccountingReconciliationService::class,
+        \App\Services\Inventory\InventoryReconciliationService::class,
+        \App\Services\Sales\SalesReconciliationService::class,
+        \App\Services\Purchasing\PayablesReconciliationService::class,
+        \App\Services\Money\MoneyReconciliationService::class,
+        \App\Services\Accounting\Phase7ReconciliationService::class,
+    ];
+    foreach ($services as $svc) {
+        $app->make($svc);
+    }
+    $context->clearSessionless();
+    echo "ISOLATED_DEPENDENCY_PREFLIGHT_OK";
+    ');
+
+    try {
+        $proc = new Process([PHP_BINARY, $preflightScript], dirname(__DIR__, 3), [
+            'APP_ENV' => 'testing',
+            'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        ]);
+        $proc->setTimeout(10)->mustRun();
+        $preflightOut = $proc->getOutput();
+        if (! str_contains($preflightOut, 'ISOLATED_DEPENDENCY_PREFLIGHT_OK')) {
+            throw new \RuntimeException('Isolated dependency preflight did not output expected marker.');
+        }
+        $preChecks['isolated_dependency_preflight'] = [
+            'status' => 'PASS',
+            'message' => 'Bounded no-DB dependency construction preflight validated CompanyContext sessionless auth, array cache, and all 6 reconciliation service resolutions without DB socket.',
+        ];
+    } finally {
+        @unlink($preflightScript);
+    }
+
     // 5. Isolated Laravel Pre-boot with Ambient Poisoning
     $cliCacheDir = sys_get_temp_dir().'/cli_qual_cache_'.bin2hex(random_bytes(6));
     if (! is_dir($cliCacheDir)) {

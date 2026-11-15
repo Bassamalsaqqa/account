@@ -954,16 +954,54 @@ final class DisposableFinancialPostRunInspector
             $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
             $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
 
-            // Minimal isolated container: autoload only, no full service providers, sessions, cache, or background jobs.
+            // Minimal isolated container: autoload only, no full service providers, sessions, or background jobs.
             $appDir = dirname(__DIR__, 3);
             $app = new \Illuminate\Foundation\Application($appDir);
             $app['env'] = 'testing';
-            $app->instance('config', new \Illuminate\Config\Repository([
+
+            $permissionConfig = file_exists($appDir.'/config/permission.php')
+                ? require $appDir.'/config/permission.php'
+                : [];
+
+            $configRepo = new \Illuminate\Config\Repository([
                 'database' => [
                     'default' => 'disposable_inspector',
                     'connections' => [],
                 ],
-            ]));
+                'cache' => [
+                    'default' => 'array',
+                    'stores' => [
+                        'array' => [
+                            'driver' => 'array',
+                            'serialize' => false,
+                        ],
+                    ],
+                ],
+                'permission' => $permissionConfig,
+            ]);
+            $app->instance('config', $configRepo);
+
+            // Minimal legitimate sessionless RequestGuard with null user contracts (zero session/DB IO)
+            $sessionlessGuard = new \Illuminate\Auth\RequestGuard(
+                fn () => null,
+                new \Illuminate\Http\Request()
+            );
+            $authManager = new class($sessionlessGuard) implements \Illuminate\Contracts\Auth\Factory {
+                public function __construct(private \Illuminate\Contracts\Auth\Guard $guard) {}
+                public function guard($name = null): \Illuminate\Contracts\Auth\Guard { return $this->guard; }
+                public function shouldUse($name): void {}
+                public function __call(string $method, array $args): mixed { return $this->guard->{$method}(...$args); }
+            };
+            $app->instance('auth', $authManager);
+            $app->instance(\Illuminate\Contracts\Auth\Factory::class, $authManager);
+            $app->instance(\Illuminate\Contracts\Auth\Guard::class, $sessionlessGuard);
+
+            // Array-only CacheManager and singleton PermissionRegistrar for CompanyContext::clearSessionless
+            $cacheManager = new \Illuminate\Cache\CacheManager($app);
+            $app->instance('cache', $cacheManager);
+            $app->instance(\Illuminate\Contracts\Cache\Factory::class, $cacheManager);
+            $app->singleton(\Spatie\Permission\PermissionRegistrar::class);
+
             $app->singleton(CompanyContext::class);
 
             // Wrap the SAME verified read-only PDO connection
@@ -1077,6 +1115,22 @@ final class DisposableFinancialPostRunInspector
                     \Illuminate\Container\Container::setInstance($previousGlobalContainer);
                 }
             } catch (\Throwable) {
+            }
+
+            // Ensure tenant contexts absent upon restoration
+            if (function_exists('setPermissionsTeamId')) {
+                try {
+                    setPermissionsTeamId(null);
+                } catch (\Throwable) {
+                }
+            }
+            if ($previousApp !== null) {
+                try {
+                    if ($previousApp->bound(CompanyContext::class)) {
+                        $previousApp->make(CompanyContext::class)->clear(sessionless: true);
+                    }
+                } catch (\Throwable) {
+                }
             }
 
             if ($app instanceof \Illuminate\Foundation\Application) {
