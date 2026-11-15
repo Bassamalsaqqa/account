@@ -1029,7 +1029,11 @@ class SupervisedPairedFinancialDrill
     /**
      * Recursively remove an owned temporary directory.
      * Enforces that root must be an owned temp descendant, not a symlink, owner is current UID,
-     * and strictly rejects arbitrary /tmp, /, /home, checkouts, NUL bytes, or backticks.
+     * permissions 0700, and strictly rejects arbitrary /tmp, /, /home, checkouts, NUL bytes, or backticks.
+     *
+     * Validates the top-level harness directory ONCE against HARNESS_DIR_REGEX and canonical root containment.
+     * Descendant files and directories are pre-validated to ensure identical UID ownership and containment within
+     * root, then unlinked and removed bottom-up without following symlinks.
      *
      * @param  string  $dir  Directory to delete
      * @param  string  $repoRoot  Checkout repository root
@@ -1055,6 +1059,11 @@ class SupervisedPairedFinancialDrill
             throw new RuntimeException("TEMP_DIR_OWNER_MISMATCH: '{$dir}'");
         }
 
+        $perms = fileperms($dir) & 0777;
+        if ($perms !== 0700) {
+            throw new RuntimeException(sprintf("CLEANUP_UNSAFE_TEMP_PERMS: expected 0700, got %04o", $perms));
+        }
+
         if (preg_match(self::HARNESS_DIR_REGEX, basename($dir)) !== 1) {
             throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Basename '" . basename($dir) . "' does not match " . self::HARNESS_DIR_REGEX);
         }
@@ -1069,30 +1078,111 @@ class SupervisedPairedFinancialDrill
             throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Refusing destructive deletion of root or system directory '{$realDir}'.");
         }
 
-        if ($realDir === $realRoot || str_starts_with($realDir, $realRoot . '/')) {
+        $realRootWithSep = rtrim($realRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if ($realDir === $realRoot || str_starts_with($realDir, $realRootWithSep)) {
             throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Refusing destructive deletion inside repository root '{$realDir}'.");
         }
 
         $realSysTemp = realpath(sys_get_temp_dir());
-        if ($realSysTemp !== false && ! str_starts_with($realDir, $realSysTemp)) {
+        if ($realSysTemp === false) {
+            throw new RuntimeException("TEMP_DIR_RESOLVE_FAILED: System temp directory cannot be resolved.");
+        }
+        $sysTempWithSep = rtrim($realSysTemp, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if (! str_starts_with($realDir, $sysTempWithSep)) {
             throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Directory '{$realDir}' is not descendant of system temp dir '{$realSysTemp}'.");
         }
 
-        $entries = glob($realDir . '/{,.}*', GLOB_BRACE);
-        if (is_array($entries)) {
-            foreach ($entries as $entry) {
-                $base = basename($entry);
-                if ($base === '.' || $base === '..') {
+        $rootPrefix = rtrim($realDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+
+        // 1. Pre-validate full tree before any destructive deletion to prevent partial removal on foreign child
+        self::validateDescendantTree($realDir, $rootPrefix, $currentUid);
+
+        // 2. Destructive bottom-up deletion walk constrained to validated root
+        self::deleteDescendantTree($realDir);
+    }
+
+    /**
+     * Validates that all descendant entries under rootPrefix are owned by currentUid and stay contained.
+     * Symlinks are checked with lstat (uid match) and never traversed.
+     *
+     * @throws RuntimeException
+     */
+    private static function validateDescendantTree(string $currentDir, string $rootPrefix, int $currentUid): void
+    {
+        $handle = @opendir($currentDir);
+        if ($handle === false) {
+            throw new RuntimeException("CLEANUP_OPENDIR_FAILED: '{$currentDir}'");
+        }
+
+        try {
+            while (($entryName = readdir($handle)) !== false) {
+                if ($entryName === '.' || $entryName === '..') {
                     continue;
                 }
-                if (is_dir($entry) && ! is_link($entry)) {
-                    self::recursiveRemoveOwnedDir($entry, $repoRoot);
-                } elseif (is_file($entry) || is_link($entry)) {
-                    @unlink($entry);
+                $entryPath = $currentDir . DIRECTORY_SEPARATOR . $entryName;
+                if (! str_starts_with($entryPath, $rootPrefix)) {
+                    throw new RuntimeException("CLEANUP_DESCENDANT_ESCAPED_ROOT: '{$entryPath}' is not inside '{$rootPrefix}'");
+                }
+
+                $lstat = @lstat($entryPath);
+                if ($lstat === false) {
+                    throw new RuntimeException("CLEANUP_LSTAT_FAILED: '{$entryPath}'");
+                }
+
+                if ($lstat['uid'] !== $currentUid) {
+                    throw new RuntimeException("CLEANUP_FOREIGN_CHILD_REJECTED: UID mismatch on '{$entryPath}'");
+                }
+
+                // If entry is a symlink, do NOT follow or traverse its target
+                if (is_link($entryPath)) {
+                    continue;
+                }
+
+                if (is_dir($entryPath)) {
+                    self::validateDescendantTree($entryPath, $rootPrefix, $currentUid);
                 }
             }
+        } finally {
+            closedir($handle);
         }
-        @rmdir($realDir);
+    }
+
+    /**
+     * Deletes all descendant files and subdirectories bottom-up, then deletes currentDir.
+     * Symlinks are unlinked directly without touching their targets.
+     *
+     * @throws RuntimeException
+     */
+    private static function deleteDescendantTree(string $currentDir): void
+    {
+        $handle = @opendir($currentDir);
+        if ($handle === false) {
+            throw new RuntimeException("CLEANUP_OPENDIR_FAILED: '{$currentDir}'");
+        }
+
+        try {
+            while (($entryName = readdir($handle)) !== false) {
+                if ($entryName === '.' || $entryName === '..') {
+                    continue;
+                }
+                $entryPath = $currentDir . DIRECTORY_SEPARATOR . $entryName;
+
+                // Never follow symlinks; unlinking a symlink only removes the link itself, never target
+                if (is_link($entryPath) || is_file($entryPath)) {
+                    if (! @unlink($entryPath) && (file_exists($entryPath) || is_link($entryPath))) {
+                        throw new RuntimeException("CLEANUP_UNLINK_FAILED: '{$entryPath}'");
+                    }
+                } elseif (is_dir($entryPath)) {
+                    self::deleteDescendantTree($entryPath);
+                }
+            }
+        } finally {
+            closedir($handle);
+        }
+
+        if (! @rmdir($currentDir) && is_dir($currentDir)) {
+            throw new RuntimeException("CLEANUP_RMDIR_FAILED: '{$currentDir}'");
+        }
     }
 }
 

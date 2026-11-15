@@ -989,6 +989,108 @@ class SupervisedFinancialDrillTest extends TestCase
     }
 
     #[Test]
+    public function test_exact_cleanup_removes_nested_subdirectories_and_unlinks_symlink_without_touching_outside_target(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        // Populate nested directory tree inside harness directory
+        $bootstrapDir = $snapshot->harnessDir . '/bootstrap';
+        mkdir($bootstrapDir, 0700);
+        $nestedSubdir = $bootstrapDir . '/subfolder';
+        mkdir($nestedSubdir, 0700);
+        $nestedFile = $nestedSubdir . '/nested_payload.json';
+        file_put_contents($nestedFile, '{"nested":true}');
+        chmod($nestedFile, 0600);
+
+        // Create an outside target file that must NOT be touched or removed
+        $outsideTarget = $this->tempDir . '/outside_preserved.txt';
+        file_put_contents($outsideTarget, 'PRESERVED_OUTSIDE_DATA');
+        chmod($outsideTarget, 0600);
+
+        // Create a symlink inside the harness directory pointing to the outside file
+        $symlinkPath = $snapshot->harnessDir . '/symlink_to_outside';
+        symlink($outsideTarget, $symlinkPath);
+
+        $mockPortStmt = $this->createMock(PDOStatement::class);
+        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+        $mockSchemaStmt = $this->createMock(PDOStatement::class);
+        $mockSchemaStmt->method('fetch')->willReturnOnConsecutiveCalls(
+            ['SCHEMA_NAME' => $snapshot->schemaName],
+            false
+        );
+
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+        $mockPdo->expects($this->once())->method('exec')->with("DROP DATABASE IF EXISTS `{$snapshot->schemaName}`");
+
+        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+            childProcess: null,
+            snapshot: $snapshot,
+            repoRoot: $repoRoot,
+            adminPdo: $mockPdo
+        );
+
+        $this->assertTrue($result['success'], 'Exact cleanup with nested directories and symlink must succeed');
+        $this->assertTrue($result['temp_cleaned'], 'Harness temp directory and nested tree must be removed');
+        $this->assertDirectoryDoesNotExist($snapshot->harnessDir);
+
+        // Outside target file must remain intact and completely preserved
+        $this->assertFileExists($outsideTarget, 'Outside symlink target must not be deleted');
+        $this->assertSame('PRESERVED_OUTSIDE_DATA', file_get_contents($outsideTarget));
+    }
+
+    #[Test]
+    public function test_exact_cleanup_refuses_unsafe_harness_dir_pointing_to_repo_or_system_root(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        $mockPortStmt = $this->createMock(PDOStatement::class);
+        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+        $mockSchemaStmt = $this->createMock(PDOStatement::class);
+        $mockSchemaStmt->method('fetch')->willReturn(false);
+
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+        $ref = new \ReflectionClass($snapshot);
+        $prop = $ref->getProperty('harnessDir');
+        $prop->setAccessible(true);
+
+        // Case 1: Refuses harnessDir pointing to /tmp (system root)
+        $prop->setValue($snapshot, '/tmp');
+        $resultTmp = SupervisedPairedFinancialDrill::executeExactCleanup(null, $snapshot, $repoRoot, $mockPdo);
+        $this->assertFalse($resultTmp['success']);
+        $this->assertFalse($resultTmp['temp_cleaned']);
+        $this->assertStringContainsString('CLEANUP_UNSAFE_TEMP_PATH_REJECTED', implode('; ', $resultTmp['errors']));
+
+        // Case 2: Refuses harnessDir pointing inside repository root
+        $prop->setValue($snapshot, $repoRoot);
+        $resultRepo = SupervisedPairedFinancialDrill::executeExactCleanup(null, $snapshot, $repoRoot, $mockPdo);
+        $this->assertFalse($resultRepo['success']);
+        $this->assertFalse($resultRepo['temp_cleaned']);
+        $this->assertStringContainsString('CLEANUP_UNSAFE_TEMP_PATH_REJECTED', implode('; ', $resultRepo['errors']));
+
+        // Case 3: Refuses harnessDir that is a symlink
+        $symlinkHarness = sys_get_temp_dir() . '/v2_harness_' . bin2hex(random_bytes(8));
+        symlink($this->tempDir, $symlinkHarness);
+        try {
+            $prop->setValue($snapshot, $symlinkHarness);
+            $resultSymlink = SupervisedPairedFinancialDrill::executeExactCleanup(null, $snapshot, $repoRoot, $mockPdo);
+            $this->assertFalse($resultSymlink['success']);
+            $this->assertFalse($resultSymlink['temp_cleaned']);
+            $this->assertStringContainsString('TEMP_DIR_SYMLINK_REJECTED', implode('; ', $resultSymlink['errors']));
+        } finally {
+            @unlink($symlinkHarness);
+        }
+    }
+
+    #[Test]
     public function test_golden_fixture_has_distinct_provenance_between_handoff_sha_and_profile_digest(): void
     {
         // Verify actual fixture fields that map to CLI argv propagation:
