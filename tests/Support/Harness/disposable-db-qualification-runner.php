@@ -20,7 +20,7 @@ declare(strict_types=1);
  * - Minimal canonical foundation fixture via CreateCompanyAction ONLY (delta 0)
  * - Dedicated read-only PDO connection:
  *     - DisposableFinancialPostRunInspector::configureStatementTimeout($pdo, 5)
- *     - Documented MariaDB innodb_trx trx_read_only observation
+ *     - Documented MariaDB innodb_trx trx_is_read_only observation
  *     - Server-enforced mutation denial test (error 1792 / SQLSTATE 25006) on probe table
  * - Six real isolated SAME-PDO reconcilers via DisposableFinancialPostRunInspector::runSixReconciliations()
  * - Exact BigDecimal zero verification on stock movements (no float casting)
@@ -379,6 +379,7 @@ $observedDedicatedPdoDatabase = null;
 $observedDedicatedPdoPort = null;
 $observedDedicatedPdoVerified = false;
 $innodbTrxReadOnlyObserved = null;
+$innodbTrxColumnObserved = null;
 $mutationDeniedObserved = false;
 $denialMessageObserved = null;
 $denialCodeObserved = null;
@@ -670,12 +671,46 @@ try {
     $dedicatedPdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
 
     // Documented MariaDB transaction observation via information_schema.innodb_trx
-    $stmtTrx = $dedicatedPdo->query('SELECT trx_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
-    $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
-    $innodbTrxReadOnly = isset($trxRow['trx_read_only']) ? (int) $trxRow['trx_read_only'] : null;
+    // MariaDB 10.x uses trx_is_read_only; MySQL uses trx_read_only.
+    $innodbTrxReadOnly = null;
+    $innodbTrxColumnFound = null;
+
+    try {
+        $stmtTrx = $dedicatedPdo->query('SELECT trx_is_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
+        $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
+        if ($trxRow !== false && isset($trxRow['trx_is_read_only'])) {
+            $innodbTrxReadOnly = (int) $trxRow['trx_is_read_only'];
+            $innodbTrxColumnFound = 'trx_is_read_only';
+        }
+    } catch (\PDOException $e) {
+        // Fallback to MySQL trx_read_only
+        try {
+            $stmtTrx = $dedicatedPdo->query('SELECT trx_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
+            $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
+            if ($trxRow !== false && isset($trxRow['trx_read_only'])) {
+                $innodbTrxReadOnly = (int) $trxRow['trx_read_only'];
+                $innodbTrxColumnFound = 'trx_read_only';
+            }
+        } catch (\PDOException $e2) {
+            $stmtTrx = $dedicatedPdo->query('SELECT * FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
+            $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
+            if (is_array($trxRow)) {
+                if (isset($trxRow['trx_is_read_only'])) {
+                    $innodbTrxReadOnly = (int) $trxRow['trx_is_read_only'];
+                    $innodbTrxColumnFound = 'trx_is_read_only';
+                } elseif (isset($trxRow['trx_read_only'])) {
+                    $innodbTrxReadOnly = (int) $trxRow['trx_read_only'];
+                    $innodbTrxColumnFound = 'trx_read_only';
+                }
+            }
+        }
+    }
+
     $innodbTrxReadOnlyObserved = $innodbTrxReadOnly;
+    $innodbTrxColumnObserved = $innodbTrxColumnFound;
+
     if ($innodbTrxReadOnly !== 1) {
-        throw new \RuntimeException('Documented MariaDB innodb_trx observation failed: trx_read_only is not 1 (got '.($innodbTrxReadOnly ?? 'null').').');
+        throw new \RuntimeException('Documented MariaDB innodb_trx observation failed: read-only transaction flag is not 1 (got '.($innodbTrxReadOnly ?? 'null').', column='.($innodbTrxColumnFound ?? 'none').').');
     }
 
     // Harmless mutation attempt on disposable probe table inside READ ONLY transaction
@@ -862,19 +897,32 @@ $outputReport = [
         'owned_pdo_database' => $observedDedicatedPdoDatabase,
         'owned_pdo_port' => $observedDedicatedPdoPort,
     ],
-    'read_only_proof' => $observedDedicatedPdoVerified ? [
+    'read_only_proof' => ($innodbTrxReadOnlyObserved === 1 && $mutationDeniedObserved === true) ? [
         'status' => 'VERIFIED',
         'innodb_trx_read_only' => $innodbTrxReadOnlyObserved,
+        'innodb_trx_column' => $innodbTrxColumnObserved,
+        'probe_mutation_denied' => $mutationDeniedObserved,
+        'denial_sqlstate' => $denialCodeObserved,
+        'denial_message' => $denialMessageObserved,
+    ] : ($observedDedicatedPdoVerified ? [
+        'status' => 'FAILED',
+        'innodb_trx_read_only' => $innodbTrxReadOnlyObserved,
+        'innodb_trx_column' => $innodbTrxColumnObserved,
         'probe_mutation_denied' => $mutationDeniedObserved,
         'denial_sqlstate' => $denialCodeObserved,
         'denial_message' => $denialMessageObserved,
     ] : [
         'status' => 'NOT_RUN',
-    ],
+        'innodb_trx_read_only' => null,
+        'innodb_trx_column' => null,
+        'probe_mutation_denied' => false,
+        'denial_sqlstate' => null,
+        'denial_message' => null,
+    ]),
     'pre_baseline' => $preBaseline,
     'post_baseline' => $postBaseline,
     'baseline_comparison' => ($postBaseline !== null && $preBaseline !== null) ? [
-        'status' => 'VERIFIED',
+        'status' => ($postBaseline === $preBaseline && $executionSuccess === true) ? 'VERIFIED' : 'FAILED',
         'strictly_equal' => ($postBaseline === $preBaseline),
         'stock_movements_qty_sum_is_zero' => BigDecimal::of((string) ($postBaseline['stock_movements_qty_sum'] ?? '0'))->isZero(),
         'zero_deltas_verified' => $executionSuccess,
@@ -884,7 +932,9 @@ $outputReport = [
         'stock_movements_qty_sum_is_zero' => false,
         'zero_deltas_verified' => false,
     ],
-    'six_reconcilers_status' => $reconciliationReport !== null ? 'VERIFIED' : 'NOT_RUN',
+    'six_reconcilers_status' => ($reconciliationReport !== null && ($reconciliationReport['all_healthy'] ?? false) === true)
+        ? 'VERIFIED'
+        : ($reconciliationReport !== null ? 'FAILED' : 'NOT_RUN'),
     'six_reconciler_results' => $reconciliationReport,
     'cleanup_verified' => $cleanupVerified,
     'errors' => $errors,

@@ -148,3 +148,88 @@ Following Root inspection of Phase 1 failure artifacts, the following source cor
    - Configured nonsecret environment logging to use a strict allowlist of known safe keys rather than serializing all ambient environment variables.
    - Future qualification attempts will target a fresh unique directory with independent nonce (`p8_db_qualification_phase2_<nonce>`), preserving Phase 1 artifacts intact.
 
+---
+
+### 8. Phase 2 Bounded Qualification Attempt & Outcome (`fcefc8f7bcaede3c0ed532b76c5c9d90e2939b41`)
+
+**Execution Date**: 2026-11-15T07:37:37+02:00  
+**Branch**: `t3/recover-cash-writer`  
+**Execution HEAD**: `fcefc8f7bcaede3c0ed532b76c5c9d90e2939b41`  
+**Lease**: `ONE exclusive OWNED 3342 DB phase2 attempt` (RELEASED IMMEDIATELY)  
+**Outcome**: `FAILED` (Exit code: 1, Stop on FIRST failure, NO autofix/retry)  
+**Elapsed Runtime**: `8.1347s` (Subprocess PID: `1492025`)  
+**Teardown**: Owned schema dropped, independent absence verified (`ABSENCE_CONFIRMED`)
+
+#### 8.1 Invariant & Source Integrity Verification (PRE & POST)
+Pre- and post-execution source hashes match strictly across all components:
+- `tests/Support/Harness/disposable-db-qualification-runner.php`: `aa29347ece0eee06683a0ae449379bcfd7705e8a3d7404d4066f3a0312aa2677`
+- `tests/Support/Harness/DisposableFinancialPostRunInspector.php`: `4f419bef5aed7352230b1d54934a40f6cabebb912eb8ed771604473869954550`
+- `tests/Support/Harness/DisposableMobileV2BackendHarness.php`: `271eb8c30e1d86a636fb8eaab46b7426fbcf84f8d009f8ad7b18d5d6bf43f12c`
+- `tests/Support/DisposableMariaDbSchema.php`: `ac69d1e6f0875eff250ce1fd688f47fbb95162dcd081f33f889ebf1fc184c352`
+- `docs/integration/mobile-v2-client-handoff-schema.json`: `edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275`
+- `tests/Support/Harness/fixtures/golden-provenance-manifest.json`: `2135861348655859da9ef4f232cbb1b3ba87debce0b9806340df62bce0476f08`
+- `tests/Support/Harness/fixtures/synthetic-financial-golden-wire.json`: `25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6`
+- `tests/Support/Harness/fixtures/synthetic-financial-golden-wrapper.json`: `7458f05b57fe149beec9e26ebec77015b45f2acfcc428687f10c216f80f1592d`
+- `docs/integration/mobile-v2-integration-manifest.json`: `c53ccd90bca5dbe34b7ab6191f332a8e8b84de0869e8b060623d980e2759f78a`
+- `app/Actions/Company/CreateCompanyAction.php`: `fa2f38cb99780e4c635c7a3f72d77c8832265c9aaacf366a8ee88853ceff26b5`
+- **Working Tree State**: Clean (`git status --porcelain` empty).
+- **Production Diff**: `git diff 6981511405d7bcd04cd8f8a09e64443ce0aaf47e -- app routes config composer.lock` => 0 bytes.
+
+#### 8.2 Execution Trajectory & Steps Passed
+1. **Pre-checks**:
+   - `proof_refusal`: **PASS** (`Disposable schema ownership proof is required. Use the isolated runner.`)
+   - `invalid_schema_refusal`: **PASS** (`Inspector refused: invalid disposable schema name 'invalid_schema_name'.`)
+   - `child_env_propagation`: **PASS** (`Synthetic child process validated testSettings and assertPrimarySchema under explicit environment without DB socket.`)
+2. **Schema Creation & Migration Lifecycle**:
+   - Schema created: `accounting_p8_tmp_8087ec7c7426` on `127.0.0.1:3342`.
+   - Explicit environment propagation: child process received administrative credentials via `DisposableMariaDbSchema::environment()`.
+   - Schema migrations (`artisan migrate --force`): **PASS** (completed cleanly in ~7 seconds).
+3. **Canonical Foundation Fixture**:
+   - `CreateCompanyAction` executed under owned connection: created `company_id = 1` cleanly.
+   - Permissions and roles established.
+4. **Ambient Connection Sentinel**:
+   - Ambient connections poisoned to `127.0.0.1:1` / `poison_sentinel_unconnectable`.
+   - Interceptor installed; **0** ambient dials recorded (`ambient_connection_attempts: 0`).
+5. **Dedicated Read-Only Connection**:
+   - Dedicated PDO connected to `accounting_p8_tmp_8087ec7c7426` on port `3342`.
+   - Disposable probe table `_disposable_ro_probe` created and populated.
+   - Read-only transaction initiated: `START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`.
+
+#### 8.3 First Failure Encountered (`innodb_trx` Column Name)
+- The query `SELECT trx_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()` failed with:
+  ```
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'trx_read_only' in 'SELECT'
+  ```
+- **Root Cause**: In MariaDB 10.x/10.11, the read-only flag in `information_schema.innodb_trx` is named `trx_is_read_only` (MySQL uses `trx_read_only`).
+- **Enforcement**: STOP ON FIRST FAILURE enforced immediately. `qualification_status = "FAILED"`, `exit_code = 1`. No retry, no autofix, no secondary queries.
+
+#### 8.4 Teardown & Absence Verification
+1. **Internal Synchronous Teardown**:
+   - The runner's `finally` block dropped `accounting_p8_tmp_8087ec7c7426`.
+2. **External Watchdog Independent Absence Query**:
+   - Executed `SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = 'accounting_p8_tmp_8087ec7c7426'` against MariaDB port 3342.
+   - Returned `0` rows (**`ABSENCE_CONFIRMED`**). Zero schema leakage.
+3. **Process Hierarchy**:
+   - All subprocesses and migration workers cleanly exited and were reaped. Zero dangling processes.
+
+#### 8.5 Phase 2 Retained Artifacts & Hashes
+All artifacts are preserved under `/home/t3dev/.t3/userdata/attachments/p8_db_qualification_phase2_8c2e91da/` (dir `0700`, files `0600`):
+- `admin_credentials.json`: `bab71f831ab1d27c91376f79e221a1f118355b21f9d61f39e26709e3bf9219e8`
+- `pre_source_hashes.json`: `6bd6628bca4cc8021a5edeff093bd60b4852c6711d6667fead011a65dc93bb97`
+- `post_source_hashes.json`: `6bd6628bca4cc8021a5edeff093bd60b4852c6711d6667fead011a65dc93bb97`
+- `raw_stderr.log`: `5a0f5e662dfb984e01e3ab0d80c79480bb86a2924fd35f3480e7a4c02f71e5fc`
+- `raw_stdout.log`: `c43cd09ecdb763a19df773bc919d916d605466f3ba59e14b4902a418a010bb51`
+- `runner_output.json`: `c43cd09ecdb763a19df773bc919d916d605466f3ba59e14b4902a418a010bb51`
+- `watchdog_audit.json`: `0a24ebf01b07c7cc0cbdbb40829e55ae01b4ced91e35fa04bc976d082bb7965f`
+- `watchdog_runner_phase2.py`: `82fa0266eb7499ee91f6c734a716a1a28dee05908f0855aa028a06c12a409054`
+
+#### 8.6 Source Consolidation for Phase 3 Readiness (No DB Run until Root Grant)
+1. **MariaDB Transaction Column Compatibility**:
+   - `disposable-db-qualification-runner.php` queries `trx_is_read_only` (MariaDB standard) with fallback to `trx_read_only` (MySQL) and `SELECT *`.
+2. **Honest Observation Reporting**:
+   - `read_only_proof.status` is set to `VERIFIED` strictly when `$innodbTrxReadOnlyObserved === 1 && $mutationDeniedObserved === true`. Otherwise `FAILED` if attempted, or `NOT_RUN` if unreached.
+   - `baseline_comparison.status` is set to `VERIFIED` strictly when `$postBaseline === $preBaseline && $executionSuccess === true`.
+   - `six_reconcilers_status` is set to `VERIFIED` strictly when `$reconciliationReport !== null && ($reconciliationReport['all_healthy'] ?? false) === true`.
+3. **Lease Status**:
+   - **RELEASED IMMEDIATELY**. Zero active connections, zero background listeners.
+
