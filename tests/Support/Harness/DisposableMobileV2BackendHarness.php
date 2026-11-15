@@ -60,6 +60,12 @@ final class DisposableMobileV2BackendHarness
 
     public const string QUALIFIED_APP_TREE = '34d1da0ae82b182fa2c0adafd785416a86834a20';
 
+    public const string QUALIFIED_APP_TREE_BASE = '34d1da0ae82b182fa2c0adafd785416a86834a20';
+
+    public const string QUALIFIED_APP_TREE_G1 = 'd584067cf8f8a3588f4031a4cdb2107e0fa80b4d';
+
+    public const string QUALIFIED_G1_BOOTSTRAP_CONTROLLER_BLOB = '9df528b0ef80b514a2472c81be2a9203b8c1830a';
+
     public const string EVIDENCE_PUBLICATION_COMMIT = '717c3da2829792a5ec4f11597905a17dbb8e7cd9';
 
     /** Known peer Android integration candidate commit; marked CANDIDATE_KNOWN_BAD (changes required, unit 76 PASS but not Root accepted). */
@@ -394,7 +400,7 @@ final class DisposableMobileV2BackendHarness
      * 10. DisposableMariaDbSchema::testSettings() — full settings validation
      * 11. git status porcelain — clean app/routes/config/composer.lock
      * 12. qualified execution commit object — must exist in repo
-     * 13. app tree hash — must match QUALIFIED_APP_TREE
+     * 13. app tree hash — must match admitted QUALIFIED_APP_TREE_BASE or QUALIFIED_APP_TREE_G1
      *
      * @param  string  $expectedBackendHead  Full 40-hex commit SHA of current worktree HEAD (mandatory).
      * @param  string|null  $peerAndroidHead  Full 40-hex commit SHA of peer Android integration HEAD.
@@ -472,12 +478,71 @@ final class DisposableMobileV2BackendHarness
             throw new RuntimeException('Harness refused: qualified execution commit '.self::QUALIFIED_EXECUTION_HEAD.' not found in repository.');
         }
 
-        // 13. Enforce qualified app tree match (app/ must be 100% byte-identical to 34d1da0a...)
+        // 13. Enforce qualified app tree match (must match admitted base tree or qualified G1 read-metadata tree)
         $revParseApp = new Process(['git', 'rev-parse', 'HEAD:app'], $root);
         $revParseApp->run();
-        if (! $revParseApp->isSuccessful() || trim($revParseApp->getOutput()) !== self::QUALIFIED_APP_TREE) {
-            throw new RuntimeException('Harness refused: app tree does not match qualified tree '.self::QUALIFIED_APP_TREE);
+        if (! $revParseApp->isSuccessful()) {
+            throw new RuntimeException('Harness refused: failed to inspect HEAD:app tree.');
         }
+        self::assertAdmittedAppTree(trim($revParseApp->getOutput()), $root);
+    }
+
+    /**
+     * Asserts that an app tree hash matches either the qualified base tree (34d1...)
+     * or the qualified G1 read-metadata tree (d584...).
+     *
+     * Invariants enforced:
+     * - Only exact immutable SHAs QUALIFIED_APP_TREE_BASE or QUALIFIED_APP_TREE_G1 are admitted.
+     * - If QUALIFIED_APP_TREE_G1 is presented, git diff vs QUALIFIED_APP_TREE_BASE must be strictly
+     *   the single file 'Http/Controllers/Api/Mobile/V1/BootstrapController.php'.
+     * - The blob hash of BootstrapController.php in that tree must match QUALIFIED_G1_BOOTSTRAP_CONTROLLER_BLOB.
+     * - Any other tree SHA fails closed immediately; never admits arbitrary diffs or unknown trees.
+     *
+     * @param  string  $appTreeSha
+     * @param  string|null  $root
+     * @return string The admitted tree SHA
+     *
+     * @throws RuntimeException
+     */
+    public static function assertAdmittedAppTree(string $appTreeSha, ?string $root = null): string
+    {
+        if ($appTreeSha === self::QUALIFIED_APP_TREE_BASE) {
+            return self::QUALIFIED_APP_TREE_BASE;
+        }
+
+        if ($appTreeSha === self::QUALIFIED_APP_TREE_G1) {
+            $repoRoot = $root ?? dirname(__DIR__, 3);
+            // Verify diff vs base tree is solely the G1 BootstrapController
+            $diffProcess = new Process(
+                ['git', 'diff', '--name-only', self::QUALIFIED_APP_TREE_BASE, self::QUALIFIED_APP_TREE_G1],
+                $repoRoot
+            );
+            $diffProcess->run();
+            if (! $diffProcess->isSuccessful()) {
+                throw new RuntimeException('Harness refused: failed to verify git diff between qualified app trees.');
+            }
+
+            $diffOutput = trim($diffProcess->getOutput());
+            if ($diffOutput !== 'Http/Controllers/Api/Mobile/V1/BootstrapController.php') {
+                throw new RuntimeException("Harness refused: qualified G1 app tree diff contains unauthorized files: '{$diffOutput}'.");
+            }
+
+            // Verify blob hash of BootstrapController in the G1 tree matches immutable constant
+            $revParseProcess = new Process(
+                ['git', 'rev-parse', self::QUALIFIED_APP_TREE_G1.':Http/Controllers/Api/Mobile/V1/BootstrapController.php'],
+                $repoRoot
+            );
+            $revParseProcess->run();
+            if (! $revParseProcess->isSuccessful() || trim($revParseProcess->getOutput()) !== self::QUALIFIED_G1_BOOTSTRAP_CONTROLLER_BLOB) {
+                throw new RuntimeException('Harness refused: G1 BootstrapController blob hash does not match qualified blob '.self::QUALIFIED_G1_BOOTSTRAP_CONTROLLER_BLOB);
+            }
+
+            return self::QUALIFIED_APP_TREE_G1;
+        }
+
+        throw new RuntimeException(
+            "Harness refused: app tree '{$appTreeSha}' does not match qualified base tree (".self::QUALIFIED_APP_TREE_BASE.') or qualified G1 read-metadata tree ('.self::QUALIFIED_APP_TREE_G1.').'
+        );
     }
 
     /**
@@ -617,9 +682,10 @@ final class DisposableMobileV2BackendHarness
 
         $revParseApp = new Process(['git', 'rev-parse', 'HEAD:app'], $root);
         $revParseApp->run();
-        if (! $revParseApp->isSuccessful() || trim($revParseApp->getOutput()) !== self::QUALIFIED_APP_TREE) {
-            throw new RuntimeException('Harness refused: app tree does not match qualified tree '.self::QUALIFIED_APP_TREE);
+        if (! $revParseApp->isSuccessful()) {
+            throw new RuntimeException('Harness refused: failed to inspect HEAD:app tree.');
         }
+        $admittedTree = self::assertAdmittedAppTree(trim($revParseApp->getOutput()), $root);
 
         // Verify git status of core paths is clean
         $statusProcess = new Process(['git', 'status', '--porcelain', 'app/', 'routes/', 'config/', 'composer.lock'], $root);
@@ -634,7 +700,7 @@ final class DisposableMobileV2BackendHarness
             'peer_android_head' => $peerAndroidHead,
             'peer_android_approved_head_sha' => $approvedHead,
             'peer_android_executable_head_sha' => $executableHead,
-            'qualified_tree' => self::QUALIFIED_APP_TREE,
+            'qualified_tree' => $admittedTree,
             'ca5a_manifest_sha256' => self::CA5A_MANIFEST_SHA256,
             'ca5a_canonical_digest' => self::CA5A_CANONICAL_DIGEST,
             'manifest_sha256' => $actualManifestSha,
@@ -1258,8 +1324,8 @@ PHP;
         if ($pins['qualified_core_head_sha'] !== self::QUALIFIED_EXECUTION_HEAD) {
             throw new RuntimeException('Malformed client handoff artifact: qualified_core_head_sha mismatch vs constant.');
         }
-        if ($pins['qualified_app_tree_sha'] !== self::QUALIFIED_APP_TREE) {
-            throw new RuntimeException('Malformed client handoff artifact: qualified_app_tree_sha mismatch vs constant.');
+        if ($pins['qualified_app_tree_sha'] !== self::QUALIFIED_APP_TREE_BASE && $pins['qualified_app_tree_sha'] !== self::QUALIFIED_APP_TREE_G1) {
+            throw new RuntimeException('Malformed client handoff artifact: qualified_app_tree_sha mismatch vs admitted constants.');
         }
         if ($pins['peer_android_approved_head_sha'] === $pins['peer_android_executable_head_sha']) {
             throw new RuntimeException('Malformed client handoff artifact: peer_android_approved_head_sha and peer_android_executable_head_sha must be distinct publication vs executable SHAs.');
@@ -1669,7 +1735,7 @@ PHP;
             $runtimePins = [
                 'qualified_core_head_sha' => self::QUALIFIED_EXECUTION_HEAD,
                 'backend_execution_head_sha' => $expectedBackendHead,
-                'qualified_app_tree_sha' => self::QUALIFIED_APP_TREE,
+                'qualified_app_tree_sha' => $manifestInfo['qualified_tree'] ?? self::QUALIFIED_APP_TREE_BASE,
                 'peer_android_approved_head_sha' => $manifestInfo['peer_android_approved_head_sha'],
                 'peer_android_executable_head_sha' => $manifestInfo['peer_android_executable_head_sha'],
                 'client_handoff_schema_sha256' => (string) hash_file('sha256', $root.'/docs/integration/mobile-v2-client-handoff-schema.json'),

@@ -366,6 +366,19 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE));
         $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE);
 
+        $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_BASE));
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_BASE);
+        $this->assertSame('34d1da0ae82b182fa2c0adafd785416a86834a20', DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_BASE);
+        $this->assertSame(DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE, DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_BASE);
+
+        $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1));
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1);
+        $this->assertSame('d584067cf8f8a3588f4031a4cdb2107e0fa80b4d', DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1);
+
+        $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::QUALIFIED_G1_BOOTSTRAP_CONTROLLER_BLOB));
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::QUALIFIED_G1_BOOTSTRAP_CONTROLLER_BLOB);
+        $this->assertSame('9df528b0ef80b514a2472c81be2a9203b8c1830a', DisposableMobileV2BackendHarness::QUALIFIED_G1_BOOTSTRAP_CONTROLLER_BLOB);
+
         $this->assertSame(40, strlen(DisposableMobileV2BackendHarness::EVIDENCE_PUBLICATION_COMMIT));
         $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::EVIDENCE_PUBLICATION_COMMIT);
 
@@ -379,6 +392,39 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD);
 
         $this->assertSame('t3/recover-cash-writer', DisposableMobileV2BackendHarness::REQUIRED_BASE_BRANCH);
+    }
+
+    #[Test]
+    public function test_assert_admitted_app_tree_admits_qualified_base_tree(): void
+    {
+        $admitted = DisposableMobileV2BackendHarness::assertAdmittedAppTree(
+            DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_BASE
+        );
+
+        $this->assertSame(DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_BASE, $admitted);
+    }
+
+    #[Test]
+    public function test_assert_admitted_app_tree_admits_qualified_g1_tree(): void
+    {
+        $admitted = DisposableMobileV2BackendHarness::assertAdmittedAppTree(
+            DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1
+        );
+
+        $this->assertSame(DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1, $admitted);
+    }
+
+    #[Test]
+    public function test_assert_admitted_app_tree_rejects_unadmitted_third_tree(): void
+    {
+        $thirdTree = str_repeat('f', 40);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage(
+            "Harness refused: app tree '{$thirdTree}' does not match qualified base tree (".DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_BASE.') or qualified G1 read-metadata tree ('.DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1.').'
+        );
+
+        DisposableMobileV2BackendHarness::assertAdmittedAppTree($thirdTree);
     }
 
     #[Test]
@@ -1481,6 +1527,99 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         // This call must complete with ZERO exceptions, verifying CanonicalJsonSerializer and OnlineSaleIntentProfile runtime resolution
         DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
         $this->assertSame('1.0.0', $handoff['schema_version']);
+    }
+
+    #[Test]
+    public function test_validate_client_handoff_admits_g1_tree_and_rejects_unadmitted_tree(): void
+    {
+        $runtimePins = [
+            'qualified_core_head_sha' => DisposableMobileV2BackendHarness::QUALIFIED_EXECUTION_HEAD,
+            'backend_execution_head_sha' => str_repeat('b', 40),
+            'qualified_app_tree_sha' => DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1,
+            'peer_android_approved_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_HEAD,
+            'peer_android_executable_head_sha' => DisposableMobileV2BackendHarness::APPROVED_ANDROID_EXECUTABLE_HEAD,
+            'client_handoff_schema_sha256' => str_repeat('6', 64),
+            'source_fixture_sha256' => str_repeat('1', 64),
+            'guard_test_sha256' => str_repeat('2', 64),
+            'cli_command_sha256' => str_repeat('3', 64),
+            'cli_runner_sha256' => str_repeat('4', 64),
+            'pairing_manifest_sha256' => str_repeat('5', 64),
+        ];
+
+        $fixture = [
+            'schema_name' => 'harness_test_db',
+            'company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'company_base_currency' => 'ILS',
+            'currency_minor_units' => 2,
+            'staff_actor_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+            'customer_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+            'warehouse_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+            'product_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+            'product_unit_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+            'tax_rate_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+            'cash_account_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+        ];
+
+        $rawWireSample = [
+            'raw_wire_payload_json' => '{"sample":true}',
+            'raw_wire_payload_sha256' => hash('sha256', '{"sample":true}'),
+            'parsed_request' => [
+                'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'device_id' => 'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+                'customer_id' => '01M7CZPF6TP283F3ZRXF5P8GT3',
+                'warehouse_id' => '01M7CZPF6TP283F3ZRXF5P8GT4',
+                'currency' => 'ILS',
+                'lines' => [[
+                    'product_id' => '01M7CZPF6TP283F3ZRXF5P8GT5',
+                    'product_unit_id' => '01M7CZPF6TP283F3ZRXF5P8GT6',
+                    'conversion_to_base' => '1.000000',
+                    'quantity' => '1.000000',
+                    'unit_price' => '50.000000',
+                    'tax_rate_id' => '01M7CZPF6TP283F3ZRXF5P8GT7',
+                    'tax_rate' => '16.000000',
+                    'tax_inclusive' => false,
+                ]],
+                'payment' => [
+                    'settlement_mode' => 'full',
+                    'payment_method' => 'cash',
+                    'cash_account_id' => '01M7CZPF6TP283F3ZRXF5P8GT8',
+                    'amount' => '58.000000',
+                ],
+            ],
+        ];
+
+        $serverContext = [
+            'company_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'actor_id' => '01M7CZPF6TP283F3ZRXF5P8GT1',
+            'currency_minor_units' => 2,
+        ];
+
+        $handoff = DisposableMobileV2BackendHarness::buildClientHandoff(
+            runtimePins: $runtimePins,
+            fixture: $fixture,
+            credentialsPath: '/tmp/test_credentials.json',
+            rawWireSample: $rawWireSample,
+            serverContext: $serverContext,
+            canonicalDigest: str_repeat('a', 64),
+            handoffScope: DisposableMobileV2BackendHarness::SCOPE_PROVISION_ONLY,
+            lifecyclePhase: 'PROVISIONED_AWAITING_TLS_START',
+            createdAt: now()->toIso8601String(),
+            expiresAt: now()->addHours(1)->toIso8601String(),
+        );
+
+        // Assert G1 tree is admitted
+        DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+        $this->assertSame(DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1, $handoff['backend_runtime_pins']['qualified_app_tree_sha']);
+
+        // Assert unadmitted tree fails closed
+        $badHandoff = $handoff;
+        $badHandoff['backend_runtime_pins']['qualified_app_tree_sha'] = str_repeat('9', 40);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Malformed client handoff artifact: qualified_app_tree_sha mismatch vs admitted constants.');
+
+        DisposableMobileV2BackendHarness::validateClientHandoff($badHandoff);
     }
 
     #[Test]
