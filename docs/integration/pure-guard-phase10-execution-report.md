@@ -2,6 +2,7 @@
 
 - **Date / Time**: 2026-11-15T13:36:44Z
 - **Execution Target Commit**: `8c00888a8dc8d070631ac56adbc551b98422e203`
+- **Publication Commit**: `ba04b6f78e2f1bdf8c925a7a674baa98734a3baf`
 - **Branch**: `t3/recover-cash-writer`
 - **Runner**: PHPUnit 12.5.36 (PHP 8.4.27)
 - **Lease Scope**: Exclusive short focused pure QA lease on `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` (37 methods expected).
@@ -55,7 +56,7 @@ vendor/bin/phpunit \
 - **Failures**: 0
 - **Errors**: 0
 - **Skipped**: 0
-- **PHPUnit Notices**: 10 (all expected cleanup log notices from simulated failure drills)
+- **PHPUnit Notices**: 10 (emitted by PHPUnit error handler during test execution for runtime socket probe operations such as @fsockopen attempts against closed loopback ports 18080/18443 during exact cleanup tests; distinct from supervisor stdout/stderr runtime console output)
 - **Suite Outcome**: ALL 37 TESTS PASSED (100%)
 - **Unreached Test Inventory Preserved**: 0 tests
 

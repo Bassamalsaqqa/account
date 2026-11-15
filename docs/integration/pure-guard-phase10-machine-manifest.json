@@ -3,6 +3,7 @@
   "nature": "CONTEMPORANEOUS_EXECUTION_ATTESTATION",
   "phase": 10,
   "execution_target_commit": "8c00888a8dc8d070631ac56adbc551b98422e203",
+  "publication_commit": "ba04b6f78e2f1bdf8c925a7a674baa98734a3baf",
   "branch": "t3/recover-cash-writer",
   "runner": "PHPUnit 12.5.36 (PHP 8.4.27)",
   "lease_scope": "Exclusive short focused pure QA lease on SupervisedFinancialDrillTest.php (37 methods expected).",
