@@ -641,7 +641,8 @@ def run_supervised_child(cmd, cwd, env, log_file_handle, timeout_seconds):
 
     return proc.returncode
 
-def main():
+def build_parser():
+    """Constructs and returns the authoritative CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Mobile V2 Supervised Paired Financial Drill Operator Driver"
     )
@@ -669,6 +670,10 @@ def main():
     parser.add_argument("--root-approval-file", default=None, help="Root prestart approval file (required for --execute)")
     parser.add_argument("--root-live-approval-file", default=None, help="Private future path for Root live approval (required for --execute; must NOT exist at startup)")
 
+    return parser
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
 
     start_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()

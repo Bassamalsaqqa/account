@@ -22,6 +22,7 @@ Exercises all adversarial constraints and defect remediations in
 
 import os
 import sys
+import io
 import json
 import time
 import signal
@@ -29,6 +30,7 @@ import hashlib
 import shutil
 import tempfile
 import unittest
+import contextlib
 import importlib.util
 import subprocess
 from pathlib import Path
@@ -504,6 +506,58 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
                 binding_file, expected_sha, android_dir, pub_head, exe_head
             )
         self.assertIn("Disallowed prefix in approved delta path", str(ctx.exception))
+
+    def test_cli_omitted_binding_record_rejected(self):
+        parser = operator_driver.build_parser()
+        argv = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--expected-binding-sha=" + "d" * 64,
+            "--prewarm-only"
+        ]
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            with self.assertRaises(SystemExit) as ctx:
+                parser.parse_args(argv)
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--binding-record", buf.getvalue())
+
+    def test_cli_omitted_expected_binding_sha_rejected(self):
+        parser = operator_driver.build_parser()
+        argv = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--prewarm-only"
+        ]
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            with self.assertRaises(SystemExit) as ctx:
+                parser.parse_args(argv)
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--expected-binding-sha", buf.getvalue())
+
+    def test_cli_mandatory_binding_args_accepted(self):
+        parser = operator_driver.build_parser()
+        argv = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--prewarm-only"
+        ]
+        args = parser.parse_args(argv)
+        self.assertEqual(args.binding_record, "/tmp/test_binding.json")
+        self.assertEqual(args.expected_binding_sha, "d" * 64)
 
 
 if __name__ == '__main__':

@@ -125,7 +125,7 @@ All components verified in the backend worktree at HEAD:
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
 | `tests/Support/Harness/root-operator-tool.py` | `9f6930b63dc3d267b4472b0432f392bc997f6746446c9920a1e5b012c5d3fc5c` | Tool (Python 3) |
-| `tests/Support/Harness/supervised-paired-drill-operator.py` | `65b094e6ed3573a915cf982893416b444a6509a1c41e6eef5cecc353320de499` | Operator Driver |
+| `tests/Support/Harness/supervised-paired-drill-operator.py` | `3b5f951db6be83361d524183201f72a72cc84ba65167c3b728ad9d34897359bd` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
@@ -136,7 +136,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `089d7305c0db05a456ce1e7a6c5360b5939a0d840ca6fa90e74233ec24871050` | Python Unit Suite (26 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `541b3314ee1923e6c15134b957fec09925fe60969aa5c7aa0abbb2f34c97435d` | Python Unit Suite (29 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
@@ -574,6 +574,17 @@ In `supervised-paired-drill-operator.py`:
 2. **Dynamic Approved Delta Path List:** Replaced hardcoded `10_DOCS_ONLY_FILES` check. The operator parses `<N>_DOCS_ONLY_FILES` from `pub_vs_exe_delta`, verifies that `pins.approved_docs_delta_paths` is a non-empty list of exact length `N`, and validates that every path begins with an approved prefix (`docs/`, `app/docs/`) and contains no forbidden source extensions (`.kt`, `.java`, `.gradle`, `.kts`, `.sh`, `.py`, etc.).
 3. **Exact Delta Match (`verify_source_parity`):** The operator queries `git diff --name-only pub_head exe_head` in the Android peer and compares sorted actual diff files against sorted `approved_docs_delta_paths`. Any missing file or unexpected file immediately raises `SOURCE_PARITY_VIOLATION` and fails closed.
 4. **Authored Unit Tests:** Authored unit tests in `tests/Unit/Harness/test_supervised_paired_drill_operator.py` exercising exact 8-file approved delta matches, missing/unexpected diff files, delta count mismatches, and forbidden file extensions. All tests marked strictly unrun (`testsAUTHOREDUNRUN`).
+
+### 14.5 Review 5912032545 Closed in Source (Mandatory Binding Enforcement & CLI Negative Tests)
+- **Review Provenance:** Hourly GitHub review `5912032545` was submitted at 17:53:32Z referencing older commit `a596`, alleging optional binding P1.
+- **Closed in Source Status:** This condition was already resolved in source in commit `05aeb29`, maintained through `87a41fe`, `c66e564`, and HEAD:
+  - Both `--binding-record` and `--expected-binding-sha` are defined with `required=True` in `build_parser()`.
+  - `verify_binding_record` is unconditionally called before any action mode (prewarm, prepare, or live execute).
+- **Authored Negative CLI Tests:** In `tests/Unit/Harness/test_supervised_paired_drill_operator.py`:
+  - `test_cli_omitted_binding_record_rejected`: Omitting `--binding-record` raises `SystemExit` (exit code 2) with error output.
+  - `test_cli_omitted_expected_binding_sha_rejected`: Omitting `--expected-binding-sha` raises `SystemExit` (exit code 2) with error output.
+  - `test_cli_mandatory_binding_args_accepted`: Providing both flags parses successfully and preserves values.
+- All 29 unit tests remain strictly authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
 
 
 
