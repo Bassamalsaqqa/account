@@ -2055,7 +2055,7 @@ class SupervisedFinancialDrillTest extends TestCase
         $this->assertSame([], $emptyIndexData['artifacts']);
         $this->assertSame('Mobile V2 Partial Failure Diagnostic Index', $emptyIndexData['contract_name']);
         $this->assertArrayHasKey('unvalidated_warning', $emptyIndexData);
-        $this->assertStringContainsString('unvalidated', strtolower($emptyIndexData['unvalidated_warning']));
+        $this->assertStringContainsString('not qualified canonical deliverables', strtolower($emptyIndexData['unvalidated_warning']));
 
         // 2. Setup mock candidate client evidence and multiple XML fixtures (proves ALL copied, not first only)
         $mockEvidence = $this->tempDir . '/mock-client-evidence.json';
