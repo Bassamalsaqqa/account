@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Tests\Support\DisposableMariaDbSchema;
 use Tests\Support\Harness\SupervisedPairedFinancialDrill;
 use Tests\Support\Harness\VerifiedOwnedSnapshot;
 
@@ -693,6 +694,117 @@ class SupervisedFinancialDrillTest extends TestCase
             SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
             @rmdir($harnessDir);
         }
+    }
+
+    #[Test]
+    public function test_capture_snapshot_rejects_proof_parent_insecure_perms(): void
+    {
+        $insecureDir = $this->tempDir . '/insecure_proof_parent';
+        mkdir($insecureDir, 0755, true);
+        chmod($insecureDir, 0755);
+
+        $proofFile = $insecureDir . '/proof.json';
+        file_put_contents($proofFile, '{}');
+        chmod($proofFile, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_PROOF_PARENT_INSECURE_PERMS');
+
+        SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: $proofFile,
+            proofNonce: str_repeat('a', 32),
+            harnessDir: $this->tempDir,
+            childPid: 1234,
+            repoRoot: dirname(__DIR__, 4)
+        );
+    }
+
+    #[Test]
+    public function test_disposable_mariadb_schema_creates_private_0700_proof_parent_directory(): void
+    {
+        $instance = (new \ReflectionClass(DisposableMariaDbSchema::class))->newInstanceWithoutConstructor();
+        $ref = new \ReflectionClass(DisposableMariaDbSchema::class);
+
+        $propOwned = $ref->getProperty('owned');
+        $propOwned->setAccessible(true);
+        $propOwned->setValue($instance, true);
+
+        $propSchema = $ref->getProperty('schemaName');
+        $propSchema->setAccessible(true);
+        $propSchema->setValue($instance, 'accounting_p8_tmp_0123456789ab');
+
+        $propSettings = $ref->getProperty('settings');
+        $propSettings->setAccessible(true);
+        $propSettings->setValue($instance, [
+            'HOST' => '127.0.0.1',
+            'PORT' => '3342',
+            'USERNAME' => 'test_runner',
+            'PASSWORD' => '',
+        ]);
+
+        $env = $instance->environment();
+        $proofFile = $env['PHASE8_DISPOSABLE_DB_PROOF'] ?? '';
+        $this->assertFileExists($proofFile);
+
+        $proofDir = dirname($proofFile);
+        $this->assertTrue(is_dir($proofDir));
+
+        $dirPerms = fileperms($proofDir) & 0777;
+        $this->assertSame(0700, $dirPerms, 'Proof parent directory must have strict 0700 permissions');
+
+        $filePerms = fileperms($proofFile) & 0777;
+        $this->assertSame(0600, $filePerms, 'Proof file must have strict 0600 permissions');
+
+        $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+        $this->assertSame($currentUid, fileowner($proofDir), 'Proof directory must be owned by current UID');
+        $this->assertSame($currentUid, fileowner($proofFile), 'Proof file must be owned by current UID');
+
+        // Cleanup via drop() must remove both proof file and proof directory
+        $instance->drop();
+        $this->assertFileDoesNotExist($proofFile, 'Proof file must be unlinked on drop');
+        $this->assertDirectoryDoesNotExist($proofDir, 'Proof directory must be removed on drop');
+    }
+
+    #[Test]
+    public function test_prelive_failure_cleanup_with_captured_snapshot(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        // Models pre-live failure (e.g. live witness arrival timeout) where child harness was
+        // initialized, but live approval did not arrive in time.
+        // executeExactCleanup receives the pre-captured $snapshot and safely reaps child, drops
+        // schema via admin PDO on port 3342, and cleans up the harness temp directory.
+        $mockPortStmt = $this->createMock(PDOStatement::class);
+        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+        $mockSchemaStmt = $this->createMock(PDOStatement::class);
+        // Schema check returns existing schema first, then absence (false) after drop
+        $mockSchemaStmt->method('fetch')->willReturnOnConsecutiveCalls(
+            ['SCHEMA_NAME' => $snapshot->schemaName],
+            false
+        );
+
+        $mockPdo = $this->createMock(PDO::class);
+        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+        $mockPdo->expects($this->once())->method('exec')->with("DROP DATABASE IF EXISTS `{$snapshot->schemaName}`");
+
+        $this->assertDirectoryExists($snapshot->harnessDir);
+
+        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+            childProcess: null,
+            snapshot: $snapshot,
+            repoRoot: $repoRoot,
+            adminPdo: $mockPdo
+        );
+
+        $this->assertTrue($result['success'], 'Pre-live cleanup with captured snapshot must succeed');
+        $this->assertTrue($result['schema_absent'], 'Schema must be verified absent');
+        $this->assertTrue($result['temp_cleaned'], 'Harness temp directory must be cleaned up');
+        $this->assertEmpty($result['errors'], 'Cleanup must produce zero errors');
+        $this->assertDirectoryDoesNotExist($snapshot->harnessDir);
     }
 
     #[Test]

@@ -154,14 +154,18 @@ final class DisposableMariaDbSchema
     {
         $name = $this->schemaName();
         if ($this->proofPath === null) {
-            $path = tempnam(sys_get_temp_dir(), 'p8_ownership_');
-            if ($path === false) {
-                throw new RuntimeException('Unable to create private schema ownership proof.');
+            $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+            if (! is_dir($proofDir) && ! mkdir($proofDir, 0700, true)) {
+                throw new RuntimeException('Unable to create private schema ownership proof directory.');
             }
-            $this->tempFiles[] = $path;
-            chmod($path, 0600);
+            chmod($proofDir, 0700);
+
+            $path = $proofDir . '/proof.json';
             $this->proofNonce = bin2hex(random_bytes(16));
             file_put_contents($path, json_encode(['schema' => $name, 'host' => $this->settings['HOST'], 'port' => $this->settings['PORT'], 'nonce' => $this->proofNonce], JSON_THROW_ON_ERROR));
+            chmod($path, 0600);
+            $this->tempFiles[] = $path;
+            $this->tempFiles[] = $proofDir;
             $this->proofPath = $path;
         }
 
@@ -341,6 +345,8 @@ final class DisposableMariaDbSchema
             foreach ($this->tempFiles as $path) {
                 if (is_file($path)) {
                     unlink($path);
+                } elseif (is_dir($path)) {
+                    rmdir($path);
                 }
             }
             $this->tempFiles = [];

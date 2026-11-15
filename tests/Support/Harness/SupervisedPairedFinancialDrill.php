@@ -170,7 +170,7 @@ class SupervisedPairedFinancialDrill
         Process $childProcess,
         float $deadline,
         callable $checkAborted,
-        float $maxWaitSeconds = 15.0
+        float $maxWaitSeconds = 45.0
     ): string {
         $startWait = microtime(true);
         $effectiveMaxWait = min($maxWaitSeconds, max(1.0, $deadline - microtime(true) - 25.0));

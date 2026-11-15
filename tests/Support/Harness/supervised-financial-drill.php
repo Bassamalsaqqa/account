@@ -345,46 +345,23 @@ try {
     SupervisedPairedFinancialDrill::performStrictTlsReadinessCheck($readinessUrl, $caCertPath, $readinessNonce);
     echo "  [Probe] Strict TLS probe verified 200 OK with matching nonce.\n";
 
-    // 9. Gate 2: Expose Candidate Handoff & Bounded Wait for Independent External Live Root Approval
+    // 9. Expose Candidate Handoff & Capture Owned Snapshot BEFORE Awaiting Live Root Approval
     echo "\n==============================================================================\n";
     echo "CANDIDATE CLIENT HANDOFF EXPOSED FOR ROOT WITNESS RECORD:\n";
     echo "  Path   : {$handoffPath}\n";
     echo "  SHA256 : {$candidateHandoffSha}\n";
     echo "==============================================================================\n";
 
-    $liveApprovalTarget = $rootLiveApprovalFile ?? $outputDir . '/live_root_approval.json';
-    echo "Awaiting independent external Root live approval at '{$liveApprovalTarget}'...\n";
-
-    $rootApprovedHandoffSha = SupervisedPairedFinancialDrill::awaitAndVerifyLiveRootApproval(
-        $liveApprovalTarget,
-        $handoffPath,
-        $candidateHandoffSha,
-        $backendHead,
-        $androidPubHead,
-        $androidExeHead,
-        $manifestSha,
-        $schemaName,
-        $childProcess,
-        $deadline,
-        $checkAborted,
-        15.0
-    );
-    echo "  Root Live Gate       : GRANTED (witnessed SHA: {$rootApprovedHandoffSha})\n";
-
     // 10. Extract Payloads & Verified Canonical Digest (Receipt Semantics: profile digest != raw wire SHA)
-    // rawWirePayloadSha and canonicalPayloadDigest have distinct semantic provenance (raw transport hash
-    // vs normalized intent profile digest).  They are captured here for downstream inspector CLI args
-    // and the approval hashes manifest; equality between them is not a correctness constraint.
     $rawWirePayloadSha = (string) ($handoff['raw_wire_sample']['raw_wire_payload_sha256'] ?? '');
     $rawProfileDigest = (string) ($handoff['canonical_intent_profile_digest'] ?? '');
     $canonicalPayloadDigest = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($rawProfileDigest);
     $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
     $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
 
-    // 11. AFTER BOTH approvals verified: snapshot parent env allowlist from ALL THREE stores
+    // 11. BEFORE awaiting live witness: snapshot parent env allowlist from ALL THREE stores
     //     (getenv + $_ENV + $_SERVER) BEFORE any mutation, including before the loader and before
-    //     the scoped setters below.  The allowlist covers every var the loader may set plus the
-    //     scoped testing flags.  Capturing here ensures the finally block restores the exact
+    //     the scoped setters below. Capturing here ensures the finally block restores the exact
     //     pre-entry ambient state on any exception path, preventing ambient production DSN leakage.
     $envAllowlist = [
         'APP_ENV',
@@ -400,12 +377,11 @@ try {
     ];
     $parentEnvToRestore = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envAllowlist);
 
-    // Set scoped testing flags AFTER originals are captured and AFTER both approvals are verified,
+    // Set scoped testing flags AFTER originals are captured and prestart approval verified,
     // but BEFORE captureVerifiedOwnedSnapshot (which calls fromLiveOwnership -> assertPrimarySchema).
     // assertPrimarySchema refuses if APP_ENV != 'testing' or PHASE8_ALLOW_DISPOSABLE_DB != '1'.
-    // These putenvs target only the supervisor parent process environment; they are restored in finally.
     $scopedPreCaptureVars = [
-        'APP_ENV'                 => 'testing',
+        'APP_ENV'                  => 'testing',
         'MOBILE_V2_HARNESS_ENABLE' => '1',
         'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
     ];
@@ -415,15 +391,14 @@ try {
         $_SERVER[$varName] = $varVal;
     }
 
-    // Load bootstrap credentials (this calls putenv for host/port/user/password/proof internally;
-    // originals are already captured above, so the finally block will restore them unconditionally).
+    // Load bootstrap credentials from child config
     $creds = DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials($childConfigPath, $schemaName);
     $proofPath = $creds['proof_path'];
     $proofNonce = $creds['proof_nonce'];
 
-    // Capture immutable owned snapshot: 6-arg signature (schema, proof, nonce, harness, childPid, repoRoot).
-    // fromLiveOwnership inside performs ALL validation (schema/proof/nonce/harness/uid/path/assertPrimarySchema).
-    // APP_ENV=testing and PHASE8_ALLOW_DISPOSABLE_DB=1 are now set; assertPrimarySchema will pass.
+    // Capture verified owned snapshot BEFORE awaiting live witness so cleanup is guaranteed
+    // on ANY subsequent pre-live failure (timeout, signal, abort).
+    // NO economic queries or financial dispatch are executed here.
     $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
         $schemaName,
         $proofPath,
@@ -466,6 +441,26 @@ try {
         $_ENV[$varName]    = $varVal;
         $_SERVER[$varName] = $varVal;
     }
+
+    // 12. Gate 2: Bounded Wait for Independent External Live Root Approval (45s humane bound)
+    $liveApprovalTarget = $rootLiveApprovalFile ?? $outputDir . '/live_root_approval.json';
+    echo "Awaiting independent external Root live approval at '{$liveApprovalTarget}'...\n";
+
+    $rootApprovedHandoffSha = SupervisedPairedFinancialDrill::awaitAndVerifyLiveRootApproval(
+        $liveApprovalTarget,
+        $handoffPath,
+        $candidateHandoffSha,
+        $backendHead,
+        $androidPubHead,
+        $androidExeHead,
+        $manifestSha,
+        $schemaName,
+        $childProcess,
+        $deadline,
+        $checkAborted,
+        45.0
+    );
+    echo "  Root Live Gate       : GRANTED (witnessed SHA: {$rootApprovedHandoffSha})\n";
 
 
     // Connect proof PDO and resolve integer company_id (DB inspection strictly AFTER approvals)
