@@ -1,0 +1,47 @@
+{
+  "phaseA_junit.xml": {
+    "sha256": "215a67b4f74c0a2b70638e6bc2afeb1774ba566c60ca6d8f5c25a68663875e90",
+    "bytes": 18227,
+    "permissions": "0o600"
+  },
+  "phaseA_meta.json": {
+    "sha256": "28698d62703e127b04d04ef3544e8b0c14fe6dd6d7de0ed2bcdbeeabb2d5ce86",
+    "bytes": 654,
+    "permissions": "0o600"
+  },
+  "phaseA_post_backend.json": {
+    "sha256": "5dc711751b7dacdfe2c4d6cf5372ab1cf58cc24423b6e4e9c668b4ef895d8919",
+    "bytes": 301301,
+    "permissions": "0o600"
+  },
+  "phaseA_pre_backend.json": {
+    "sha256": "c949ef5e85f87ec25d16038a22a57de17a1d34403520caa356840a265d6e502e",
+    "bytes": 301301,
+    "permissions": "0o600"
+  },
+  "phaseA_raw.txt": {
+    "sha256": "933b2e1e4179478723aa864a19d105bd0d8e599b69d6385daead889bd931a94b",
+    "bytes": 1024,
+    "permissions": "0o600"
+  },
+  "phaseB_meta.json": {
+    "sha256": "25b770dba0bfaea00e1f71e2215dc4114607fa0350f25667b61c9c4ac295c041",
+    "bytes": 711,
+    "permissions": "0o600"
+  },
+  "phaseB_post_both.json": {
+    "sha256": "e1c5446ef67ca6de9c1c7beaa67024dcc27d68ebdad1070a45e1fed9b912b687",
+    "bytes": 389408,
+    "permissions": "0o600"
+  },
+  "phaseB_pre_both.json": {
+    "sha256": "8c6c628513539fd3ad6a86f58832892bf50cb738baa516db839100c3e324d772",
+    "bytes": 389712,
+    "permissions": "0o600"
+  },
+  "phaseB_raw.txt": {
+    "sha256": "0b0fa75441551b8e21c74dcf80e51c0607ae4cee09f9dcb503ad72a6ab44fc5c",
+    "bytes": 3298,
+    "permissions": "0o600"
+  }
+}
