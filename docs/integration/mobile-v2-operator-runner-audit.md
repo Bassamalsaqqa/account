@@ -557,6 +557,26 @@ To resolve this cleanly without compromising safety:
 | | `root-d43-case6-exec/argv.json` | `15d091c4d6804722cd24c7cf29f28433b7a6dff53e762e791e0c19bc8ab54711` |
 | | `root-d43-case6-exec/pre.json` | `dcec88087b48810b8b8f5b79c974de2224ac7424489cf2f3ecf85db57bc6075c` |
 | | `root-d43-case6-exec/post.json` | `7f7c41cc2ded4c5bba72af5df4083a84801efe84ea837bdfd559ecf14bb68c9e` |
+| **Root Case 7 Preparation** | `root-d43-case7-prep/pairing-manifest.json` | `78deec778d717ebb1f15d76a8a5dc6b623e991ecd63bc8a2eb263d453cbabf7f` |
+| | `root-d43-case7-prep/prestart.json` | `86fdbfd45bb4efaf8f22b09ed5e5c60db346faf2890559a41d0a8e68f3297a1a` |
+| | `root-d43-case7-prep/live.json` | `3b3516a929e6c0298e6654427a693a0a7f18e494149027553f87625e4f1dd16d` |
+| | `root-d43-case7-prep/argv.json` | `77becc79441b8accbfcdfeb89ce43903e86c27e9b9f0e7f68628fcd1eeff6701` |
+| | `root-d43-case7-prep/pre.json` | `9c796de03b5f0a3195a9c6cc6108b71cc214af6545745946155fb95596958de2` |
+| **Root Case 7 Execution (Outer Validator Refusal)** | `root-d43-case7-exec/operator_execution.log` | `166264ee5d027a9544325c49478cf985c93750e55df0e0ac59883b2de550e6cd` |
+| | `root-d43-case7-exec/exit_metadata.json` | `f82a358b3f9e1730846047e0242ba2a429da787f2dc87a859f3ed30699d6126d` |
+| | `root-d43-case7-exec/argv.json` | `e2858f84baa5f755c6c15f93f4433b32faf72f92df2ef619cb00d93a4f99e265` |
+| | `root-d43-case7-exec/paired-online-cash-pilot-evidence.json` | `c54a85b5198e1799dbde2bdc3185361211ac835838c86593ae8dd04788b6335f` |
+| | `root-d43-case7-exec/trusted_db_report.json` | `eb51bc1dce97a05d98cf0e473a9fa122772d5c8d0561afc91a1852fa8c85c55d` |
+| | `root-d43-case7-exec/delta_inspection.json` | `7be15a1a06b770c62fad9944344ead7a3ae2b086059992fa940d60fae60a9b09` |
+| | `root-d43-case7-exec/reconciliation_results.json` | `d38ce8072757719a506842adfded4921295876af563eed0d3a4e19785f4c0c23` |
+| | `root-d43-case7-exec/junit-test-report.xml` | `ba44a59bb915ef3c78766ce0197b7ccac2f5b90ae82c60647f0f646879521e6c` |
+| | `root-d43-case7-exec/raw_android_test_output.log` | `73cf88ab7a641995c4c9a921018c743ef5b5a7b79288d7f83a80691b37983733` |
+| | `root-d43-case7-exec/outer_evidence_validation.json` | `7aa2bc2a122dafdf55bcf536218d180b621dd639f5e3ceab79883c9afa399227` |
+| | `root-d43-case7-exec/post_cleanup_final_witness.json` | `44128beecd922303625e956bd51715bad369900ed4909cb317aa0bc3427ce958` |
+| | `root-d43-case7-exec/post_cleanup_artifact_index.json` | `cc2aa8afb65cace2ea7089b5c922c8f88f70d34ab3e304ef3f7021880e930a2d` |
+| | `root-d43-case7-exec/pre_run_baseline.json` | `91477e9fa9e81a9dd0c0692f94a55f3c898a739f2c1e874d27bc364ce64e64ca` |
+| | `root-d43-case7-exec/pre.json` | `bc1ed50ec58870eb0cbba6de55707ecc30640e77083c4cd294925c73dbc37b53` |
+| | `root-d43-case7-exec/post.json` | `4e4d61ece70fb67156774ac2de911fa155527d149df4c2fc9438385cc4f7dbee` |
 
 ---
 
@@ -980,6 +1000,92 @@ When CLI regressions were added to `DisposableMobileV2BackendHarnessGuardTest.ph
 4. **Preservation & Stand-Down**:
    - Historical Attempt 5 peer worktree and evidence JSON physically untouched.
    - No retry or test execution by writer. Shared lease RELEASED.
+
+---
+
+## 17. Attempt 7 Paired Financial Drill Milestone & Outer Validator Defect Disclosure
+
+### 17.1 Runtime Execution & Peer Provenance
+- **Backend HEAD**: `15fe4f388aeaa41e51aff780287d484d51101f4c`
+- **Peer Android Worktree**: `/home/t3dev/.t3/worktrees/small-trader-android/t3-389ae354-cb580f901287f02b`
+- **Peer HEADs**: Publication `d43d2c200b4ccce1d7075aed759f51529375d307` / Executable `82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd`.
+- **Peer Branch**: `verify-worktree-parity` (clean git status).
+- **Execution Output Directories**:
+  - Prep: `/home/t3dev/.t3/userdata/attachments/root-d43-case7-prep`
+  - Exec: `/home/t3dev/.t3/userdata/attachments/root-d43-case7-exec`
+- **Total Duration**: 49.809s (child PID 1982497).
+- **Overall Result**: **Exit Code 1 (Outer Evidence Validator Refusal)**.
+  - Financial Observations: **PASS** (Milestone met).
+  - Overall Suite Status: **FAIL** (1 outer validator error; no fake green).
+
+### 17.2 Real Runtime Android Smoke Execution (2/2 PASS)
+The Android test client executed under host JVM and completed in 26s (test time 2.256s):
+- `SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke`: **PASS** (2.249s)
+- `SmallTraderOnlineCashPilotSmokeTest.testCashPilotFinancialAcceptanceEnforcement`: **PASS** (0.002s)
+- **Report**: `junit-test-report.xml` (SHA `ba44a59bb915ef3c78766ce0197b7ccac2f5b90ae82c60647f0f646879521e6c`).
+- **Scenarios Witnessed in Evidence JSON** (`paired-online-cash-pilot-evidence.json`, SHA `c54a85b5198e1799dbde2bdc3185361211ac835838c86593ae8dd04788b6335f`):
+  1. `readiness_probe`: HTTP 200 (latency 340ms, host loopback HTTPS probe verified).
+  2. `financial_cash_fresh_commit_201`: HTTP 201 (latency 1218ms, fresh online cash sale committed atomically with invoice `INV-2026-0001`).
+  3. `financial_cash_idempotent_replay_200`: HTTP 200 (latency 69ms, byte-identical response with matching invoice).
+  4. `financial_cash_event_status_posted`: HTTP 200 (latency 65ms, offline event status query confirmed 'posted' status).
+  5. `financial_cash_tamper_409`: HTTP 409 (latency 68ms, duplicate clientEventId with balanced tampered payload strictly rejected).
+  - Payload digest: `11a4e579dc54cde0b7e0c8b2368299f85918d0b00619800ead6956e31762a5ac`.
+
+### 17.3 Authoritative Database Delta & Balancing
+Database delta inspection (`delta_inspection.json`, SHA `7be15a1a06b770c62fad9944344ead7a3ae2b086059992fa940d60fae60a9b09`):
+- `is_canonical_delta_valid`: **true**
+- `expected_delta_one_event`: **true**
+- `gl_batches_balanced`: **true**
+- **Created Entities**:
+  - 1 Sales Invoice (`id: 1`, `public_id: 01M7GJCCHWVFF30PTHQYZDRYYC`, `status: posted`, `grand_total_base: 58.000000`, `posting_batch_id: 2`)
+  - 1 Sales Invoice Line (`id: 1`, `public_id: 01M7GJCCJ095E05N05KR096R5T`, `quantity: 1.000000`, `unit_price: 50.000000`, `line_total: 58.000000`)
+  - 1 Sales Invoice Lot Allocation (`id: 1`, `sales_invoice_line_id: 1`, `stock_movement_id: 2`, `quantity_allocated_base: 1.000000`)
+  - 1 Customer Payment (`id: 1`, `public_id: 01M7GJCCPQTT2RXJGA499E66D3`, `amount: 58.000000`, `payment_method: cash`, `is_reversed: 0`, `posting_batch_id: 3`)
+  - 1 Customer Payment Allocation (`id: 1`, `amount: 58.000000`)
+  - 1 Mobile Event Receipt (`id: 1`, `status: completed`, `client_event_id: db442193-d21c-4900-926f-5cbf7ce25721`)
+  - 1 Stock Movement (`id: 2`, `quantity_delta_base: -1.000000`, `source_type: sales_invoice`, `source_id: 1`)
+  - 2 Posting Batches, 7 Posting Lines (balanced GL entries).
+
+### 17.4 Post-Event Financial Reconciliations (6/6 HEALTHY, 0 Issues)
+All six post-event financial reconciliation queries executed and reported 0 issues (`reconciliation_results.json`, SHA `d38ce8072757719a506842adfded4921295876af563eed0d3a4e19785f4c0c23`):
+- `AccountingReconciliationService`: `healthy: true`, `issue_count: 0`
+- `InventoryReconciliationService`: `healthy: true`, `issue_count: 0`
+- `SalesReconciliationService`: `healthy: true`, `issue_count: 0`
+- `PayablesReconciliationService`: `healthy: true`, `issue_count: 0`
+- `MoneyReconciliationService`: `healthy: true`, `issue_count: 0`
+- `Phase7ReconciliationService`: `healthy: true`, `issue_count: 0`
+- Trusted database report composed: `trusted_db_report.json` (SHA `eb51bc1dce97a05d98cf0e473a9fa122772d5c8d0561afc91a1852fa8c85c55d`).
+
+### 17.5 Cleanup Observations & Final Witness
+Post-cleanup witness verification (`post_cleanup_final_witness.json`, SHA `44128beecd922303625e956bd51715bad369900ed4909cb317aa0bc3427ce958`):
+- `child_reaped`: **true** (child PID 1982497 terminated cleanly).
+- `schema_absent`: **true** (temporary schema `accounting_p8_tmp_63886ce547ba` dropped).
+- `listeners_closed`: **true** (all ports and listeners closed).
+- `harness_absent`: **true** (`/tmp/v2_harness_07c432557630b803` removed).
+- `proof_parent_absent`: **true** (`/tmp/p8_proof_9f7afc8d7df108f6` removed).
+- `cleanup_success`: **true** (zero cleanup errors).
+- Pre/post repository invariance: 100% matched across both repositories (`invariance: true`, zero drift).
+
+### 17.6 Outer Evidence Validation Defect Disclosure
+Supervisor outer validation (`financial-inspector-cli.php --validate-evidence ...`) returned exit code 1 with single error (`outer_evidence_validation.json`, SHA `7aa2bc2a122dafdf55bcf536218d180b621dd639f5e3ceab79883c9afa399227`):
+```json
+{
+    "is_valid": false,
+    "errors": [
+        "Canonical graph sales_invoice_line.unit_price must be '58.000000', got '50.000000'."
+    ]
+}
+```
+- **Defect Cause**: `DisposableFinancialPostRunInspector.php` line 1893 hardcoded `unit_price` expected to gross `58.000000`.
+- **Authoritative Economic Core**: The authoritative synthetic profile (`mobile-v2-integration-manifest.json` lines 36-44) specifies:
+  - `quantity`: `1.000000`
+  - `unit_price`: `50.000000` (net price before tax)
+  - `tax_rate`: `16.000000` (`tax_inclusive: false` &rarr; exclusive tax = `8.000000`)
+  - `line_total`: `58.000000` (gross total)
+  - `grand_total_base`: `58.000000`
+  - `customer_payment.amount`: `58.000000`
+- In the database schema and queries (line 485), `sales_invoice_lines.unit_price` stores the net price `50.000000`, while `line_total` stores `58.000000`. Line 1893 erroneously conflated `unit_price` with `line_total`.
+- **Standing Status**: Shared lease RELEASED. No fake full green reported; financial operations verified healthy, outer validator bug isolated.
 
 
 
