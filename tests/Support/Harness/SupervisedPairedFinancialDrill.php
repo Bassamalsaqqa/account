@@ -631,14 +631,14 @@ class SupervisedPairedFinancialDrill
 
     /**
      * Preserves any available partial client evidence or JUnit XML test reports
-     * in the private output directory upon drill completion or failure, setting mode 0600.
-     * This ensures raw diagnostics are never lost even on JVM timeout or assertion failure.
-     * Note: Calling this does NOT validate freshness or claim test success.
+     * in a dedicated private partial/ diagnostics directory upon drill completion or failure.
+     * All preserved artifacts are explicitly indexed with their source path, sha256, mtime,
+     * and labeled 'unvalidated: true'. Qualified canonical filenames are NEVER overwritten.
      *
      * @param  string  $outputDir  Private output directory
      * @param  string|null  $evidenceFile  Path to candidate client evidence JSON
      * @param  string|null  $targetAndroidDir  Path to Android repository checkout
-     * @return array{evidence_preserved: bool, xml_preserved: bool, evidence_path: ?string, xml_path: ?string}
+     * @return array{partial_dir: ?string, evidence_preserved: bool, xml_count: int, index_path: ?string}
      */
     public static function preserveAvailablePartialFailureEvidence(
         string $outputDir,
@@ -646,33 +646,50 @@ class SupervisedPairedFinancialDrill
         ?string $targetAndroidDir = null
     ): array {
         $result = [
+            'partial_dir' => null,
             'evidence_preserved' => false,
-            'xml_preserved' => false,
-            'evidence_path' => null,
-            'xml_path' => null,
+            'xml_count' => 0,
+            'index_path' => null,
         ];
 
         if (! is_dir($outputDir)) {
             return $result;
         }
 
-        // 1. Partial client evidence JSON
-        $retainedEvidencePath = $outputDir . '/paired-online-cash-pilot-evidence.json';
-        if (! is_file($retainedEvidencePath) && $evidenceFile !== null && is_file($evidenceFile)) {
-            if (@copy($evidenceFile, $retainedEvidencePath)) {
-                @chmod($retainedEvidencePath, 0600);
-                $result['evidence_preserved'] = true;
-                $result['evidence_path'] = $retainedEvidencePath;
+        $partialDir = $outputDir . '/partial_failure_diagnostics';
+        if (! is_dir($partialDir)) {
+            if (! @mkdir($partialDir, 0700, true)) {
+                return $result;
             }
-        } elseif (is_file($retainedEvidencePath)) {
-            @chmod($retainedEvidencePath, 0600);
-            $result['evidence_preserved'] = true;
-            $result['evidence_path'] = $retainedEvidencePath;
+        }
+        @chmod($partialDir, 0700);
+        $result['partial_dir'] = $partialDir;
+
+        $index = [
+            'contract_name' => 'Mobile V2 Partial Failure Diagnostic Index',
+            'retained_at_utc' => gmdate('Y-m-d\TH:i:s\Z'),
+            'unvalidated_warning' => 'These artifacts are partial failure diagnostics from an aborted/failed drill. They are NOT qualified canonical deliverables.',
+            'artifacts' => [],
+        ];
+
+        // 1. Partial client evidence JSON
+        if ($evidenceFile !== null && is_file($evidenceFile)) {
+            $destEvidence = $partialDir . '/partial_client_evidence.json';
+            if (@copy($evidenceFile, $destEvidence)) {
+                @chmod($destEvidence, 0600);
+                $result['evidence_preserved'] = true;
+                $index['artifacts']['partial_client_evidence.json'] = [
+                    'source_path' => $evidenceFile,
+                    'sha256' => hash_file('sha256', $destEvidence),
+                    'bytes' => filesize($destEvidence),
+                    'mtime_utc' => gmdate('Y-m-d\TH:i:s\Z', filemtime($evidenceFile)),
+                    'unvalidated' => true,
+                ];
+            }
         }
 
-        // 2. Partial JUnit XML test report
-        $retainedXmlPath = $outputDir . '/junit-test-report.xml';
-        if (! is_file($retainedXmlPath) && $targetAndroidDir !== null && is_dir($targetAndroidDir)) {
+        // 2. Retain ALL available XML reports under partial/
+        if ($targetAndroidDir !== null && is_dir($targetAndroidDir)) {
             $possibleXmlDirs = [
                 $targetAndroidDir . '/app/build/test-results/testDebugUnitTest',
                 $targetAndroidDir . '/build/test-results/testDebugUnitTest',
@@ -680,20 +697,34 @@ class SupervisedPairedFinancialDrill
             foreach ($possibleXmlDirs as $d) {
                 if (is_dir($d)) {
                     $files = glob($d . '/*.xml');
-                    if (! empty($files) && is_file($files[0])) {
-                        if (@copy($files[0], $retainedXmlPath)) {
-                            @chmod($retainedXmlPath, 0600);
-                            $result['xml_preserved'] = true;
-                            $result['xml_path'] = $retainedXmlPath;
-                            break;
+                    if (! empty($files)) {
+                        foreach ($files as $f) {
+                            if (is_file($f)) {
+                                $destXml = $partialDir . '/' . basename($f);
+                                if (@copy($f, $destXml)) {
+                                    @chmod($destXml, 0600);
+                                    $result['xml_count']++;
+                                    $index['artifacts'][basename($f)] = [
+                                        'source_path' => $f,
+                                        'sha256' => hash_file('sha256', $destXml),
+                                        'bytes' => filesize($destXml),
+                                        'mtime_utc' => gmdate('Y-m-d\TH:i:s\Z', filemtime($f)),
+                                        'unvalidated' => true,
+                                    ];
+                                }
+                            }
                         }
                     }
                 }
             }
-        } elseif (is_file($retainedXmlPath)) {
-            @chmod($retainedXmlPath, 0600);
-            $result['xml_preserved'] = true;
-            $result['xml_path'] = $retainedXmlPath;
+        }
+
+        // Write index file
+        $indexPath = $partialDir . '/partial_failure_index.json';
+        $encoded = json_encode($index, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        if (@file_put_contents($indexPath, $encoded) !== false) {
+            @chmod($indexPath, 0600);
+            $result['index_path'] = $indexPath;
         }
 
         return $result;

@@ -2046,7 +2046,8 @@ class SupervisedFinancialDrillTest extends TestCase
             targetAndroidDir: null
         );
         $this->assertFalse($emptyResult['evidence_preserved']);
-        $this->assertFalse($emptyResult['xml_preserved']);
+        $this->assertSame(0, $emptyResult['xml_count']);
+        $this->assertNull($emptyResult['index_path']);
 
         // 2. Setup mock evidence file and mock Android build xml
         $mockEvidence = $this->tempDir . '/mock-client-evidence.json';
@@ -2065,17 +2066,37 @@ class SupervisedFinancialDrillTest extends TestCase
         );
 
         $this->assertTrue($result['evidence_preserved']);
-        $this->assertTrue($result['xml_preserved']);
-        $this->assertFileExists($outputDir . '/paired-online-cash-pilot-evidence.json');
-        $this->assertFileExists($outputDir . '/junit-test-report.xml');
+        $this->assertSame(1, $result['xml_count']);
+        $this->assertNotNull($result['index_path']);
 
-        $evidencePerms = fileperms($outputDir . '/paired-online-cash-pilot-evidence.json') & 0777;
-        $xmlPerms = fileperms($outputDir . '/junit-test-report.xml') & 0777;
-        $this->assertSame(0600, $evidencePerms);
-        $this->assertSame(0600, $xmlPerms);
+        $partialDir = $outputDir . '/partial_failure_diagnostics';
+        $this->assertDirectoryExists($partialDir);
+        $this->assertSame(0700, fileperms($partialDir) & 0777);
 
-        $this->assertSame('{"partial": true}', file_get_contents($outputDir . '/paired-online-cash-pilot-evidence.json'));
-        $this->assertSame('<testsuite name="SmokeTest" tests="2"/>', file_get_contents($outputDir . '/junit-test-report.xml'));
+        // Verified canonical filenames are strictly NOT created/overwritten at root
+        $this->assertFileDoesNotExist($outputDir . '/paired-online-cash-pilot-evidence.json');
+        $this->assertFileDoesNotExist($outputDir . '/junit-test-report.xml');
+
+        // Preserved diagnostics exist under partial/ with 0600 permissions
+        $destEvidence = $partialDir . '/partial_client_evidence.json';
+        $destXml = $partialDir . '/TEST-SmokeTest.xml';
+        $destIndex = $partialDir . '/partial_failure_index.json';
+
+        $this->assertFileExists($destEvidence);
+        $this->assertFileExists($destXml);
+        $this->assertFileExists($destIndex);
+
+        $this->assertSame(0600, fileperms($destEvidence) & 0777);
+        $this->assertSame(0600, fileperms($destXml) & 0777);
+        $this->assertSame(0600, fileperms($destIndex) & 0777);
+
+        $this->assertSame('{"partial": true}', file_get_contents($destEvidence));
+        $this->assertSame('<testsuite name="SmokeTest" tests="2"/>', file_get_contents($destXml));
+
+        $indexData = json_decode((string) file_get_contents($destIndex), true);
+        $this->assertSame('Mobile V2 Partial Failure Diagnostic Index', $indexData['contract_name']);
+        $this->assertTrue($indexData['artifacts']['partial_client_evidence.json']['unvalidated']);
+        $this->assertTrue($indexData['artifacts']['TEST-SmokeTest.xml']['unvalidated']);
     }
 
     // ---------------------------------------------------------------------------

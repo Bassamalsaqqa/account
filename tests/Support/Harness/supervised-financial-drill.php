@@ -558,24 +558,34 @@ try {
     $gradleProc = new Process($gradleCmd, $targetAndroidDir, $gradleEnv, null, $gradleTimeout);
 
     $rawLogPath = $outputDir . '/raw_android_test_output.log';
+    $touchBytes = @file_put_contents($rawLogPath, '');
+    if ($touchBytes === false) {
+        throw new \RuntimeException("FAILED_TO_CREATE_ANDROID_LOG: unable to create '{$rawLogPath}'");
+    }
+    if (! @chmod($rawLogPath, 0600) || (fileperms($rawLogPath) & 0777) !== 0600) {
+        throw new \RuntimeException("FAILED_TO_CHMOD_ANDROID_LOG: failed to set 0600 on '{$rawLogPath}'");
+    }
+
     $rawLogHandle = @fopen($rawLogPath, 'wb');
-    if ($rawLogHandle !== false) {
-        @chmod($rawLogPath, 0600);
+    if ($rawLogHandle === false) {
+        throw new \RuntimeException("FAILED_TO_OPEN_ANDROID_LOG: unable to open '{$rawLogPath}' for writing");
     }
 
     $rawGradleOutput = '';
     try {
-        $gradleProc->run(function ($type, $buffer) use (&$rawGradleOutput, $rawLogHandle): void {
+        $gradleProc->run(function ($type, $buffer) use (&$rawGradleOutput, $rawLogHandle, $rawLogPath): void {
             $rawGradleOutput .= $buffer;
-            if ($rawLogHandle !== false) {
-                @fwrite($rawLogHandle, $buffer);
-                @fflush($rawLogHandle);
+            $written = @fwrite($rawLogHandle, $buffer);
+            if ($written === false || $written !== strlen($buffer)) {
+                throw new \RuntimeException("FAILED_TO_WRITE_ANDROID_LOG: fwrite failed on '{$rawLogPath}'");
+            }
+            if (! @fflush($rawLogHandle)) {
+                throw new \RuntimeException("FAILED_TO_FLUSH_ANDROID_LOG: fflush failed on '{$rawLogPath}'");
             }
         });
     } finally {
-        if ($rawLogHandle !== false) {
+        if (is_resource($rawLogHandle)) {
             @fclose($rawLogHandle);
-            $rawLogHandle = false;
         }
         if (is_file($rawLogPath)) {
             @chmod($rawLogPath, 0600);
