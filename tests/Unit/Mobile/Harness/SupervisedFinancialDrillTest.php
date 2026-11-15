@@ -665,6 +665,7 @@ class SupervisedFinancialDrillTest extends TestCase
             $_ENV['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
             $_SERVER['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
 
+            $caught = null;
             try {
                 SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
                     schemaName: 'accounting_p8_tmp_0123456789ab',
@@ -674,17 +675,20 @@ class SupervisedFinancialDrillTest extends TestCase
                     childPid: 1234,
                     repoRoot: dirname(__DIR__, 3)
                 );
-                $this->fail('Expected Exception from assertPrimarySchema with malformed proof file');
             } catch (\Throwable $e) {
-                // Expected: assertPrimarySchema threw
-                // Verify env was restored to its pre-call state in the finally block
-                $this->assertSame($origProof, getenv('PHASE8_DISPOSABLE_DB_PROOF'),
-                    'PHASE8_DISPOSABLE_DB_PROOF must be restored after captureVerifiedOwnedSnapshot fails');
-                $this->assertSame($origNonce, getenv('PHASE8_DISPOSABLE_DB_NONCE'),
-                    'PHASE8_DISPOSABLE_DB_NONCE must be restored after captureVerifiedOwnedSnapshot fails');
-                $this->assertSame($origAllow, getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
-                    'PHASE8_ALLOW_DISPOSABLE_DB must be restored after captureVerifiedOwnedSnapshot fails');
+                $caught = $e;
             }
+
+            $this->assertNotNull($caught, 'Expected exception from assertPrimarySchema with malformed proof file');
+            $this->assertInstanceOf(\JsonException::class, $caught, 'Expected JsonException from malformed proof JSON');
+
+            // Verify env was restored to its pre-call state in the finally block
+            $this->assertSame($origProof, getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+                'PHASE8_DISPOSABLE_DB_PROOF must be restored after captureVerifiedOwnedSnapshot fails');
+            $this->assertSame($origNonce, getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+                'PHASE8_DISPOSABLE_DB_NONCE must be restored after captureVerifiedOwnedSnapshot fails');
+            $this->assertSame($origAllow, getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+                'PHASE8_ALLOW_DISPOSABLE_DB must be restored after captureVerifiedOwnedSnapshot fails');
         } finally {
             SupervisedPairedFinancialDrill::restoreEnvironmentStores($savedStores);
             @rmdir($harnessDir);
