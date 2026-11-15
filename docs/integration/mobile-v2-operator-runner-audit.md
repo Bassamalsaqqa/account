@@ -137,7 +137,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `79ee3c27aedfa62ca32eee55a17555c176d6fe2df360a4dd19682e8a2b358a73` | Guard Test Suite |
-| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `843f67ce3f2c85702f3013c8d47e2141fb1a1a7ade6c170988351270c521ff10` | Python Unit Suite (40 tests) |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `9074ecebf4d8fc10588f3c3743190230e1455a7bb1111428fc046e79eb9a38c1` | Python Unit Suite (41 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
@@ -527,6 +527,11 @@ To resolve this cleanly without compromising safety:
 | | `root-cli-bootstrap-guards-qq0icvl1/argv.json` | `edc97e8630ab7306086a3eb076d8b6aba10b9f65ee51c15763626df93d32c483` |
 | | `root-cli-bootstrap-guards-qq0icvl1/pre.json` | `04d0bfae274311fcde576255bde12541da6a251f599e21672b99441b6026b442` |
 | | `root-cli-bootstrap-guards-qq0icvl1/post.json` | `04d0bfae274311fcde576255bde12541da6a251f599e21672b99441b6026b442` |
+| **Root Peer Baseline Tests 1 (24 PASS, 1 FAIL)** | `root-peer-baseline-tests-w6no73md/raw.log` | `6ad56cec5af0c9b9380b15a4f960f9e683875bb3db005cbe0d06562881d01200` |
+| | `root-peer-baseline-tests-w6no73md/exit.json` | `11d2b8e32ad34cdb70612f87b6e447122e43860dbe348d6703c13274e13448f9` |
+| | `root-peer-baseline-tests-w6no73md/argv.json` | `9dcf016d8008f963206c81ccc1d7fd66a1d770b39aa3a05b2040aa24ffd44633` |
+| | `root-peer-baseline-tests-w6no73md/pre.json` | `c668ffdc6efed1f43c66f064adc3c74fdf4bdca0432ec137b843058262b1d99a` |
+| | `root-peer-baseline-tests-w6no73md/post.json` | `c668ffdc6efed1f43c66f064adc3c74fdf4bdca0432ec137b843058262b1d99a` |
 
 ---
 
@@ -777,7 +782,7 @@ To resolve the CLI dependency closure cleanly before Root's next invocation:
 - **Exit Code**: `0`
 - **Execution Counts**: **6 tests, 46 assertions, 0 failures, 0 errors, 0 skipped (100% PASS)**.
 - **Elapsed Time**: 0.411s.
-- **Repository Invariance**: Pre/post source, HEAD, and git status hashes 100% matched across both repositories (`invariance: true`).
+- **Repository Invariance**: Pre/post source, HEAD, and git status hashes 100% matched in backend repository (`invariance: true`; pure backend execution, Android worktree was not touched in this run).
 - **Retained Evidence**: `/home/t3dev/.t3/userdata/attachments/root-cli-bootstrap-guards-qq0icvl1` (0700 dir, 0600 files: `raw.log`, `junit.xml`, `exit.json`, `argv.json`, `pre.json`, `post.json`).
 - **Lease Status**: Released.
 
@@ -832,20 +837,33 @@ In `tests/Support/Harness/supervised-paired-drill-operator.py`:
   2. Create a fresh sibling isolated worktree (e.g. `t3-pair6-android`) branched from publication commit `d43d2c200b4ccce1d7075aed759f51529375d307` on branch `t3/verify-isolated-worktree`.
   3. This new peer worktree starts in a 100% clean git state (no untracked files), eliminating in-place overwrite while preserving all existing evidence.
 
-#### 5. Authored Unit Tests (40 Tests Total)
-Authored 10 comprehensive throwaway fixture tests in `tests/Unit/Harness/test_supervised_paired_drill_operator.py`:
+#### 5. Authored Unit Tests (41 Tests Total)
+Authored 11 comprehensive throwaway fixture tests in `tests/Unit/Harness/test_supervised_paired_drill_operator.py`:
 1. `test_peer_baseline_record_admitted_when_valid`: Valid baseline record and matching untracked file admitted cleanly.
 2. `test_peer_untracked_rejected_when_baseline_record_omitted`: Untracked file rejected when baseline record is not passed.
-3. `test_peer_baseline_record_fails_on_sha_mismatch`: Tampered file content on disk fails closed.
-4. `test_peer_baseline_record_fails_on_extra_untracked_file`: Undeclared extra untracked file fails closed.
-5. `test_peer_baseline_record_fails_on_symlink_artifact`: Symlink baseline file fails closed.
-6. `test_peer_baseline_record_fails_on_modified_tracked_file`: Modified tracked file fails closed (tracked clean is absolute).
-7. `test_peer_baseline_archive_immutable_and_bytes_retained`: `O_EXCL` mode 0600 archiving and duplicate overwrite refusal verified.
-8. `test_cli_peer_baseline_args_mutual_requirement`: CLI parser verifies mutual presence of `--peer-baseline-record` and `--expected-peer-baseline-sha`.
-9. `test_peer_clean_status_with_unexpected_baseline_record_rejected`: Clean worktree rejects unexpected baseline record.
-10. `test_peer_baseline_record_rejects_unapproved_artifact_path`: Unapproved artifact path outside allowlist rejected.
+3. `test_peer_baseline_record_fails_on_sha_mismatch`: Tampered file content on disk fails closed (equal-length 25-byte payload).
+4. `test_peer_baseline_record_fails_on_size_mismatch`: File with mismatched byte size (26 bytes vs expected 25) fails closed.
+5. `test_peer_baseline_record_fails_on_extra_untracked_file`: Undeclared extra untracked file fails closed.
+6. `test_peer_baseline_record_fails_on_symlink_artifact`: Symlink baseline file fails closed.
+7. `test_peer_baseline_record_fails_on_modified_tracked_file`: Modified tracked file fails closed (tracked clean is absolute).
+8. `test_peer_baseline_archive_immutable_and_bytes_retained`: `O_EXCL` mode 0600 archiving and duplicate overwrite refusal verified.
+9. `test_cli_peer_baseline_args_mutual_requirement`: CLI parser verifies mutual presence of `--peer-baseline-record` and `--expected-peer-baseline-sha`.
+10. `test_peer_clean_status_with_unexpected_baseline_record_rejected`: Clean worktree rejects unexpected baseline record.
+11. `test_peer_baseline_record_rejects_unapproved_artifact_path`: Unapproved artifact path outside allowlist rejected.
 
-All tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root review.
+#### 6. Root Execution `root-peer-baseline-tests-w6no73md` & Guard Ordering Resolution
+- **Run ID**: `root-peer-baseline-tests-w6no73md`
+- **Commit**: `af6fa725579208eef01d9a4cfc3f5423371a841f`
+- **Command**: `python3 -B -m unittest -f tests/Unit/Harness/test_supervised_paired_drill_operator.py`
+- **Exit Code**: `1` (STOP on first failure, no retries)
+- **Results**: Ran 25 tests in 0.138s (24 PASS, 1 FAIL).
+- **Repository Invariance**: Pre/post source, HEAD, and git status hashes 100% matched (`invariance: true`).
+- **Retained Evidence**: `/home/t3dev/.t3/userdata/attachments/root-peer-baseline-tests-w6no73md` (0700 dir, 0600 files: `raw.log`, `exit.json`, `argv.json`, `pre.json`, `post.json`).
+- **Root Cause & Remediation**:
+  - `test_peer_baseline_record_fails_on_sha_mismatch` tampered the untracked file with `b'{"tampered_content": true}'` (26 bytes) instead of the original 25 bytes (`b'{"sample_evidence": true}'`). In `verify_peer_clean_or_baseline_status`, the non-empty/size check precedes the SHA-256 calculation. Thus, a size mismatch exception (`size mismatch: expected 25, got 26`) was raised first, failing the test's expectation of `"SHA mismatch"`.
+  - Remediated by modifying `test_peer_baseline_record_fails_on_sha_mismatch` to write equal-length 25-byte content (`b'{"sample_evidence": fals}'`), allowing the size check to pass and directly exercising the SHA-256 mismatch guard.
+  - Added a dedicated test `test_peer_baseline_record_fails_on_size_mismatch` to verify that byte size discrepancies are caught by the size guard.
+  - All tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root review.
 
 
 

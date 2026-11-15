@@ -652,13 +652,24 @@ class TestSupervisedPairedDrillOperator(unittest.TestCase):
 
     def test_peer_baseline_record_fails_on_sha_mismatch(self):
         android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
-        # Tamper the untracked file content on disk
+        # Tamper the untracked file content on disk using equal-length bytes (25 bytes)
+        # to ensure the preceding size guard passes and the SHA-256 mismatch guard is exercised
+        target_file = os.path.join(android_dir, 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json')
+        with open(target_file, 'wb') as f:
+            f.write(b'{"sample_evidence": fals}')
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("SHA mismatch", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_size_mismatch(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        # Tamper file with different length (26 bytes vs expected 25) to exercise the size guard
         target_file = os.path.join(android_dir, 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json')
         with open(target_file, 'wb') as f:
             f.write(b'{"tampered_content": true}')
         with self.assertRaises(RuntimeError) as ctx:
             operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
-        self.assertIn("SHA mismatch", str(ctx.exception))
+        self.assertIn("size mismatch", str(ctx.exception))
 
     def test_peer_baseline_record_fails_on_extra_untracked_file(self):
         android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
