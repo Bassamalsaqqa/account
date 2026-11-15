@@ -930,6 +930,11 @@ final class DisposableFinancialPostRunInspector
      * services: sessionless RequestGuard with null user contracts, array-only CacheManager,
      * and Spatie PermissionRegistrar. Autoload only, zero session files, zero default DB dials.
      */
+    /**
+     * Binds minimal isolated container services required by CompanyContext and reconciliation
+     * services: sessionless RequestGuard with null user contracts, array-only CacheManager,
+     * and Spatie PermissionRegistrar. Autoload only, zero session files, zero default DB dials.
+     */
     public static function bindIsolatedContainerServices(\Illuminate\Foundation\Application $app): void
     {
         $appDir = dirname(__DIR__, 3);
@@ -955,7 +960,16 @@ final class DisposableFinancialPostRunInspector
             'permission' => $permissionConfig,
         ], $existingConfig);
 
-        $app->instance('config', new \Illuminate\Config\Repository($mergedConfig));
+        $configRepo = new \Illuminate\Config\Repository($mergedConfig);
+        // Force isolation invariants: caller config cannot override database default or cache array driver
+        $configRepo->set('database.default', 'disposable_inspector');
+        $configRepo->set('database.connections', []);
+        $configRepo->set('cache.default', 'array');
+        $configRepo->set('cache.stores.array', [
+            'driver' => 'array',
+            'serialize' => false,
+        ]);
+        $app->instance('config', $configRepo);
 
         // Minimal legitimate sessionless RequestGuard with null user contracts (zero session/DB IO)
         $sessionlessGuard = new \Illuminate\Auth\RequestGuard(
@@ -982,6 +996,37 @@ final class DisposableFinancialPostRunInspector
     }
 
     /**
+     * Binds the isolated database connection directly wrapping the verified read-only PDO instance,
+     * ensuring database.connections contains ONLY the owned connection and database.default is disposable_inspector.
+     */
+    public static function bindIsolatedDatabaseManager(\Illuminate\Foundation\Application $app, PDO $pdo, string $expectedSchemaName): \Illuminate\Database\DatabaseManager
+    {
+        $connection = new \Illuminate\Database\MySqlConnection($pdo, $expectedSchemaName, '', [
+            'name' => 'disposable_inspector',
+            'database' => $expectedSchemaName,
+            'host' => '127.0.0.1',
+            'port' => 3342,
+            'url' => null,
+        ]);
+        $manager = new \Illuminate\Database\DatabaseManager($app, new \Illuminate\Database\Connectors\ConnectionFactory($app));
+        $manager->extend('disposable_inspector', fn () => $connection);
+
+        $app['config']->set('database.default', 'disposable_inspector');
+        $app['config']->set('database.connections', [
+            'disposable_inspector' => [
+                'driver' => 'disposable_inspector',
+                'database' => $expectedSchemaName,
+                'host' => '127.0.0.1',
+                'port' => 3342,
+                'url' => null,
+            ],
+        ]);
+        $app->instance('db', $manager);
+
+        return $manager;
+    }
+
+    /**
      * Executes the 6 canonical read-only reconciliation services in context-free system mode
      * using the minimal isolated container pattern from bin/final-release-check.php.
      * Binds all models and services to the EXACT verified read-only PDO instance
@@ -998,6 +1043,10 @@ final class DisposableFinancialPostRunInspector
         $previousApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
         $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
 
+        // Snapshot caller's resolved facade instances
+        $facadeResolvedRef = new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, 'resolvedInstance');
+        $previousResolvedInstances = $facadeResolvedRef->getValue();
+
         $hasSnapshottedTeamId = false;
         $previousTeamId = null;
         if (function_exists('getPermissionsTeamId')) {
@@ -1013,7 +1062,6 @@ final class DisposableFinancialPostRunInspector
         $pdo = null;
         $app = null;
         $manager = null;
-        $connection = null;
         $results = [];
         $allHealthy = true;
         $primaryException = null;
@@ -1029,27 +1077,29 @@ final class DisposableFinancialPostRunInspector
             $app['env'] = 'testing';
 
             self::bindIsolatedContainerServices($app);
+            $manager = self::bindIsolatedDatabaseManager($app, $pdo, $expectedSchemaName);
 
-            // Wrap the SAME verified read-only PDO connection
-            $connection = new \Illuminate\Database\MySqlConnection($pdo, $expectedSchemaName, '', [
-                'name' => 'disposable_inspector',
-                'database' => $expectedSchemaName,
-                'host' => '127.0.0.1',
-                'port' => 3342,
-                'url' => null,
-            ]);
-            $manager = new \Illuminate\Database\DatabaseManager($app, new \Illuminate\Database\Connectors\ConnectionFactory($app));
-            $manager->extend('disposable_inspector', fn () => $connection);
-            $app['config']->set('database.connections.disposable_inspector', [
-                'driver' => 'disposable_inspector',
-                'database' => $expectedSchemaName,
-                'host' => '127.0.0.1',
-                'port' => 3342,
-                'url' => null,
-            ]);
-            $app->instance('db', $manager);
+            // Clear caller cached facade instances BEFORE isolated facade use
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
             \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
             \Illuminate\Database\Eloquent\Model::setConnectionResolver($manager);
+
+            // Assert strict isolation invariants
+            if (\Illuminate\Support\Facades\DB::getFacadeRoot() !== $manager) {
+                throw new \RuntimeException('DB facade root does not match isolated database manager.');
+            }
+            if (\Illuminate\Database\Eloquent\Model::getConnectionResolver() !== $manager) {
+                throw new \RuntimeException('Model connection resolver does not match isolated database manager.');
+            }
+            if ($manager->getDefaultConnection() !== 'disposable_inspector') {
+                throw new \RuntimeException("Manager default connection must be 'disposable_inspector', got: ".$manager->getDefaultConnection());
+            }
+            if ($manager->connection('disposable_inspector')->getPdo() !== $pdo) {
+                throw new \RuntimeException('Manager connection PDO does not match verified read-only PDO instance.');
+            }
+            if (\Illuminate\Support\Facades\DB::getPdo() !== $pdo) {
+                throw new \RuntimeException('DB facade PDO does not match verified read-only PDO instance.');
+            }
 
             $companyId = is_int($companyOrId) ? $companyOrId : $companyOrId->id;
             $company = Company::where('id', $companyId)->firstOrFail();
@@ -1149,16 +1199,15 @@ final class DisposableFinancialPostRunInspector
                 $cleanupExceptions[] = 'Model resolver restoration failed: '.$e->getMessage();
             }
 
-            // 5. Clear resolved facade instances and restore previous facade application
+            // 5. Clear isolated facade cache and safely restore caller facade application and cached instances
             try {
                 \Illuminate\Support\Facades\Facade::clearResolvedInstances();
-                \Illuminate\Support\Facades\Facade::setFacadeApplication($previousApp);
-            } catch (\Throwable) {
-                try {
-                    \Illuminate\Support\Facades\Facade::setFacadeApplication($previousApp);
-                } catch (\Throwable $e) {
-                    $cleanupExceptions[] = 'Facade application restoration failed: '.$e->getMessage();
+                if (is_array($previousResolvedInstances)) {
+                    $facadeResolvedRef->setValue(null, $previousResolvedInstances);
                 }
+                \Illuminate\Support\Facades\Facade::setFacadeApplication($previousApp);
+            } catch (\Throwable $e) {
+                $cleanupExceptions[] = 'Facade application restoration failed: '.$e->getMessage();
             }
 
             // 6. Restore exact previous global container

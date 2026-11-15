@@ -245,13 +245,62 @@ if ($checkDependencies ?? false) {
     chmod($preflightScript, 0600);
     file_put_contents($preflightScript, '<?php
     require '.$autoloadPath.';
-    $app = new \Illuminate\Foundation\Application('.$appRootEsc.');
-    $app["env"] = "testing";
 
-    \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedContainerServices($app);
-    \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+    // 1. Ambient app with poisoned DB manager simulating runner environment
+    $ambientApp = new \Illuminate\Foundation\Application('.$appRootEsc.');
+    $ambientSentinel = new class {
+        public static int $calls = 0;
+        public function connection($name = null) {
+            self::$calls++;
+            throw new \RuntimeException("UNAUTHORIZED_AMBIENT_FACADE_CALL: " . ($name ?? "default"));
+        }
+    };
+    $ambientApp->instance("db", $ambientSentinel);
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($ambientApp);
+    // Warm ambient facade cache with ambient DB manager
+    try {
+        \Illuminate\Support\Facades\DB::connection("mysql");
+    } catch (\RuntimeException $e) {
+    }
 
-    $context = $app->make(\App\Support\Tenancy\CompanyContext::class);
+    // 2. Snapshot caller facade instances
+    $facadeResolvedRef = new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, "resolvedInstance");
+    $previousResolved = $facadeResolvedRef->getValue();
+    \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+
+    // 3. Isolated app using actual boundary helpers
+    $isolatedApp = new \Illuminate\Foundation\Application('.$appRootEsc.');
+    $isolatedApp["env"] = "testing";
+
+    \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedContainerServices($isolatedApp);
+    $dummyPdo = new \PDO("sqlite::memory:");
+    $isolatedManager = \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedDatabaseManager(
+        $isolatedApp,
+        $dummyPdo,
+        "disposable_inspector"
+    );
+
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($isolatedApp);
+    \Illuminate\Database\Eloquent\Model::setConnectionResolver($isolatedManager);
+
+    // Invariant assertions
+    if (\Illuminate\Support\Facades\DB::getFacadeRoot() !== $isolatedManager) {
+        throw new \RuntimeException("DB facade root must be isolated manager");
+    }
+    if (\Illuminate\Database\Eloquent\Model::getConnectionResolver() !== $isolatedManager) {
+        throw new \RuntimeException("Model connection resolver must be isolated manager");
+    }
+    if ($isolatedManager->getDefaultConnection() !== "disposable_inspector") {
+        throw new \RuntimeException("Default connection must be disposable_inspector");
+    }
+    if (\Illuminate\Support\Facades\DB::connection()->getName() !== "disposable_inspector") {
+        throw new \RuntimeException("DB::connection() must resolve disposable_inspector");
+    }
+    if (\Illuminate\Support\Facades\DB::getPdo() !== $dummyPdo) {
+        throw new \RuntimeException("DB::getPdo() must match isolated PDO");
+    }
+
+    $context = $isolatedApp->make(\App\Support\Tenancy\CompanyContext::class);
     $context->clearSessionless();
 
     $services = [
@@ -263,9 +312,28 @@ if ($checkDependencies ?? false) {
         \App\Services\Accounting\Phase7ReconciliationService::class,
     ];
     foreach ($services as $svc) {
-        $app->make($svc);
+        $isolatedApp->make($svc);
     }
     $context->clearSessionless();
+
+    // 4. Restore caller facade
+    \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+    if (is_array($previousResolved)) {
+        $facadeResolvedRef->setValue(null, $previousResolved);
+    }
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($ambientApp);
+
+    $ambientThrows = false;
+    try {
+        \Illuminate\Support\Facades\DB::connection("mysql");
+    } catch (\RuntimeException $e) {
+        if (str_contains($e->getMessage(), "UNAUTHORIZED_AMBIENT_FACADE_CALL")) {
+            $ambientThrows = true;
+        }
+    }
+    if (! $ambientThrows) {
+        throw new \RuntimeException("Ambient sentinel must remain restored and active on caller");
+    }
     echo "ISOLATED_DEPENDENCY_PREFLIGHT_OK";
     ');
 
@@ -614,13 +682,62 @@ try {
     $appRootEsc = var_export(dirname(__DIR__, 3), true);
     file_put_contents($preflightScript, '<?php
     require '.$autoloadPath.';
-    $app = new \Illuminate\Foundation\Application('.$appRootEsc.');
-    $app["env"] = "testing";
 
-    \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedContainerServices($app);
-    \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+    // 1. Ambient app with poisoned DB manager simulating runner environment
+    $ambientApp = new \Illuminate\Foundation\Application('.$appRootEsc.');
+    $ambientSentinel = new class {
+        public static int $calls = 0;
+        public function connection($name = null) {
+            self::$calls++;
+            throw new \RuntimeException("UNAUTHORIZED_AMBIENT_FACADE_CALL: " . ($name ?? "default"));
+        }
+    };
+    $ambientApp->instance("db", $ambientSentinel);
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($ambientApp);
+    // Warm ambient facade cache with ambient DB manager
+    try {
+        \Illuminate\Support\Facades\DB::connection("mysql");
+    } catch (\RuntimeException $e) {
+    }
 
-    $context = $app->make(\App\Support\Tenancy\CompanyContext::class);
+    // 2. Snapshot caller facade instances
+    $facadeResolvedRef = new \ReflectionProperty(\Illuminate\Support\Facades\Facade::class, "resolvedInstance");
+    $previousResolved = $facadeResolvedRef->getValue();
+    \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+
+    // 3. Isolated app using actual boundary helpers
+    $isolatedApp = new \Illuminate\Foundation\Application('.$appRootEsc.');
+    $isolatedApp["env"] = "testing";
+
+    \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedContainerServices($isolatedApp);
+    $dummyPdo = new \PDO("sqlite::memory:");
+    $isolatedManager = \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedDatabaseManager(
+        $isolatedApp,
+        $dummyPdo,
+        "disposable_inspector"
+    );
+
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($isolatedApp);
+    \Illuminate\Database\Eloquent\Model::setConnectionResolver($isolatedManager);
+
+    // Invariant assertions
+    if (\Illuminate\Support\Facades\DB::getFacadeRoot() !== $isolatedManager) {
+        throw new \RuntimeException("DB facade root must be isolated manager");
+    }
+    if (\Illuminate\Database\Eloquent\Model::getConnectionResolver() !== $isolatedManager) {
+        throw new \RuntimeException("Model connection resolver must be isolated manager");
+    }
+    if ($isolatedManager->getDefaultConnection() !== "disposable_inspector") {
+        throw new \RuntimeException("Default connection must be disposable_inspector");
+    }
+    if (\Illuminate\Support\Facades\DB::connection()->getName() !== "disposable_inspector") {
+        throw new \RuntimeException("DB::connection() must resolve disposable_inspector");
+    }
+    if (\Illuminate\Support\Facades\DB::getPdo() !== $dummyPdo) {
+        throw new \RuntimeException("DB::getPdo() must match isolated PDO");
+    }
+
+    $context = $isolatedApp->make(\App\Support\Tenancy\CompanyContext::class);
     $context->clearSessionless();
 
     $services = [
@@ -632,9 +749,28 @@ try {
         \App\Services\Accounting\Phase7ReconciliationService::class,
     ];
     foreach ($services as $svc) {
-        $app->make($svc);
+        $isolatedApp->make($svc);
     }
     $context->clearSessionless();
+
+    // 4. Restore caller facade
+    \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+    if (is_array($previousResolved)) {
+        $facadeResolvedRef->setValue(null, $previousResolved);
+    }
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($ambientApp);
+
+    $ambientThrows = false;
+    try {
+        \Illuminate\Support\Facades\DB::connection("mysql");
+    } catch (\RuntimeException $e) {
+        if (str_contains($e->getMessage(), "UNAUTHORIZED_AMBIENT_FACADE_CALL")) {
+            $ambientThrows = true;
+        }
+    }
+    if (! $ambientThrows) {
+        throw new \RuntimeException("Ambient sentinel must remain restored and active on caller");
+    }
     echo "ISOLATED_DEPENDENCY_PREFLIGHT_OK";
     ');
 
@@ -1036,7 +1172,7 @@ $outputReport = [
     ],
     'pre_checks' => $preChecks,
     'sentinel_report' => [
-        'status' => $sentinelInstalled ? ($observedDedicatedPdoVerified ? 'VERIFIED' : 'FAILED') : 'NOT_RUN',
+        'status' => $sentinelInstalled ? ((AmbientConnectionSentinel::$attemptCount === 0 && $observedDedicatedPdoVerified === true) ? 'VERIFIED' : 'FAILED') : 'NOT_RUN',
         'sentinel_installed' => $sentinelInstalled,
         'ambient_connection_attempts' => $sentinelInstalled ? AmbientConnectionSentinel::$attemptCount : null,
         'attempt_contexts' => $sentinelInstalled ? AmbientConnectionSentinel::$attemptContexts : [],
