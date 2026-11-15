@@ -19,9 +19,9 @@ declare(strict_types=1);
  * - Poisoned ambient Laravel connection sentinel active DURING baseline & reconciler calls
  * - Minimal canonical foundation fixture via CreateCompanyAction ONLY (delta 0)
  * - Dedicated read-only PDO connection:
- *     - DisposableFinancialPostRunInspector::configureStatementTimeout($pdo, 5)
- *     - Documented MariaDB innodb_trx trx_is_read_only observation
- *     - Server-enforced mutation denial test (error 1792 / SQLSTATE 25006) on probe table
+ *     - DisposableFinancialPostRunInspector::configureStatementTimeout($pdo, 5) verified via session variable
+ *     - Server-enforced mutation denial test: driver code 1792 and SQLSTATE 25006 on ordinary InnoDB probe table
+ *     - Verified probe values: read initial inside snapshot, denial, and post-rollback invariance
  * - Six real isolated SAME-PDO reconcilers via DisposableFinancialPostRunInspector::runSixReconciliations()
  * - Exact BigDecimal zero verification on stock movements (no float casting)
  * - Baseline metrics capture before and after:
@@ -378,11 +378,16 @@ $sentinelInstalled = false;
 $observedDedicatedPdoDatabase = null;
 $observedDedicatedPdoPort = null;
 $observedDedicatedPdoVerified = false;
-$innodbTrxReadOnlyObserved = null;
-$innodbTrxColumnObserved = null;
+$serverVersionObserved = null;
+$configuredTimeoutObserved = null;
+$transactionStartSuccessObserved = false;
+$readBeforeMutationObserved = null;
 $mutationDeniedObserved = false;
-$denialMessageObserved = null;
 $denialCodeObserved = null;
+$denialSqlStateObserved = null;
+$denialMessageObserved = null;
+$readAfterDenialObserved = null;
+$readAfterRollbackObserved = null;
 
 $preBaseline = null;
 $postBaseline = null;
@@ -644,7 +649,7 @@ try {
     DB::purge();
     $sentinelInstalled = true;
 
-    // 9. Dedicated Read-Only PDO, Documented MariaDB Read-Only Proof & Server Denial
+    // 9. Dedicated Read-Only PDO, Statement Timeout & Server-Enforced Read-Only Denial
     $dedicatedDsn = "mysql:host={$settings['HOST']};port={$settings['PORT']};dbname={$schemaName};charset=utf8mb4";
     $dedicatedPdo = new PDO($dedicatedDsn, $settings['USERNAME'], $settings['PASSWORD'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -653,90 +658,105 @@ try {
 
     DisposableFinancialPostRunInspector::configureStatementTimeout($dedicatedPdo, 5);
 
-    $identityRow = $dedicatedPdo->query('SELECT DATABASE() AS db, @@port AS port')->fetch(PDO::FETCH_ASSOC);
+    // Verify actual configured session value via finite query (no heavy sleeping)
+    $timeoutRow = null;
+    $configuredTimeoutValue = null;
+    try {
+        $timeoutStmt = $dedicatedPdo->query('SELECT @@session.max_statement_time AS st');
+        $timeoutRow = $timeoutStmt->fetch(PDO::FETCH_ASSOC);
+        if ($timeoutRow !== false && isset($timeoutRow['st'])) {
+            $configuredTimeoutValue = (float) $timeoutRow['st'];
+        }
+    } catch (\Throwable) {
+        try {
+            $timeoutStmt = $dedicatedPdo->query('SELECT @@session.max_execution_time AS st');
+            $timeoutRow = $timeoutStmt->fetch(PDO::FETCH_ASSOC);
+            if ($timeoutRow !== false && isset($timeoutRow['st'])) {
+                $configuredTimeoutValue = (int) $timeoutRow['st'];
+            }
+        } catch (\Throwable) {
+        }
+    }
+    if ($configuredTimeoutValue === null || $configuredTimeoutValue <= 0) {
+        throw new \RuntimeException('Failed to verify configured session statement timeout on dedicated PDO.');
+    }
+    $configuredTimeoutObserved = $configuredTimeoutValue;
+
+    $identityRow = $dedicatedPdo->query('SELECT DATABASE() AS db, @@port AS port, @@version AS ver')->fetch(PDO::FETCH_ASSOC);
     $observedDedicatedPdoDatabase = (string) ($identityRow['db'] ?? '');
     $observedDedicatedPdoPort = (int) ($identityRow['port'] ?? 0);
+    $serverVersionObserved = (string) ($identityRow['ver'] ?? '');
     $observedDedicatedPdoVerified = ($observedDedicatedPdoDatabase === $schemaName && $observedDedicatedPdoPort === 3342);
 
     if (! $observedDedicatedPdoVerified) {
         throw new \RuntimeException("Dedicated PDO DB mismatch: expected '{$schemaName}'@3342, got '{$observedDedicatedPdoDatabase}'@{$observedDedicatedPdoPort}.");
     }
 
-    // Create temporary probe table under owned schema to test server-enforced mutation denial
+    // Create ordinary InnoDB probe table and initial row before RO transaction
     $dedicatedPdo->exec('CREATE TABLE `_disposable_ro_probe` (id INT PRIMARY KEY, val VARCHAR(32)) ENGINE=InnoDB');
     $dedicatedPdo->exec("INSERT INTO `_disposable_ro_probe` (id, val) VALUES (1, 'initial')");
 
-    // Enter read-only transaction
+    // Enter read-only transaction with repeatable read consistent snapshot
     $dedicatedPdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
     $dedicatedPdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+    $transactionStartSuccessObserved = true;
 
-    // Documented MariaDB transaction observation via information_schema.innodb_trx
-    // MariaDB 10.x uses trx_is_read_only; MySQL uses trx_read_only.
-    $innodbTrxReadOnly = null;
-    $innodbTrxColumnFound = null;
-
-    try {
-        $stmtTrx = $dedicatedPdo->query('SELECT trx_is_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
-        $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
-        if ($trxRow !== false && isset($trxRow['trx_is_read_only'])) {
-            $innodbTrxReadOnly = (int) $trxRow['trx_is_read_only'];
-            $innodbTrxColumnFound = 'trx_is_read_only';
-        }
-    } catch (\PDOException $e) {
-        // Fallback to MySQL trx_read_only
-        try {
-            $stmtTrx = $dedicatedPdo->query('SELECT trx_read_only FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
-            $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
-            if ($trxRow !== false && isset($trxRow['trx_read_only'])) {
-                $innodbTrxReadOnly = (int) $trxRow['trx_read_only'];
-                $innodbTrxColumnFound = 'trx_read_only';
-            }
-        } catch (\PDOException $e2) {
-            $stmtTrx = $dedicatedPdo->query('SELECT * FROM information_schema.innodb_trx WHERE trx_mysql_thread_id = CONNECTION_ID()');
-            $trxRow = $stmtTrx->fetch(PDO::FETCH_ASSOC);
-            if (is_array($trxRow)) {
-                if (isset($trxRow['trx_is_read_only'])) {
-                    $innodbTrxReadOnly = (int) $trxRow['trx_is_read_only'];
-                    $innodbTrxColumnFound = 'trx_is_read_only';
-                } elseif (isset($trxRow['trx_read_only'])) {
-                    $innodbTrxReadOnly = (int) $trxRow['trx_read_only'];
-                    $innodbTrxColumnFound = 'trx_read_only';
-                }
-            }
-        }
+    // SELECT probe initial within snapshot
+    $probeStmt = $dedicatedPdo->query('SELECT val FROM `_disposable_ro_probe` WHERE id = 1');
+    $probeRow = $probeStmt->fetch(PDO::FETCH_ASSOC);
+    $readBeforeMutation = $probeRow['val'] ?? null;
+    $readBeforeMutationObserved = $readBeforeMutation;
+    if ($readBeforeMutation !== 'initial') {
+        throw new \RuntimeException("Probe read inside snapshot expected 'initial', got '{$readBeforeMutation}'.");
     }
 
-    $innodbTrxReadOnlyObserved = $innodbTrxReadOnly;
-    $innodbTrxColumnObserved = $innodbTrxColumnFound;
-
-    if ($innodbTrxReadOnly !== 1) {
-        throw new \RuntimeException('Documented MariaDB innodb_trx observation failed: read-only transaction flag is not 1 (got '.($innodbTrxReadOnly ?? 'null').', column='.($innodbTrxColumnFound ?? 'none').').');
-    }
-
-    // Harmless mutation attempt on disposable probe table inside READ ONLY transaction
+    // Attempt mutation: REQUIRE driver errorInfo[1] === 1792 AND SQLSTATE errorInfo[0] === '25006'
     $mutationDenied = false;
-    $denialMessage = null;
+    $denialDriverCode = null;
     $denialSqlState = null;
+    $denialMessage = null;
+
     try {
-        $dedicatedPdo->exec("UPDATE `_disposable_ro_probe` SET val = 'mutated' WHERE id = 1");
+        $affected = $dedicatedPdo->exec("UPDATE `_disposable_ro_probe` SET val = 'mutated' WHERE id = 1");
+        // If permitted update, fail regardless of rollback
+        throw new \RuntimeException("Read-only enforcement failure: MariaDB server permitted UPDATE inside READ ONLY transaction! (affected rows: {$affected})");
     } catch (\PDOException $e) {
-        $mutationDenied = true;
+        $errorInfo = $e->errorInfo ?? $dedicatedPdo->errorInfo();
+        $denialSqlState = (string) ($errorInfo[0] ?? $e->getCode());
+        $denialDriverCode = isset($errorInfo[1]) ? (int) $errorInfo[1] : null;
         $denialMessage = $e->getMessage();
-        $denialSqlState = (string) $e->getCode();
+
+        if ($denialDriverCode === 1792 && $denialSqlState === '25006') {
+            $mutationDenied = true;
+        } else {
+            throw new \RuntimeException("Unexpected mutation rejection (required driver code 1792 AND SQLSTATE 25006): got driverCode=[{$denialDriverCode}], SQLSTATE=[{$denialSqlState}], message: {$denialMessage}");
+        }
     }
+
     $mutationDeniedObserved = $mutationDenied;
+    $denialCodeObserved = $denialDriverCode;
+    $denialSqlStateObserved = $denialSqlState;
     $denialMessageObserved = $denialMessage;
-    $denialCodeObserved = $denialSqlState;
 
-    if (! $mutationDenied) {
-        throw new \RuntimeException('Read-only enforcement failure: MariaDB server permitted UPDATE inside READ ONLY transaction!');
-    }
-    // Verify server-side rejection (error 1792 or SQLSTATE 25006 or READ ONLY message)
-    if (! str_contains($denialMessage, '1792') && ! str_contains($denialMessage, 'READ ONLY') && $denialSqlState !== '25006') {
-        throw new \RuntimeException("Unexpected mutation rejection (not READ ONLY denial): [{$denialSqlState}] {$denialMessage}");
+    // Require same row remains 'initial' after denial within transaction
+    $afterDenialStmt = $dedicatedPdo->query('SELECT val FROM `_disposable_ro_probe` WHERE id = 1');
+    $readAfterDenial = $afterDenialStmt->fetch(PDO::FETCH_ASSOC)['val'] ?? null;
+    $readAfterDenialObserved = $readAfterDenial;
+    if ($readAfterDenial !== 'initial') {
+        throw new \RuntimeException("Probe row was mutated despite denial: expected 'initial', got '{$readAfterDenial}'.");
     }
 
+    // Rollback read-only transaction
     $dedicatedPdo->rollBack();
+
+    // Require same row remains 'initial' after rollback via independent query
+    $afterRollbackStmt = $dedicatedPdo->query('SELECT val FROM `_disposable_ro_probe` WHERE id = 1');
+    $readAfterRollback = $afterRollbackStmt->fetch(PDO::FETCH_ASSOC)['val'] ?? null;
+    $readAfterRollbackObserved = $readAfterRollback;
+    if ($readAfterRollback !== 'initial') {
+        throw new \RuntimeException("Probe row value modified after rollback: expected 'initial', got '{$readAfterRollback}'.");
+    }
+
     // Drop probe table cleanly
     $dedicatedPdo->exec('DROP TABLE IF EXISTS `_disposable_ro_probe`');
     unset($dedicatedPdo);
@@ -897,27 +917,52 @@ $outputReport = [
         'owned_pdo_database' => $observedDedicatedPdoDatabase,
         'owned_pdo_port' => $observedDedicatedPdoPort,
     ],
-    'read_only_proof' => ($innodbTrxReadOnlyObserved === 1 && $mutationDeniedObserved === true) ? [
+    'read_only_proof' => ($mutationDeniedObserved === true
+        && $readBeforeMutationObserved === 'initial'
+        && $readAfterDenialObserved === 'initial'
+        && $readAfterRollbackObserved === 'initial'
+        && $denialCodeObserved === 1792
+        && $denialSqlStateObserved === '25006'
+        && $transactionStartSuccessObserved === true
+    ) ? [
         'status' => 'VERIFIED',
-        'innodb_trx_read_only' => $innodbTrxReadOnlyObserved,
-        'innodb_trx_column' => $innodbTrxColumnObserved,
+        'server_version' => $serverVersionObserved,
+        'transaction_start_success' => $transactionStartSuccessObserved,
+        'innodb_trx_metadata' => 'NOT_REQUESTED',
+        'configured_statement_timeout_seconds' => $configuredTimeoutObserved,
+        'probe_read_before_mutation' => $readBeforeMutationObserved,
         'probe_mutation_denied' => $mutationDeniedObserved,
-        'denial_sqlstate' => $denialCodeObserved,
+        'denial_driver_code' => $denialCodeObserved,
+        'denial_sqlstate' => $denialSqlStateObserved,
         'denial_message' => $denialMessageObserved,
+        'probe_read_after_denial' => $readAfterDenialObserved,
+        'probe_read_after_rollback' => $readAfterRollbackObserved,
     ] : ($observedDedicatedPdoVerified ? [
         'status' => 'FAILED',
-        'innodb_trx_read_only' => $innodbTrxReadOnlyObserved,
-        'innodb_trx_column' => $innodbTrxColumnObserved,
+        'server_version' => $serverVersionObserved,
+        'transaction_start_success' => $transactionStartSuccessObserved,
+        'innodb_trx_metadata' => 'NOT_REQUESTED',
+        'configured_statement_timeout_seconds' => $configuredTimeoutObserved,
+        'probe_read_before_mutation' => $readBeforeMutationObserved,
         'probe_mutation_denied' => $mutationDeniedObserved,
-        'denial_sqlstate' => $denialCodeObserved,
+        'denial_driver_code' => $denialCodeObserved,
+        'denial_sqlstate' => $denialSqlStateObserved,
         'denial_message' => $denialMessageObserved,
+        'probe_read_after_denial' => $readAfterDenialObserved,
+        'probe_read_after_rollback' => $readAfterRollbackObserved,
     ] : [
         'status' => 'NOT_RUN',
-        'innodb_trx_read_only' => null,
-        'innodb_trx_column' => null,
+        'server_version' => null,
+        'transaction_start_success' => false,
+        'innodb_trx_metadata' => 'NOT_REQUESTED',
+        'configured_statement_timeout_seconds' => null,
+        'probe_read_before_mutation' => null,
         'probe_mutation_denied' => false,
+        'denial_driver_code' => null,
         'denial_sqlstate' => null,
         'denial_message' => null,
+        'probe_read_after_denial' => null,
+        'probe_read_after_rollback' => null,
     ]),
     'pre_baseline' => $preBaseline,
     'post_baseline' => $postBaseline,
