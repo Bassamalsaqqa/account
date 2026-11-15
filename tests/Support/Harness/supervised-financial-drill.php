@@ -226,6 +226,8 @@ pcntl_signal(SIGTERM, $sigHandler);
 $childProcess = null;
 $schemaName = null;
 $harnessDir = null;
+$snapshot = null;
+$parentEnvToRestore = [];
 $cleanupExecuted = false;
 $exitCode = 0;
 
@@ -341,21 +343,7 @@ try {
     SupervisedPairedFinancialDrill::performStrictTlsReadinessCheck($readinessUrl, $caCertPath, $readinessNonce);
     echo "  [Probe] Strict TLS probe verified 200 OK with matching nonce.\n";
 
-    // 9. Resolve Company Integer ID via Proof PDO (Never int-cast ULID!)
-    $creds = DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials($childConfigPath, $schemaName);
-    $proofPath = $creds['proof_path'];
-    $proofNonce = $creds['proof_nonce'];
-
-    $pdo = DisposableFinancialPostRunInspector::assertExecutionGates($schemaName);
-    $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
-    $companyId = SupervisedPairedFinancialDrill::resolveCompanyIntegerId($pdo, $companyUlid);
-    $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
-    $canonicalPayloadDigest = (string) ($handoff['raw_wire_sample']['raw_wire_payload_sha256'] ?? '');
-
-    echo "  [DB] Company Public ULID : {$companyUlid}\n";
-    echo "  [DB] Company Integer ID  : {$companyId} (resolved via proof PDO)\n";
-
-    // 10. Gate 2: Expose Candidate Handoff & Bounded Wait for Independent External Live Root Approval
+    // 9. Gate 2: Expose Candidate Handoff & Bounded Wait for Independent External Live Root Approval
     echo "\n==============================================================================\n";
     echo "CANDIDATE CLIENT HANDOFF EXPOSED FOR ROOT WITNESS RECORD:\n";
     echo "  Path   : {$handoffPath}\n";
@@ -381,7 +369,72 @@ try {
     );
     echo "  Root Live Gate       : GRANTED (witnessed SHA: {$rootApprovedHandoffSha})\n";
 
-    // 11. Pre-Run Baseline Capture (Hard-gated before/after & bounded timeout)
+    // 10. Extract Payloads & Verified Canonical Digest (Receipt Semantics: profile digest != raw wire)
+    $rawWirePayloadSha = (string) ($handoff['raw_wire_sample']['raw_wire_payload_sha256'] ?? '');
+    $rawProfileDigest = (string) ($handoff['canonical_intent_profile_digest'] ?? '');
+    $canonicalPayloadDigest = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($rawProfileDigest);
+    if (hash_equals($rawWirePayloadSha, $canonicalPayloadDigest)) {
+        throw new \RuntimeException('RAW_WIRE_AND_PROFILE_DIGEST_COLLISION: raw wire payload SHA matches canonical profile digest unexpectedly.');
+    }
+    $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
+    $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
+
+    // 11. AFTER BOTH approvals verified: Load bootstrap creds, capture owned snapshot & scoped inspector env
+    $creds = DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials($childConfigPath, $schemaName);
+    $proofPath = $creds['proof_path'];
+    $proofNonce = $creds['proof_nonce'];
+
+    $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+        $childProcess,
+        $proofPath,
+        $harnessDir,
+        $schemaName
+    );
+
+    // Construct explicit inspectorEnv array with testing flags and testing DB creds
+    $inspectorEnv = array_merge($_ENV, [
+        'APP_ENV' => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        'PHASE8_TEST_DB_HOST' => $creds['host'],
+        'PHASE8_TEST_DB_PORT' => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
+        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
+        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
+    ]);
+    if ($creds['password'] === '') {
+        $inspectorEnv['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+    }
+
+    // Scoped putenv in parent so assertExecutionGates passes, tracked for restoration in finally
+    $scopedParentVars = [
+        'APP_ENV' => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        'PHASE8_TEST_DB_HOST' => $creds['host'],
+        'PHASE8_TEST_DB_PORT' => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
+        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
+        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
+    ];
+    if ($creds['password'] === '') {
+        $scopedParentVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+    }
+    foreach ($scopedParentVars as $varName => $varVal) {
+        $parentEnvToRestore[$varName] = getenv($varName);
+        putenv("{$varName}={$varVal}");
+    }
+
+    // Connect proof PDO and resolve integer company_id (DB inspection strictly AFTER approvals)
+    $pdo = DisposableFinancialPostRunInspector::assertExecutionGates($schemaName);
+    $companyId = SupervisedPairedFinancialDrill::resolveCompanyIntegerId($pdo, $companyUlid);
+
+    echo "  [DB] Company Public ULID : {$companyUlid}\n";
+    echo "  [DB] Company Integer ID  : {$companyId} (resolved via proof PDO)\n";
+
+    // 12. Pre-Run Baseline Capture (Hard-gated before/after & bounded timeout)
     if (! $childProcess->isRunning()) {
         throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_BASELINE');
     }
@@ -398,7 +451,7 @@ try {
         '--company-id=' . $companyId,
         '--output=' . $baselineFile,
     ];
-    $baselineProc = new Process($baselineCmd, $repoRoot, null, null, $baselineTimeout);
+    $baselineProc = new Process($baselineCmd, $repoRoot, $inspectorEnv, null, $baselineTimeout);
     $baselineProc->mustRun();
     chmod($baselineFile, 0600);
 
@@ -553,7 +606,7 @@ try {
         '--expected-payload-digest=' . $canonicalPayloadDigest,
         '--output=' . $deltaFile,
     ];
-    $deltaProc = new Process($deltaCmd, $repoRoot, null, null, $deltaTimeout);
+    $deltaProc = new Process($deltaCmd, $repoRoot, $inspectorEnv, null, $deltaTimeout);
     $deltaProc->mustRun();
     chmod($deltaFile, 0600);
 
@@ -573,7 +626,7 @@ try {
         '--company-id=' . $companyId,
         '--output=' . $reconcileFile,
     ];
-    $reconcileProc = new Process($reconcileCmd, $repoRoot, null, null, $reconTimeout);
+    $reconcileProc = new Process($reconcileCmd, $repoRoot, $inspectorEnv, null, $reconTimeout);
     $reconcileProc->mustRun();
     chmod($reconcileFile, 0600);
 
@@ -600,7 +653,7 @@ try {
         '--expected-scope=' . SupervisedPairedFinancialDrill::REQUIRED_SCOPE,
         '--output=' . $trustedDbReportFile,
     ];
-    $composeProc = new Process($composeCmd, $repoRoot, null, null, $reportTimeout);
+    $composeProc = new Process($composeCmd, $repoRoot, $inspectorEnv, null, $reportTimeout);
     $composeProc->mustRun();
     chmod($trustedDbReportFile, 0600);
     $expectedDbReportSha = hash_file('sha256', $trustedDbReportFile);
@@ -626,7 +679,7 @@ try {
         '--expected-event-id=' . $expectedEventId,
         '--output=' . $validationFile,
     ];
-    $validateProc = new Process($validateCmd, $repoRoot, null, null, 10.0);
+    $validateProc = new Process($validateCmd, $repoRoot, $inspectorEnv, null, 10.0);
     $validateProc->mustRun();
     chmod($validationFile, 0600);
 
@@ -638,6 +691,8 @@ try {
         'prestart_approval_sha256' => hash_file('sha256', $rootApprovalFile),
         'live_root_approval_sha256' => hash_file('sha256', $liveApprovalTarget),
         'candidate_handoff_sha256' => $candidateHandoffSha,
+        'raw_wire_payload_sha256' => $rawWirePayloadSha,
+        'canonical_payload_digest' => $canonicalPayloadDigest,
         'canonical_baseline_hash' => $canonicalBaselineHash,
         'trusted_db_report_sha256' => $expectedDbReportSha,
         'outer_evidence_sha256' => $expectedEvidenceSha,
@@ -655,12 +710,19 @@ try {
     fwrite(STDERR, "\nSupervisor Error: {$e->getMessage()}\n");
     $exitCode = 1;
 } finally {
+    foreach ($parentEnvToRestore as $varName => $origVal) {
+        if ($origVal === false) {
+            putenv($varName);
+        } else {
+            putenv("{$varName}={$origVal}");
+        }
+    }
     if (! $cleanupExecuted) {
         $cleanupExecuted = true;
         $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
             $childProcess,
-            $schemaName,
-            $harnessDir
+            $snapshot,
+            $repoRoot
         );
         if (! $cleanupResult['success']) {
             fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', $cleanupResult['errors']) . "\n");

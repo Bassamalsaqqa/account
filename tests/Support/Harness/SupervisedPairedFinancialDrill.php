@@ -9,21 +9,26 @@ use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use PDO;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Tests\Support\DisposableMariaDbSchema;
 
 /**
  * Supervised Mobile V2 Paired Financial Integration Drill.
  *
- * Implements strict adversarial validation across all live execution phases:
+ * Enforces strict adversarial validation across all live execution phases:
  * 1. Mandatory prestart Root approval TTL + private permissions (0600/0700/UID/no-symlinks) + identical pub/exe allowed.
  * 2. Mandatory bounded wait for independent external live Root approval post-handoff, pre-JVM (no auto-approval).
  * 3. Hard-gated child alive & remaining deadline checks before and after EVERY subprocess with bounded timeouts.
  * 4. Private unique output directory outside checkouts (0700/0600) retaining all artifacts before cleanup.
- * 5. Structured exact cleanup failing non-zero on any lingering schema, listeners, or temp dirs.
- * 6. Mandatory pcntl availability, signal trap with no-reentry cleanup, and non-zero exit on abort.
- * 7. Mandatory live approval TTL, scope, schema, and whole-file pins equality.
- * 8. Manifest SHA override verified against actual file bytes; app tree admission verified via assertAdmittedAppTree.
- * 9. Explicit allowlist for readiness URL (strictly loopback https://127.0.0.1:18443/_harness/readiness).
- * 10. Triple-match of sample, parsed, and raw canonical JSON with payload hash independently verified.
+ * 5. Prevalidated owned snapshot captured while live proof exists before child kill (schema regex, 3342 port identity, owned temp).
+ * 6. Structured exact cleanup requiring valid snapshot before ANY destructive database drop or file removal; skips unproven partial setups; fails non-zero on lingering resources.
+ * 7. Mandatory pcntl availability, signal trap with no-reentry cleanup, and non-zero exit on abort.
+ * 8. Mandatory live approval TTL, scope, schema, and whole-file pins equality.
+ * 9. Manifest SHA override verified against actual file bytes; app tree admission verified via assertAdmittedAppTree.
+ * 10. Explicit allowlist for readiness URL (strictly loopback https://127.0.0.1:18443/_harness/readiness).
+ * 11. Triple-match of sample, parsed, and raw canonical JSON with payload hash independently verified.
+ * 12. Strict Kotlin top-level evidence keys (runId, backendHead, clientPublicationHead, clientExecutableHead, manifestDigest) and 7 scenarios.
+ * 13. Canonical intent profile digest semantic normalization (OnlineSaleIntentProfile::computeDigest).
+ * 14. Scoped parent/inspector environment created only AFTER both approval records verified; restored in finally.
  */
 class SupervisedPairedFinancialDrill
 {
@@ -31,6 +36,8 @@ class SupervisedPairedFinancialDrill
     public const REQUIRED_SCOPE = 'ROOT_AUTHORIZED_PAIRED_EXECUTION';
     public const REQUIRED_LIFECYCLE_GRANT = 'FINANCIAL_PAIRED_RUN';
     public const ALLOWED_READINESS_URL = 'https://127.0.0.1:18443/_harness/readiness';
+    public const SCHEMA_REGEX = '/^accounting_p8_tmp_[a-f0-9]{12}$/D';
+    public const HARNESS_DIR_REGEX = '/^v2_harness_[0-9a-f]{16}$/D';
 
     /**
      * Validates prestart Root coordination approval file.
@@ -314,6 +321,89 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
+     * Captures an immutable, verified owned execution snapshot while live proof and processes exist.
+     * Enforces schema regex, proof file verification, DisposableMariaDbSchema::assertPrimarySchema,
+     * owned temporary directory permissions, and child PID mapping.
+     *
+     * @param  string  $schemaName  Exact schema name (must match SCHEMA_REGEX)
+     * @param  string  $proofPath  Path to disposable DB ownership proof file
+     * @param  string  $proofNonce  Disposable DB ownership proof nonce
+     * @param  string  $harnessDir  Owned temporary directory path
+     * @param  int  $childPid  Child CLI process PID
+     * @param  string  $repoRoot  Checkout root directory
+     * @return array{
+     *     schema_name: string,
+     *     proof_path: string,
+     *     proof_nonce: string,
+     *     harness_dir: string,
+     *     child_pid: int,
+     *     verified_at: int
+     * }
+     *
+     * @throws RuntimeException
+     */
+    public static function captureVerifiedOwnedSnapshot(
+        string $schemaName,
+        string $proofPath,
+        string $proofNonce,
+        string $harnessDir,
+        int $childPid,
+        string $repoRoot
+    ): array {
+        if (preg_match(self::SCHEMA_REGEX, $schemaName) !== 1 || str_contains($schemaName, "\0") || str_contains($schemaName, '`')) {
+            throw new RuntimeException("SNAPSHOT_INVALID_SCHEMA_NAME: '{$schemaName}' does not match required pattern " . self::SCHEMA_REGEX);
+        }
+
+        if ($childPid <= 0) {
+            throw new RuntimeException("SNAPSHOT_INVALID_CHILD_PID: must be positive integer, got {$childPid}");
+        }
+
+        self::assertSecureFilePermissions($proofPath, 'SNAPSHOT_PROOF');
+        if (preg_match('/^[0-9a-f]{32,64}$/', $proofNonce) !== 1) {
+            throw new RuntimeException('SNAPSHOT_INVALID_PROOF_NONCE');
+        }
+
+        self::assertSecureDirectoryPermissions($harnessDir, 'SNAPSHOT_HARNESS_DIR');
+        $baseName = basename($harnessDir);
+        if (preg_match(self::HARNESS_DIR_REGEX, $baseName) !== 1 || str_contains($harnessDir, "\0") || str_contains($harnessDir, '`')) {
+            throw new RuntimeException("SNAPSHOT_INVALID_HARNESS_DIR_NAME: '{$baseName}' does not match " . self::HARNESS_DIR_REGEX);
+        }
+
+        $realHarness = realpath($harnessDir);
+        $realRoot = realpath($repoRoot);
+        if ($realHarness === false || $realRoot === false) {
+            throw new RuntimeException('SNAPSHOT_CANONICAL_PATH_RESOLVE_FAILED');
+        }
+
+        if ($realHarness === '/' || $realHarness === '/tmp' || $realHarness === '/home') {
+            throw new RuntimeException("SNAPSHOT_UNSAFE_HARNESS_DIR_REFUSED: '{$realHarness}'");
+        }
+        if ($realHarness === $realRoot || str_starts_with($realHarness, $realRoot . '/')) {
+            throw new RuntimeException("SNAPSHOT_HARNESS_DIR_INSIDE_REPO_REFUSED: '{$realHarness}'");
+        }
+
+        $realSysTemp = realpath(sys_get_temp_dir());
+        if ($realSysTemp !== false && ! str_starts_with($realHarness, $realSysTemp)) {
+            throw new RuntimeException("SNAPSHOT_HARNESS_DIR_NOT_IN_SYS_TEMP: '{$realHarness}'");
+        }
+
+        // Verify primary schema ownership via DisposableMariaDbSchema assertion
+        putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofPath}");
+        putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+        putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+        DisposableMariaDbSchema::assertPrimarySchema($schemaName);
+
+        return [
+            'schema_name' => $schemaName,
+            'proof_path' => $proofPath,
+            'proof_nonce' => $proofNonce,
+            'harness_dir' => $realHarness,
+            'child_pid' => $childPid,
+            'verified_at' => time(),
+        ];
+    }
+
+    /**
      * Verifies triple match between parsed_request, raw_wire_payload_json, raw_wire_payload_sha256,
      * sample_event_id, and intent profile digest.
      *
@@ -369,9 +459,29 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
+     * Normalizes a canonical intent profile digest by stripping the 'sha256:' prefix if present,
+     * validating that the result is an exact 64-hex SHA-256 string.
+     *
+     * @param  string  $digest  Raw digest from handoff or intent profile
+     * @return string Normalized 64-hex SHA-256 string
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function normalizeCanonicalDigest(string $digest): string
+    {
+        $normalized = str_starts_with($digest, 'sha256:') ? substr($digest, 7) : $digest;
+        if (! preg_match('/^[0-9a-f]{64}$/D', $normalized)) {
+            throw new \InvalidArgumentException("Invalid canonical digest format: '{$digest}'. Expected 64-hex SHA-256.");
+        }
+
+        return $normalized;
+    }
+
+    /**
      * Validates fresh Android test evidence artifact.
-     * Asserts it is relative to approved Android cwd, fresh (mtime >= preRunTime, hash != preRunSha),
-     * and contains the verified runtime pins.
+     * Enforces strictly the actual Kotlin top-level keys (runId, backendHead, clientPublicationHead,
+     * clientExecutableHead, manifestDigest) and 7 scenarios (5 PASS, 2 NOT_RUN with null httpStatusCode).
+     * Strictly rejects aliases and fallbacks.
      *
      * @param  string  $evidencePath  Path to evidence JSON
      * @param  int  $preRunTime  Timestamp before Gradle launch
@@ -413,23 +523,89 @@ class SupervisedPairedFinancialDrill
             throw new RuntimeException('EVIDENCE_FILE_INVALID_JSON');
         }
 
-        $pins = $data['pins'] ?? ($data['backend_runtime_pins'] ?? $data);
-        $backendHead = $pins['backend_execution_head_sha'] ?? ($pins['backendHead'] ?? '');
-        $pubHead = $pins['peer_android_approved_head_sha'] ?? ($pins['clientPublicationHead'] ?? '');
-        $exeHead = $pins['peer_android_executable_head_sha'] ?? ($pins['clientExecutableHead'] ?? '');
-        $handoffSha = $pins['live_handoff_sha256'] ?? ($pins['handoffDigest'] ?? ($pins['expected_handoff_sha'] ?? ''));
+        // Must reject aliases; require exact Kotlin top-level keys
+        if (! isset($data['runId']) || ! is_string($data['runId']) || preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $data['runId']) !== 1) {
+            throw new RuntimeException('EVIDENCE_RUN_ID_MISSING_OR_INVALID: runId must be top-level UUID');
+        }
 
-        if (! hash_equals($expectedBackend, (string) $backendHead)) {
-            throw new RuntimeException("EVIDENCE_BACKEND_HEAD_MISMATCH: expected {$expectedBackend}, got {$backendHead}");
+        if (! isset($data['backendHead']) || ! is_string($data['backendHead'])) {
+            throw new RuntimeException('EVIDENCE_BACKEND_HEAD_MISSING: backendHead must be top-level');
         }
-        if (! hash_equals($expectedPub, (string) $pubHead)) {
-            throw new RuntimeException("EVIDENCE_PUB_HEAD_MISMATCH: expected {$expectedPub}, got {$pubHead}");
+        if (! hash_equals($expectedBackend, $data['backendHead'])) {
+            throw new RuntimeException("EVIDENCE_BACKEND_HEAD_MISMATCH: expected {$expectedBackend}, got {$data['backendHead']}");
         }
-        if (! hash_equals($expectedExe, (string) $exeHead)) {
-            throw new RuntimeException("EVIDENCE_EXE_HEAD_MISMATCH: expected {$expectedExe}, got {$exeHead}");
+
+        if (! isset($data['clientPublicationHead']) || ! is_string($data['clientPublicationHead'])) {
+            throw new RuntimeException('EVIDENCE_PUB_HEAD_MISSING: clientPublicationHead must be top-level');
         }
-        if (! hash_equals($expectedHandoffSha, (string) $handoffSha)) {
-            throw new RuntimeException("EVIDENCE_HANDOFF_SHA_MISMATCH: expected {$expectedHandoffSha}, got {$handoffSha}");
+        if (! hash_equals($expectedPub, $data['clientPublicationHead'])) {
+            throw new RuntimeException("EVIDENCE_PUB_HEAD_MISMATCH: expected {$expectedPub}, got {$data['clientPublicationHead']}");
+        }
+
+        if (! isset($data['clientExecutableHead']) || ! is_string($data['clientExecutableHead'])) {
+            throw new RuntimeException('EVIDENCE_EXE_HEAD_MISSING: clientExecutableHead must be top-level');
+        }
+        if (! hash_equals($expectedExe, $data['clientExecutableHead'])) {
+            throw new RuntimeException("EVIDENCE_EXE_HEAD_MISMATCH: expected {$expectedExe}, got {$data['clientExecutableHead']}");
+        }
+
+        if (! isset($data['manifestDigest']) || ! is_string($data['manifestDigest'])) {
+            throw new RuntimeException('EVIDENCE_MANIFEST_DIGEST_MISSING: manifestDigest must be top-level');
+        }
+        if (! hash_equals($expectedHandoffSha, $data['manifestDigest'])) {
+            throw new RuntimeException("EVIDENCE_HANDOFF_SHA_MISMATCH: expected {$expectedHandoffSha}, got {$data['manifestDigest']}");
+        }
+
+        if (($data['overallStatus'] ?? '') !== 'PASS') {
+            throw new RuntimeException("EVIDENCE_OVERALL_STATUS_NOT_PASS: got '" . ($data['overallStatus'] ?? '') . "'");
+        }
+
+        if (($data['lifecycleGrant'] ?? '') !== self::REQUIRED_LIFECYCLE_GRANT) {
+            throw new RuntimeException("EVIDENCE_LIFECYCLE_GRANT_MISMATCH: expected " . self::REQUIRED_LIFECYCLE_GRANT . ", got '" . ($data['lifecycleGrant'] ?? '') . "'");
+        }
+
+        // Validate scenarios: sequential array list of exactly 7 items (5 PASS, 2 NOT_RUN)
+        $scenarios = $data['scenarios'] ?? null;
+        if (! is_array($scenarios) || ! array_is_list($scenarios) || count($scenarios) !== 7) {
+            throw new RuntimeException('EVIDENCE_SCENARIOS_INVALID_COUNT: scenarios must be list of exactly 7 items');
+        }
+
+        $activeScenarios = [
+            'readiness_probe' => 200,
+            'financial_cash_fresh_commit_201' => 201,
+            'financial_cash_idempotent_replay_200' => 200,
+            'financial_cash_event_status_posted' => 200,
+            'financial_cash_tamper_409' => 409,
+        ];
+        $notRunScenarios = [
+            'transport_lost_ack_recovery' => null,
+            'stock_permission_rollback_probes' => null,
+        ];
+
+        $scenarioMap = [];
+        foreach ($scenarios as $s) {
+            if (! is_array($s) || ! isset($s['name']) || ! is_string($s['name'])) {
+                throw new RuntimeException('EVIDENCE_SCENARIO_MALFORMED');
+            }
+            $scenarioMap[$s['name']] = $s;
+        }
+
+        foreach ($activeScenarios as $name => $expectedCode) {
+            if (! isset($scenarioMap[$name])) {
+                throw new RuntimeException("EVIDENCE_SCENARIO_MISSING: {$name}");
+            }
+            if (($scenarioMap[$name]['status'] ?? '') !== 'PASS' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== $expectedCode) {
+                throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: {$name}");
+            }
+        }
+
+        foreach ($notRunScenarios as $name => $expectedCode) {
+            if (! isset($scenarioMap[$name])) {
+                throw new RuntimeException("EVIDENCE_SCENARIO_MISSING: {$name}");
+            }
+            if (($scenarioMap[$name]['status'] ?? '') !== 'NOT_RUN' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== null) {
+                throw new RuntimeException("EVIDENCE_SCENARIO_NOT_RUN_FAILED: {$name}");
+            }
         }
 
         return $data;
@@ -645,15 +821,18 @@ class SupervisedPairedFinancialDrill
     /**
      * Performs exact structured cleanup:
      * - Reaps child CLI process (SIGTERM then SIGKILL with actual wait loop).
-     * - Drops owned schema via admin PDO if lingered, querying exact schema absence afterwards.
+     * - Requires prevalidated owned snapshot before executing ANY destructive database drop or file removal.
+     * - If snapshot is missing on partial setup, skips destructive actions and reports UNPROVEN.
+     * - Validates DB server port strictly 3342 before issuing SQL.
+     * - Drops verified schema and queries exact absence afterwards.
      * - Verifies listener absence on 18080 and 18443.
      * - Recursively removes owned harness temporary directory and asserts absence.
      * Returns structured result array; fails if any check is unsatisfied.
      *
      * @param  Process|null  $childProcess  Child harness process
-     * @param  string|null  $schemaName  Owned schema name
-     * @param  string|null  $harnessDir  Harness temporary directory
-     * @param  PDO|null  $adminPdo  Optional admin PDO for testing/execution
+     * @param  array<string, mixed>|null  $snapshot  Prevalidated owned snapshot
+     * @param  string  $repoRoot  Repository root path
+     * @param  PDO|null  $adminPdo  Optional admin PDO for testing seam (must still pass port 3342 identity)
      * @return array{
      *     child_reaped: bool,
      *     schema_absent: bool,
@@ -665,8 +844,8 @@ class SupervisedPairedFinancialDrill
      */
     public static function executeExactCleanup(
         ?Process $childProcess,
-        ?string $schemaName,
-        ?string $harnessDir,
+        ?array $snapshot,
+        string $repoRoot,
         ?PDO $adminPdo = null
     ): array {
         $errors = [];
@@ -700,8 +879,26 @@ class SupervisedPairedFinancialDrill
             }
         }
 
-        // 2. Query and enforce exact schema absence
-        if ($schemaName !== null && $schemaName !== '') {
+        // 2. Destructive Cleanup Gate: Mandatory Prevalidated Owned Snapshot
+        if ($snapshot === null) {
+            $errors[] = 'CLEANUP_UNPROVEN_NO_VALID_SNAPSHOT: Destructive cleanup skipped; no verified owned snapshot exists. External Root operator inspection required.';
+
+            return [
+                'child_reaped' => $childReaped,
+                'schema_absent' => false,
+                'listeners_closed' => false,
+                'temp_cleaned' => false,
+                'success' => false,
+                'errors' => $errors,
+            ];
+        }
+
+        // Validate snapshot structure strictly before issuing ANY DB or file deletion
+        $schemaName = (string) ($snapshot['schema_name'] ?? '');
+        if (preg_match(self::SCHEMA_REGEX, $schemaName) !== 1 || str_contains($schemaName, "\0") || str_contains($schemaName, '`')) {
+            $errors[] = "CLEANUP_MALFORMED_SCHEMA_REJECTED: Schema '{$schemaName}' rejected. Zero SQL attempts made.";
+            $schemaAbsent = false;
+        } else {
             try {
                 $pdo = $adminPdo;
                 if ($pdo === null) {
@@ -714,18 +911,26 @@ class SupervisedPairedFinancialDrill
                     );
                 }
 
-                $stmt = $pdo->prepare('SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1');
-                $stmt->execute([$schemaName]);
-                if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
-                    fwrite(STDERR, "[Cleanup] Lingering schema '{$schemaName}' detected; executing admin DROP DATABASE...\n");
-                    $pdo->exec("DROP DATABASE IF EXISTS `{$schemaName}`");
-                }
-
-                // Verify exact schema absence
-                $stmt->execute([$schemaName]);
-                if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                // Assert DB server port identity is strictly 3342 before ANY query
+                $portCheck = $pdo->query('SELECT @@port AS port')->fetch(PDO::FETCH_ASSOC);
+                $actualPort = (string) ($portCheck['port'] ?? '');
+                if ($actualPort !== '3342') {
                     $schemaAbsent = false;
-                    $errors[] = "SCHEMA_LINGERING_AFTER_DROP: '{$schemaName}'";
+                    $errors[] = "CLEANUP_FOREIGN_DB_PORT_REJECTED: Expected port 3342, got '{$actualPort}'. Zero DROP SQL calls made.";
+                } else {
+                    $stmt = $pdo->prepare('SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1');
+                    $stmt->execute([$schemaName]);
+                    if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                        fwrite(STDERR, "[Cleanup] Lingering schema '{$schemaName}' detected; executing admin DROP DATABASE...\n");
+                        $pdo->exec("DROP DATABASE IF EXISTS `{$schemaName}`");
+                    }
+
+                    // Verify exact schema absence after drop
+                    $stmt->execute([$schemaName]);
+                    if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
+                        $schemaAbsent = false;
+                        $errors[] = "SCHEMA_LINGERING_AFTER_DROP: '{$schemaName}'";
+                    }
                 }
             } catch (\Throwable $e) {
                 $schemaAbsent = false;
@@ -744,15 +949,19 @@ class SupervisedPairedFinancialDrill
         }
 
         // 4. Clean temporary directory and verify absence
-        if ($harnessDir !== null && is_dir($harnessDir) && ! is_link($harnessDir)) {
-            self::recursiveRemoveDir($harnessDir);
+        $harnessDir = (string) ($snapshot['harness_dir'] ?? '');
+        try {
+            self::recursiveRemoveOwnedDir($harnessDir, $repoRoot);
             if (is_dir($harnessDir)) {
                 $tempCleaned = false;
                 $errors[] = "TEMP_DIR_STILL_EXISTS: '{$harnessDir}'";
             }
+        } catch (\Throwable $e) {
+            $tempCleaned = false;
+            $errors[] = 'TEMP_DIR_CLEANUP_FAILED: ' . $e->getMessage();
         }
 
-        $success = $childReaped && $schemaAbsent && $listenersClosed && $tempCleaned;
+        $success = $childReaped && $schemaAbsent && $listenersClosed && $tempCleaned && empty($errors);
 
         return [
             'child_reaped' => $childReaped,
@@ -765,11 +974,58 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
-     * Recursively remove a directory without following symlinks.
+     * Recursively remove an owned temporary directory.
+     * Enforces that root must be an owned temp descendant, not a symlink, owner is current UID,
+     * and strictly rejects arbitrary /tmp, /, /home, checkouts, NUL bytes, or backticks.
+     *
+     * @param  string  $dir  Directory to delete
+     * @param  string  $repoRoot  Checkout repository root
+     *
+     * @throws RuntimeException
      */
-    public static function recursiveRemoveDir(string $dir): void
+    private static function recursiveRemoveOwnedDir(string $dir, string $repoRoot): void
     {
-        $entries = glob($dir . '/{,.}*', GLOB_BRACE);
+        if ($dir === '' || str_contains($dir, "\0") || str_contains($dir, '`')) {
+            throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: '{$dir}'");
+        }
+
+        if (is_link($dir)) {
+            throw new RuntimeException("TEMP_DIR_SYMLINK_REJECTED: '{$dir}'");
+        }
+
+        if (! is_dir($dir)) {
+            return; // Already absent
+        }
+
+        $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+        if (fileowner($dir) !== $currentUid) {
+            throw new RuntimeException("TEMP_DIR_OWNER_MISMATCH: '{$dir}'");
+        }
+
+        if (preg_match(self::HARNESS_DIR_REGEX, basename($dir)) !== 1) {
+            throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Basename '" . basename($dir) . "' does not match " . self::HARNESS_DIR_REGEX);
+        }
+
+        $realDir = realpath($dir);
+        $realRoot = realpath($repoRoot);
+        if ($realDir === false || $realRoot === false) {
+            throw new RuntimeException("TEMP_DIR_RESOLVE_FAILED: '{$dir}'");
+        }
+
+        if ($realDir === '/' || $realDir === '/tmp' || $realDir === '/home') {
+            throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Refusing destructive deletion of root or system directory '{$realDir}'.");
+        }
+
+        if ($realDir === $realRoot || str_starts_with($realDir, $realRoot . '/')) {
+            throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Refusing destructive deletion inside repository root '{$realDir}'.");
+        }
+
+        $realSysTemp = realpath(sys_get_temp_dir());
+        if ($realSysTemp !== false && ! str_starts_with($realDir, $realSysTemp)) {
+            throw new RuntimeException("CLEANUP_UNSAFE_TEMP_PATH_REJECTED: Directory '{$realDir}' is not descendant of system temp dir '{$realSysTemp}'.");
+        }
+
+        $entries = glob($realDir . '/{,.}*', GLOB_BRACE);
         if (is_array($entries)) {
             foreach ($entries as $entry) {
                 $base = basename($entry);
@@ -777,12 +1033,12 @@ class SupervisedPairedFinancialDrill
                     continue;
                 }
                 if (is_dir($entry) && ! is_link($entry)) {
-                    self::recursiveRemoveDir($entry);
+                    self::recursiveRemoveOwnedDir($entry, $repoRoot);
                 } elseif (is_file($entry) || is_link($entry)) {
                     @unlink($entry);
                 }
             }
         }
-        @rmdir($dir);
+        @rmdir($realDir);
     }
 }
