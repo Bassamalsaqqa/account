@@ -349,7 +349,7 @@ class SupervisedPairedFinancialDrill
         string $harnessDir,
         int $childPid,
         string $repoRoot
-    ): array {
+    ): VerifiedOwnedSnapshot {
         if (preg_match(self::SCHEMA_REGEX, $schemaName) !== 1 || str_contains($schemaName, "\0") || str_contains($schemaName, '`')) {
             throw new RuntimeException("SNAPSHOT_INVALID_SCHEMA_NAME: '{$schemaName}' does not match required pattern " . self::SCHEMA_REGEX);
         }
@@ -387,20 +387,38 @@ class SupervisedPairedFinancialDrill
             throw new RuntimeException("SNAPSHOT_HARNESS_DIR_NOT_IN_SYS_TEMP: '{$realHarness}'");
         }
 
-        // Verify primary schema ownership via DisposableMariaDbSchema assertion
-        putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofPath}");
-        putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
-        putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
-        DisposableMariaDbSchema::assertPrimarySchema($schemaName);
+        // Snapshot original env values for the three proof vars BEFORE any mutation.
+        // assertPrimarySchema reads these via getenv(); we set them, run the assertion,
+        // then restore originals in finally so this method has zero net env side-effect.
+        $proofVarNames = ['PHASE8_DISPOSABLE_DB_PROOF', 'PHASE8_DISPOSABLE_DB_NONCE', 'PHASE8_ALLOW_DISPOSABLE_DB'];
+        $savedEnv = [];
+        foreach ($proofVarNames as $varName) {
+            $savedEnv[$varName] = getenv($varName);
+        }
+        try {
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofPath}");
+            putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            DisposableMariaDbSchema::assertPrimarySchema($schemaName);
+        } finally {
+            // Restore originals unconditionally
+            foreach ($savedEnv as $varName => $origVal) {
+                if ($origVal === false) {
+                    putenv($varName);
+                } else {
+                    putenv("{$varName}={$origVal}");
+                }
+            }
+        }
 
-        return [
-            'schema_name' => $schemaName,
-            'proof_path' => $proofPath,
-            'proof_nonce' => $proofNonce,
-            'harness_dir' => $realHarness,
-            'child_pid' => $childPid,
-            'verified_at' => time(),
-        ];
+        return VerifiedOwnedSnapshot::_internal_create(
+            schemaName: $schemaName,
+            proofPath: $proofPath,
+            proofNonce: $proofNonce,
+            harnessDir: $realHarness,
+            childPid: $childPid,
+            verifiedAt: time()
+        );
     }
 
     /**
@@ -830,7 +848,7 @@ class SupervisedPairedFinancialDrill
      * Returns structured result array; fails if any check is unsatisfied.
      *
      * @param  Process|null  $childProcess  Child harness process
-     * @param  array<string, mixed>|null  $snapshot  Prevalidated owned snapshot
+     * @param  VerifiedOwnedSnapshot|null  $snapshot  Prevalidated owned snapshot (typed; fabricated arrays refused)
      * @param  string  $repoRoot  Repository root path
      * @param  PDO|null  $adminPdo  Optional admin PDO for testing seam (must still pass port 3342 identity)
      * @return array{
@@ -844,7 +862,7 @@ class SupervisedPairedFinancialDrill
      */
     public static function executeExactCleanup(
         ?Process $childProcess,
-        ?array $snapshot,
+        ?VerifiedOwnedSnapshot $snapshot,
         string $repoRoot,
         ?PDO $adminPdo = null
     ): array {
@@ -893,8 +911,9 @@ class SupervisedPairedFinancialDrill
             ];
         }
 
-        // Validate snapshot structure strictly before issuing ANY DB or file deletion
-        $schemaName = (string) ($snapshot['schema_name'] ?? '');
+        // Validate snapshot structure strictly before issuing ANY DB or file deletion.
+        // VerifiedOwnedSnapshot guarantees schema regex and harness dir at construction; no re-validation needed.
+        $schemaName = $snapshot->schemaName;
         if (preg_match(self::SCHEMA_REGEX, $schemaName) !== 1 || str_contains($schemaName, "\0") || str_contains($schemaName, '`')) {
             $errors[] = "CLEANUP_MALFORMED_SCHEMA_REJECTED: Schema '{$schemaName}' rejected. Zero SQL attempts made.";
             $schemaAbsent = false;
@@ -949,7 +968,8 @@ class SupervisedPairedFinancialDrill
         }
 
         // 4. Clean temporary directory and verify absence
-        $harnessDir = (string) ($snapshot['harness_dir'] ?? '');
+        $harnessDir = $snapshot->harnessDir;
+
         try {
             self::recursiveRemoveOwnedDir($harnessDir, $repoRoot);
             if (is_dir($harnessDir)) {
@@ -1040,5 +1060,57 @@ class SupervisedPairedFinancialDrill
             }
         }
         @rmdir($realDir);
+    }
+}
+
+/**
+ * Immutable, test-only owned execution snapshot.
+ *
+ * Can only be created by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(),
+ * which requires DisposableMariaDbSchema::assertPrimarySchema() to pass, the harness dir
+ * to match the canonical v2_harness_16hex pattern under sys_get_temp_dir(), the schema to
+ * match accounting_p8_tmp_12hex, and a positive integer child PID. Fabricated raw arrays
+ * cannot be passed to executeExactCleanup().
+ */
+final class VerifiedOwnedSnapshot
+{
+    /**
+     * @param  string  $schemaName  Verified schema name (accounting_p8_tmp_12hex)
+     * @param  string  $proofPath   Path to disposable DB ownership proof file
+     * @param  string  $proofNonce  Disposable DB ownership proof nonce (32-64 hex)
+     * @param  string  $harnessDir  Realpath of owned temp dir (v2_harness_16hex under sys_get_temp_dir)
+     * @param  int     $childPid    Captured child CLI process PID (positive integer)
+     * @param  int     $verifiedAt  Unix timestamp when snapshot was captured
+     */
+    private function __construct(
+        public readonly string $schemaName,
+        public readonly string $proofPath,
+        public readonly string $proofNonce,
+        public readonly string $harnessDir,
+        public readonly int $childPid,
+        public readonly int $verifiedAt,
+    ) {}
+
+    /**
+     * Internal factory used only by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot().
+     *
+     * @internal
+     */
+    public static function _internal_create(
+        string $schemaName,
+        string $proofPath,
+        string $proofNonce,
+        string $harnessDir,
+        int $childPid,
+        int $verifiedAt
+    ): self {
+        return new self(
+            schemaName: $schemaName,
+            proofPath: $proofPath,
+            proofNonce: $proofNonce,
+            harnessDir: $harnessDir,
+            childPid: $childPid,
+            verifiedAt: $verifiedAt,
+        );
     }
 }

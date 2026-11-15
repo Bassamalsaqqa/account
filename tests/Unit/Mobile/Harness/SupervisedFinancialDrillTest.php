@@ -12,6 +12,7 @@ use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Tests\Support\Harness\SupervisedPairedFinancialDrill;
+use Tests\Support\Harness\VerifiedOwnedSnapshot;
 
 /**
  * Pure source-only unit tests for SupervisedPairedFinancialDrill.
@@ -461,13 +462,14 @@ class SupervisedFinancialDrillTest extends TestCase
     public function test_exact_cleanup_rejects_foreign_db_port(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $snapshot = [
-            'schema_name' => 'accounting_p8_tmp_0123456789ab',
-            'proof_path' => $this->tempDir . '/proof.txt',
-            'proof_nonce' => '0123456789abcdef0123456789abcdef',
-            'harness_dir' => sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            'child_pid' => 12345,
-        ];
+        $snapshot = VerifiedOwnedSnapshot::_internal_create(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: '0123456789abcdef0123456789abcdef',
+            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
+            childPid: 12345,
+            verifiedAt: time()
+        );
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
         $mockPortStmt->method('fetch')->willReturn(['port' => '3306']); // Wrong port!
@@ -492,13 +494,15 @@ class SupervisedFinancialDrillTest extends TestCase
     public function test_exact_cleanup_rejects_malformed_schema(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $snapshot = [
-            'schema_name' => 'accounting_p8_tmp_invalid; DROP TABLE users;',
-            'proof_path' => $this->tempDir . '/proof.txt',
-            'proof_nonce' => '0123456789abcdef0123456789abcdef',
-            'harness_dir' => sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            'child_pid' => 12345,
-        ];
+        // _internal_create is an unvalidated factory used here to test that cleanup's own defense fires.
+        $snapshot = VerifiedOwnedSnapshot::_internal_create(
+            schemaName: 'accounting_p8_tmp_invalid; DROP TABLE users;',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: '0123456789abcdef0123456789abcdef',
+            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
+            childPid: 12345,
+            verifiedAt: time()
+        );
 
         $result = SupervisedPairedFinancialDrill::executeExactCleanup(
             null,
@@ -516,13 +520,14 @@ class SupervisedFinancialDrillTest extends TestCase
     public function test_exact_cleanup_reports_failure_when_schema_lingers(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $snapshot = [
-            'schema_name' => 'accounting_p8_tmp_0123456789ab',
-            'proof_path' => $this->tempDir . '/proof.txt',
-            'proof_nonce' => '0123456789abcdef0123456789abcdef',
-            'harness_dir' => sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            'child_pid' => 12345,
-        ];
+        $snapshot = VerifiedOwnedSnapshot::_internal_create(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: '0123456789abcdef0123456789abcdef',
+            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
+            childPid: 12345,
+            verifiedAt: time()
+        );
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
         $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
@@ -551,13 +556,14 @@ class SupervisedFinancialDrillTest extends TestCase
     public function test_exact_cleanup_succeeds_when_clean(): void
     {
         $repoRoot = dirname(__DIR__, 3);
-        $snapshot = [
-            'schema_name' => 'accounting_p8_tmp_0123456789ab',
-            'proof_path' => $this->tempDir . '/proof.txt',
-            'proof_nonce' => '0123456789abcdef0123456789abcdef',
-            'harness_dir' => sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            'child_pid' => 12345,
-        ];
+        $snapshot = VerifiedOwnedSnapshot::_internal_create(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: '0123456789abcdef0123456789abcdef',
+            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
+            childPid: 12345,
+            verifiedAt: time()
+        );
 
         $mockPortStmt = $this->createMock(PDOStatement::class);
         $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
@@ -580,5 +586,139 @@ class SupervisedFinancialDrillTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertTrue($result['schema_absent']);
         $this->assertEmpty($result['errors']);
+    }
+
+    // ---------------------------------------------------------------------------
+    // New meaningful no-DB tests: captureVerifiedOwnedSnapshot argument validation
+    // and env restoration invariant.
+    // ---------------------------------------------------------------------------
+
+    #[Test]
+    public function test_capture_snapshot_rejects_invalid_schema_name(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_INVALID_SCHEMA_NAME');
+        // Schema name does not match accounting_p8_tmp_12hex pattern
+        SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+            schemaName: 'bad_schema_name',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: str_repeat('a', 32),
+            harnessDir: $this->tempDir,
+            childPid: 1234,
+            repoRoot: dirname(__DIR__, 3)
+        );
+    }
+
+    #[Test]
+    public function test_capture_snapshot_rejects_zero_child_pid(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_INVALID_CHILD_PID');
+        // childPid must be a positive integer
+        SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: $this->tempDir . '/proof.txt',
+            proofNonce: str_repeat('a', 32),
+            harnessDir: $this->tempDir,
+            childPid: 0,
+            repoRoot: dirname(__DIR__, 3)
+        );
+    }
+
+    #[Test]
+    public function test_capture_snapshot_rejects_invalid_proof_nonce_format(): void
+    {
+        // Create a valid-looking proof file first so we get past file permission check
+        $proofFile = $this->tempDir . '/proof.txt';
+        file_put_contents($proofFile, '{}');
+        chmod($proofFile, 0600);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_INVALID_PROOF_NONCE');
+        // Nonce must be 32-64 lowercase hex; 'short' is not valid
+        SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: $proofFile,
+            proofNonce: 'short',
+            harnessDir: $this->tempDir,
+            childPid: 1234,
+            repoRoot: dirname(__DIR__, 3)
+        );
+    }
+
+    #[Test]
+    public function test_capture_snapshot_env_is_restored_after_proof_assertion_failure(): void
+    {
+        // If assertPrimarySchema throws (bad proof file content), captureVerifiedOwnedSnapshot
+        // must still restore the three proof env vars to their pre-call originals.
+        $origProof = getenv('PHASE8_DISPOSABLE_DB_PROOF');
+        $origNonce = getenv('PHASE8_DISPOSABLE_DB_NONCE');
+        $origAllow = getenv('PHASE8_ALLOW_DISPOSABLE_DB');
+
+        $proofFile = $this->tempDir . '/proof.txt';
+        // Write intentionally malformed proof JSON so assertPrimarySchema throws
+        file_put_contents($proofFile, 'not-valid-json');
+        chmod($proofFile, 0600);
+
+        $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+        $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+        mkdir($harnessDir, 0700, true);
+
+        try {
+            SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+                schemaName: 'accounting_p8_tmp_0123456789ab',
+                proofPath: $proofFile,
+                proofNonce: str_repeat('a', 32),
+                harnessDir: $harnessDir,
+                childPid: 1234,
+                repoRoot: dirname(__DIR__, 3)
+            );
+            $this->fail('Expected RuntimeException from assertPrimarySchema with malformed proof file');
+        } catch (RuntimeException $e) {
+            // Expected: assertPrimarySchema threw
+            // Verify env was restored to its pre-call state in the finally block
+            $this->assertSame($origProof, getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+                'PHASE8_DISPOSABLE_DB_PROOF must be restored after captureVerifiedOwnedSnapshot fails');
+            $this->assertSame($origNonce, getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+                'PHASE8_DISPOSABLE_DB_NONCE must be restored after captureVerifiedOwnedSnapshot fails');
+            $this->assertSame($origAllow, getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+                'PHASE8_ALLOW_DISPOSABLE_DB must be restored after captureVerifiedOwnedSnapshot fails');
+        } finally {
+            @rmdir($harnessDir);
+        }
+    }
+
+    #[Test]
+    public function test_golden_fixture_has_distinct_provenance_between_run_id_and_manifest_digest(): void
+    {
+        // Confirm actual fixture inequality: runId (UUID) is distinct from manifestDigest (sha256 hex).
+        // Documents real provenance distinction without asserting a hand-made payload.
+        $fixturePath = dirname(__DIR__, 2) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
+        $this->assertFileExists($fixturePath);
+
+        $data = json_decode((string) file_get_contents($fixturePath), true);
+        $this->assertIsArray($data);
+
+        $runId = $data['runId'] ?? '';
+        $manifestDigest = $data['manifestDigest'] ?? '';
+
+        $this->assertNotEmpty($runId, 'Golden fixture must have top-level runId');
+        $this->assertNotEmpty($manifestDigest, 'Golden fixture must have top-level manifestDigest');
+
+        // They must be distinct: UUID format vs sha256 hex format — real provenance inequality
+        $this->assertNotSame($runId, $manifestDigest,
+            'runId and manifestDigest must have distinct provenance');
+
+        // runId must be UUID format
+        $this->assertMatchesRegularExpression(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+            $runId,
+            'Golden fixture runId must be UUID format'
+        );
+
+        // manifestDigest must normalize to 64-hex sha256
+        $normalized = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($manifestDigest);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $normalized,
+            'Golden fixture manifestDigest must normalize to 64-hex SHA-256');
     }
 }

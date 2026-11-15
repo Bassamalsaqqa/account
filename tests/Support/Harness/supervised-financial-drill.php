@@ -384,11 +384,38 @@ try {
     $proofPath = $creds['proof_path'];
     $proofNonce = $creds['proof_nonce'];
 
+    // Snapshot all scoped vars from the CURRENT (original) parent env BEFORE any mutation.
+    // captureVerifiedOwnedSnapshot has zero net env side-effect (it snapshots/restores internally),
+    // but we snapshot here so the finally block can restore to the state that existed before this section.
+    $scopedParentVars = [
+        'APP_ENV' => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        'PHASE8_TEST_DB_HOST' => $creds['host'],
+        'PHASE8_TEST_DB_PORT' => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
+        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
+        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
+    ];
+    if ($creds['password'] === '') {
+        $scopedParentVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+    }
+    // Snapshot originals BEFORE captureVerifiedOwnedSnapshot and BEFORE any putenv
+    foreach ($scopedParentVars as $varName => $varVal) {
+        $parentEnvToRestore[$varName] = getenv($varName);
+    }
+
+    // Capture immutable owned snapshot: 6-arg signature (schema, proof, nonce, harness, childPid, repoRoot).
+    // Must be called AFTER both prestart + live approvals verified, BEFORE assertPrimarySchema-dependent gates.
+    // Returns typed VerifiedOwnedSnapshot; raw array bypass refused by executeExactCleanup.
     $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
-        $childProcess,
+        $schemaName,
         $proofPath,
+        $proofNonce,
         $harnessDir,
-        $schemaName
+        $childProcess->getPid(),
+        $repoRoot
     );
 
     // Construct explicit inspectorEnv array with testing flags and testing DB creds
@@ -407,23 +434,8 @@ try {
         $inspectorEnv['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
     }
 
-    // Scoped putenv in parent so assertExecutionGates passes, tracked for restoration in finally
-    $scopedParentVars = [
-        'APP_ENV' => 'testing',
-        'MOBILE_V2_HARNESS_ENABLE' => '1',
-        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-        'PHASE8_TEST_DB_HOST' => $creds['host'],
-        'PHASE8_TEST_DB_PORT' => $creds['port'],
-        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
-        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
-        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
-        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
-    ];
-    if ($creds['password'] === '') {
-        $scopedParentVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
-    }
+    // Apply scoped putenv mutations AFTER snapshot of originals and AFTER assertPrimarySchema
     foreach ($scopedParentVars as $varName => $varVal) {
-        $parentEnvToRestore[$varName] = getenv($varName);
         putenv("{$varName}={$varVal}");
     }
 
@@ -549,9 +561,9 @@ try {
         $androidExeHead,
         $rootApprovedHandoffSha
     );
-    $witnessedRunId = (string) ($freshEvidence['run_id'] ?? ($freshEvidence['metadata']['run_id'] ?? ''));
+    $witnessedRunId = (string) ($freshEvidence['runId'] ?? '');
     if ($witnessedRunId === '' || preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $witnessedRunId) !== 1) {
-        throw new \RuntimeException("Witnessed client run_id missing or invalid UUID format.");
+        throw new \RuntimeException("Witnessed client runId missing or invalid UUID format.");
     }
     $expectedEvidenceSha = hash_file('sha256', $evidenceFile);
 
