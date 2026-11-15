@@ -1931,44 +1931,99 @@ class SupervisedFinancialDrillTest extends TestCase
         $repoRoot = dirname(__DIR__, 4);
         $snapshot = $this->createValidSnapshot($repoRoot);
 
-        // Delete the original directory and recreate it at the exact same path.
-        // On filesystem, re-creation assigns a different inode number.
-        @unlink($snapshot->proofPath);
-        @rmdir($snapshot->proofParentDir);
+        // Rename original proof parent directory to a quarantine sibling.
+        // This keeps the original inode allocated, guaranteeing that a newly created
+        // directory at the original path receives a different inode number.
+        $quarantineDir = $snapshot->proofParentDir . '_quarantine';
+        $renamed = rename($snapshot->proofParentDir, $quarantineDir);
+        $this->assertTrue($renamed, 'Renaming proof parent directory to quarantine sibling must succeed');
+        $this->extraTempDirs[] = $quarantineDir;
+
+        // Recreate directory at original path with 0700 permissions
         mkdir($snapshot->proofParentDir, 0700);
 
         try {
             $newStat = stat($snapshot->proofParentDir);
-            // In the extremely rare event inode happens to match (same inode recycled immediately), skip assertion
-            if ($newStat !== false && (int) $newStat['ino'] !== $snapshot->proofParentIno) {
-                $result = SupervisedPairedFinancialDrill::cleanOwnedProofParentDir($snapshot, $repoRoot);
+            $this->assertNotFalse($newStat, 'New directory stat must succeed');
+            $this->assertNotSame(
+                $snapshot->proofParentIno,
+                (int) $newStat['ino'],
+                'Newly created directory must receive a distinct inode while original inode is held by quarantine'
+            );
 
-                $this->assertFalse($result['proof_parent_absent'], 'Must fail closed on replaced parent directory inode mismatch');
-                $this->assertNotEmpty($result['errors']);
-                $this->assertStringContainsString('PROOF_DIR_REPLACED_INODE_MISMATCH', implode('; ', $result['errors']));
-                $this->assertDirectoryExists($snapshot->proofParentDir, 'Replaced directory must be preserved');
+            $result = SupervisedPairedFinancialDrill::cleanOwnedProofParentDir($snapshot, $repoRoot);
 
-                // Also verify executeExactCleanup reports failure
-                $mockPortStmt = $this->createMock(PDOStatement::class);
-                $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
-                $mockSchemaStmt = $this->createMock(PDOStatement::class);
-                $mockSchemaStmt->method('fetch')->willReturn(false);
-                $mockPdo = $this->createMock(PDO::class);
-                $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
-                $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+            $this->assertFalse($result['proof_parent_absent'], 'Must fail closed on replaced parent directory inode mismatch');
+            $this->assertNotEmpty($result['errors']);
+            $this->assertStringContainsString('PROOF_DIR_REPLACED_INODE_MISMATCH', implode('; ', $result['errors']));
+            $this->assertDirectoryExists($snapshot->proofParentDir, 'Replaced directory must be preserved');
 
-                $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
-                    childProcess: null,
-                    snapshot: $snapshot,
-                    repoRoot: $repoRoot,
-                    adminPdo: $mockPdo
-                );
+            // Also verify executeExactCleanup reports failure
+            $mockPortStmt = $this->createMock(PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+            $mockSchemaStmt = $this->createMock(PDOStatement::class);
+            $mockSchemaStmt->method('fetch')->willReturn(false);
+            $mockPdo = $this->createMock(PDO::class);
+            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
 
-                $this->assertFalse($cleanupResult['success']);
-                $this->assertFalse($cleanupResult['proof_parent_absent']);
-                $this->assertStringContainsString('PROOF_DIR_REPLACED_INODE_MISMATCH', implode('; ', $cleanupResult['errors']));
-            }
+            $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: null,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+
+            $this->assertFalse($cleanupResult['success'], 'Exact cleanup must fail on replaced parent directory inode mismatch');
+            $this->assertFalse($cleanupResult['proof_parent_absent']);
+            $this->assertStringContainsString('PROOF_DIR_REPLACED_INODE_MISMATCH', implode('; ', $cleanupResult['errors']));
         } finally {
+            if (is_dir($quarantineDir)) {
+                $this->removeDirectory($quarantineDir);
+            }
+            if (is_dir($snapshot->proofParentDir)) {
+                $this->removeDirectory($snapshot->proofParentDir);
+            }
+            if (is_dir($snapshot->harnessDir)) {
+                $this->removeDirectory($snapshot->harnessDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_persist_post_cleanup_final_witness_throws_on_output_path_collision(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        $outputDir = $this->tempDir . '/witness_collision_dir';
+        mkdir($outputDir, 0700, true);
+
+        // Create a directory at the exact path where post_cleanup_final_witness.json should be written
+        $collisionPath = $outputDir . '/post_cleanup_final_witness.json';
+        mkdir($collisionPath, 0700, true);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('WITNESS_WRITE_FAILED');
+
+        try {
+            SupervisedPairedFinancialDrill::persistPostCleanupFinalWitness(
+                outputDir: $outputDir,
+                backendHead: str_repeat('a', 40),
+                androidPubHead: str_repeat('b', 40),
+                androidExeHead: str_repeat('c', 40),
+                manifestSha: str_repeat('d', 64),
+                snapshot: $snapshot,
+                cleanupResult: ['success' => true, 'errors' => []],
+                exitCode: 0
+            );
+        } finally {
+            if (is_dir($collisionPath)) {
+                @rmdir($collisionPath);
+            }
+            if (is_dir($outputDir)) {
+                $this->removeDirectory($outputDir);
+            }
             if (is_dir($snapshot->proofParentDir)) {
                 $this->removeDirectory($snapshot->proofParentDir);
             }

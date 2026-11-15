@@ -1314,10 +1314,20 @@ class SupervisedPairedFinancialDrill
         ];
 
         $witnessPath = rtrim($outputDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'post_cleanup_final_witness.json';
-        file_put_contents($witnessPath, json_encode($witnessData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-        chmod($witnessPath, 0600);
+        $encoded = json_encode($witnessData, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        $bytes = @file_put_contents($witnessPath, $encoded);
+        if ($bytes === false || $bytes !== strlen($encoded)) {
+            throw new RuntimeException("WITNESS_WRITE_FAILED: unable to write '{$witnessPath}'");
+        }
 
-        $witnessSha = hash_file('sha256', $witnessPath);
+        if (! @chmod($witnessPath, 0600) || (fileperms($witnessPath) & 0777) !== 0600) {
+            throw new RuntimeException("WITNESS_CHMOD_FAILED: failed to set 0600 permissions on '{$witnessPath}'");
+        }
+
+        $witnessSha = @hash_file('sha256', $witnessPath);
+        if ($witnessSha === false || preg_match('/^[a-f0-9]{64}$/D', $witnessSha) !== 1) {
+            throw new RuntimeException("WITNESS_HASH_FAILED: failed to compute valid sha256 for '{$witnessPath}'");
+        }
 
         return [
             'witness_path' => $witnessPath,

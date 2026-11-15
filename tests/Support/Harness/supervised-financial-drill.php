@@ -734,8 +734,14 @@ try {
         'created_at' => date('c'),
     ];
     $manifestOut = $outputDir . '/approval_hashes_manifest.json';
-    file_put_contents($manifestOut, json_encode($hashesManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-    chmod($manifestOut, 0600);
+    $manifestEncoded = json_encode($hashesManifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    $manifestBytes = @file_put_contents($manifestOut, $manifestEncoded);
+    if ($manifestBytes === false || $manifestBytes !== strlen($manifestEncoded)) {
+        throw new RuntimeException("MANIFEST_WRITE_FAILED: unable to write '{$manifestOut}'");
+    }
+    if (! @chmod($manifestOut, 0600) || (fileperms($manifestOut) & 0777) !== 0600) {
+        throw new RuntimeException("MANIFEST_CHMOD_FAILED: failed to set 0600 on '{$manifestOut}'");
+    }
 } catch (\Throwable $e) {
     fwrite(STDERR, "\nSupervisor Error: {$e->getMessage()}\n");
     $exitCode = 1;
@@ -798,8 +804,14 @@ try {
                 'created_at' => gmdate('Y-m-d\TH:i:s\Z'),
             ];
             $artifactIndexPath = $outputDir . '/post_cleanup_artifact_index.json';
-            file_put_contents($artifactIndexPath, json_encode($artifactIndex, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-            chmod($artifactIndexPath, 0600);
+            $indexEncoded = json_encode($artifactIndex, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $indexBytes = @file_put_contents($artifactIndexPath, $indexEncoded);
+            if ($indexBytes === false || $indexBytes !== strlen($indexEncoded)) {
+                throw new RuntimeException("ARTIFACT_INDEX_WRITE_FAILED: unable to write '{$artifactIndexPath}'");
+            }
+            if (! @chmod($artifactIndexPath, 0600) || (fileperms($artifactIndexPath) & 0777) !== 0600) {
+                throw new RuntimeException("ARTIFACT_INDEX_CHMOD_FAILED: failed to set 0600 on '{$artifactIndexPath}'");
+            }
         } catch (\Throwable $witnessThrowable) {
             fwrite(STDERR, "\n[Final Witness Failure] Failed to persist post-cleanup final witness: " . $witnessThrowable->getMessage() . "\n");
             $exitCode = ($exitCode === 0) ? 1 : $exitCode;
