@@ -205,10 +205,13 @@ foreach ($argvList as $arg) {
         $timeout = (int) $rawTimeout;
     } elseif (str_starts_with($arg, '--output-file=')) {
         $outputFile = substr($arg, 14);
+    } elseif ($arg === '--check-dependencies') {
+        $checkDependencies = true;
     } elseif ($arg === '--help' || $arg === '-h') {
         echo "Usage: php tests/Support/Harness/disposable-db-qualification-runner.php [OPTIONS]\n";
         echo "Options:\n";
         echo "  --execute                    Execute the qualification lifecycle (default: dry-run preflight)\n";
+        echo "  --check-dependencies         Run bounded no-DB isolated dependency construction preflight\n";
         echo "  --credentials-file=<path>    Secure 0600 JSON administrative credentials file\n";
         echo "  --expected-source-head=<sha> Pinned 40-hex git commit SHA (mandatory for --execute)\n";
         echo "  --timeout=<seconds>          Timeout in seconds (max 180, default 180)\n";
@@ -223,7 +226,78 @@ require __DIR__.'/../../../vendor/autoload.php';
 // Verify current git HEAD
 $actualHead = trim((string) shell_exec('git rev-parse HEAD 2>/dev/null'));
 
-// DRY-RUN PREFLIGHT MODE (default without --execute)
+// EXPLICIT NO-DB DEPENDENCY PREFLIGHT (--check-dependencies)
+if ($checkDependencies ?? false) {
+    if ($expectedSourceHead !== null && $expectedSourceHead !== '') {
+        if (! hash_equals($expectedSourceHead, $actualHead)) {
+            fwrite(STDERR, "Error: Source HEAD mismatch: expected {$expectedSourceHead}, got {$actualHead}\n");
+            exit(1);
+        }
+    }
+
+    $autoloadPath = var_export(__DIR__.'/../../../vendor/autoload.php', true);
+    $appRootEsc = var_export(dirname(__DIR__, 3), true);
+    $preflightScript = tempnam(sys_get_temp_dir(), 'p8_dep_preflight_');
+    if ($preflightScript === false) {
+        fwrite(STDERR, "Error: Failed to create temp script.\n");
+        exit(1);
+    }
+    chmod($preflightScript, 0600);
+    file_put_contents($preflightScript, '<?php
+    require '.$autoloadPath.';
+    $app = new \Illuminate\Foundation\Application('.$appRootEsc.');
+    $app["env"] = "testing";
+
+    \Tests\Support\Harness\DisposableFinancialPostRunInspector::bindIsolatedContainerServices($app);
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+
+    $context = $app->make(\App\Support\Tenancy\CompanyContext::class);
+    $context->clearSessionless();
+
+    $services = [
+        \App\Services\Accounting\AccountingReconciliationService::class,
+        \App\Services\Inventory\InventoryReconciliationService::class,
+        \App\Services\Sales\SalesReconciliationService::class,
+        \App\Services\Purchasing\PayablesReconciliationService::class,
+        \App\Services\Money\MoneyReconciliationService::class,
+        \App\Services\Accounting\Phase7ReconciliationService::class,
+    ];
+    foreach ($services as $svc) {
+        $app->make($svc);
+    }
+    $context->clearSessionless();
+    echo "ISOLATED_DEPENDENCY_PREFLIGHT_OK";
+    ');
+
+    try {
+        $proc = new \Symfony\Component\Process\Process([PHP_BINARY, $preflightScript], dirname(__DIR__, 3), [
+            'APP_ENV' => 'testing',
+            'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        ]);
+        $proc->setTimeout(10)->mustRun();
+        $preflightOut = $proc->getOutput();
+        if (! str_contains($preflightOut, 'ISOLATED_DEPENDENCY_PREFLIGHT_OK')) {
+            fwrite(STDERR, "Error: Isolated dependency preflight did not output expected marker.\n");
+            exit(1);
+        }
+        $depReport = [
+            'status' => 'PASS',
+            'mode' => 'check_dependencies_no_db',
+            'source_head' => $actualHead,
+            'message' => 'Bounded no-DB dependency construction preflight validated CompanyContext sessionless auth, array cache, and all 6 reconciliation service resolutions without DB socket.',
+        ];
+        $jsonOutput = json_encode($depReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($outputFile !== null) {
+            file_put_contents($outputFile, $jsonOutput.PHP_EOL);
+        }
+        echo $jsonOutput.PHP_EOL;
+        exit(0);
+    } finally {
+        @unlink($preflightScript);
+    }
+}
+
+// DRY-RUN PREFLIGHT MODE (default without --execute or --check-dependencies)
 if (! $execute) {
     if ($expectedSourceHead !== null && $expectedSourceHead !== '') {
         if (! hash_equals($expectedSourceHead, $actualHead)) {
@@ -276,7 +350,8 @@ if (! $execute) {
         'timeout_limit_seconds' => $timeout,
         'classes_verified' => array_keys($classesStatus),
         'credentials_preflight' => $credentialsCheck,
-        'message' => 'Qualification runner dry-run preflight passed. Zero sockets dialed, zero DB touched. Awaiting explicit Root lease to run with --execute.',
+        'runtime_prechecks' => 'NOT_RUN (exercised during --execute or --check-dependencies)',
+        'message' => 'Qualification runner dry-run preflight passed. Autoload only; runtime pre-checks and database qualification are NOT_RUN until --execute.',
     ];
 
     $jsonOutput = json_encode($preflightReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

@@ -997,11 +997,16 @@ final class DisposableFinancialPostRunInspector
         $previousGlobalContainer = \Illuminate\Container\Container::getInstance();
         $previousApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
         $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();
+
+        $hasSnapshottedTeamId = false;
         $previousTeamId = null;
         if (function_exists('getPermissionsTeamId')) {
             try {
                 $previousTeamId = getPermissionsTeamId();
-            } catch (\Throwable) {
+                $hasSnapshottedTeamId = true;
+            } catch (\Throwable $e) {
+                // Fail-closed before changing global state
+                throw new \RuntimeException('Failed to snapshot caller permission team ID: '.$e->getMessage(), previous: $e);
             }
         }
 
@@ -1115,13 +1120,12 @@ final class DisposableFinancialPostRunInspector
                 }
             }
 
-            // 2. Disconnect and purge database manager
+            // 2. Purge database manager (purge disconnects and unsets connection instance; no trailing disconnect)
             if ($manager instanceof \Illuminate\Database\DatabaseManager) {
                 try {
                     $manager->purge('disposable_inspector');
-                    $manager->disconnect('disposable_inspector');
                 } catch (\Throwable $e) {
-                    $cleanupExceptions[] = 'DB manager disconnect failed: '.$e->getMessage();
+                    $cleanupExceptions[] = 'DB manager purge failed: '.$e->getMessage();
                 }
             }
 
@@ -1162,15 +1166,15 @@ final class DisposableFinancialPostRunInspector
                 if ($previousGlobalContainer !== null) {
                     \Illuminate\Container\Container::setInstance($previousGlobalContainer);
                 }
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 $cleanupExceptions[] = 'Global container restoration failed: '.$e->getMessage();
             }
 
             // 7. Restore exact previous permission team ID (without touching caller context or old guard/session)
-            if (function_exists('setPermissionsTeamId')) {
+            if ($hasSnapshottedTeamId && function_exists('setPermissionsTeamId')) {
                 try {
                     setPermissionsTeamId($previousTeamId);
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
                     $cleanupExceptions[] = 'Permission teamId restoration failed: '.$e->getMessage();
                 }
             }
@@ -1179,7 +1183,7 @@ final class DisposableFinancialPostRunInspector
             if ($app instanceof \Illuminate\Foundation\Application) {
                 try {
                     $app->flush();
-                } catch (\Throwable) {
+                } catch (\Throwable $e) {
                     $cleanupExceptions[] = 'Isolated app flush failed: '.$e->getMessage();
                 }
             }
