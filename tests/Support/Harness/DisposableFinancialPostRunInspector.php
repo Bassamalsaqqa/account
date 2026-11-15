@@ -1117,12 +1117,26 @@ final class DisposableFinancialPostRunInspector
                         $hasSnapshottedTeamId = true;
                     } else {
                         // Bare CLI context (Container::$instance is null or bare generic Container):
-                        // Establish an isolated temporary bootstrap container to resolve registrar
-                        // without treating it as caller application and without mutating original global state.
+                        // Scope temporary bootstrap container as active global while resolving registrar
+                        // (required for global config() helper in PermissionRegistrar::__construct),
+                        // with guaranteed immediate restoration of original global/facades in finally.
                         $bareBootstrapApp = self::createIsolatedBootstrapApplication();
-                        $registrar = $bareBootstrapApp->make(\Spatie\Permission\PermissionRegistrar::class);
-                        $previousTeamId = $registrar->getPermissionsTeamId();
-                        $hasSnapshottedTeamId = true;
+                        try {
+                            \Illuminate\Container\Container::setInstance($bareBootstrapApp);
+                            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+                            \Illuminate\Support\Facades\Facade::setFacadeApplication($bareBootstrapApp);
+
+                            $registrar = $bareBootstrapApp->make(\Spatie\Permission\PermissionRegistrar::class);
+                            $previousTeamId = $registrar->getPermissionsTeamId();
+                            $hasSnapshottedTeamId = true;
+                        } finally {
+                            \Illuminate\Container\Container::setInstance($previousGlobalContainer);
+                            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+                            if (is_array($previousResolvedInstances)) {
+                                $facadeResolvedRef->setValue(null, $previousResolvedInstances);
+                            }
+                            \Illuminate\Support\Facades\Facade::setFacadeApplication($previousApp);
+                        }
                     }
                 } catch (\Throwable $e) {
                     // Do not mask genuine permission resolution errors; fail-closed

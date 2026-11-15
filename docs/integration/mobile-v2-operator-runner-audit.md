@@ -131,7 +131,7 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
 | `tests/Support/Harness/supervised-financial-drill.php` | `4444ed463500c7dc63383ac3c1d055534fc18dedc7643fe023a4ac6f63ae8723` | Supervisor CLI Driver |
 | `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `7fcf73a3c55940aa484464a56078506cb9faa15b22656750d88923dc3d90b3cc` | Fixture Harness |
-| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `3834432064443788d95345288b26e2c1bf87ada204a53c20a0a84a8bd746df7d` | Post-Run Inspector |
+| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `b1cb9fd9fb92cfba57154966d83b6ec015ef5cdfd0220a69f94cf6c5a01d2177` | Post-Run Inspector |
 | `tests/Support/Harness/financial-inspector-cli.php` | `46d4e38151d8d06f7e79aa13b3c654825b486f5b60a583420eecbcb673d42811` | Post-Run Inspector CLI |
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7` | Artisan Command |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
@@ -509,6 +509,12 @@ To resolve this cleanly without compromising safety:
 | | `root-d43-pair5-exec/post_cleanup_final_witness.json` | `f9d38baddcea39fbc17b23d070570f3a680adc0845cd6ac9551648b30803a520` |
 | | `root-d43-pair5-exec/exit_metadata.json` | `0a41c5b8392bc0085cda5896f13ecba02a9b3ef6a3376e640f58f9a761aa0efb` |
 | | `root-d43-pair5-exec/operator_execution.log` | `39d3125dff57ced312c96730c3811c80f6a27cbde4c2741ab302fc57d3acc009` |
+| **Root Pure Guards (Retained)** | `root-cli-bootstrap-guards-85ckbcbk/raw.log` | `a9c93a1786759943a09fef5effdf4b8cd3a262207b903360c89a43b3d5f8f9ab` |
+| | `root-cli-bootstrap-guards-85ckbcbk/junit.xml` | `7297d71cc710aeb01e688a0e782aba53b99a55539880080a2bc059ee7b7c20ab` |
+| | `root-cli-bootstrap-guards-85ckbcbk/exit.json` | `417b8c4782482092c6b0f15df7c0e212139de98c1085915c6d3e26c0a40c02d9` |
+| | `root-cli-bootstrap-guards-85ckbcbk/argv.json` | `8f58a892904efaa547073d5aea1b15d81ef94afa3525c4715eadf5f5a0b0e4a6` |
+| | `root-cli-bootstrap-guards-85ckbcbk/pre.json` | `7e61d7b8f94c353cc68d59718a2dd2b48c961dc52b1e98fd299c427fca024ad0` |
+| | `root-cli-bootstrap-guards-85ckbcbk/post.json` | `7e61d7b8f94c353cc68d59718a2dd2b48c961dc52b1e98fd299c427fca024ad0` |
 
 ---
 
@@ -725,23 +731,27 @@ Despite JVM and delta inspection success, FULL acceptance was **NOT ACHIEVED**:
 
 ### 15.6 Narrow Source-Only Fix (Applied)
 To resolve the CLI dependency closure cleanly before Root's next invocation:
-1. Corrected caller context preservation lifecycle in `DisposableFinancialPostRunInspector`:
+1. Documented Root's focused pure regression execution (`root-cli-bootstrap-guards-85ckbcbk`, exit code 1):
+   - Executed: 2 tests, 12 assertions, 1 PASS, 1 FAIL.
+   - Retained evidence: `raw.log` (`a9c93a17...`), `junit.xml` (`7297d71c...`), `exit.json` (`417b8c47...`), `argv.json` (`8f58a892...`), `pre.json`/`post.json` (`7e61d7b8...`, pre/post zero drift matched).
+   - Root cause identified: In bare CLI context, `PermissionRegistrar::__construct` calls global `config()` helpers (lines 57-60). Calling `$bareBootstrapApp->make(PermissionRegistrar::class)` while global `Container::$instance` was null caused `config()` to throw `Target class [config] does not exist`, failing before reaching `assertExecutionGates`.
+2. Corrected caller context preservation lifecycle in `DisposableFinancialPostRunInspector`:
    - `createIsolatedBootstrapApplication()` captures raw `Container::$instance` before `Application::__construct` (which calls `registerBaseBindings` -> `static::setInstance($this)`) and restores it unconditionally in its own `finally`, returning a fully configured isolated application without leaking ambient container mutations.
+   - For bare CLI contexts (`Container::$instance` is `null` or a generic Container), scopes the isolated temporary bootstrap container as the active global container and facade application while resolving `PermissionRegistrar` (satisfying global `config()` helpers in `PermissionRegistrar::__construct`), with guaranteed immediate restoration in `finally` back to exact original global container (`null` or generic) and facade application (`null`).
    - Encompasses the caller permission snapshot and bootstrap phase within `runSixReconciliations()` outer `try { ... } finally { ... }` block, guaranteeing that any exception during caller team snapshotting or registrar dependency resolution does not bypass exact container (`Container::$instance`), facade (`Facade::$app`), cached resolved instances (`Facade::$resolvedInstance`), or Eloquent model connection resolver restoration.
    - For existing caller `Application` instances (including partially configured callers with custom config, auth, cache, resolved facades, or non-null team ID), snapshots `$previousTeamId` using caller's application without overwriting or mutating caller's container bindings, environment, or facades.
-   - For bare CLI contexts (`Container::$instance` is `null` or a generic Container), establishes an isolated temporary bootstrap container (`createIsolatedBootstrapApplication()`) to resolve `PermissionRegistrar` dependencies without treating it as the caller application and without mutating ambient global state.
    - Removed duplicate eager `ensureStandaloneBootstrapDependencyClosure()` call from `financial-inspector-cli.php` to prevent premature global container replacement before `runSixReconciliations` captures original caller state.
    - Strict fail-closed exception handling around `getPermissionsTeamId()` retained unchanged (no exception masking or skipping).
    - In `finally`, unconditionally restores exact previous global container (including `null`), facade application (including `null`), resolved facade instances, model connection resolver, and caller permission team ID (only on existing caller Application).
    - Flushes both isolated execution application and temporary bare bootstrap application.
-2. Authored 6 comprehensive real no-DB regression tests in `DisposableMobileV2BackendHarnessGuardTest.php`:
+3. Authored 6 comprehensive real no-DB regression tests in `DisposableMobileV2BackendHarnessGuardTest.php`:
    - `test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db()`: asserts real `CacheManager` with parameter `$app` and Spatie `PermissionRegistrar` resolution without exceptions, enforcing isolation defaults (`cache.default = 'array'`, `database.default = 'disposable_inspector'`) and restoring `null` facade application.
    - `test_create_isolated_bootstrap_application_preserves_ambient_container_identity()`: verifies that raw `Container::$instance` remains strictly unchanged immediately after `createIsolatedBootstrapApplication()` across `null`, generic `Container`, and `Application` sentinels.
-   - `test_run_six_reconciliations_restores_bare_context_on_denied_execution_gates()`: verifies that when called from a bare CLI context (`null` container, `null` facade app) with denied execution gates, the bare context is fully and cleanly restored in `finally`.
+   - `test_run_six_reconciliations_restores_bare_context_on_denied_execution_gates()`: verifies that when called from a bare CLI context (`null` container, `null` facade app) with denied execution gates, the bare context is fully and cleanly restored in `finally` and execution gates reject invalid schema name.
    - `test_run_six_reconciliations_preserves_partially_configured_caller_application_on_failure()`: verifies that a real caller `Application` configured with custom config, auth, cache, resolved facades, and non-null Spatie team ID (`777`) remains 100% unchanged across execution gate failure.
    - `test_run_six_reconciliations_preserves_complete_caller_context_on_denied_execution_gates()`: verifies complete caller application context and team ID (`888`) remain intact across execution gate failure.
    - `test_run_six_reconciliations_fails_closed_and_preserves_caller_on_deliberately_failing_registrar()`: verifies that a caller with a deliberately failing registrar factory fails closed without masking genuine permission resolution errors and completely preserves caller config, auth, facades, container, and model connection resolver.
-3. Tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
+4. Tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
 
 
 
