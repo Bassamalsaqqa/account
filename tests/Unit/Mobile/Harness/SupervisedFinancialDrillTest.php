@@ -689,36 +689,73 @@ class SupervisedFinancialDrillTest extends TestCase
     }
 
     #[Test]
-    public function test_golden_fixture_has_distinct_provenance_between_run_id_and_manifest_digest(): void
+    public function test_golden_fixture_has_distinct_provenance_between_handoff_sha_and_profile_digest(): void
     {
-        // Confirm actual fixture inequality: runId (UUID) is distinct from manifestDigest (sha256 hex).
-        // Documents real provenance distinction without asserting a hand-made payload.
+        // Verify actual fixture fields that map to CLI argv propagation:
+        //   manifestDigest  -> --expected-handoff-digest (whole handoff SHA, raw wire provenance)
+        //   runId           -> UUID of the Android test execution run
+        //   backendHead, clientPublicationHead, clientExecutableHead -> --expected-backend-head etc.
+        //
+        // These are the values verifyEvidenceFreshness() receives and validates.
+        // This test documents real provenance distinction: manifestDigest is a sha256 hex string
+        // (whole handoff SHA) while runId is a UUID — structurally and semantically distinct.
+        // The test does NOT execute any subprocess or make real network/DB calls.
         $fixturePath = dirname(__DIR__, 2) . '/Support/Harness/fixtures/synthetic-financial-golden-wire.json';
         $this->assertFileExists($fixturePath);
 
         $data = json_decode((string) file_get_contents($fixturePath), true);
         $this->assertIsArray($data);
 
+        // CLI argv propagation fields must all be present at top level (no aliases)
         $runId = $data['runId'] ?? '';
         $manifestDigest = $data['manifestDigest'] ?? '';
+        $backendHead = $data['backendHead'] ?? '';
+        $clientPublicationHead = $data['clientPublicationHead'] ?? '';
+        $clientExecutableHead = $data['clientExecutableHead'] ?? '';
 
         $this->assertNotEmpty($runId, 'Golden fixture must have top-level runId');
-        $this->assertNotEmpty($manifestDigest, 'Golden fixture must have top-level manifestDigest');
+        $this->assertNotEmpty($manifestDigest, 'Golden fixture must have top-level manifestDigest (whole handoff SHA)');
+        $this->assertNotEmpty($backendHead, 'Golden fixture must have top-level backendHead (CLI argv propagation)');
+        $this->assertNotEmpty($clientPublicationHead, 'Golden fixture must have top-level clientPublicationHead (CLI argv propagation)');
+        $this->assertNotEmpty($clientExecutableHead, 'Golden fixture must have top-level clientExecutableHead (CLI argv propagation)');
 
-        // They must be distinct: UUID format vs sha256 hex format — real provenance inequality
-        $this->assertNotSame($runId, $manifestDigest,
-            'runId and manifestDigest must have distinct provenance');
-
-        // runId must be UUID format
+        // runId must be UUID format — Android test execution run identity
         $this->assertMatchesRegularExpression(
             '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
             $runId,
             'Golden fixture runId must be UUID format'
         );
 
-        // manifestDigest must normalize to 64-hex sha256
-        $normalized = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($manifestDigest);
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $normalized,
-            'Golden fixture manifestDigest must normalize to 64-hex SHA-256');
+        // manifestDigest is the whole handoff SHA (raw wire provenance), must be 64-hex SHA-256
+        // This is what the inspector CLI receives as --expected-handoff-digest
+        $this->assertMatchesRegularExpression(
+            '/^[0-9a-f]{64}$/',
+            $manifestDigest,
+            'Golden fixture manifestDigest must be 64-hex SHA-256 (whole handoff SHA for CLI argv propagation)'
+        );
+
+        // backendHead and client heads must be 40-hex git SHAs (CLI argv propagation fields)
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', $backendHead, 'backendHead must be 40-hex git SHA');
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', $clientPublicationHead, 'clientPublicationHead must be 40-hex git SHA');
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{40}$/', $clientExecutableHead, 'clientExecutableHead must be 40-hex git SHA');
+
+        // runId and manifestDigest have distinct provenance: UUID (execution identity) vs sha256 hex (handoff hash)
+        $this->assertNotSame($runId, $manifestDigest, 'runId and manifestDigest must have distinct provenance');
+
+        // manifestDigest normalizes cleanly via normalizeCanonicalDigest (64-hex, no prefix needed)
+        $normalizedManifestDigest = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($manifestDigest);
+        $this->assertSame($manifestDigest, $normalizedManifestDigest, 'manifestDigest is already normalized 64-hex');
+
+        // Confirm the golden fixture's field values match what verifyEvidenceFreshness() will receive
+        // from the actual GH review 5909921626 Kotlin wire: backendHead=cfc28b..., clientPubHead=c00aed...,
+        // clientExeHead=b7e61e..., manifestDigest=8e48f3... — these are the actual CLI argv values.
+        $this->assertSame('cfc28baaaaf52521ecbc88f1ba4c621afee17221', $backendHead,
+            'backendHead must match actual Kotlin wire CLI argv value');
+        $this->assertSame('c00aedb70ea06f28ae42282149c030df76dc300d', $clientPublicationHead,
+            'clientPublicationHead must match actual Kotlin wire CLI argv value');
+        $this->assertSame('b7e61eb4ed0aed2f5040d9fc44f9764b310be530', $clientExecutableHead,
+            'clientExecutableHead must match actual Kotlin wire CLI argv value');
+        $this->assertSame('8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc', $manifestDigest,
+            'manifestDigest must match actual Kotlin wire whole handoff SHA (--expected-handoff-digest CLI argv)');
     }
 }

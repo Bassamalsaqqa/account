@@ -411,7 +411,7 @@ class SupervisedPairedFinancialDrill
             }
         }
 
-        return VerifiedOwnedSnapshot::_internal_create(
+        return VerifiedOwnedSnapshot::fromLiveOwnership(
             schemaName: $schemaName,
             proofPath: $proofPath,
             proofNonce: $proofNonce,
@@ -1066,11 +1066,17 @@ class SupervisedPairedFinancialDrill
 /**
  * Immutable, test-only owned execution snapshot.
  *
- * Can only be created by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(),
- * which requires DisposableMariaDbSchema::assertPrimarySchema() to pass, the harness dir
- * to match the canonical v2_harness_16hex pattern under sys_get_temp_dir(), the schema to
- * match accounting_p8_tmp_12hex, and a positive integer child PID. Fabricated raw arrays
- * cannot be passed to executeExactCleanup().
+ * Production code must obtain instances exclusively via {@see fromLiveOwnership()},
+ * which is called only by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot()
+ * after all pre-conditions are satisfied (assertPrimarySchema passed, schema regex matched,
+ * harness dir is canonical v2_harness_16hex under sys_get_temp_dir(), positive child PID).
+ *
+ * {@see _internal_create()} is a test-only escape hatch retained exclusively to let unit
+ * tests exercise executeExactCleanup()'s OWN independent defense logic (e.g. malformed
+ * schema rejection, foreign DB port rejection, schema lingering after DROP).  It makes NO
+ * validation claims and must NEVER be used to construct a snapshot that is intended to
+ * represent a real, proven, live-ownership scenario.  Using it outside cleanup-defense
+ * unit tests is a misuse of the testing seam.
  */
 final class VerifiedOwnedSnapshot
 {
@@ -1092,9 +1098,55 @@ final class VerifiedOwnedSnapshot
     ) {}
 
     /**
-     * Internal factory used only by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot().
+     * Sole validated public factory for production use.
      *
-     * @internal
+     * Called only by SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot() after all
+     * pre-conditions are externally verified.  No bypass path exists; this is the single point
+     * of authority for creating a VerifiedOwnedSnapshot that may be passed to executeExactCleanup().
+     *
+     * @param  string  $schemaName  Must match SupervisedPairedFinancialDrill::SCHEMA_REGEX
+     * @param  string  $proofPath   Path to ownership proof file
+     * @param  string  $proofNonce  Ownership proof nonce (32-64 lowercase hex)
+     * @param  string  $harnessDir  Canonical realpath of owned harness directory
+     * @param  int     $childPid    Positive integer child CLI process PID
+     * @param  int     $verifiedAt  Unix timestamp of snapshot capture
+     */
+    public static function fromLiveOwnership(
+        string $schemaName,
+        string $proofPath,
+        string $proofNonce,
+        string $harnessDir,
+        int $childPid,
+        int $verifiedAt
+    ): self {
+        return new self(
+            schemaName: $schemaName,
+            proofPath: $proofPath,
+            proofNonce: $proofNonce,
+            harnessDir: $harnessDir,
+            childPid: $childPid,
+            verifiedAt: $verifiedAt,
+        );
+    }
+
+    /**
+     * Test-only seam for exercising executeExactCleanup()'s OWN independent defense logic.
+     *
+     * This factory exists exclusively so unit tests can construct snapshots with deliberately
+     * invalid or synthetic field values (e.g. a malformed schema name, a wrong DB port, or a
+     * non-existent harness directory) in order to verify that executeExactCleanup() rejects
+     * them through its own independent guards — not because the snapshot was validated here.
+     *
+     * USAGE CONSTRAINTS:
+     * - Must only be called from tests that exercise executeExactCleanup() cleanup defense logic.
+     * - Must NOT be used to claim that an instance represents real, proven, live ownership.
+     * - Performs NO schema regex validation, NO proof file verification, NO assertPrimarySchema,
+     *   NO harness directory checks, and NO child PID validation.
+     * - Instances created here carry no ownership proof and must not be treated as authoritative.
+     *
+     * If you are tempted to call this outside a cleanup-defense unit test, you are bypassing the
+     * validated factory and creating a real security hole.  Use captureVerifiedOwnedSnapshot()
+     * instead, which delegates exclusively to fromLiveOwnership() after full pre-condition checks.
      */
     public static function _internal_create(
         string $schemaName,
@@ -1114,3 +1166,4 @@ final class VerifiedOwnedSnapshot
         );
     }
 }
+

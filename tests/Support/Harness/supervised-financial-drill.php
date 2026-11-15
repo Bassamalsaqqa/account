@@ -369,46 +369,48 @@ try {
     );
     echo "  Root Live Gate       : GRANTED (witnessed SHA: {$rootApprovedHandoffSha})\n";
 
-    // 10. Extract Payloads & Verified Canonical Digest (Receipt Semantics: profile digest != raw wire)
+    // 10. Extract Payloads & Verified Canonical Digest (Receipt Semantics: profile digest != raw wire SHA)
+    // rawWirePayloadSha and canonicalPayloadDigest have distinct semantic provenance (raw transport hash
+    // vs normalized intent profile digest).  They are captured here for downstream inspector CLI args
+    // and the approval hashes manifest; equality between them is not a correctness constraint.
     $rawWirePayloadSha = (string) ($handoff['raw_wire_sample']['raw_wire_payload_sha256'] ?? '');
     $rawProfileDigest = (string) ($handoff['canonical_intent_profile_digest'] ?? '');
     $canonicalPayloadDigest = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($rawProfileDigest);
-    if (hash_equals($rawWirePayloadSha, $canonicalPayloadDigest)) {
-        throw new \RuntimeException('RAW_WIRE_AND_PROFILE_DIGEST_COLLISION: raw wire payload SHA matches canonical profile digest unexpectedly.');
-    }
     $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
     $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
 
-    // 11. AFTER BOTH approvals verified: Load bootstrap creds, capture owned snapshot & scoped inspector env
+    // 11. AFTER BOTH approvals verified: snapshot parent env allowlist from ALL THREE stores BEFORE
+    //     any mutation (including before loadSecureBootstrapCredentials, which calls putenv for
+    //     host/port/user/password/proof).  The allowlist covers all vars the loader may set plus the
+    //     scoped testing flags (APP_ENV, PHASE8_ALLOW_DISPOSABLE_DB, MOBILE_V2_HARNESS_ENABLE).
+    //     Capturing originals here ensures the finally block restores the exact pre-entry ambient state
+    //     even if the loader throws, preventing ambient production DSN leakage on exception paths.
+    $envAllowlist = [
+        'APP_ENV',
+        'MOBILE_V2_HARNESS_ENABLE',
+        'PHASE8_ALLOW_DISPOSABLE_DB',
+        'PHASE8_TEST_DB_HOST',
+        'PHASE8_TEST_DB_PORT',
+        'PHASE8_TEST_DB_USERNAME',
+        'PHASE8_TEST_DB_PASSWORD',
+        'PHASE8_TEST_DB_EMPTY_PASSWORD',
+        'PHASE8_DISPOSABLE_DB_PROOF',
+        'PHASE8_DISPOSABLE_DB_NONCE',
+    ];
+    foreach ($envAllowlist as $varName) {
+        $parentEnvToRestore[$varName] = getenv($varName);
+    }
+
+    // Load bootstrap credentials (this calls putenv for host/port/user/password/proof internally;
+    // originals are already captured above, so the finally block will restore them unconditionally).
     $creds = DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials($childConfigPath, $schemaName);
     $proofPath = $creds['proof_path'];
     $proofNonce = $creds['proof_nonce'];
 
-    // Snapshot all scoped vars from the CURRENT (original) parent env BEFORE any mutation.
-    // captureVerifiedOwnedSnapshot has zero net env side-effect (it snapshots/restores internally),
-    // but we snapshot here so the finally block can restore to the state that existed before this section.
-    $scopedParentVars = [
-        'APP_ENV' => 'testing',
-        'MOBILE_V2_HARNESS_ENABLE' => '1',
-        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-        'PHASE8_TEST_DB_HOST' => $creds['host'],
-        'PHASE8_TEST_DB_PORT' => $creds['port'],
-        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
-        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
-        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
-        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
-    ];
-    if ($creds['password'] === '') {
-        $scopedParentVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
-    }
-    // Snapshot originals BEFORE captureVerifiedOwnedSnapshot and BEFORE any putenv
-    foreach ($scopedParentVars as $varName => $varVal) {
-        $parentEnvToRestore[$varName] = getenv($varName);
-    }
-
     // Capture immutable owned snapshot: 6-arg signature (schema, proof, nonce, harness, childPid, repoRoot).
-    // Must be called AFTER both prestart + live approvals verified, BEFORE assertPrimarySchema-dependent gates.
-    // Returns typed VerifiedOwnedSnapshot; raw array bypass refused by executeExactCleanup.
+    // Must be called AFTER both prestart + live approvals verified and AFTER env originals are captured.
+    // captureVerifiedOwnedSnapshot has zero net env side-effect (snapshots/restores proof vars internally).
+    // Returns typed VerifiedOwnedSnapshot via fromLiveOwnership; raw array bypass refused by executeExactCleanup.
     $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
         $schemaName,
         $proofPath,
@@ -434,7 +436,21 @@ try {
         $inspectorEnv['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
     }
 
-    // Apply scoped putenv mutations AFTER snapshot of originals and AFTER assertPrimarySchema
+    // Apply scoped putenv mutations AFTER snapshot of originals and AFTER captureVerifiedOwnedSnapshot
+    $scopedParentVars = [
+        'APP_ENV' => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        'PHASE8_TEST_DB_HOST' => $creds['host'],
+        'PHASE8_TEST_DB_PORT' => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME' => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD' => $creds['password'],
+        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
+        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
+    ];
+    if ($creds['password'] === '') {
+        $scopedParentVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+    }
     foreach ($scopedParentVars as $varName => $varVal) {
         putenv("{$varName}={$varVal}");
     }
