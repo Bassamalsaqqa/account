@@ -1,0 +1,23 @@
+Owned primary test schema: accounting_p8_tmp_aad612ff0b2d
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/userdata/antigravity-tmp/aaa9f510728a/run-MTdzjD/p8_phpunit_5tgpisq04gmg0cN5hRj
+
+............[41;37mF[0m
+
+Time: 00:07.292, Memory: 77.00 MB
+
+There was 1 failure:
+
+1) Tests\Feature\Mobile\BootstrapTest::test_bootstrap_optin_include_projects_authoritative_currency_minor_units_for_ils_jod_and_zero_scale
+Expected response status code [200] but received 409.
+Failed asserting that 409 is identical to 200.
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Testing/TestResponseAssert.php:46
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Testing/TestResponse.php:183
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php:493
+
+[37;41mFAILURES![0m
+[37;41mTests: 13[0m[37;41m, Assertions: 67[0m[37;41m, Failures: 1[0m[37;41m.[0m
+Owned primary schema cleaned.

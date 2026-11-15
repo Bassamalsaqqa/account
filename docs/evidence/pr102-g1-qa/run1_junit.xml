@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="CLI Arguments" tests="13" assertions="67" errors="0" failures="1" skipped="0" time="7.289819">
+    <testsuite name="Tests\Feature\Mobile\BootstrapTest" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" tests="13" assertions="67" errors="0" failures="1" skipped="0" time="7.289819">
+      <testcase name="test_bootstrap_succeeds_with_valid_configuration" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="171" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="21" time="3.723996"/>
+      <testcase name="test_bootstrap_fails_truthfully_when_walkin_customer_is_missing_or_inactive" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="206" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="6" time="0.287400"/>
+      <testcase name="test_bootstrap_fails_truthfully_when_cash_account_is_missing_inactive_or_currency_mismatched" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="238" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="6" time="0.292144"/>
+      <testcase name="test_bootstrap_fails_truthfully_when_default_warehouse_is_missing_or_inactive" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="261" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="4" time="0.278559"/>
+      <testcase name="test_bootstrap_allows_empty_units_and_taxes_without_invented_defaults" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="278" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="4" time="0.373201"/>
+      <testcase name="test_bootstrap_fails_when_approved_cash_account_is_bank_type" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="300" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="2" time="0.263786"/>
+      <testcase name="test_bootstrap_fails_when_ledger_account_is_inactive_or_foreign" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="311" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="4" time="0.268595"/>
+      <testcase name="test_bootstrap_fails_when_base_currency_is_disabled_or_inactive" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="354" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="4" time="0.255253"/>
+      <testcase name="test_bootstrap_fails_when_configured_default_tax_rate_is_foreign_or_inactive" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="378" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="4" time="0.306547"/>
+      <testcase name="test_bootstrap_fails_with_409_when_stored_unit_decimal_places_exceeds_contract" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="409" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="2" time="0.261963"/>
+      <testcase name="test_bootstrap_fails_when_default_warehouse_is_foreign_or_inactive" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="420" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="4" time="0.292564"/>
+      <testcase name="test_bootstrap_absent_include_emits_exact_twelve_response" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="449" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="5" time="0.406541"/>
+      <testcase name="test_bootstrap_optin_include_projects_authoritative_currency_minor_units_for_ils_jod_and_zero_scale" file="/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php" line="486" class="Tests\Feature\Mobile\BootstrapTest" classname="Tests.Feature.Mobile.BootstrapTest" assertions="1" time="0.279270">
+        <failure type="PHPUnit\Framework\ExpectationFailedException">Tests\Feature\Mobile\BootstrapTest::test_bootstrap_optin_include_projects_authoritative_currency_minor_units_for_ils_jod_and_zero_scale
+Expected response status code [200] but received 409.
+Failed asserting that 409 is identical to 200.
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Testing/TestResponseAssert.php:46
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Testing/TestResponse.php:183
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php:493</failure>
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

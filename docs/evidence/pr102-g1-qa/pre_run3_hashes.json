@@ -1,0 +1,11 @@
+{
+    "app/Http/Controllers/Api/Mobile/V1/BootstrapController.php": "e35838f0bfda7ccb9534c20ec4d8d45f5eedef7501912499f5ac384637d2727c",
+    "tests/Feature/Mobile/BootstrapTest.php": "bcde31e3b0044e34bdb55286b8937c91cb0b25f08671117be093602e9cad415f",
+    "tests/Unit/Mobile/Contract/BootstrapMetadataContractTest.php": "34e486deed32224e7d25cecf556f617f582590ad9f32cf3655b9dc3cbd8b5721",
+    "docs/integration/mobile-v1/schemas/bootstrap-response.json": "3c7c7be0f7e096fa3063436aaa4ca9ecb18c27805312a8ddb6ca1adbfb89de55",
+    "docs/integration/mobile-metadata-contract-g1-g2.md": "d31fd4bef314d5e03fc1f60f97252694405dbce06f84aba3922e03befd29ca3a",
+    "app/Services/Money/CurrencyMinorUnitsResolver.php": "982852c8faa129d678dc6a46b24b52267306ad420c21828ba7bca641a0938ecd",
+    "app/Support/Mobile/Contract/Revision3/OnlineSaleIntentProfile.php": "6fa214c8696338f50117c465dce1e54893fbefd627ef6183f5ece42d182f45f8",
+    "tests/Support/DisposableMariaDbSchema.php": "ac69d1e6f0875eff250ce1fd688f47fbb95162dcd081f33f889ebf1fc184c352",
+    "tests/Support/run-phase8-disposable.php": "06cb8f5f25b7fed9d08b29c0baee7de155725e3a7fbd0ddd3525190b43860329"
+}
