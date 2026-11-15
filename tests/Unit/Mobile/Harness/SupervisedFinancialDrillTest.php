@@ -1870,6 +1870,114 @@ class SupervisedFinancialDrillTest extends TestCase
         }
     }
 
+    #[Test]
+    public function test_exact_cleanup_refuses_tampered_proof_file_content_preserving_evidence(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        // Mutate the private proof.json file on disk so its content hash no longer matches snapshot->proofSha256
+        $tamperedContent = json_encode(['tampered' => true, 'schema' => $snapshot->schemaName], JSON_THROW_ON_ERROR);
+        file_put_contents($snapshot->proofPath, $tamperedContent);
+        chmod($snapshot->proofPath, 0600);
+
+        try {
+            // Direct helper call must fail closed on hash mismatch and refuse unlinking
+            $result = SupervisedPairedFinancialDrill::cleanOwnedProofParentDir($snapshot, $repoRoot);
+
+            $this->assertFalse($result['proof_parent_absent'], 'Must not report proof parent absent when proof file is tampered');
+            $this->assertNotEmpty($result['errors']);
+            $this->assertStringContainsString('PROOF_FILE_CONTENT_TAMPERED', implode('; ', $result['errors']));
+            $this->assertFileExists($snapshot->proofPath, 'Tampered proof file must be preserved for manual remediation');
+            $this->assertDirectoryExists($snapshot->proofParentDir, 'Proof parent directory must be preserved');
+
+            // Also verify executeExactCleanup reports failure and does not remove the directory
+            $mockPortStmt = $this->createMock(PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+            $mockSchemaStmt = $this->createMock(PDOStatement::class);
+            $mockSchemaStmt->method('fetch')->willReturn(false);
+            $mockPdo = $this->createMock(PDO::class);
+            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+            $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: null,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+
+            $this->assertFalse($cleanupResult['success'], 'Exact cleanup must fail on tampered proof file');
+            $this->assertFalse($cleanupResult['proof_parent_absent']);
+            $this->assertStringContainsString('PROOF_FILE_CONTENT_TAMPERED', implode('; ', $cleanupResult['errors']));
+            $this->assertFileExists($snapshot->proofPath);
+            $this->assertDirectoryExists($snapshot->proofParentDir);
+        } finally {
+            if (is_file($snapshot->proofPath)) {
+                @unlink($snapshot->proofPath);
+            }
+            if (is_dir($snapshot->proofParentDir)) {
+                $this->removeDirectory($snapshot->proofParentDir);
+            }
+            if (is_dir($snapshot->harnessDir)) {
+                $this->removeDirectory($snapshot->harnessDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_exact_cleanup_refuses_regenerated_proof_parent_directory_with_inode_mismatch(): void
+    {
+        $repoRoot = dirname(__DIR__, 4);
+        $snapshot = $this->createValidSnapshot($repoRoot);
+
+        // Delete the original directory and recreate it at the exact same path.
+        // On filesystem, re-creation assigns a different inode number.
+        @unlink($snapshot->proofPath);
+        @rmdir($snapshot->proofParentDir);
+        mkdir($snapshot->proofParentDir, 0700);
+
+        try {
+            $newStat = stat($snapshot->proofParentDir);
+            // In the extremely rare event inode happens to match (same inode recycled immediately), skip assertion
+            if ($newStat !== false && (int) $newStat['ino'] !== $snapshot->proofParentIno) {
+                $result = SupervisedPairedFinancialDrill::cleanOwnedProofParentDir($snapshot, $repoRoot);
+
+                $this->assertFalse($result['proof_parent_absent'], 'Must fail closed on replaced parent directory inode mismatch');
+                $this->assertNotEmpty($result['errors']);
+                $this->assertStringContainsString('PROOF_DIR_REPLACED_INODE_MISMATCH', implode('; ', $result['errors']));
+                $this->assertDirectoryExists($snapshot->proofParentDir, 'Replaced directory must be preserved');
+
+                // Also verify executeExactCleanup reports failure
+                $mockPortStmt = $this->createMock(PDOStatement::class);
+                $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+                $mockSchemaStmt = $this->createMock(PDOStatement::class);
+                $mockSchemaStmt->method('fetch')->willReturn(false);
+                $mockPdo = $this->createMock(PDO::class);
+                $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+                $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+                $cleanupResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                    childProcess: null,
+                    snapshot: $snapshot,
+                    repoRoot: $repoRoot,
+                    adminPdo: $mockPdo
+                );
+
+                $this->assertFalse($cleanupResult['success']);
+                $this->assertFalse($cleanupResult['proof_parent_absent']);
+                $this->assertStringContainsString('PROOF_DIR_REPLACED_INODE_MISMATCH', implode('; ', $cleanupResult['errors']));
+            }
+        } finally {
+            if (is_dir($snapshot->proofParentDir)) {
+                $this->removeDirectory($snapshot->proofParentDir);
+            }
+            if (is_dir($snapshot->harnessDir)) {
+                $this->removeDirectory($snapshot->harnessDir);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------------
     // Private helper: create a valid VerifiedOwnedSnapshot via fromLiveOwnership()
     // with synthetic proof fixture and scoped env that satisfies assertPrimarySchema.

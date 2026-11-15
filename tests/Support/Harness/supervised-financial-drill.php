@@ -742,50 +742,75 @@ try {
 } finally {
     if (! $cleanupExecuted) {
         $cleanupExecuted = true;
-        $cleanupResult = SupervisedPairedFinancialDrill::executeCleanupAndRestoreEnv(
-            $childProcess,
-            $snapshot,
-            $repoRoot,
-            $parentEnvToRestore,
-            $pdo
-        );
-        if (! $cleanupResult['success']) {
-            fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', $cleanupResult['errors']) . "\n");
-            $exitCode = 1;
+
+        // Compute signal exit code BEFORE cleanup and witness persistence so that
+        // the witness accurately records the true abort status.
+        if ($aborted) {
+            $exitCode = ($abortSignal === SIGINT) ? 130 : 143;
+        }
+
+        try {
+            $cleanupResult = SupervisedPairedFinancialDrill::executeCleanupAndRestoreEnv(
+                $childProcess,
+                $snapshot,
+                $repoRoot,
+                $parentEnvToRestore,
+                $pdo
+            );
+        } catch (\Throwable $cleanupThrowable) {
+            fwrite(STDERR, "\n[Cleanup Failure] executeCleanupAndRestoreEnv threw: " . $cleanupThrowable->getMessage() . "\n");
+            $exitCode = ($exitCode === 0) ? 1 : $exitCode;
+            $cleanupResult = [
+                'child_reaped' => false,
+                'schema_absent' => false,
+                'listeners_closed' => false,
+                'temp_cleaned' => false,
+                'proof_parent_absent' => false,
+                'success' => false,
+                'errors' => ['CLEANUP_EXECUTION_THREW_EXCEPTION: ' . $cleanupThrowable->getMessage()],
+            ];
+        }
+
+        if (! ($cleanupResult['success'] ?? false)) {
+            fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', (array) ($cleanupResult['errors'] ?? [])) . "\n");
+            $exitCode = ($exitCode === 0) ? 1 : $exitCode;
         }
 
         // Persist restricted hash-pinned POST-cleanup final witness
-        $finalWitness = SupervisedPairedFinancialDrill::persistPostCleanupFinalWitness(
-            outputDir: $outputDir,
-            backendHead: $backendHead,
-            androidPubHead: $androidPubHead,
-            androidExeHead: $androidExeHead,
-            manifestSha: $manifestSha,
-            snapshot: $snapshot,
-            cleanupResult: $cleanupResult,
-            exitCode: $exitCode
-        );
+        try {
+            $finalWitness = SupervisedPairedFinancialDrill::persistPostCleanupFinalWitness(
+                outputDir: $outputDir,
+                backendHead: $backendHead,
+                androidPubHead: $androidPubHead,
+                androidExeHead: $androidExeHead,
+                manifestSha: $manifestSha,
+                snapshot: $snapshot,
+                cleanupResult: $cleanupResult,
+                exitCode: $exitCode
+            );
 
-        echo "  [Final Witness] Recorded POST-cleanup witness: {$finalWitness['witness_path']} (SHA: {$finalWitness['witness_sha256']})\n";
+            echo "  [Final Witness] Recorded POST-cleanup witness: {$finalWitness['witness_path']} (SHA: {$finalWitness['witness_sha256']})\n";
 
-        // Persist artifact index with separate final witness SHA (avoiding circular hash with pre-cleanup manifest)
-        $artifactIndex = [
-            'approval_hashes_manifest_sha256' => ($manifestOut !== null && is_file($manifestOut)) ? hash_file('sha256', $manifestOut) : null,
-            'post_cleanup_final_witness_sha256' => $finalWitness['witness_sha256'],
-            'created_at' => gmdate('Y-m-d\TH:i:s\Z'),
-        ];
-        $artifactIndexPath = $outputDir . '/post_cleanup_artifact_index.json';
-        file_put_contents($artifactIndexPath, json_encode($artifactIndex, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-        chmod($artifactIndexPath, 0600);
+            // Persist artifact index with separate final witness SHA (avoiding circular hash with pre-cleanup manifest)
+            $artifactIndex = [
+                'approval_hashes_manifest_sha256' => ($manifestOut !== null && is_file($manifestOut)) ? hash_file('sha256', $manifestOut) : null,
+                'post_cleanup_final_witness_sha256' => $finalWitness['witness_sha256'],
+                'created_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            ];
+            $artifactIndexPath = $outputDir . '/post_cleanup_artifact_index.json';
+            file_put_contents($artifactIndexPath, json_encode($artifactIndex, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+            chmod($artifactIndexPath, 0600);
+        } catch (\Throwable $witnessThrowable) {
+            fwrite(STDERR, "\n[Final Witness Failure] Failed to persist post-cleanup final witness: " . $witnessThrowable->getMessage() . "\n");
+            $exitCode = ($exitCode === 0) ? 1 : $exitCode;
+        }
     }
+
     if ($exitCode === 0 && ! $aborted && ($cleanupResult['success'] ?? false) && $manifestOut !== null) {
         echo "\n==============================================================================\n";
         echo "PAIRED FINANCIAL INTEGRATION DRILL COMPLETED SUCCESSFULLY\n";
         echo "Retained Artifacts Manifest: {$manifestOut}\n";
         echo "==============================================================================\n";
-    }
-    if ($aborted) {
-        $exitCode = ($abortSignal === SIGINT) ? 130 : 143;
     }
 }
 

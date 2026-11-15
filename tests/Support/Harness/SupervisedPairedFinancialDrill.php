@@ -1138,6 +1138,28 @@ class SupervisedPairedFinancialDrill
             ];
         }
 
+        // Verify inode and device match snapshot (refuse replaced/regenerated parent directory)
+        $parentStat = stat($realProofParent);
+        if ($parentStat === false) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_DIR_STAT_FAILED: '{$realProofParent}'"],
+            ];
+        }
+        if ((int) $parentStat['dev'] !== $snapshot->proofParentDev || (int) $parentStat['ino'] !== $snapshot->proofParentIno) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => [sprintf(
+                    "PROOF_DIR_REPLACED_INODE_MISMATCH: '%s' dev/ino changed (expected dev=%d, ino=%d; got dev=%d, ino=%d). Manual remediation required.",
+                    $realProofParent,
+                    $snapshot->proofParentDev,
+                    $snapshot->proofParentIno,
+                    (int) $parentStat['dev'],
+                    (int) $parentStat['ino']
+                )],
+            ];
+        }
+
         // Verify entries inside proof parent directory:
         // Must contain ONLY proof.json (or be empty). Any extra entries -> FAIL CLOSED!
         $entries = scandir($realProofParent);
@@ -1159,8 +1181,17 @@ class SupervisedPairedFinancialDrill
             }
         }
 
+        // Verify snapshot canonical proofPath matches exact expected parent/proof.json
+        $expectedProofJsonPath = $realProofParent . DIRECTORY_SEPARATOR . 'proof.json';
+        if ($snapshot->proofPath !== $expectedProofJsonPath) {
+            return [
+                'proof_parent_absent' => false,
+                'errors' => ["PROOF_SNAPSHOT_PATH_MISMATCH: expected '{$expectedProofJsonPath}', snapshot recorded '{$snapshot->proofPath}'"],
+            ];
+        }
+
         // Unlink proven proof.json if present
-        $proofJsonPath = $realProofParent . DIRECTORY_SEPARATOR . 'proof.json';
+        $proofJsonPath = $expectedProofJsonPath;
         if (file_exists($proofJsonPath) || is_link($proofJsonPath)) {
             if (is_link($proofJsonPath)) {
                 return [
@@ -1168,10 +1199,36 @@ class SupervisedPairedFinancialDrill
                     'errors' => ["PROOF_FILE_SYMLINK_REJECTED: '{$proofJsonPath}'"],
                 ];
             }
+            if (! is_file($proofJsonPath)) {
+                return [
+                    'proof_parent_absent' => false,
+                    'errors' => ["PROOF_FILE_NOT_REGULAR: '{$proofJsonPath}'"],
+                ];
+            }
+            $filePerms = fileperms($proofJsonPath) & 0777;
+            if ($filePerms !== 0600) {
+                return [
+                    'proof_parent_absent' => false,
+                    'errors' => [sprintf("PROOF_FILE_INSECURE_PERMS: expected 0600, got %04o in '%s'", $filePerms, $proofJsonPath)],
+                ];
+            }
             if (fileowner($proofJsonPath) !== $currentUid) {
                 return [
                     'proof_parent_absent' => false,
                     'errors' => ["PROOF_FILE_OWNER_MISMATCH: '{$proofJsonPath}'"],
+                ];
+            }
+            // Strict content hash verification against snapshot proofSha256
+            $actualSha256 = hash_file('sha256', $proofJsonPath);
+            if ($actualSha256 === false || ! hash_equals($snapshot->proofSha256, $actualSha256)) {
+                return [
+                    'proof_parent_absent' => false,
+                    'errors' => [sprintf(
+                        "PROOF_FILE_CONTENT_TAMPERED: '%s' SHA-256 does not match snapshot (expected %s, got %s). Files preserved for manual remediation.",
+                        $proofJsonPath,
+                        $snapshot->proofSha256,
+                        is_string($actualSha256) ? $actualSha256 : 'hash_failed'
+                    )],
                 ];
             }
             if (! @unlink($proofJsonPath)) {
@@ -1452,6 +1509,8 @@ final class VerifiedOwnedSnapshot
      * @param  string  $proofParentDir  Canonical realpath of owned proof parent dir (p8_proof_16hex in sys_get_temp_dir)
      * @param  string  $proofSha256     SHA-256 of proof.json file content (non-secret evidence hash)
      * @param  int     $proofParentUid  Captured UID of proof parent directory
+     * @param  int     $proofParentDev  Captured filesystem device ID of proof parent directory
+     * @param  int     $proofParentIno  Captured filesystem inode of proof parent directory
      * @param  string  $harnessDir      Canonical realpath of owned harness dir (v2_harness_16hex in sys_get_temp_dir)
      * @param  int     $childPid        Captured child CLI process PID (positive integer, bound before signals)
      * @param  int     $verifiedAt      Unix timestamp when snapshot was captured and assertPrimarySchema passed
@@ -1463,6 +1522,8 @@ final class VerifiedOwnedSnapshot
         public readonly string $proofParentDir,
         public readonly string $proofSha256,
         public readonly int $proofParentUid,
+        public readonly int $proofParentDev,
+        public readonly int $proofParentIno,
         public readonly string $harnessDir,
         public readonly int $childPid,
         public readonly int $verifiedAt,
@@ -1626,19 +1687,38 @@ final class VerifiedOwnedSnapshot
             throw new RuntimeException("SNAPSHOT_INVALID_PROOF_FILE_NAME: expected 'proof.json', got '" . basename($proofPath) . "'");
         }
 
-        $proofSha256 = hash_file('sha256', $proofPath);
+        $realProofPath = realpath($proofPath);
+        if ($realProofPath === false) {
+            throw new RuntimeException('SNAPSHOT_PROOF_PATH_RESOLVE_FAILED');
+        }
+
+        $expectedProofPath = $realProofParent . DIRECTORY_SEPARATOR . 'proof.json';
+        if ($realProofPath !== $expectedProofPath) {
+            throw new RuntimeException("SNAPSHOT_PROOF_PATH_MISMATCH: expected '{$expectedProofPath}', got '{$realProofPath}'");
+        }
+
+        $proofSha256 = hash_file('sha256', $realProofPath);
         if ($proofSha256 === false) {
             throw new RuntimeException('SNAPSHOT_PROOF_HASH_FAILED');
         }
+
         $proofParentUid = fileowner($realProofParent);
+        $parentStat = stat($realProofParent);
+        if ($parentStat === false) {
+            throw new RuntimeException('SNAPSHOT_PROOF_PARENT_STAT_FAILED');
+        }
+        $proofParentDev = (int) $parentStat['dev'];
+        $proofParentIno = (int) $parentStat['ino'];
 
         return new self(
             schemaName: $schemaName,
-            proofPath: $proofPath,
+            proofPath: $expectedProofPath,
             proofNonce: $proofNonce,
             proofParentDir: $realProofParent,
             proofSha256: $proofSha256,
             proofParentUid: $proofParentUid,
+            proofParentDev: $proofParentDev,
+            proofParentIno: $proofParentIno,
             harnessDir: $realHarness,
             childPid: $childPid,
             verifiedAt: time(),
