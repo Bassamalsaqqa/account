@@ -60,6 +60,11 @@ final class BootstrapTest extends TestCase
             'status' => 'active',
         ]);
 
+        DB::table('company_currencies')->updateOrInsert(
+            ['company_id' => $this->company->id, 'currency_code' => 'ILS'],
+            ['enabled' => true, 'is_base' => true, 'display_order' => 1, 'created_at' => now(), 'updated_at' => now()]
+        );
+
         $this->user->companies()->attach($this->company->id, ['status' => 'active', 'is_owner' => false]);
         app(CompanyRoleService::class)->ensurePermissionsExist();
         app(CompanyRoleService::class)->seedCompanyRoles($this->company);
@@ -513,6 +518,10 @@ final class BootstrapTest extends TestCase
             'status' => 'active',
         ]);
         $this->user->companies()->attach($jodCompany->id, ['status' => 'active', 'is_owner' => false]);
+        DB::table('company_currencies')->updateOrInsert(
+            ['company_id' => $jodCompany->id, 'currency_code' => 'JOD'],
+            ['enabled' => true, 'is_base' => true, 'display_order' => 1, 'created_at' => now(), 'updated_at' => now()]
+        );
         app(CompanyRoleService::class)->seedCompanyRoles($jodCompany);
         setPermissionsTeamId($jodCompany->id);
         $this->user->assignRole('Cashier');
@@ -606,6 +615,10 @@ final class BootstrapTest extends TestCase
             'status' => 'active',
         ]);
         $this->user->companies()->attach($jpyCompany->id, ['status' => 'active', 'is_owner' => false]);
+        DB::table('company_currencies')->updateOrInsert(
+            ['company_id' => $jpyCompany->id, 'currency_code' => 'JPY'],
+            ['enabled' => true, 'is_base' => true, 'display_order' => 1, 'created_at' => now(), 'updated_at' => now()]
+        );
         app(CompanyRoleService::class)->seedCompanyRoles($jpyCompany);
         setPermissionsTeamId($jpyCompany->id);
         $this->user->assignRole('Cashier');
