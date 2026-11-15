@@ -732,7 +732,7 @@ class SupervisedFinancialDrillTest extends TestCase
         $mockPdo = $this->createMock(PDO::class);
         $mockPdo->expects($this->once())
             ->method('exec')
-            ->with('DROP DATABASE IF EXISTS `accounting_p8_tmp_0123456789ab`');
+            ->with('DROP DATABASE `accounting_p8_tmp_0123456789ab`');
 
         $propAdminPdo = $ref->getProperty('adminPdo');
         $propAdminPdo->setAccessible(true);
