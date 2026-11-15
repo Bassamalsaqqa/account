@@ -990,9 +990,41 @@ final class DisposableFinancialPostRunInspector
         $cacheManager = new \Illuminate\Cache\CacheManager($app);
         $app->instance('cache', $cacheManager);
         $app->instance(\Illuminate\Contracts\Cache\Factory::class, $cacheManager);
+        $app->instance(\Illuminate\Cache\CacheManager::class, $cacheManager);
         $app->singleton(\Spatie\Permission\PermissionRegistrar::class);
 
         $app->singleton(CompanyContext::class);
+    }
+
+    /**
+     * Ensures minimal standalone CLI bootstrap dependency closure before Spatie permission team snapshot.
+     * Preserves caller's existing application, team ID, and facades when already bound.
+     * In a bare CLI context, binds an explicit minimal Application container with sessionless auth,
+     * array cache, and singleton PermissionRegistrar, without touching default DB or economic core flags.
+     */
+    public static function ensureStandaloneBootstrapDependencyClosure(): void
+    {
+        $container = \Illuminate\Container\Container::getInstance();
+        if ($container instanceof \Illuminate\Foundation\Application
+            && $container->bound('cache')
+            && $container->bound(\Spatie\Permission\PermissionRegistrar::class)
+        ) {
+            // Preserves caller's existing application, team ID, and facades
+            return;
+        }
+
+        $appDir = dirname(__DIR__, 3);
+        $app = ($container instanceof \Illuminate\Foundation\Application)
+            ? $container
+            : new \Illuminate\Foundation\Application($appDir);
+
+        $app['env'] = 'testing';
+
+        \Illuminate\Container\Container::setInstance($app);
+        \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+        \Illuminate\Support\Facades\Facade::setFacadeApplication($app);
+
+        self::bindIsolatedContainerServices($app);
     }
 
     /**
@@ -1039,6 +1071,8 @@ final class DisposableFinancialPostRunInspector
      */
     public static function runSixReconciliations(Company|int $companyOrId, string $expectedSchemaName): array
     {
+        self::ensureStandaloneBootstrapDependencyClosure();
+
         $previousGlobalContainer = \Illuminate\Container\Container::getInstance();
         $previousApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
         $previousResolver = \Illuminate\Database\Eloquent\Model::getConnectionResolver();

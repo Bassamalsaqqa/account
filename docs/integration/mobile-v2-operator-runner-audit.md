@@ -131,11 +131,12 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
 | `tests/Support/Harness/supervised-financial-drill.php` | `4444ed463500c7dc63383ac3c1d055534fc18dedc7643fe023a4ac6f63ae8723` | Supervisor CLI Driver |
 | `tests/Support/Harness/DisposableMobileV2BackendHarness.php` | `7fcf73a3c55940aa484464a56078506cb9faa15b22656750d88923dc3d90b3cc` | Fixture Harness |
-| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `c8caaf80ffe51adccc90e19e48fa5064c659577b6ef61e3834d218a59595b638` | Post-Run Inspector |
+| `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `0613d2f202008ccf70440922af3ae0202596e9d5de12d834b547244218a0b312` | Post-Run Inspector |
+| `tests/Support/Harness/financial-inspector-cli.php` | `dd90bc1ff196d9b696973c87073121b551e1a5034c04c83dfa21c8178f1822bf` | Post-Run Inspector CLI |
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7` | Artisan Command |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
 | `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
-| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda` | Guard Test Suite |
+| `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `e353e0daa24819e6679ec8b2448e34504efb1e2d3c843d492d5060af4c1f559e` | Guard Test Suite |
 | `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `8255528f48a7e0710169523cab6ec5ecb2a2eacee593391ed804d009ae9dbfc8` | Python Unit Suite (30 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
@@ -722,15 +723,17 @@ Despite JVM and delta inspection success, FULL acceptance was **NOT ACHIEVED**:
 - Ports closed, background daemons terminated, lease released.
 - Frozen peer worktree contains owned evidence artifacts and remains untouched.
 
-### 15.6 Planned Narrow Source-Only Fix
+### 15.6 Narrow Source-Only Fix (Applied)
 To resolve the CLI dependency closure cleanly before Root's next invocation:
-1. Provide a standalone bootstrap dependency closure in `financial-inspector-cli.php` prior to calling `runSixReconciliations`:
-   - Bind minimal CLI container, sessionless auth, array cache, and `PermissionRegistrar` helper.
-   - Preserve caller's existing application/team/facade instances when already bound.
-   - Never catch/ignore `getPermissionsTeamId()` exceptions to falsely claim pass.
-   - Ambience / owned PDO only, with zero weakening of economic core or flags.
-2. Add real CLI (no DB) dependency construction regression test exercising the actual standalone path.
-3. This fix will be published in a separate commit following this documentation disclosure.
+1. Provided standalone bootstrap dependency closure via `DisposableFinancialPostRunInspector::ensureStandaloneBootstrapDependencyClosure()`:
+   - Binds an explicit minimal `Application` container with sessionless auth, array cache, and singleton `PermissionRegistrar`, explicitly binding `\Illuminate\Cache\CacheManager::class` and `\Illuminate\Contracts\Cache\Factory::class`.
+   - Preserves caller's existing application, team ID, and facades when already bound (idempotent).
+   - Retains strict fail-closed exception handling around `getPermissionsTeamId()` (no exception masking or skipping).
+   - Ambience / owned PDO only, with zero weakening of economic core or security flags.
+   - Chained at the top of `runSixReconciliations()` and invoked explicitly prior to reconciliation execution in `financial-inspector-cli.php`.
+2. Added real CLI (no DB) dependency construction regression test in `DisposableMobileV2BackendHarnessGuardTest.php`:
+   - `test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db()` verifies that in a bare CLI environment with cleared container and facades, `ensureStandaloneBootstrapDependencyClosure()` constructs an `Application` instance, binds array cache and Spatie `PermissionRegistrar`, allows `getPermissionsTeamId()` to resolve cleanly to `null` without throwing `CacheManager` resolution exceptions, enforces isolation defaults (`cache.default = 'array'`, `database.default = 'disposable_inspector'`), and maintains strict idempotency.
+3. Tests remain authored and unrun (`testsAUTHOREDUNRUN`) pending Root's execution grant.
 
 
 

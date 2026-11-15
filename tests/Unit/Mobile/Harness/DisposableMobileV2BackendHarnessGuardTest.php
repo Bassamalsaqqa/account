@@ -4250,6 +4250,46 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertFalse($resLot['is_valid']);
         $this->assertTrue(collect($resLot['errors'])->contains(fn ($e) => str_contains($e, 'sales_invoice_lot_allocation.stock_movement_id must be non-null')));
     }
+
+    #[Test]
+    public function test_standalone_cli_bootstrap_dependency_closure_constructs_real_container_without_db(): void
+    {
+        $prevContainer = \Illuminate\Container\Container::getInstance();
+        $prevFacadeApp = function_exists('app') ? \Illuminate\Support\Facades\Facade::getFacadeApplication() : null;
+
+        try {
+            // Simulate bare CLI context: container and facades cleared
+            \Illuminate\Container\Container::setInstance(null);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            \Illuminate\Support\Facades\Facade::setFacadeApplication(null);
+
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::ensureStandaloneBootstrapDependencyClosure();
+
+            $container = \Illuminate\Container\Container::getInstance();
+            $this->assertInstanceOf(\Illuminate\Foundation\Application::class, $container);
+            $this->assertTrue($container->bound('cache'));
+            $this->assertTrue($container->bound(\Illuminate\Cache\CacheManager::class));
+            $this->assertTrue($container->bound(\Spatie\Permission\PermissionRegistrar::class));
+
+            // Verify safe config defaults: isolation invariants enforced
+            $this->assertSame('array', $container->make('config')->get('cache.default'));
+            $this->assertSame('disposable_inspector', $container->make('config')->get('database.default'));
+
+            // Verify Spatie getPermissionsTeamId() resolves without container/CacheManager exception
+            $this->assertNull(getPermissionsTeamId());
+            $this->assertNull($container->make(\Spatie\Permission\PermissionRegistrar::class)->getPermissionsTeamId());
+
+            // Idempotency: calling again preserves the exact container instance
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::ensureStandaloneBootstrapDependencyClosure();
+            $this->assertSame($container, \Illuminate\Container\Container::getInstance());
+        } finally {
+            \Illuminate\Container\Container::setInstance($prevContainer);
+            \Illuminate\Support\Facades\Facade::clearResolvedInstances();
+            if ($prevFacadeApp !== null) {
+                \Illuminate\Support\Facades\Facade::setFacadeApplication($prevFacadeApp);
+            }
+        }
+    }
 }
 
 
