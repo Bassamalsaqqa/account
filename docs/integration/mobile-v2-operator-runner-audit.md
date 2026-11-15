@@ -9,83 +9,76 @@
 
 ## 1. Executive Summary
 
-Following Root's full source audit of commit `c90f458`, all 8 concrete blocking defects identified in the operator runner scripts, attestation helpers, and prewarm scripts have been resolved.
+Following Root's full source audit of commits `c90f458` and `b2b88a7`, all concrete blocking defects identified across the operator runner driver, attestation tools, and prewarm scripts have been resolved with strict **SOURCE-ONLY** fixes.
 
-All remediations are strictly **SOURCE-ONLY**:
-- Non-blocking I/O via Python `selectors` eliminates deadline hangs on silent or unterminated child output; process group reaping bounded with a 2.0s grace period followed by `SIGKILL`.
-- Canonical output directory verification strictly enforces `0700` UID ownership, rejects any symlink path component, mandates an external location relative to checkouts, and refuses existing non-empty directories.
-- Canonical realpath validation unconditionally rejects active development lanes (`*7ac8*` / `t3-7ac8b73d`).
-- Exact clean initial status (`git status --porcelain` empty) is enforced on both repositories; untracked file creation during prewarm is strictly restricted to owned Gradle build directories.
-- Full 40-hex lowercase regex validation, commit object existence checks (`git cat-file -e`), and mandatory expected backend HEAD pin enforcement.
-- Automated pre/post git state comparison: any detected drift on tracked files or HEAD fails non-zero (`exit 1`); comprehensive exit metadata (`exit_metadata.json`) recorded across all paths.
-- Initial `pre.json` is immutable: `root-operator-tool.py prepare` writes a distinct `tool_prepare.json` witness when `pre.json` exists.
-- Operator driver execution mode is truthful and unambiguous: explicit `--prewarm-only`, `--prepare-only`, or `--execute` (requiring separate external Root approval files; zero self-approval).
-
-Unit test coverage in `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` was expanded to **54 tests** verifying all new adversarial constraints. All authored tests remain **strictly unrun** (`testsAUTHOREDUNRUN`) pending explicit QA grant.
+No premature "all closed" claims are asserted; every technical defect and architectural contradiction has been systematically addressed:
+1. **Decoupled `--execute` Arguments & Output Directory Model:** Resolved the contradiction where empty directory requirements clashed with existing manifest expectations. `--execute` now accepts an external Root-prepared `--manifest` with verified `--manifest-sha`, external `--root-approval-file`, and a private future target path `--root-live-approval-file` that is validated to **not** exist prior to candidate execution.
+2. **Complete Process Group Reaping & Orphan Prevention:** Fixed early return in `reap_process_group` when only the leader had exited. Added `is_pgid_alive(pgid)` to detect any surviving child processes in the process group, enforcing SIGTERM, bounded grace period (2.0s), SIGKILL, and orphan metadata error flagging.
+3. **Executable Source Parity & Binding Verification:** Mandates Root-verified binding JSON (`peer_binding_c8dda700_verified/binding.json`). Verifies that `pub_head..exe_head` contains **strictly** approved documentation files (`APPROVED_DOCS_DELTA_PREFIXES`). Any source code, test code, or build configuration deviation fails closed immediately.
+4. **Symlink Component Validation Order:** Validates original input path arguments (`args.backend_dir`, `args.android_dir`, `args.output_dir`) against symlinks **before** resolving `os.path.realpath`, preventing symlink erasure. Canonical realpaths are then checked to unconditionally refuse `7ac8`.
+5. **Output Drain Log Write Error Propagation:** Removed silent `except Exception: pass` in stdout drain. Log write exceptions propagate immediately and trigger full process group reaping.
+6. **Guaranteed Non-Zero Exit on Metadata Write Failure:** Ensured `exit_code = 1` if `exit_metadata.json` write fails.
+7. **Authored Python Unit Test Suite:** Authored repo-tracked unit tests in `tests/Unit/Harness/test_supervised_paired_drill_operator.py` exercising timeouts, unterminated output, process group reaping, log write failures, and parity checks using temporary throwaway fixtures. Marked strictly unrun (`testsAUTHOREDUNRUN`).
 
 ---
 
-## 2. Comprehensive Resolution of Concrete Blocking Defects
+## 2. Detailed Technical Remediations
 
-### 2.1 Defect 1: Non-Blocking I/O & Bounded Process Group Reaping
-- **Root Audit Finding:** `proc.stdout.readline()` blocked until a newline was received; if the child was silent or emitted unterminated output, the deadline check was never reached. `proc.wait()` was unbounded.
+### 2.1 Decoupled Execution Lifecycle & Directory Model
+- **Defect:** `validate_secure_output_dir` rejected any non-empty directory, yet `--execute` looked for `pairing-manifest.json` in `output_dir` from a prior run. Additionally, checking `--root-live-approval-file` for file existence at startup made execution impossible, as Root writes this witness only after the candidate handoff is exposed in supervisor stdout.
 - **Remediation:**
-  - Implemented `selectors.DefaultSelector()` with non-blocking child stdout (`os.set_blocking(fd, False)`).
-  - Loop checks monotonic deadline (`time.monotonic()`) continuously with `select(timeout=min(rem, 0.2))`.
-  - Process group termination sends `SIGTERM` to `os.killpg`, waits with a bounded grace period (2.0s), escalates to `SIGKILL`, and performs a bounded `proc.wait(timeout=2.0)`.
-  - Exception and signal handlers guarantee the child process group is reaped and waited on even if log writes fail.
+  - `--output-dir` is strictly a fresh, empty directory per execution (mode `0700` owned by current UID).
+  - `--manifest` is accepted as an external Root-prepared file accompanied by mandatory `--manifest-sha` (verified via `sha256_file`).
+  - `--root-approval-file` is accepted from an external private directory.
+  - `--root-live-approval-file` is validated as a private future path: validates parent directory exists and is secure (`0700`/UID), verifies path has no symlinks, and enforces that the target file does **not** exist at startup.
 
-### 2.2 Defect 2: Output Directory Canonical Verification & Overwrite Refusal
-- **Root Audit Finding:** `os.path.abspath + os.makedirs/chmod` followed symlinks, allowed directories inside repositories, and could overwrite existing audit files.
+### 2.2 Complete Process Group Reaping & Orphan Prevention
+- **Defect:** `reap_process_group` checked only `proc.poll()`, returning early if the leader died while descendants were still active in the process group.
 - **Remediation:**
-  - Added `validate_no_symlink_components(path)` checking every path component.
-  - Enforced canonical `os.path.realpath` resolution.
-  - Verified directory is strictly external to both repository checkouts (`not starts_with`).
-  - Required mode `0700` owned by `os.getuid()`.
-  - Refuses existing non-empty directories to prevent arbitrary pre/post overwrite.
+  - Implemented `is_pgid_alive(pgid)` using `os.killpg(pgid, 0)` to detect if ANY process remains in the process group.
+  - Bounded grace period waits for the entire PGID to become empty.
+  - Escalates to `SIGKILL` on the PGID if any descendant survives grace period.
+  - Unconditionally calls `proc.wait(timeout=2.0)`.
+  - Flags `METADATA_ORPHAN_PROCESS_DETECTED` if any process remains alive after deadline.
+  - Reaping is executed in `finally` on all code paths, including normal leader exits and non-signal exceptions.
 
-### 2.3 Defect 3: Canonical Protected Path Refusal
-- **Root Audit Finding:** `abspath`/`normpath` could be bypassed via symlinks pointing into `7ac8`.
+### 2.3 Executable Source Parity & Binding Record Verification
+- **Defect:** Executable pin was only verified for commit existence (`git cat-file -e`), without verifying source parity against publication pin or checking the Root binding JSON.
 - **Remediation:**
-  - Enforced `validate_no_symlink_components` and `os.path.realpath` across Python, bash, and PHP.
-  - Rejects any canonical path containing `7ac8` or `t3-7ac8b73d`.
-  - In `SupervisedPairedFinancialDrill::assertNotProtectedWorktree`, added canonical `realpath` inspection.
+  - Added `verify_binding_record(binding_path, android_dir, pub_head, exe_head)` verifying worktree path and exact publication/executable pins against Root's approved record (`SHA: 9819d6d20f...`).
+  - Added `verify_source_parity(android_dir, pub_head, exe_head)`: inspects `git diff --name-only pub_head exe_head`. All changed files must match approved documentation prefixes (`docs/`, `README.md`, `CHANGELOG.md`). Any modified `.kt`, `.java`, `.gradle`, or configuration file raises `SOURCE_PARITY_VIOLATION` and fails closed.
 
-### 2.4 Defect 4: Initial Clean Parity & Restricted Untracked Allowlist
-- **Root Audit Finding:** Driver only checked tracked clean (`diff-index`) and ignored untracked files; bash prewarm used broad globs (`build/*`, `docs/*`) without owned provenance.
+### 2.4 Symlink Validation Order Before Canonical Realpath
+- **Defect:** Calling `os.path.realpath` before `validate_no_symlink_components` erased symlinks from user arguments before the check inspected them.
 - **Remediation:**
-  - Enforced `git status --porcelain` must be strictly empty on both repositories before any child process is spawned.
-  - In `paired-drill-prewarm.sh`, initial status must be clean; post-compilation untracked files are restricted strictly to owned Gradle directories (`.gradle/*`, `build/*`, `app/build/*`). Any other untracked file halts execution immediately.
+  - `validate_no_symlink_components` inspects all path components of original user arguments (`args.backend_dir`, `args.android_dir`, `args.output_dir`, `args.root_live_approval_file`) before canonical resolution.
+  - Canonical `realpath` is then computed and checked against protected active lane patterns (`7ac8` / `t3-7ac8b73d`).
 
-### 2.5 Defect 5: 40-Hex Validation, Commit Existence & Expected Backend Pin
-- **Root Audit Finding:** Pins were validated only by length (`len == 40`) without hex regex, object existence check, or expected backend HEAD pin.
+### 2.5 Propagating Log Write Errors During Output Drain
+- **Defect:** The final stdout drain swallowed write errors via `except Exception: pass`, risking false passes if disk writes failed.
 - **Remediation:**
-  - Enforced regex `^[0-9a-f]{40}$` across all commit SHAs.
-  - Verified commit existence in git object store via read-only `git cat-file -e <sha>^{commit}` for backend expected HEAD, Android publication HEAD, and Android executable HEAD.
-  - Added mandatory `--expected-backend-head=<sha>` argument in operator driver, verifying actual backend HEAD matches.
+  - Catches only non-blocking empty reads (`BlockingIOError`, `InterruptedError`).
+  - File write errors raise immediately, causing `reap_process_group` execution and recording failure in exit metadata.
 
-### 2.6 Defect 6: Pre/Post Drift Comparison & Exit Metadata
-- **Root Audit Finding:** Post-execution state was captured but never compared to pre-execution state; post-capture failure only printed a warning and exited 0.
+### 2.6 Guaranteed Non-Zero Exit on Metadata Write Failure
+- **Defect:** If writing `exit_metadata.json` raised an exception, it was logged but did not force a non-zero exit code if `exit_code` was previously 0.
 - **Remediation:**
-  - Added `compare_git_states(pre, post)` comparing HEAD, status, and tracked file SHA-256 dictionaries for both repositories.
-  - Any detected drift fails non-zero (`exit 1`) and logs full drift diff.
-  - Post-capture failure unconditionally sets `exit_code = 1`.
-  - Always writes `exit_metadata.json` (0600) recording `exit_code`, `duration_seconds`, `pre_post_matched`, `drift_detected`, and `failure_reason`.
+  - Failure to write exit metadata unconditionally forces `exit_code = 1`.
 
-### 2.7 Defect 7: Immutable Initial `pre.json`
-- **Root Audit Finding:** `root-operator-tool.py prepare` overwrote the driver's initial `pre.json`.
-- **Remediation:**
-  - Initial `pre.json` created by operator driver with `O_CREAT | O_EXCL` (mode 0600).
-  - In `root-operator-tool.py prepare`, if `pre.json` already exists, it writes a distinct witness `tool_prepare.json` (0600) and never overwrites `pre.json`.
-
-### 2.8 Defect 8: Truthful Execution Modes & Arguments
-- **Root Audit Finding:** Driver claimed "full prepare + drill" in else-branch but only ran prepare; lacked truthful execution modes.
-- **Remediation:**
-  - Mutually exclusive explicit mode flags:
-    - `--prewarm-only`: Executes compile-only prewarm (`paired-drill-prewarm.sh`).
-    - `--prepare-only`: Executes witness preparation (`root-operator-tool.py prepare`).
-    - `--execute`: Executes live supervised drill (`supervised-financial-drill.php --execute`) requiring separate external Root approval files (`--root-approval-file` and `--root-live-approval-file`; zero self-approval).
-  - Verified `--paired-hold` argument is supported and passed correctly to `root-operator-tool.py`.
+### 2.7 Authored Python Unit Test Suite (`tests/Unit/Harness/test_supervised_paired_drill_operator.py`)
+- Authored 12 comprehensive unit test cases exercising:
+  - Symlink component rejection on original paths.
+  - Canonical `7ac8` refusal.
+  - Output directory isolation and non-empty directory rejection.
+  - Future live approval target path validation (must not exist).
+  - 40-hex commit SHA and 64-hex manifest SHA validation.
+  - Monotonic timeout on dead-silent child processes without blocking on `readline`.
+  - Continuous capture and timeout handling on unterminated output.
+  - Process group reaping of forked descendant processes when the leader exits.
+  - Immediate process group reaping on log write failure.
+  - Pre/Post git state comparison and drift detection.
+  - Executable source parity enforcement on throwaway git fixtures (accepts docs, rejects code diffs).
+- All tests marked strictly unrun (`testsAUTHOREDUNRUN`).
 
 ---
 
@@ -94,17 +87,17 @@ Unit test coverage in `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.ph
 ```mermaid
 flowchart TD
     subgraph Operator ["Operator Driver (supervised-paired-drill-operator.py)"]
-        VAL["Preflight Validation\n(40-hex, cat-file, clean status,\ncanonical path, secure 0700 dir)"]
+        VAL["Preflight Validation\n(validate original symlinks, canonical realpath,\nexact clean status, 40-hex commit check,\nsource parity & binding JSON verification)"]
         PRE["Capture Immutable pre.json\n(O_CREAT | O_EXCL, mode 0600)"]
-        SEL["Non-Blocking Supervised Runner\n(selectors, monotonic deadline,\nprocess group SIGTERM/grace/SIGKILL)"]
+        SEL["Non-Blocking Supervised Runner\n(selectors, monotonic deadline,\nPGID is_pgid_alive check, SIGTERM/grace/SIGKILL)"]
         POST["Capture post.json & Compare Drift\n(diff pre vs post; fail exit 1 on drift)"]
-        META["Write exit_metadata.json\n(timestamps, duration, drift details)"]
+        META["Write exit_metadata.json\n(timestamps, duration, drift details, exit code)"]
     end
 
     subgraph Modes ["Mutually Exclusive Action Modes"]
         MODE_PREWARM["--prewarm-only\n(paired-drill-prewarm.sh)"]
         MODE_PREP["--prepare-only\n(root-operator-tool.py prepare)"]
-        MODE_EXEC["--execute\n(supervised-financial-drill.php --execute\nrequires Root prestart & live approval)"]
+        MODE_EXEC["--execute\n(supervised-financial-drill.php --execute\nexternal manifest, prestart approval,\nfuture live approval path)"]
     end
 
     subgraph Execution ["Target Scripts"]
@@ -131,8 +124,8 @@ All components verified in the backend worktree at HEAD:
 
 | File Path | SHA-256 Checksum | Classification |
 | :--- | :--- | :--- |
-| `tests/Support/Harness/root-operator-tool.py` | `944b04e0cf0e82bf7793b2db3a73feb634b3f67c338757aae6765837b1367232` | Tool (Python 3) |
-| `tests/Support/Harness/supervised-paired-drill-operator.py` | `cafd019a60918ac832af0bc9af75972edf34ccc81a6af519377d9b3353ce3451` | Operator Driver |
+| `tests/Support/Harness/root-operator-tool.py` | `9f6930b63dc3d267b4472b0432f392bc997f6746446c9920a1e5b012c5d3fc5c` | Tool (Python 3) |
+| `tests/Support/Harness/supervised-paired-drill-operator.py` | `6d4462e987d0f9248b94f7e1a6104aa430f9195a869389a27dce6841903dcb53` | Operator Driver |
 | `tests/Support/Harness/paired-drill-prewarm.sh` | `017b8b011064e26a0552f84f68b49b39b5593800a5179ca49c72d14e88d86ecd` | Prewarm Script |
 | `tests/Support/Harness/operator-paired-financial-drill.sh` | `e45df5cc06a6574f07a744a0d6f25ca0f2e9a8f9a38b03adb4166287711a0440` | Operator Script |
 | `tests/Support/Harness/SupervisedPairedFinancialDrill.php` | `d95ba8eccf7ac7cf436d62c880ea38fcf08a3826cf4f0b8628d4bef8759a591e` | Core Harness Class |
@@ -141,15 +134,16 @@ All components verified in the backend worktree at HEAD:
 | `tests/Support/Harness/DisposableFinancialPostRunInspector.php` | `c8caaf80ffe51adccc90e19e48fa5064c659577b6ef61e3834d218a59595b638` | Post-Run Inspector |
 | `tests/Support/Harness/MobileV2HarnessCommand.php` | `0b6914ffc299cd399db6ab2311764b4bd18212238fbaeb46d32518da356a4aa7` | Artisan Command |
 | `tests/Support/Harness/mobile-v2-harness-cli.php` | `70bcf0edc24cbba3d896ad7d742085bfed616b370dbb0919a1ace55f1a2a5075` | Child CLI Runner |
-| `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | Unit Test Suite (54 tests) |
+| `tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php` | `5b4f25478c44b8bf6872d16c08e3f845df1d377c46b24c2b267426fe08b7d9b3` | PHP Unit Suite (54 tests) |
 | `tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php` | `a55c5f7b1cc698ec0ca6f64646192a49e290466751ca0eccccb2a5b12090ffda` | Guard Test Suite |
+| `tests/Unit/Harness/test_supervised_paired_drill_operator.py` | `00cf3bfda2464ae6509bb4db10c5ce458c55c8a0f71d03790b5226598528790f` | Python Unit Suite (12 tests) |
 | `docs/integration/mobile-v2-integration-manifest.json` | `d386b0bf7bcd31ec693b8cc5ee99d13eb84fac03f1f2543ef0c77cf492e7fcc1` | Manifest Template |
 
 ---
 
 ## 5. T3-Bound Verified Peer Binding Record & Provenance
 
-Android Root has completed the setup and verification of the dedicated T3-bound peer worktree:
+Android Root has completed setup and verification of the dedicated T3-bound peer worktree:
 - **Worktree Directory:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
 - **Branch:** `t3/android-qualified-basic-peer-c8dda700`
 - **Attached:** `TRUE` (T3 Android supervisor thread moved via handoff, `baseRef: local c8`, `startFromOrigin: false`, `runSetup: false`, `spawnNewAgent: false`)
@@ -163,13 +157,14 @@ Android Root has completed the setup and verification of the dedicated T3-bound 
 
 ---
 
-## 6. Authoritative Next Argv for Verified T3-Bound Peer Pins
+## 6. Authoritative Next Argv for Complete Workable Lifecycle
 
 When Root grants execution authority for the verified peer:
 - **Publication HEAD:** `c8dda7003b83aba4aebfb0c4095e42a0a6e3484c`
 - **Executable HEAD:** `5f382ba77d5fa9dd87606c8f0bb9be31a4861f36`
 - **Target Android Worktree:** `/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13`
 - **Backend Directory:** `/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision`
+- **Binding Record:** `/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json`
 
 ### 6.1 Phase B Compile-Only Prewarm Command
 ```bash
@@ -177,25 +172,47 @@ python3 tests/Support/Harness/supervised-paired-drill-operator.py \
   --output-dir=/home/t3dev/.t3/userdata/attachments/prewarm-c8dda700-$(date +%s) \
   --backend-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
   --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
-  --expected-backend-head=c90f4587c41277629370631645eba5c52661ee07 \
+  --expected-backend-head=b2b88a7d92aa4880149127d77c06bbef4f94a599 \
   --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
   --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
+  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
   --prewarm-only \
   --offline \
   --timeout=180
 ```
 
-### 6.2 Full Paired Drill Preparation Command
+### 6.2 Full Paired Drill Preparation Witness Command
 ```bash
+python3 tests/Support/Harness/supervised-paired-drill-operator.py \
+  --output-dir=/home/t3dev/.t3/userdata/attachments/prep-c8dda700-$(date +%s) \
+  --backend-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
+  --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
+  --expected-backend-head=b2b88a7d92aa4880149127d77c06bbef4f94a599 \
+  --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
+  --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
+  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
+  --prepare-only \
+  --paired-hold=120
+```
+
+### 6.3 Live Supervised Drill Execution Command (Decoupled Handshake)
+```bash
+# Executed in a fresh, empty output directory with external manifest and approvals:
 python3 tests/Support/Harness/supervised-paired-drill-operator.py \
   --output-dir=/home/t3dev/.t3/userdata/attachments/drill-c8dda700-$(date +%s) \
   --backend-dir=/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision \
   --android-dir=/home/t3dev/.t3/worktrees/small-trader-android/t3-android-qualified-ba-78afad29fb3bdd13 \
-  --expected-backend-head=c90f4587c41277629370631645eba5c52661ee07 \
+  --expected-backend-head=b2b88a7d92aa4880149127d77c06bbef4f94a599 \
   --android-pub-head=c8dda7003b83aba4aebfb0c4095e42a0a6e3484c \
   --android-exe-head=5f382ba77d5fa9dd87606c8f0bb9be31a4861f36 \
-  --prepare-only \
-  --paired-hold=120
+  --binding-record=/home/t3dev/.t3/userdata/attachments/peer_binding_c8dda700_verified/binding.json \
+  --manifest=/path/to/external/pairing-manifest.json \
+  --manifest-sha=<64hex_sha> \
+  --root-approval-file=/path/to/external/prestart.json \
+  --root-live-approval-file=/path/to/external/live.json \
+  --execute \
+  --paired-hold=120 \
+  --timeout=180
 ```
 
 ---

@@ -195,16 +195,18 @@ def prepare_manifest(output_dir, backend_head, pub_head, exe_head, repo_dir):
     return manifest_path, manifest_sha
 
 def cmd_prepare(args):
-    repo_dir = os.path.realpath(args.repo_dir)
-    android_dir = os.path.realpath(args.android_dir)
-
-    # Validate paths & refuse protected active lane
+    # Validate original input paths for symlinks BEFORE realpath resolution (Defect 4 fix)
     try:
-        assert_not_protected_worktree(repo_dir)
-        assert_not_protected_worktree(android_dir)
+        validate_no_symlink_components(args.repo_dir, "Backend repository path")
+        validate_no_symlink_components(args.android_dir, "Android repository path")
+        assert_not_protected_worktree(args.repo_dir)
+        assert_not_protected_worktree(args.android_dir)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
+
+    repo_dir = os.path.realpath(args.repo_dir)
+    android_dir = os.path.realpath(args.android_dir)
 
     if not os.path.isdir(android_dir):
         print(f"ERROR: Android repo directory not found: {android_dir}", file=sys.stderr)
