@@ -1,0 +1,25 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+
+.....N.......N.[Cleanup] Lingering schema 'accounting_p8_tmp_0123456789ab' detected; executing admin DROP DATABASE...
+NN.....Owned schema dropped: accounting_p8_tmp_0123456789ab
+.[Cleanup] Lingering schema 'accounting_p8_tmp_0123456789ab' detected; executing admin DROP DATABASE...
+N[Cleanup] Lingering schema 'accounting_p8_tmp_0123456789ab' detected; executing admin DROP DATABASE...
+N[Cleanup] Lingering schema 'accounting_p8_tmp_0123456789ab' detected; executing admin DROP DATABASE...
+N..N......N[Cleanup] Sending SIGTERM to child process (PID 54321, matches snapshot)...
+N[Cleanup] Lingering schema 'accounting_p8_tmp_0123456789ab' detected; executing admin DROP DATABASE...
+N[Cleanup] Lingering schema 'accounting_p8_tmp_0123456789ab' detected; executing admin DROP DATABASE...
+NN.NN.F                     45 / 45 (100%)
+
+Time: 00:00.047, Memory: 28.50 MB
+
+There was 1 failure:
+
+1) Tests\Unit\Mobile\Harness\SupervisedFinancialDrillTest::test_preserve_available_partial_failure_evidence
+Failed asserting that 'these artifacts are partial failure diagnostics from an aborted/failed drill. they are not qualified canonical deliverables.' [ASCII](length: 124) contains "unvalidated" [ASCII](length: 11).
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php:2058
+
+FAILURES!
+Tests: 45, Assertions: 329, Failures: 1, PHPUnit Notices: 15.

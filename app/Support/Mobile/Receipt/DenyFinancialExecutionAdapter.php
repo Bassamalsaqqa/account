@@ -34,7 +34,8 @@ final class DenyFinancialExecutionAdapter implements FinancialExecutionAdapterIn
         User $actor,
         MobileDevice $device,
         array $payload,
-        string $idempotencySuffix
+        string $idempotencySuffix,
+        ?NativeFinancialExecutionCapability $capability = null
     ): array {
         $this->authorize($company, $actor, $device, 'execute', $payload);
 

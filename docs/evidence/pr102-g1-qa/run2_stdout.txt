@@ -1,0 +1,39 @@
+Owned primary test schema: accounting_p8_tmp_3732c1a02338
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/userdata/antigravity-tmp/aaa9f510728a/run-MTdzjD/p8_phpunit_uorg16smndbg9YKDSOx
+
+............[31;1mE[0m.....[31;1mE[0m...                                            22 / 22 (100%)
+
+Time: 00:07.075, Memory: 77.00 MB
+
+There were 2 errors:
+
+1) Tests\Feature\Mobile\BootstrapTest::test_bootstrap_optin_include_projects_authoritative_currency_minor_units_for_ils_jod_and_zero_scale
+App\Exceptions\NoActiveCompanyException: Cannot create company-owned model [App\Models\LedgerAccount] without active company context.
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/app/Support/Tenancy/BelongsToCompany.php:24
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php:496
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php:326
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php:306
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Events/Dispatcher.php:266
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Concerns/HasEvents.php:224
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php:1608
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php:1427
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php:1258
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Support/helpers.php:393
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Builder.php:1257
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Support/Traits/ForwardsCalls.php:23
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php:2911
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/vendor/laravel/framework/src/Illuminate/Database/Eloquent/Model.php:2927
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Feature/Mobile/BootstrapTest.php:529
+
+2) Tests\Unit\Mobile\Contract\BootstrapMetadataContractTest::test_currency_minor_units_resolver_fail_closed_contract
+Error: Class "Tests\Unit\Mobile\Contract\CurrencyMinorUnitsResolver" not found
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Contract/BootstrapMetadataContractTest.php:143
+
+[37;41mERRORS![0m
+[37;41mTests: 22[0m[37;41m, Assertions: 122[0m[37;41m, Errors: 2[0m[37;41m.[0m
+Owned primary schema cleaned.

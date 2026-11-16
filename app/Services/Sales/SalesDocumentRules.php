@@ -12,6 +12,7 @@ use App\Models\CompanyLanguage;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\User;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -45,6 +46,7 @@ final class SalesDocumentRules
             || ($currency === $company->base_currency_code && ! $rate->isEqualTo(1))) {
             throw new InvalidArgumentException('Enabled currency and a valid exact exchange rate are required; base currency rate must be one.');
         }
+        app(CurrencyMinorUnitsResolver::class)->resolveForCompany($company, $currency);
         if (! in_array($locale, ['ar', 'en'], true) || ! CompanyLanguage::where('company_id', $company->id)->where('locale', $locale)->where('enabled', true)->exists()) {
             throw new InvalidArgumentException('Document language must be enabled for this company.');
         }
@@ -68,7 +70,7 @@ final class SalesDocumentRules
         return $selected;
     }
 
-    public function price(Product $product, ProductUnit $unit, User $actor, BigDecimal $rate, string $currency, BigDecimal $requested): void
+    public function price(Product $product, ProductUnit $unit, User $actor, BigDecimal $rate, string $currency, BigDecimal $requested, ?int $minorUnits = null): void
     {
         $suggestion = $unit->default_sale_price_base;
         if ($suggestion === null && $product->default_sale_price_base !== null) {
@@ -77,8 +79,9 @@ final class SalesDocumentRules
         if ($actor->hasPermissionTo('sales.invoice.change_price')) {
             return;
         }
-        if ($suggestion === null || ! $requested->toScale($currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP)
-            ->isEqualTo(BigDecimal::of((string) $suggestion)->dividedBy($rate, $currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP))) {
+        $minorUnits ??= app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $product->company_id, $currency);
+        if ($suggestion === null || ! $requested->toScale($minorUnits, RoundingMode::HALF_UP)
+            ->isEqualTo(BigDecimal::of((string) $suggestion)->dividedBy($rate, $minorUnits, RoundingMode::HALF_UP))) {
             throw new AuthorizationException('Manual price permission is required when there is no matching suggested price.');
         }
     }

@@ -1,0 +1,18 @@
+=== ROUTE CACHE BOOTSTRAP PROOF ===
+Isolated cache directory: /home/t3dev/.t3/userdata/antigravity-tmp/98fdbd5a1187/run-gas2Rd/route_cache_proof_d7710e08c6295074
+
+--- Cycle 1: Cash OFF, Master ON ---
+PASS: Flag OFF excludes cash and status routes from route cache.
+PASS: HTTP probe returns boundary 404 with code NOT_FOUND for both endpoints.
+
+--- Cycle 2: Stale Cache Invariant (Cash ON without rebuild) ---
+PASS: Stale cache preserves 404 boundary (NOT_FOUND); flag change does not bypass compiled cache.
+
+--- Cycle 3: Cash ON with Rebuild Ceremony ---
+PASS: Rebuilt route cache includes both POST sales/online-cash and GET offline-events/status.
+PASS: HTTP probe reaches mobile.v2.auth middleware and returns 401 (UNAUTHENTICATED).
+
+--- Cycle 4: Master Flags OFF Fail-Closed ---
+PASS: Master flags OFF fail closed with 404 (MOBILE_API_DISABLED) even when cash flag is ON.
+
+All route cache isolation and bootstrap invariants verified successfully.

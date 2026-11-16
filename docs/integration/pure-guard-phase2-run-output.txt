@@ -1,0 +1,19 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/phpunit.xml
+
+................................................................. 65 / 75 ( 86%)
+..[41;37mF[0m
+
+Time: 00:03.645, Memory: 30.50 MB
+
+There was 1 failure:
+
+1) Tests\Unit\Mobile\Harness\DisposableMobileV2BackendHarnessGuardTest::test_financial_outer_validator_accepts_valid_golden_android_evidence_and_trusted_db_report
+Failed asserting that false is true.
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php:2499
+
+[37;41mFAILURES![0m
+[37;41mTests: 68[0m[37;41m, Assertions: 290[0m[37;41m, Failures: 1[0m[37;41m.[0m

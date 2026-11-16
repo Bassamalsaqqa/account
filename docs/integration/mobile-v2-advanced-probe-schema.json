@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MobileV2AdvancedProbeEvidence",
+  "description": "Authoritative contract schema for Mobile V2 Advanced Probe Evidence (Lost ACK Recovery & Rollback Probes) under explicit Root coordination. Completely separate from the basic EDA evidence contract.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "scope",
+    "run_id",
+    "company_id",
+    "schema_name",
+    "backend_head",
+    "android_publication_head",
+    "android_executable_head",
+    "handoff_sha256",
+    "source_pins",
+    "scenarios",
+    "lost_ack_recovery_evidence",
+    "rollback_probes_evidence"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "const": "v2_advanced_probe_evidence_v1"
+    },
+    "scope": {
+      "type": "string",
+      "const": "ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "company_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "schema_name": {
+      "type": "string",
+      "pattern": "^accounting_p8_tmp_[0-9a-f]{12}$"
+    },
+    "backend_head": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40}$"
+    },
+    "android_publication_head": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40}$"
+    },
+    "android_executable_head": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{40}$"
+    },
+    "handoff_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "source_pins": {
+      "type": "object",
+      "required": [
+        "source_fixture_sha256",
+        "guard_test_sha256",
+        "cli_command_sha256",
+        "cli_runner_sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source_fixture_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "guard_test_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "cli_command_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" },
+        "cli_runner_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "required": ["name", "status", "httpStatusCode"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "readiness_probe",
+              "transport_lost_ack_retained_status_recovery",
+              "idempotent_replay_integrity",
+              "tamper_rejection_integrity",
+              "rollback_permission_denial",
+              "rollback_insufficient_stock",
+              "rollback_controlled_after_posting"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["PASS", "FAIL", "NOT_RUN"]
+          },
+          "httpStatusCode": {
+            "type": ["integer", "null"]
+          }
+        }
+      }
+    },
+    "lost_ack_recovery_evidence": {
+      "type": "object",
+      "required": [
+        "suppression_mode",
+        "target_client_event_id",
+        "server_commit_verified_before_suppression",
+        "network_witness_state",
+        "suppression_witness_file",
+        "recovery_route",
+        "recovery_method",
+        "recovery_http_status",
+        "receipt_status",
+        "matching_payload_digest",
+        "sales_invoice_public_id",
+        "customer_payment_public_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "suppression_mode": {
+          "type": "string",
+          "const": "TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP"
+        },
+        "target_client_event_id": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "server_commit_verified_before_suppression": {
+          "type": "boolean",
+          "const": true
+        },
+        "network_witness_state": {
+          "type": "string",
+          "const": "UNRUN_AWAITING_REAL_NETWORK_WITNESS"
+        },
+        "suppression_witness_file": {
+          "type": "string"
+        },
+        "recovery_route": {
+          "type": "string",
+          "pattern": "^/api/mobile/v2/companies/[0-9A-Za-z_-]+/offline-events/[0-9a-fA-F-]{36}/status$"
+        },
+        "recovery_method": {
+          "type": "string",
+          "const": "RETAINED_EVENT_GET_STATUS"
+        },
+        "recovery_http_status": {
+          "type": "integer",
+          "const": 200
+        },
+        "receipt_status": {
+          "type": "string",
+          "const": "posted"
+        },
+        "matching_payload_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "sales_invoice_public_id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26
+        },
+        "customer_payment_public_id": {
+          "type": "string",
+          "minLength": 26,
+          "maxLength": 26
+        }
+      }
+    },
+    "rollback_probes_evidence": {
+      "type": "object",
+      "required": [
+        "probes_count",
+        "probes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "probes_count": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "probes": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "object",
+            "required": [
+              "probe_name",
+              "client_event_id",
+              "route",
+              "expected_http_status",
+              "actual_http_status",
+              "baseline_metrics",
+              "post_metrics",
+              "economic_delta_zero",
+              "reconciliations",
+              "reconciliations_healthy",
+              "issue_count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "probe_name": {
+                "type": "string",
+                "enum": [
+                  "permission_denial",
+                  "insufficient_stock",
+                  "controlled_fault_after_posting"
+                ]
+              },
+              "client_event_id": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+              },
+              "route": {
+                "type": "string",
+                "pattern": "^/api/mobile/v2/companies/[0-9A-Za-z_-]+/sales/online-cash$"
+              },
+              "expected_http_status": {
+                "type": "integer"
+              },
+              "actual_http_status": {
+                "type": "integer"
+              },
+              "baseline_metrics": {
+                "type": "object",
+                "required": [
+                  "sales_invoices",
+                  "sales_invoice_lines",
+                  "sales_invoice_lot_allocations",
+                  "customer_payments",
+                  "customer_payment_allocations",
+                  "mobile_event_receipts",
+                  "stock_movements",
+                  "posting_batches",
+                  "posting_lines",
+                  "document_sequences",
+                  "table_fingerprints",
+                  "stock_movements_qty_delta_base",
+                  "lot_allocations_qty_allocated_base",
+                  "row_fingerprint_sha256"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "sales_invoices": { "type": "integer" },
+                  "sales_invoice_lines": { "type": "integer" },
+                  "sales_invoice_lot_allocations": { "type": "integer" },
+                  "customer_payments": { "type": "integer" },
+                  "customer_payment_allocations": { "type": "integer" },
+                  "mobile_event_receipts": { "type": "integer" },
+                  "stock_movements": { "type": "integer" },
+                  "posting_batches": { "type": "integer" },
+                  "posting_lines": { "type": "integer" },
+                  "document_sequences": { "type": "object" },
+                  "table_fingerprints": { "type": "object" },
+                  "stock_movements_qty_delta_base": { "type": "string" },
+                  "lot_allocations_qty_allocated_base": { "type": "string" },
+                  "row_fingerprint_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }
+                }
+              },
+              "post_metrics": {
+                "type": "object",
+                "required": [
+                  "sales_invoices",
+                  "sales_invoice_lines",
+                  "sales_invoice_lot_allocations",
+                  "customer_payments",
+                  "customer_payment_allocations",
+                  "mobile_event_receipts",
+                  "stock_movements",
+                  "posting_batches",
+                  "posting_lines",
+                  "document_sequences",
+                  "table_fingerprints",
+                  "stock_movements_qty_delta_base",
+                  "lot_allocations_qty_allocated_base",
+                  "row_fingerprint_sha256"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "sales_invoices": { "type": "integer" },
+                  "sales_invoice_lines": { "type": "integer" },
+                  "sales_invoice_lot_allocations": { "type": "integer" },
+                  "customer_payments": { "type": "integer" },
+                  "customer_payment_allocations": { "type": "integer" },
+                  "mobile_event_receipts": { "type": "integer" },
+                  "stock_movements": { "type": "integer" },
+                  "posting_batches": { "type": "integer" },
+                  "posting_lines": { "type": "integer" },
+                  "document_sequences": { "type": "object" },
+                  "table_fingerprints": { "type": "object" },
+                  "stock_movements_qty_delta_base": { "type": "string" },
+                  "lot_allocations_qty_allocated_base": { "type": "string" },
+                  "row_fingerprint_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }
+                }
+              },
+              "economic_delta_zero": {
+                "type": "boolean",
+                "const": true
+              },
+              "reconciliations": {
+                "type": "object",
+                "required": [
+                  "accounting",
+                  "inventory",
+                  "sales",
+                  "payables",
+                  "money",
+                  "phase7"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "accounting": { "type": "boolean", "const": true },
+                  "inventory": { "type": "boolean", "const": true },
+                  "sales": { "type": "boolean", "const": true },
+                  "payables": { "type": "boolean", "const": true },
+                  "money": { "type": "boolean", "const": true },
+                  "phase7": { "type": "boolean", "const": true }
+                }
+              },
+              "reconciliations_healthy": {
+                "type": "boolean",
+                "const": true
+              },
+              "issue_count": {
+                "type": "integer",
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+Owned schema created: accounting_p8_tmp_d76597b44ca6
+Owned primary test schema: accounting_p8_tmp_d76597b44ca6
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/userdata/antigravity-tmp/98fdbd5a1187/run-gas2Rd/p8_phpunit_bllnl814cmcn1GA6wFl
+
+Owned schema created: accounting_p8_tmp_50cbc34e7974
+Owned schema dropped: accounting_p8_tmp_50cbc34e7974
+.Owned schema created: accounting_p8_tmp_10ab9278c2eb
+Owned schema dropped: accounting_p8_tmp_10ab9278c2eb
+.Owned schema created: accounting_p8_tmp_fe18f457c213
+Owned schema dropped: accounting_p8_tmp_fe18f457c213
+.Owned schema created: accounting_p8_tmp_624daeb9167e
+Owned schema dropped: accounting_p8_tmp_624daeb9167e
+.Owned schema created: accounting_p8_tmp_4d825a22306f
+Owned schema dropped: accounting_p8_tmp_4d825a22306f
+.Owned schema created: accounting_p8_tmp_c58e34ce32dd
+Owned schema dropped: accounting_p8_tmp_c58e34ce32dd
+Owned schema created: accounting_p8_tmp_ccc1e98fa812
+Owned schema dropped: accounting_p8_tmp_ccc1e98fa812
+.Owned schema created: accounting_p8_tmp_cc1d68132765
+Owned schema dropped: accounting_p8_tmp_cc1d68132765
+Owned schema created: accounting_p8_tmp_1233734fb7f9
+Owned schema dropped: accounting_p8_tmp_1233734fb7f9
+.Owned schema created: accounting_p8_tmp_a9b79af57a8d
+Owned schema dropped: accounting_p8_tmp_a9b79af57a8d
+Owned schema created: accounting_p8_tmp_d8b82cdbfbef
+Owned schema dropped: accounting_p8_tmp_d8b82cdbfbef
+.Owned schema created: accounting_p8_tmp_e87c87922f8a
+Owned schema dropped: accounting_p8_tmp_e87c87922f8a
+Owned schema created: accounting_p8_tmp_5e96067059f9
+Owned schema dropped: accounting_p8_tmp_5e96067059f9
+.Owned schema created: accounting_p8_tmp_88be6ea5acde
+Owned schema dropped: accounting_p8_tmp_88be6ea5acde
+Owned schema created: accounting_p8_tmp_12cbae6ad580
+Owned schema dropped: accounting_p8_tmp_12cbae6ad580
+.Owned schema created: accounting_p8_tmp_526f8dcaaca1
+Owned schema dropped: accounting_p8_tmp_526f8dcaaca1
+Owned schema created: accounting_p8_tmp_8ece110b5be6
+Owned schema dropped: accounting_p8_tmp_8ece110b5be6
+.Owned schema created: accounting_p8_tmp_6dce21806e23
+Owned schema dropped: accounting_p8_tmp_6dce21806e23
+.                                                      12 / 12 (100%)
+
+Time: 01:22.112, Memory: 73.00 MB
+
+[30;42mOK (12 tests, 202 assertions)[0m
+Owned schema dropped: accounting_p8_tmp_d76597b44ca6
+Owned primary schema cleaned.

@@ -1,0 +1,18 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+
+..............................................E
+
+Time: 00:00.134, Memory: 30.50 MB
+
+There was 1 error:
+
+1) Tests\Unit\Mobile\Harness\DisposableMobileV2BackendHarnessGuardTest::test_validate_client_handoff_admits_g1_tree_and_rejects_unadmitted_tree
+RuntimeException: Malformed client handoff artifact: raw_wire_payload_json must be strictly serialized in authoritative RFC 8785 JCS canonical JSON.
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/DisposableMobileV2BackendHarness.php:1363
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php:1612
+
+ERRORS!
+Tests: 47, Assertions: 165, Errors: 1.

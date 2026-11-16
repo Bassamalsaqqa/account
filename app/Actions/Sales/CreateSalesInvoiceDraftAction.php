@@ -20,8 +20,10 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
+use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -61,6 +63,8 @@ class CreateSalesInvoiceDraftAction
      */
     public function execute(Company $company, User $user, array $data): SalesInvoice
     {
+        CompositeFinancialExecutionScope::guardPartialAction((int) $company->id, (int) $user->id);
+
         if (($data['quotation_id'] ?? null) !== null) {
             throw new InvalidArgumentException('Only canonical quotation conversion may link an invoice.');
         }
@@ -130,8 +134,10 @@ class CreateSalesInvoiceDraftAction
                 }
             }
 
-            $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-            $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $currencies = array_values(array_unique([$currency, (string) $company->base_currency_code]));
+            $minorUnitsMap = app(CurrencyMinorUnitsResolver::class)->resolveCurrenciesForCompanyWrite((int) $company->id, $currencies, lockForUpdate: true);
+            $minorUnits = $minorUnitsMap[$currency];
+            $baseMinorUnits = $minorUnitsMap[(string) $company->base_currency_code];
 
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
             $lineResults = [];
@@ -148,7 +154,7 @@ class CreateSalesInvoiceDraftAction
                         ! empty($lineData['product_unit_id']) ? (int) $lineData['product_unit_id'] : null,
                         app(SalesDocumentRules::class)->quantity($lineData['quantity']));
                     $conversionRatio = BigDecimal::of((string) $productUnit->conversion_to_base);
-                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']));
+                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']), $minorUnits);
                 } else {
                     app(SalesDocumentRules::class)->quantity($lineData['quantity']);
                     if (! $user->hasPermissionTo('sales.invoice.change_price')) {

@@ -1,0 +1,19 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/phpunit.xml
+
+................................................................. 65 / 92 ( 70%)
+..........[41;37mF[0m
+
+Time: 00:03.059, Memory: 32.50 MB
+
+There was 1 failure:
+
+1) Tests\Unit\Mobile\Harness\DisposableMobileV2BackendHarnessGuardTest::test_outer_validator_rejects_missing_or_invalid_or_mismatched_expected_event_id
+Failed asserting that false is true.
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php:3082
+
+[37;41mFAILURES![0m
+[37;41mTests: 76[0m[37;41m, Assertions: 363[0m[37;41m, Failures: 1[0m[37;41m.[0m

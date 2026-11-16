@@ -16,6 +16,7 @@ use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\CatalogSnapshot;
 use App\Support\Mobile\WireResponse;
 use Brick\Math\BigDecimal;
@@ -23,6 +24,7 @@ use Brick\Math\RoundingMode;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 final class BootstrapController extends Controller
 {
@@ -36,7 +38,21 @@ final class BootstrapController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        return CatalogSnapshot::withConsistentRead(function () use ($company, $user): JsonResponse {
+        // Explicit read projection opt-in for currency_minor_units
+        $includeCurrencyMinorUnits = false;
+        if ($request->query->has('include')) {
+            $rawInclude = $request->query('include');
+            if (is_array($rawInclude) || ! is_string($rawInclude) || $rawInclude === '' || $rawInclude !== 'currency_minor_units') {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Invalid include parameter. Supported projection: currency_minor_units.',
+                    status: 422
+                );
+            }
+            $includeCurrencyMinorUnits = true;
+        }
+
+        return CatalogSnapshot::withConsistentRead(function () use ($company, $user, $includeCurrencyMinorUnits): JsonResponse {
             // Determine configured company mobile settings
             /** @var CompanyMobileSetting|null $setting */
             $setting = CompanyMobileSetting::where('company_id', $company->id)->first();
@@ -148,6 +164,21 @@ final class BootstrapController extends Controller
                 );
             }
 
+            // G1: Authoritative currency minor units resolution (explicit projection opt-in only)
+            $currencyMinorUnits = null;
+            if ($includeCurrencyMinorUnits) {
+                try {
+                    $currencyMinorUnits = app(CurrencyMinorUnitsResolver::class)
+                        ->resolveForCompany($company, $baseCurrencyCode);
+                } catch (InvalidArgumentException $e) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'CONTRACT_INCOMPATIBLE',
+                        message: 'Company base currency minor units cannot be resolved: '.$e->getMessage(),
+                        status: 409
+                    );
+                }
+            }
+
             // 5. Staff role and permissions
             $roleName = $user->roles()->where('roles.company_id', $company->id)->value('name');
             $role = match (strtolower((string) $roleName)) {
@@ -210,7 +241,7 @@ final class BootstrapController extends Controller
                 ->values()
                 ->all();
 
-            $response = response()->json([
+            $payload = [
                 'company_id' => $company->public_id,
                 'company_name' => (string) $company->displayName(),
                 'base_currency' => $company->base_currency_code,
@@ -240,7 +271,13 @@ final class BootstrapController extends Controller
                     'availability' => 'unavailable',
                 ],
                 'catalog_snapshot_version' => CatalogSnapshot::computeVersion($company),
-            ], 200, [
+            ];
+
+            if ($includeCurrencyMinorUnits && $currencyMinorUnits !== null) {
+                $payload['currency_minor_units'] = $currencyMinorUnits;
+            }
+
+            $response = response()->json($payload, 200, [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
                 'Pragma' => 'no-cache',

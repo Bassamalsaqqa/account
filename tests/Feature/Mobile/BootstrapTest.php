@@ -15,6 +15,7 @@ use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
@@ -58,6 +59,11 @@ final class BootstrapTest extends TestCase
             'base_currency_code' => 'ILS',
             'status' => 'active',
         ]);
+
+        DB::table('company_currencies')->updateOrInsert(
+            ['company_id' => $this->company->id, 'currency_code' => 'ILS'],
+            ['enabled' => true, 'is_base' => true, 'display_order' => 1, 'created_at' => now(), 'updated_at' => now()]
+        );
 
         $this->user->companies()->attach($this->company->id, ['status' => 'active', 'is_owner' => false]);
         app(CompanyRoleService::class)->ensurePermissionsExist();
@@ -148,8 +154,9 @@ final class BootstrapTest extends TestCase
         app(CompanyContext::class)->clear();
     }
 
-    private function issueToken(): string
+    private function issueToken(?Company $company = null): string
     {
+        $targetCompany = $company ?? $this->company;
         $raw = 'st_m_'.bin2hex(random_bytes(32));
         $deviceId = (string) Str::uuid();
         MobileDevice::create(['device_id' => $deviceId, 'device_name' => 'Tablet', 'user_id' => $this->user->id]);
@@ -158,7 +165,7 @@ final class BootstrapTest extends TestCase
             'token_hash' => hash('sha256', $raw),
             'device_id' => $deviceId,
             'user_id' => $this->user->id,
-            'company_id' => $this->company->id,
+            'company_id' => $targetCompany->id,
             'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->user->password), 0, 16),
             'expires_at' => now()->addDays(7),
         ]);
@@ -442,5 +449,336 @@ final class BootstrapTest extends TestCase
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
             ->assertStatus(409)
             ->assertJsonPath('error.code', 'BOOTSTRAP_CONFIG_UNSUPPORTED');
+    }
+
+    public function test_bootstrap_absent_include_emits_exact_twelve_response(): void
+    {
+        $token = $this->issueToken();
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap");
+
+        $response->assertStatus(200);
+
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validator->setInput($response->getContent())->run();
+        $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
+
+        $data = $response->json();
+        $expected12Keys = [
+            'approved_cash_account',
+            'base_currency',
+            'catalog_snapshot_version',
+            'company_id',
+            'company_name',
+            'default_warehouse',
+            'device_lease',
+            'offline_policy',
+            'staff',
+            'taxes',
+            'units',
+            'walk_in_customer_id',
+        ];
+
+        $keys = array_keys($data);
+        sort($keys);
+        sort($expected12Keys);
+
+        $this->assertSame($expected12Keys, $keys, 'Default bootstrap must emit exact 12-key whitelist');
+        $this->assertArrayNotHasKey('currency_minor_units', $data);
+        $this->assertArrayNotHasKey('base_currency_minor_units', $data);
+    }
+
+    public function test_bootstrap_optin_include_projects_authoritative_currency_minor_units_for_ils_jod_and_zero_scale(): void
+    {
+        // 1. ILS company (scale = 2)
+        $tokenIls = $this->issueToken();
+        $responseIls = $this->withHeader('Authorization', "Bearer {$tokenIls}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include=currency_minor_units");
+
+        $responseIls->assertStatus(200);
+
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validator->setInput($responseIls->getContent())->run();
+        $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
+
+        $dataIls = $responseIls->json();
+        $this->assertArrayHasKey('currency_minor_units', $dataIls);
+        $this->assertArrayNotHasKey('base_currency_minor_units', $dataIls);
+
+        $expectedIlsUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany($this->company, 'ILS');
+        $this->assertSame(2, $expectedIlsUnits);
+        $this->assertSame($expectedIlsUnits, $dataIls['currency_minor_units']);
+        $this->assertCount(13, array_keys($dataIls));
+
+        // 2. JOD company (scale = 3)
+        $jodCompany = Company::factory()->create([
+            'name_ar' => 'شركة الأردن للتجارة',
+            'name_en' => 'Jordan Trading Co',
+            'base_currency_code' => 'JOD',
+            'status' => 'active',
+        ]);
+        $this->user->companies()->attach($jodCompany->id, ['status' => 'active', 'is_owner' => false]);
+        DB::table('company_currencies')->updateOrInsert(
+            ['company_id' => $jodCompany->id, 'currency_code' => 'JOD'],
+            ['enabled' => true, 'is_base' => true, 'display_order' => 1, 'created_at' => now(), 'updated_at' => now()]
+        );
+        app(CompanyRoleService::class)->seedCompanyRoles($jodCompany);
+        setPermissionsTeamId($jodCompany->id);
+        $this->user->assignRole('Cashier');
+
+        CompanyScope::executeWithoutScope(function () use ($jodCompany): void {
+            $jodLedger = LedgerAccount::create([
+                'company_id' => $jodCompany->id,
+                'code' => '1011',
+                'name_ar' => 'صندوق دينار',
+                'name_en' => 'JOD Cash Box',
+                'account_type' => LedgerAccount::TYPE_ASSET,
+                'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+                'is_control' => false,
+                'is_system' => false,
+                'active' => true,
+            ]);
+
+            $jodCash = MoneyAccount::create([
+                'company_id' => $jodCompany->id,
+                'account_type' => 'cash',
+                'name_ar' => 'صندوق رئيسي دينار',
+                'name_en' => 'Main Cash JOD',
+                'currency_code' => 'JOD',
+                'ledger_account_id' => $jodLedger->id,
+                'is_active' => true,
+                'created_by' => $this->user->id,
+            ]);
+
+            $jodWarehouse = Warehouse::create([
+                'company_id' => $jodCompany->id,
+                'code' => 'WH-JOD',
+                'name_ar' => 'مستودع عمان',
+                'name_en' => 'Amman Warehouse',
+                'active' => true,
+                'is_default' => true,
+                'created_by' => $this->user->id,
+            ]);
+
+            $jodCustomer = Customer::create([
+                'company_id' => $jodCompany->id,
+                'code' => 'CUST-JOD',
+                'name_ar' => 'عميل عمان',
+                'name_en' => 'Amman Customer',
+                'status' => 'active',
+                'created_by' => $this->user->id,
+            ]);
+
+            CompanyMobileSetting::create([
+                'company_id' => $jodCompany->id,
+                'walk_in_customer_id' => $jodCustomer->id,
+                'approved_cash_account_id' => $jodCash->id,
+                'default_warehouse_id' => $jodWarehouse->id,
+                'default_tax_rate_id' => null,
+                'offline_policy_enabled' => false,
+                'offline_cash_only' => true,
+                'max_offline_hours' => 12,
+                'max_offline_sales_count' => 50,
+                'max_offline_total_amount' => 5000,
+                'catalog_snapshot_version' => 'snap-jod-v1',
+            ]);
+        });
+
+        $tokenJod = $this->issueToken($jodCompany);
+        $responseJod = $this->withHeader('Authorization', "Bearer {$tokenJod}")
+            ->getJson("/api/mobile/v1/companies/{$jodCompany->public_id}/bootstrap?include=currency_minor_units");
+
+        $responseJod->assertStatus(200);
+
+        $validatorJod = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validatorJod->setInput($responseJod->getContent())->run();
+        $this->assertTrue($validatorJod->isSuccessful(), $validatorJod->getErrorOutput());
+
+        $dataJod = $responseJod->json();
+        $this->assertArrayHasKey('currency_minor_units', $dataJod);
+        $this->assertArrayNotHasKey('base_currency_minor_units', $dataJod);
+
+        $expectedJodUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany($jodCompany, 'JOD');
+        $this->assertSame(3, $expectedJodUnits);
+        $this->assertSame($expectedJodUnits, $dataJod['currency_minor_units']);
+        $this->assertCount(13, array_keys($dataJod));
+
+        // 3. JPY company (scale = 0)
+        DB::table('currencies')->updateOrInsert(
+            ['code' => 'JPY'],
+            ['name' => 'Japanese Yen', 'symbol' => '¥', 'minor_units' => 0, 'active' => true, 'created_at' => now(), 'updated_at' => now()]
+        );
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        $jpyCompany = Company::factory()->create([
+            'name_ar' => 'شركة الين للتجارة',
+            'name_en' => 'Japan Yen Trading Co',
+            'base_currency_code' => 'JPY',
+            'status' => 'active',
+        ]);
+        $this->user->companies()->attach($jpyCompany->id, ['status' => 'active', 'is_owner' => false]);
+        DB::table('company_currencies')->updateOrInsert(
+            ['company_id' => $jpyCompany->id, 'currency_code' => 'JPY'],
+            ['enabled' => true, 'is_base' => true, 'display_order' => 1, 'created_at' => now(), 'updated_at' => now()]
+        );
+        app(CompanyRoleService::class)->seedCompanyRoles($jpyCompany);
+        setPermissionsTeamId($jpyCompany->id);
+        $this->user->assignRole('Cashier');
+
+        CompanyScope::executeWithoutScope(function () use ($jpyCompany): void {
+            $jpyLedger = LedgerAccount::create([
+                'company_id' => $jpyCompany->id,
+                'code' => '1012',
+                'name_ar' => 'صندوق ين',
+                'name_en' => 'JPY Cash Box',
+                'account_type' => LedgerAccount::TYPE_ASSET,
+                'normal_balance' => LedgerAccount::BALANCE_DEBIT,
+                'is_control' => false,
+                'is_system' => false,
+                'active' => true,
+            ]);
+
+            $jpyCash = MoneyAccount::create([
+                'company_id' => $jpyCompany->id,
+                'account_type' => 'cash',
+                'name_ar' => 'صندوق رئيسي ين',
+                'name_en' => 'Main Cash JPY',
+                'currency_code' => 'JPY',
+                'ledger_account_id' => $jpyLedger->id,
+                'is_active' => true,
+                'created_by' => $this->user->id,
+            ]);
+
+            $jpyWarehouse = Warehouse::create([
+                'company_id' => $jpyCompany->id,
+                'code' => 'WH-JPY',
+                'name_ar' => 'مستودع طوكيو',
+                'name_en' => 'Tokyo Warehouse',
+                'active' => true,
+                'is_default' => true,
+                'created_by' => $this->user->id,
+            ]);
+
+            $jpyCustomer = Customer::create([
+                'company_id' => $jpyCompany->id,
+                'code' => 'CUST-JPY',
+                'name_ar' => 'عميل طوكيو',
+                'name_en' => 'Tokyo Customer',
+                'status' => 'active',
+                'created_by' => $this->user->id,
+            ]);
+
+            CompanyMobileSetting::create([
+                'company_id' => $jpyCompany->id,
+                'walk_in_customer_id' => $jpyCustomer->id,
+                'approved_cash_account_id' => $jpyCash->id,
+                'default_warehouse_id' => $jpyWarehouse->id,
+                'default_tax_rate_id' => null,
+                'offline_policy_enabled' => false,
+                'offline_cash_only' => true,
+                'max_offline_hours' => 12,
+                'max_offline_sales_count' => 50,
+                'max_offline_total_amount' => 5000,
+                'catalog_snapshot_version' => 'snap-jpy-v1',
+            ]);
+        });
+
+        $tokenJpy = $this->issueToken($jpyCompany);
+        $responseJpy = $this->withHeader('Authorization', "Bearer {$tokenJpy}")
+            ->getJson("/api/mobile/v1/companies/{$jpyCompany->public_id}/bootstrap?include=currency_minor_units");
+
+        $responseJpy->assertStatus(200);
+
+        $validatorJpy = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validatorJpy->setInput($responseJpy->getContent())->run();
+        $this->assertTrue($validatorJpy->isSuccessful(), $validatorJpy->getErrorOutput());
+
+        $dataJpy = $responseJpy->json();
+        $this->assertArrayHasKey('currency_minor_units', $dataJpy);
+        $this->assertArrayNotHasKey('base_currency_minor_units', $dataJpy);
+
+        $expectedJpyUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany($jpyCompany, 'JPY');
+        $this->assertSame(0, $expectedJpyUnits);
+        $this->assertSame(0, $dataJpy['currency_minor_units']);
+        $this->assertSame($expectedJpyUnits, $dataJpy['currency_minor_units']);
+        $this->assertCount(13, array_keys($dataJpy));
+
+        // Restore permission team id
+        setPermissionsTeamId($this->company->id);
+    }
+
+    public function test_bootstrap_rejects_empty_null_array_and_unknown_include_with_422(): void
+    {
+        $token = $this->issueToken();
+
+        // 1. Empty include parameter (?include=)
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include=")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 2. Bare include parameter (?include)
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 3. Array include parameter (?include[]=currency_minor_units)
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include[]=currency_minor_units")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 4. Unknown projection (?include=unknown_field)
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include=unknown_field")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 5. Completely removed alias (?include=base_currency_minor_units)
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include=base_currency_minor_units")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_bootstrap_controller_409_when_currency_metadata_unresolvable_while_absent_include_retains_prior_behavior(): void
+    {
+        $token = $this->issueToken();
+
+        // Scenario A: Corrupt/out-of-range minor units in currencies table
+        DB::table('currencies')->where('code', 'ILS')->update(['minor_units' => 7]);
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        // With opt-in include=currency_minor_units: fail closed 409 CONTRACT_INCOMPATIBLE
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include=currency_minor_units")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'CONTRACT_INCOMPATIBLE');
+
+        // Without include: retains prior behavior (200 OK without extra resolver failure)
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(200);
+
+        // Restore currencies table
+        DB::table('currencies')->where('code', 'ILS')->update(['minor_units' => 2]);
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        // Scenario B: Missing currency enablement in company_currencies
+        // When company_currencies has no row for ILS, resolver resolveForCompany() throws InvalidArgumentException
+        DB::table('company_currencies')->where('company_id', $this->company->id)->delete();
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        // With opt-in include: resolver throws, controller returns 409 CONTRACT_INCOMPATIBLE
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap?include=currency_minor_units")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'CONTRACT_INCOMPATIBLE');
+
+        // Without include: prior behavior retained (200 OK)
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap")
+            ->assertStatus(200);
     }
 }

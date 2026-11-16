@@ -1,0 +1,193 @@
+{
+    "manifest_version": "1.2.0",
+    "review_context": {
+        "latest_review_id": "5906317848",
+        "latest_review_submitted_at": "2026-11-14T18:21:45Z",
+        "backend_execution_head_sha": "d7c7324535b1e6586140ab1e3561966342d625d6",
+        "peer_android_approved_head_sha": "653327243b2f5a4541c5fcf8cbe9520769e6be50",
+        "peer_android_executable_head_sha": "78ac4437e4010b68408278788dc82eb826fe8014",
+        "existing_core_status": "ACCEPTED_DO_NOT_REDO",
+        "qualified_core_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
+        "core_invariance_verified": true
+    },
+    "provenance_and_pins": {
+        "client_handoff_schema_sha256": "edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275",
+        "source_fixture_sha256": "ccb8c9f3852b4736675253d094659c8629d197df1c35a3caa7c99ba519da8152",
+        "guard_test_sha256": "cb601109631bd7c7899d3093fae079e0c8a5b8cb4f31582f016bc5cbf4bdd4fe",
+        "cli_command_sha256": "9bf4f389a034c52c62ea6aad796b20c06051f87dbf5a33b683572c4bff9bfd97",
+        "cli_runner_sha256": "5836790dcc58a9956868c1fcc1e6a0cc979a989d0bcf82a2a197b2787c548690",
+        "integration_manifest_sha256": "471240f132901eacef39ff1acea44f4b4802f775edb81e6e8c6a151d2b56ac92",
+        "runtime_pairing_manifest_sha256": "88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f",
+        "runtime_pairing_scope": "ROOT_AUTHORIZED_READINESS_ONLY",
+        "peer_android_approved_head_sha": "653327243b2f5a4541c5fcf8cbe9520769e6be50",
+        "peer_android_executable_head_sha": "78ac4437e4010b68408278788dc82eb826fe8014"
+    },
+    "guard_execution_history": {
+        "commit_31140e4": {
+            "result": "3_ERRORS_3_FAILURES",
+            "tests": 43,
+            "assertions": 145,
+            "failure_details": [
+                "Too few arguments on buildClientHandoff (tests 732, 888, 1027)",
+                "Stale exception message expectation in test_assert_readiness_scope_fails_closed_on_provision_only_status",
+                "Start unprovisioned guard hit before scope check in test_start_fails_closed_on_provision_only_manifest_status",
+                "Unsupported settlement_mode thrown by OnlineSaleIntentProfile::construct before validateClientHandoff in payment test"
+            ]
+        },
+        "commit_6e8c01c": {
+            "root_guard_run_seconds": 0.281,
+            "worker_guard_run_seconds": 0.277,
+            "tests": 44,
+            "assertions": 163,
+            "errors": 0,
+            "failures": 0,
+            "database_sockets": 0,
+            "network_sockets": 0,
+            "subprocess_router_test_added": true
+        },
+        "commit_815db26": {
+            "root_guard_run_seconds": 0.965,
+            "tests": 53,
+            "assertions": 227,
+            "errors": 0,
+            "failures": 0,
+            "database_sockets": 0,
+            "network_sockets": 0,
+            "strict_x509_v3_extensions_added": true
+        },
+        "commit_a8540ff": {
+            "root_guard_run_seconds": 1.180,
+            "worker_guard_run_seconds": 1.116,
+            "tests": 57,
+            "assertions": 241,
+            "errors": 0,
+            "failures": 0,
+            "database_sockets": 0,
+            "network_sockets": 0,
+            "pcntl_pre_socket_enforcement_added": true,
+            "cert_permissions_0600_enforced": true
+        }
+    },
+    "execution_runs_history": {
+        "run_1_standalone_provision": {
+            "head_sha": "4a2e0b28f8b4a4bced4a4aed3e7f69abaf7c3ac1",
+            "type": "STANDALONE_PROVISION",
+            "status": "PROVISIONED_AWAITING_TLS_START_ONLY",
+            "captured_handoff_sha256": "964e7bcfe6b8a140f043e921e99da6020258434b6649a47dcf9225c7ddcad6d3"
+        },
+        "run_2_worker_readiness_probe": {
+            "head_sha": "6e8c01cbfed9d11fd79e50699ff1a51ae8f4e72e",
+            "command": "mobile-v2-harness-cli.php --run --readiness-only",
+            "duration_seconds": 8.236,
+            "exit_code": 0,
+            "owned_disposable_schema": "accounting_p8_tmp_ad42c06ee92a",
+            "owned_disposable_schema_dropped": true,
+            "sanitized_report_digest_sha256": "ad1f7cc1bf82a6a7353f6b1b898065ccc9ce10ec1882ea178f270091200c35cb"
+        },
+        "run_3_root_readiness_hold_ca_failure": {
+            "head_sha": "9589edaa55531a2bfa2b2deb06ca9ca82f222e3a",
+            "evidence_dir": "/tmp/root-readiness-eb_1btu5",
+            "cause": "OpenSSL / Python 3.13 strict CA cert keyUsage extension validation failure",
+            "jvm_invocations": 0,
+            "exit_code": 1,
+            "interrupted_by_signal": "SIGTERM",
+            "owned_disposable_schema": "accounting_p8_tmp_a5057b7ce693",
+            "owned_disposable_schema_dropped": true
+        },
+        "run_4_root_coordinated_paired_run": {
+            "head_sha": "a8540ff83513b49988d90c77cf284831cfd5b2de",
+            "evidence_dir": "/tmp/root-readiness-bar7pq1o",
+            "dedicated_report": "docs/evidence/pr102-a854-coordinated-readiness-report.json",
+            "runtime_pairing_manifest_sha256": "76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b",
+            "live_handoff_sha256": "3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253",
+            "ca_sha256": "b5f7f5b100a2d40c8746eba466e569178f988ea61a470a4906152738556c4066",
+            "android_client_execution": {
+                "jvm_invocations": 1,
+                "duration_seconds": 27.16,
+                "exit_code": 1,
+                "tests_total": 2,
+                "tests_passed": 1,
+                "tests_failed": 1,
+                "failed_test": "executePairedOnlineCashPilotSmoke",
+                "failure_detail": "Peer Android executable HEAD pin mismatch: expected 824cb7dac1f17a3530f178134f9d9168e7e50b94, got 753fb5133e28acb1284370dd7a84e3929e7b1a7d at CashPilotHandoffConfig.kt:603"
+            },
+            "backend_sigterm_drill": {
+                "pid": 1185016,
+                "exit_code": 1,
+                "exact_owned_schema_dropped": "accounting_p8_tmp_3a598a57cc05"
+            }
+        },
+        "run_5_root_coordinated_success": {
+            "head_sha": "d7c7324535b1e6586140ab1e3561966342d625d6",
+            "evidence_dir": "/tmp/root-readiness-ooug5prl",
+            "dedicated_report": "docs/evidence/pr102-ooug5prl-readiness-success-report.json",
+            "runtime_pairing_manifest_sha256": "88c8c2e2389f7486e73c74f4f660aa0621bf3c8486a85590b6c4bbb44bb83f5f",
+            "live_handoff_sha256": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc",
+            "ca_sha256": "9dde86450a9ccef026bb1ff4c2d6d75cb46ff61729cc008994c5a0d0ac725f72",
+            "root_outcome_sha256": "dd267bc4f3a505d1558020758545ac1e40159114eca0b9538fb9f37839aeffe7",
+            "verdict": "READINESS_JVM_TESTS_PASS",
+            "android_client_execution": {
+                "jvm_invocations": 1,
+                "duration_seconds": 13.3375,
+                "exit_code": 0,
+                "tests_total": 2,
+                "tests_passed": 2,
+                "tests_failed": 0,
+                "tests_skipped": 0,
+                "tests_errors": 0,
+                "passed_tests": [
+                    "executePairedOnlineCashPilotSmoke (0.643s)",
+                    "testCashPilotFinancialAcceptanceEnforcement (0.002s)"
+                ],
+                "fresh_evidence_json_sha256": "0bfaba51e8ab55ae49ab5bf05f374fe4091d48c2a694dd4b810e120049246c5d",
+                "overall_status": "PASS",
+                "readiness_probe_status": "PASS",
+                "financial_scenarios_status": "ALL_6_NOT_RUN",
+                "serialization_disclosure": "Original Android fresh evidence JSON (0bfaba...) toJson serializes only clientHead: 78ac4437e4010b68408278788dc82eb826fe8014 and omits separate publication pin field. Original JSON and hash are preserved unaltered; wrapper independently records publication 653327243b2f5a4541c5fcf8cbe9520769e6be50 and execution 78ac4437e4010b68408278788dc82eb826fe8014."
+            },
+            "backend_sigterm_drill": {
+                "pid": 1204264,
+                "signal": "SIGTERM",
+                "exit_code": 1,
+                "exit_mode": "INTENTIONAL_SIGTERM_AFTER_EVIDENCE_CAPTURE",
+                "abort_logged": "Readiness hold ABORTED by interrupt signal SIGTERM.",
+                "exact_owned_schema_dropped": "accounting_p8_tmp_84fa14fb4cb2",
+                "exact_owned_temp_dir_deleted": "/tmp/v2_harness_c8253786b061d82a",
+                "ports_closed": [18080, 18443],
+                "ports_verification_method": "Python socket.connect_ex non-zero (connection refused)"
+            }
+        }
+    },
+    "cleanup_verification": {
+        "scope": "EXACT_OWNED_RESOURCES_ONLY",
+        "latest_owned_schema_dropped": "accounting_p8_tmp_84fa14fb4cb2",
+        "latest_owned_temp_dir_deleted": "/tmp/v2_harness_c8253786b061d82a",
+        "ports_closed": [18080, 18443],
+        "ports_verification_method": "Python socket.connect_ex non-zero (connection refused)",
+        "worktree_clean": true
+    },
+    "unexecuted_gaps_record": [
+        "Financial pilot execution (strictly NOT RUN; readiness-only lifecycle scope forbids financial network requests)",
+        "Live SIGINT abort drill (only SIGTERM exercised on PID 1185016 and PID 1204264)",
+        "Intermediate transport process failure recovery (simulated killed child / crashed caddy during active transport) not exercised live"
+    ],
+    "gate_checklist_review_5906317848": {
+        "accepted": [
+            "Core 187/1440 qualification and route cache DAG invariance against 6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
+            "Pure guard test suite passing (57 tests, 241 assertions, 0 errors, 0 failures, Root: 1.180s, Worker: 1.116s)",
+            "Strict X.509 v3 extensions for CA (keyUsage, basicConstraints) and server (SAN, serverAuth)",
+            "Pre-socket pcntl availability and early signal registration enforced before sockets/DB",
+            "File permission policy enforced (0600 certs, 0600 keys, 0700 dir)",
+            "Root TLS probe verified strict CA/SAN GET 200 with nonce, POST 405 refusal, safe GET 403 refusal on /_readiness_forbidden_probe",
+            "Root actual live TLS negative PASS on wrong CA cert rejection",
+            "Root paired readiness execution PASS: 2 tests, 2 PASS, 0 failure, 0 error, exit 0 in 13.3375s",
+            "Root SIGTERM abort drill verified: handler marks ABORTED, exits 1, drops exact owned schema accounting_p8_tmp_84fa14fb4cb2, closes ports",
+            "Failure first stop honored across all runs; no automated restart loops"
+        ],
+        "pending": [
+            "Full financial pilot execution (all 6 financial scenarios are NOT_RUN; basic readiness smoke alone does not qualify financial pilot)",
+            "Live SIGINT drill on active hold",
+            "Intermediate transport crash/recovery drill during active client traffic"
+        ]
+    }
+}

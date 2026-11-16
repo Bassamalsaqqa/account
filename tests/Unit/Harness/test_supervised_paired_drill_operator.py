@@ -1,0 +1,981 @@
+#!/usr/bin/env python3
+"""
+Unit Tests for Mobile V2 Supervised Paired Financial Drill Operator Driver
+==========================================================================
+Exercises all adversarial constraints and defect remediations in
+`tests/Support/Harness/supervised-paired-drill-operator.py`:
+1. Symlink component rejection on original input paths.
+2. Canonical protected active lane refusal (7ac8 / t3-7ac8b73d).
+3. Secure output directory validation (no symlinks, outside repos, 0700 UID, refuse non-empty).
+4. Future live approval target path validation (must NOT exist prior to startup).
+5. 40-hex commit SHA and 64-hex manifest SHA validation.
+6. Non-blocking supervised runner timeout on silent child without hanging on readline.
+7. Non-blocking supervised runner capture of unterminated output.
+8. Process group reaping of forked descendant processes when leader exits.
+9. Log write failure propagation and immediate child process group reaping.
+10. Pre/Post git state comparison and drift detection.
+11. Executable source parity verification on temporary throwaway git fixtures.
+12. Decoupled prepare/execute directory handshake validation.
+13. Strict mandatory binding record verification (parent 0700 UID, file 0600 UID, SHA pin match,
+    root_verified is True, peer_android_attached is True, canonical worktree and branch match).
+"""
+
+import os
+import sys
+import io
+import json
+import time
+import signal
+import hashlib
+import shutil
+import tempfile
+import unittest
+import contextlib
+import importlib.util
+import subprocess
+from pathlib import Path
+
+# Resolve actual repo root using Path(__file__).resolve().parents[3]
+REPO_ROOT = str(Path(__file__).resolve().parents[3])
+OPERATOR_PATH = os.path.join(REPO_ROOT, 'tests/Support/Harness/supervised-paired-drill-operator.py')
+assert os.path.isfile(OPERATOR_PATH), f"Operator driver not found at {OPERATOR_PATH}"
+
+# Verify against non-mutating git rev-parse --show-toplevel
+git_root = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], cwd=REPO_ROOT).decode().strip()
+assert os.path.realpath(REPO_ROOT) == os.path.realpath(git_root), f"Repo root mismatch: {REPO_ROOT} != {git_root}"
+
+# Dynamically import the hyphenated module
+spec = importlib.util.spec_from_file_location("operator_driver", OPERATOR_PATH)
+operator_driver = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(operator_driver)
+
+ROOT_TOOL_PATH = os.path.join(REPO_ROOT, 'tests/Support/Harness/root-operator-tool.py')
+assert os.path.isfile(ROOT_TOOL_PATH), f"Root operator tool not found at {ROOT_TOOL_PATH}"
+spec_tool = importlib.util.spec_from_file_location("root_operator_tool", ROOT_TOOL_PATH)
+root_operator_tool = importlib.util.module_from_spec(spec_tool)
+spec_tool.loader.exec_module(root_operator_tool)
+
+
+class TestSupervisedPairedDrillOperator(unittest.TestCase):
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix='test_operator_driver_')
+
+    def tearDown(self):
+        if os.path.isdir(self.test_dir):
+            shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_validate_no_symlink_components_rejects_symlink(self):
+        real_target = os.path.join(self.test_dir, 'real_dir')
+        os.makedirs(real_target, mode=0o700)
+        symlink_path = os.path.join(self.test_dir, 'symlink_dir')
+        os.symlink(real_target, symlink_path)
+        sub_path = os.path.join(symlink_path, 'sub')
+
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.validate_no_symlink_components(sub_path, "Test path")
+        self.assertIn("contains a symlink component", str(ctx.exception))
+
+    def test_assert_not_protected_worktree_rejects_7ac8(self):
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.assert_not_protected_worktree(
+                '/home/t3dev/.t3/worktrees/small-trader-android/t3-7ac8b73d-abb5d6e52b3b3cf9'
+            )
+        self.assertIn("Protected active Android lane path refusal", str(ctx.exception))
+
+    def test_validate_secure_output_dir_rejects_inside_backend_repo(self):
+        backend_dir = os.path.join(self.test_dir, 'backend')
+        android_dir = os.path.join(self.test_dir, 'android')
+        os.makedirs(backend_dir, mode=0o700)
+        os.makedirs(android_dir, mode=0o700)
+
+        inside_dir = os.path.join(backend_dir, 'sub_out')
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.validate_secure_output_dir(inside_dir, backend_dir, android_dir)
+        self.assertIn("must be external to backend repository", str(ctx.exception))
+
+    def test_validate_secure_output_dir_rejects_non_empty_dir(self):
+        backend_dir = os.path.join(self.test_dir, 'backend')
+        android_dir = os.path.join(self.test_dir, 'android')
+        out_dir = os.path.join(self.test_dir, 'out')
+        os.makedirs(backend_dir, mode=0o700)
+        os.makedirs(android_dir, mode=0o700)
+        os.makedirs(out_dir, mode=0o700)
+
+        # Place a file to make it non-empty
+        with open(os.path.join(out_dir, 'existing.txt'), 'w') as f:
+            f.write('polluted')
+
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.validate_secure_output_dir(out_dir, backend_dir, android_dir)
+        self.assertIn("already exists and is not empty", str(ctx.exception))
+
+    def test_validate_future_live_approval_path_rejects_already_existing_file(self):
+        existing_file = os.path.join(self.test_dir, 'live_already.json')
+        with open(existing_file, 'w') as f:
+            f.write('{}')
+        os.chmod(existing_file, 0o600)
+
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.validate_future_live_approval_path(existing_file)
+        self.assertIn("must NOT exist prior to candidate execution", str(ctx.exception))
+
+    def test_validate_commit_sha_and_manifest_sha_rejects_invalid(self):
+        with self.assertRaises(ValueError):
+            operator_driver.validate_commit_sha('not-40-hex', 'Commit pin')
+        with self.assertRaises(ValueError):
+            operator_driver.validate_manifest_sha('short-sha', 'Manifest pin')
+
+        valid_commit = 'a' * 40
+        self.assertEqual(operator_driver.validate_commit_sha(valid_commit, 'Commit pin'), valid_commit)
+        valid_manifest = 'b' * 64
+        self.assertEqual(operator_driver.validate_manifest_sha(valid_manifest, 'Manifest pin'), valid_manifest)
+
+    def test_compare_git_states_detects_drift(self):
+        pre = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {'f1': 'h1'}},
+            'android': {'head': '2' * 40, 'status': '', 'sha256': {'f2': 'h2'}}
+        }
+        post = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {'f1': 'h1_drift'}},
+            'android': {'head': '2' * 40, 'status': '', 'sha256': {'f2': 'h2'}}
+        }
+        drifts = operator_driver.compare_git_states(pre, post)
+        self.assertTrue(bool(drifts))
+        self.assertIn('backend_tracked_hashes_drift', drifts)
+
+    def test_compare_git_states_allows_declared_owned_output_artifact(self):
+        mock_android = os.path.join(self.test_dir, 'mock_android_repo')
+        art_rel = 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json'
+        art_full = os.path.join(mock_android, art_rel)
+        os.makedirs(os.path.dirname(art_full), mode=0o700)
+        with open(art_full, 'w') as f:
+            f.write('{"status": "PASS"}')
+        os.chmod(art_full, 0o600)
+
+        pre = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': '', 'sha256': {}}
+        }
+        post = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': f'?? {art_rel}', 'sha256': {}}
+        }
+        drifts = operator_driver.compare_git_states(
+            pre, post,
+            declared_output_artifacts={'android': [art_rel]},
+            repo_dirs={'backend': self.test_dir, 'android': mock_android}
+        )
+        self.assertEqual(drifts, {})
+
+    def test_compare_git_states_rejects_undeclared_untracked_file(self):
+        mock_android = os.path.join(self.test_dir, 'mock_android_repo_undeclared')
+        art_rel = 'app/docs/unexpected_file.txt'
+        art_full = os.path.join(mock_android, art_rel)
+        os.makedirs(os.path.dirname(art_full), mode=0o700)
+        with open(art_full, 'w') as f:
+            f.write('unauthorized')
+
+        pre = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': '', 'sha256': {}}
+        }
+        post = {
+            'backend': {'head': '1' * 40, 'status': '', 'sha256': {}},
+            'android': {'head': '2' * 40, 'status': f'?? {art_rel}', 'sha256': {}}
+        }
+        drifts = operator_driver.compare_git_states(
+            pre, post,
+            declared_output_artifacts={'android': ['app/docs/other_approved.json']},
+            repo_dirs={'backend': self.test_dir, 'android': mock_android}
+        )
+        self.assertIn('android_status_drift', drifts)
+
+    def test_run_supervised_child_silent_child_timeout(self):
+        log_path = os.path.join(self.test_dir, 'silent.log')
+        with open(log_path, 'w') as log_f:
+            cmd = [sys.executable, '-c', 'import time; time.sleep(10)']
+            start = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                operator_driver.run_supervised_child(cmd, self.test_dir, os.environ.copy(), log_f, timeout_seconds=0.5)
+            duration = time.monotonic() - start
+            # Must timeout promptly without blocking on readline
+            self.assertLess(duration, 3.0)
+
+    def test_run_supervised_child_unterminated_output(self):
+        log_path = os.path.join(self.test_dir, 'unterminated.log')
+        with open(log_path, 'w') as log_f:
+            cmd = [
+                sys.executable,
+                '-c',
+                'import sys, time; sys.stdout.write("unterminated_chunk_without_newline"); sys.stdout.flush(); time.sleep(10)'
+            ]
+            start = time.monotonic()
+            with self.assertRaises(TimeoutError):
+                operator_driver.run_supervised_child(cmd, self.test_dir, os.environ.copy(), log_f, timeout_seconds=0.5)
+            duration = time.monotonic() - start
+            self.assertLess(duration, 3.0)
+
+        with open(log_path, 'r') as log_f:
+            content = log_f.read()
+        self.assertIn("unterminated_chunk_without_newline", content)
+
+    def test_run_supervised_child_forking_descendant_reaped(self):
+        log_path = os.path.join(self.test_dir, 'fork.log')
+        pid_file = os.path.join(self.test_dir, 'child.pid')
+        # Parent forks a descendant that writes its PID and sleeps 30s, then parent exits 0
+        cmd = [
+            sys.executable,
+            '-c',
+            f'import os, sys, time; pid = os.fork();\n'
+            f'if pid == 0:\n'
+            f'    with open("{pid_file}", "w") as f: f.write(str(os.getpid()))\n'
+            f'    time.sleep(30)\n'
+            f'    sys.exit(0)\n'
+            f'sys.exit(0)\n'
+        ]
+        with open(log_path, 'w') as log_f:
+            operator_driver.run_supervised_child(cmd, self.test_dir, os.environ.copy(), log_f, timeout_seconds=5.0)
+
+        descendant_pid = None
+        try:
+            # Wait briefly for pid file to be written
+            for _ in range(40):
+                if os.path.isfile(pid_file):
+                    break
+                time.sleep(0.05)
+
+            self.assertTrue(os.path.isfile(pid_file), "PID file not created by descendant child")
+            with open(pid_file, 'r') as f:
+                descendant_pid = int(f.read().strip())
+
+            # Descendant process must be killed by reap_process_group
+            try:
+                os.kill(descendant_pid, 0)
+                alive = True
+            except ProcessLookupError:
+                alive = False
+            self.assertFalse(alive, f"Descendant process {descendant_pid} survived execution!")
+        finally:
+            if descendant_pid is not None:
+                try:
+                    os.kill(descendant_pid, 0)
+                    os.kill(descendant_pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    pass
+
+    def test_run_supervised_child_log_write_failure_propagates(self):
+        class FailingLogHandle:
+            def write(self, s):
+                raise IOError("Simulated disk write failure")
+            def flush(self):
+                pass
+
+        cmd = [sys.executable, '-c', 'import sys; sys.stdout.write("output"); sys.stdout.flush()']
+        with self.assertRaises(IOError):
+            operator_driver.run_supervised_child(
+                cmd, self.test_dir, os.environ.copy(), FailingLogHandle(), timeout_seconds=5.0
+            )
+
+    def test_verify_source_parity_accepts_docs_and_rejects_code_diff(self):
+        # Create a throwaway git repository fixture (NEVER a real checkout)
+        git_dir = os.path.join(self.test_dir, 'throwaway_git')
+        os.makedirs(git_dir, mode=0o700)
+        subprocess.check_call(['git', 'init'], cwd=git_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=git_dir)
+        subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=git_dir)
+
+        # Commit 1: Initial base
+        code_file = os.path.join(git_dir, 'App.kt')
+        with open(code_file, 'w') as f:
+            f.write('class App')
+        subprocess.check_call(['git', 'add', 'App.kt'], cwd=git_dir)
+        subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        base_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
+
+        # Commit 2: Docs-only change under approved prefix
+        docs_sub = os.path.join(git_dir, 'docs')
+        os.makedirs(docs_sub, mode=0o700)
+        docs_file = os.path.join(docs_sub, 'README.md')
+        with open(docs_file, 'w') as f:
+            f.write('# Documentation')
+        subprocess.check_call(['git', 'add', 'docs/README.md'], cwd=git_dir)
+        subprocess.check_call(['git', 'commit', '-m', 'Docs'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        docs_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
+
+        approved_paths = ['docs/README.md']
+        # Parity between base and docs head must PASS
+        operator_driver.verify_source_parity(git_dir, base_head, docs_head, approved_paths)
+
+        # Commit 3: Code modification
+        with open(code_file, 'w') as f:
+            f.write('class AppModified')
+        subprocess.check_call(['git', 'add', 'App.kt'], cwd=git_dir)
+        subprocess.check_call(['git', 'commit', '-m', 'Code change'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        code_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
+
+        # Parity between docs_head and code_head must FAIL CLOSED
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_source_parity(git_dir, docs_head, code_head, ['App.kt'])
+        self.assertIn("SOURCE_PARITY_VIOLATION", str(ctx.exception))
+
+    def test_verify_source_parity_mismatch_unexpected_or_missing_files(self):
+        git_dir = os.path.join(self.test_dir, 'throwaway_git_mismatch')
+        os.makedirs(git_dir, mode=0o700)
+        subprocess.check_call(['git', 'init'], cwd=git_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=git_dir)
+        subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=git_dir)
+
+        # Commit 1: Initial base
+        init_file = os.path.join(git_dir, 'init.txt')
+        with open(init_file, 'w') as f:
+            f.write('init')
+        subprocess.check_call(['git', 'add', 'init.txt'], cwd=git_dir)
+        subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        base_head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
+
+        # Commit 2: Add doc1
+        os.makedirs(os.path.join(git_dir, 'docs'), mode=0o700)
+        with open(os.path.join(git_dir, 'docs/doc1.md'), 'w') as f:
+            f.write('# Doc 1')
+        subprocess.check_call(['git', 'add', 'docs/doc1.md'], cwd=git_dir)
+        subprocess.check_call(['git', 'commit', '-m', 'Doc 1'], cwd=git_dir, stdout=subprocess.DEVNULL)
+        head_1 = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=git_dir).decode().strip()
+
+        # 1. Missing expected diff file in actual diff
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_source_parity(git_dir, base_head, head_1, ['docs/doc1.md', 'docs/doc2.md'])
+        self.assertIn("Missing expected diff files", str(ctx.exception))
+
+        # 2. Unexpected diff file in actual diff
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_source_parity(git_dir, base_head, head_1, [])
+        self.assertIn("Unexpected diff files", str(ctx.exception))
+
+    def _create_mock_binding(self, parent_mode=0o700, file_mode=0o600, overrides=None):
+        parent_dir = os.path.join(self.test_dir, 'mock_binding_parent')
+        if not os.path.exists(parent_dir):
+            os.makedirs(parent_dir, mode=parent_mode)
+        else:
+            os.chmod(parent_dir, parent_mode)
+        binding_file = os.path.join(parent_dir, 'binding.json')
+
+        mock_worktree = os.path.join(self.test_dir, 'mock_android_peer')
+        if not os.path.exists(mock_worktree):
+            os.makedirs(mock_worktree, mode=0o700)
+            subprocess.check_call(['git', 'init'], cwd=mock_worktree, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.check_call(
+                ['git', 'symbolic-ref', 'HEAD', 'refs/heads/t3/verify-isolated-worktree'],
+                cwd=mock_worktree,
+                stdout=subprocess.DEVNULL
+            )
+
+        default_branch = "t3/verify-isolated-worktree"
+        data = {
+            "root_verified": True,
+            "peer_android_worktree": mock_worktree,
+            "peer_android_branch": default_branch,
+            "peer_android_attached": True,
+            "pins": {
+                "android_publication_head": "c" * 40,
+                "android_executable_head": "5" * 40,
+                "pub_vs_exe_delta": "8_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": [
+                    f"docs/evidence/doc_{i}.md" for i in range(8)
+                ]
+            }
+        }
+        if overrides:
+            for k, v in overrides.items():
+                if k == "pins":
+                    data["pins"].update(v)
+                else:
+                    data[k] = v
+
+        content = json.dumps(data, indent=2).encode('utf-8')
+        with open(binding_file, 'wb') as f:
+            f.write(content)
+        os.chmod(binding_file, file_mode)
+
+        expected_sha = hashlib.sha256(content).hexdigest()
+        return binding_file, expected_sha, mock_worktree, "c" * 40, "5" * 40
+
+    def test_binding_record_valid_passes(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        approved_paths = operator_driver.verify_binding_record(
+            binding_file, expected_sha, android_dir, pub_head, exe_head
+        )
+        self.assertEqual(len(approved_paths), 8)
+
+    def test_binding_record_missing_fails_closed(self):
+        nonexistent = os.path.join(self.test_dir, 'missing_dir/binding.json')
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                nonexistent, "0" * 64, "/nonexistent", "c" * 40, "5" * 40
+            )
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_binding_record_tampered_sha_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        tampered_sha = "0" * 64
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, tampered_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("Binding record SHA mismatch", str(ctx.exception))
+
+    def test_binding_record_root_verified_not_true_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"root_verified": False}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("root_verified must be boolean True", str(ctx.exception))
+
+    def test_binding_record_peer_attached_not_true_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"peer_android_attached": False}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("peer_android_attached must be boolean True", str(ctx.exception))
+
+    def test_binding_record_worktree_mismatch_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        other_worktree = os.path.join(self.test_dir, 'other_worktree')
+        os.makedirs(other_worktree, mode=0o700)
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, other_worktree, pub_head, exe_head
+            )
+        self.assertIn("worktree mismatch", str(ctx.exception))
+
+    def test_binding_record_branch_mismatch_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"peer_android_branch": "wrong/branch"}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("branch mismatch", str(ctx.exception))
+
+    def test_binding_record_parent_insecure_permissions_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        parent_dir = os.path.dirname(binding_file)
+        os.chmod(parent_dir, 0o755)
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("parent directory insecure permissions", str(ctx.exception))
+
+    def test_binding_record_file_insecure_permissions_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding()
+        os.chmod(binding_file, 0o644)
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("permissions insecure", str(ctx.exception))
+
+    def test_binding_record_delta_count_mismatch_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"pins": {
+                "pub_vs_exe_delta": "8_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": [f"docs/evidence/doc_{i}.md" for i in range(5)]
+            }}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("Binding record count mismatch", str(ctx.exception))
+        self.assertIn("pub_vs_exe_delta specifies 8 files, but approved_docs_delta_paths has 5", str(ctx.exception))
+
+    def test_binding_record_forbidden_extension_in_delta_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"pins": {
+                "pub_vs_exe_delta": "1_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": ["docs/evidence/exploit.kt"]
+            }}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("contains forbidden source extension", str(ctx.exception))
+
+    def test_binding_record_disallowed_prefix_in_delta_fails_closed(self):
+        binding_file, expected_sha, android_dir, pub_head, exe_head = self._create_mock_binding(
+            overrides={"pins": {
+                "pub_vs_exe_delta": "1_DOCS_ONLY_FILES",
+                "approved_docs_delta_paths": ["unapproved/path.md"]
+            }}
+        )
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_binding_record(
+                binding_file, expected_sha, android_dir, pub_head, exe_head
+            )
+        self.assertIn("does not start with approved documentation prefix", str(ctx.exception))
+
+    def test_cli_omitted_binding_record_rejected(self):
+        parser = operator_driver.build_parser()
+        argv = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--expected-binding-sha=" + "d" * 64,
+            "--prewarm-only"
+        ]
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            with self.assertRaises(SystemExit) as ctx:
+                parser.parse_args(argv)
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--binding-record", buf.getvalue())
+
+    def test_cli_omitted_expected_binding_sha_rejected(self):
+        parser = operator_driver.build_parser()
+        argv = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--prewarm-only"
+        ]
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            with self.assertRaises(SystemExit) as ctx:
+                parser.parse_args(argv)
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--expected-binding-sha", buf.getvalue())
+
+    def test_cli_mandatory_binding_args_accepted(self):
+        parser = operator_driver.build_parser()
+        argv = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--prewarm-only"
+        ]
+        args = parser.parse_args(argv)
+        self.assertEqual(args.binding_record, "/tmp/test_binding.json")
+        self.assertEqual(args.expected_binding_sha, "d" * 64)
+
+    def _create_mock_peer_repo_and_baseline(
+        self, untracked_files=None, modified_files=None, baseline_overrides=None,
+        record_parent_mode=0o700, record_file_mode=0o600
+    ):
+        mock_android = os.path.join(self.test_dir, 'mock_android_peer_baseline')
+        if not os.path.exists(mock_android):
+            os.makedirs(mock_android, mode=0o700)
+            subprocess.check_call(['git', 'init'], cwd=mock_android, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=mock_android)
+            subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=mock_android)
+            tracked_file = os.path.join(mock_android, 'tracked.txt')
+            with open(tracked_file, 'w') as f:
+                f.write('initial tracked content')
+            subprocess.check_call(['git', 'add', 'tracked.txt'], cwd=mock_android)
+            subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=mock_android, stdout=subprocess.DEVNULL)
+
+        if modified_files:
+            for rel_mod, mod_content in modified_files.items():
+                p = os.path.join(mock_android, rel_mod)
+                with open(p, 'w') as f:
+                    f.write(mod_content)
+
+        default_art_rel = 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json'
+        baseline_artifacts_list = []
+
+        if untracked_files is None:
+            untracked_files = {default_art_rel: '{"sample_evidence": true}'}
+
+        for rel_p, content in untracked_files.items():
+            full_p = os.path.join(mock_android, rel_p)
+            os.makedirs(os.path.dirname(full_p), mode=0o700, exist_ok=True)
+            if isinstance(content, str):
+                content_bytes = content.encode('utf-8')
+                with open(full_p, 'wb') as f:
+                    f.write(content_bytes)
+                os.chmod(full_p, 0o600)
+                sha = hashlib.sha256(content_bytes).hexdigest()
+                baseline_artifacts_list.append({
+                    "relative_path": rel_p,
+                    "sha256": sha,
+                    "size": len(content_bytes)
+                })
+
+        parent_dir = os.path.join(self.test_dir, 'mock_peer_baseline_parent')
+        os.makedirs(parent_dir, mode=record_parent_mode, exist_ok=True)
+        os.chmod(parent_dir, record_parent_mode)
+        record_file = os.path.join(parent_dir, 'baseline.json')
+
+        record_data = {
+            "root_verified": True,
+            "peer_android_worktree": mock_android,
+            "baseline_artifacts": baseline_artifacts_list
+        }
+        if baseline_overrides:
+            record_data.update(baseline_overrides)
+
+        encoded = json.dumps(record_data, indent=2).encode('utf-8')
+        with open(record_file, 'wb') as f:
+            f.write(encoded)
+        os.chmod(record_file, record_file_mode)
+
+        expected_sha = hashlib.sha256(encoded).hexdigest()
+        return mock_android, record_file, expected_sha
+
+    def test_peer_baseline_record_admitted_when_valid(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        admitted = operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertEqual(len(admitted), 1)
+        self.assertEqual(
+            admitted[0]['relative_path'],
+            'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json'
+        )
+        self.assertEqual(len(admitted[0]['sha256']), 64)
+
+    def test_peer_untracked_rejected_when_baseline_record_omitted(self):
+        android_dir, _, _ = self._create_mock_peer_repo_and_baseline()
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, None, None)
+        self.assertIn("Android repository is not in clean state", str(ctx.exception))
+        self.assertIn("no --peer-baseline-record provided", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_sha_mismatch(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        # Tamper the untracked file content on disk using equal-length bytes (25 bytes)
+        # to ensure the preceding size guard passes and the SHA-256 mismatch guard is exercised
+        target_file = os.path.join(android_dir, 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json')
+        with open(target_file, 'wb') as f:
+            f.write(b'{"sample_evidence": fals}')
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("SHA mismatch", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_size_mismatch(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        # Tamper file with different length (26 bytes vs expected 25) to exercise the size guard
+        target_file = os.path.join(android_dir, 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json')
+        with open(target_file, 'wb') as f:
+            f.write(b'{"tampered_content": true}')
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("size mismatch", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_extra_untracked_file(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        # Add an extra undeclared untracked file
+        extra_file = os.path.join(android_dir, 'extra_untracked.txt')
+        with open(extra_file, 'w') as f:
+            f.write('extra file')
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("Android repository untracked files do not match baseline record", str(ctx.exception))
+        self.assertIn("Extra untracked", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_symlink_artifact(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        target_file = os.path.join(android_dir, 'app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json')
+        real_target = os.path.join(self.test_dir, 'symlink_real_target.json')
+        with open(real_target, 'wb') as f:
+            f.write(b'{"target": true}')
+        os.remove(target_file)
+        os.symlink(real_target, target_file)
+
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("contains a symlink component", str(ctx.exception))
+
+    def test_peer_baseline_record_fails_on_modified_tracked_file(self):
+        # Untracked baseline file matches, but a tracked file is modified
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline(
+            modified_files={'tracked.txt': 'modified content here'}
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertIn("tracked clean is absolute", str(ctx.exception))
+
+    def test_peer_baseline_archive_immutable_and_bytes_retained(self):
+        android_dir, record_file, expected_sha = self._create_mock_peer_repo_and_baseline()
+        admitted = operator_driver.verify_peer_clean_or_baseline_status(android_dir, record_file, expected_sha)
+        self.assertEqual(len(admitted), 1)
+
+        out_dir = os.path.join(self.test_dir, 'archive_output_test')
+        os.makedirs(out_dir, mode=0o700)
+
+        meta = operator_driver.archive_peer_baseline_artifacts(admitted, out_dir)
+        self.assertIsNotNone(meta)
+        self.assertEqual(meta['count'], 1)
+
+        archived_file = os.path.join(out_dir, 'archived_peer_baseline_paired-online-cash-pilot-evidence.json')
+        self.assertTrue(os.path.isfile(archived_file))
+        st = os.stat(archived_file)
+        self.assertEqual(st.st_mode & 0o777, 0o600)
+        self.assertEqual(operator_driver.sha256_file(archived_file), admitted[0]['sha256'])
+
+        meta_file = os.path.join(out_dir, 'peer_baseline_archive_metadata.json')
+        self.assertTrue(os.path.isfile(meta_file))
+        st_meta = os.stat(meta_file)
+        self.assertEqual(st_meta.st_mode & 0o777, 0o600)
+
+        # Calling again must FAIL CLOSED with FileExistsError (O_EXCL ensures immutable archive)
+        with self.assertRaises(FileExistsError):
+            operator_driver.archive_peer_baseline_artifacts(admitted, out_dir)
+
+    def test_cli_peer_baseline_args_mutual_requirement(self):
+        parser = operator_driver.build_parser()
+        # 1. Specifying --peer-baseline-record without --expected-peer-baseline-sha
+        argv1 = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--peer-baseline-record=/tmp/peer_baseline.json",
+            "--prewarm-only"
+        ]
+        args1 = parser.parse_args(argv1)
+        self.assertIsNotNone(args1.peer_baseline_record)
+        self.assertIsNone(args1.expected_peer_baseline_sha)
+        self.assertTrue(bool(args1.peer_baseline_record) != bool(args1.expected_peer_baseline_sha))
+
+        # 2. Specifying --expected-peer-baseline-sha without --peer-baseline-record
+        argv2 = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--expected-peer-baseline-sha=" + "e" * 64,
+            "--prewarm-only"
+        ]
+        args2 = parser.parse_args(argv2)
+        self.assertIsNone(args2.peer_baseline_record)
+        self.assertIsNotNone(args2.expected_peer_baseline_sha)
+        self.assertTrue(bool(args2.peer_baseline_record) != bool(args2.expected_peer_baseline_sha))
+
+        # 3. Specifying both succeeds
+        argv3 = [
+            "--output-dir=/tmp/test_out",
+            "--android-dir=/tmp/test_android",
+            "--expected-backend-head=" + "a" * 40,
+            "--android-pub-head=" + "b" * 40,
+            "--android-exe-head=" + "c" * 40,
+            "--binding-record=/tmp/test_binding.json",
+            "--expected-binding-sha=" + "d" * 64,
+            "--peer-baseline-record=/tmp/peer_baseline.json",
+            "--expected-peer-baseline-sha=" + "e" * 64,
+            "--prewarm-only"
+        ]
+        args3 = parser.parse_args(argv3)
+        self.assertEqual(args3.peer_baseline_record, "/tmp/peer_baseline.json")
+        self.assertEqual(args3.expected_peer_baseline_sha, "e" * 64)
+
+    def test_peer_clean_status_with_unexpected_baseline_record_rejected(self):
+        # Status is completely clean, but a baseline record was passed expecting artifacts
+        mock_android = os.path.join(self.test_dir, 'mock_android_clean_unexpected')
+        os.makedirs(mock_android, mode=0o700)
+        subprocess.check_call(['git', 'init'], cwd=mock_android, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.check_call(['git', 'config', 'user.name', 'Test'], cwd=mock_android)
+        subprocess.check_call(['git', 'config', 'user.email', 'test@example.com'], cwd=mock_android)
+        tracked_file = os.path.join(mock_android, 'tracked.txt')
+        with open(tracked_file, 'w') as f:
+            f.write('initial tracked content')
+        subprocess.check_call(['git', 'add', 'tracked.txt'], cwd=mock_android)
+        subprocess.check_call(['git', 'commit', '-m', 'Initial'], cwd=mock_android, stdout=subprocess.DEVNULL)
+
+        # Create dummy record
+        parent_dir = os.path.join(self.test_dir, 'mock_parent_clean_unexpected')
+        os.makedirs(parent_dir, mode=0o700)
+        rec_file = os.path.join(parent_dir, 'baseline.json')
+        rec_data = {
+            "root_verified": True,
+            "peer_android_worktree": mock_android,
+            "baseline_artifacts": [{
+                "relative_path": "app/docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json",
+                "sha256": "a" * 64
+            }]
+        }
+        with open(rec_file, 'w') as f:
+            json.dump(rec_data, f)
+        os.chmod(rec_file, 0o600)
+        rec_sha = operator_driver.sha256_file(rec_file)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(mock_android, rec_file, rec_sha)
+        self.assertIn("Android repository status is completely clean", str(ctx.exception))
+
+    def test_peer_baseline_record_rejects_unapproved_artifact_path(self):
+        android_dir, _, _ = self._create_mock_peer_repo_and_baseline()
+        parent_dir = os.path.join(self.test_dir, 'mock_parent_unapproved_path')
+        os.makedirs(parent_dir, mode=0o700)
+        rec_file = os.path.join(parent_dir, 'baseline.json')
+        rec_data = {
+            "root_verified": True,
+            "peer_android_worktree": android_dir,
+            "baseline_artifacts": [{
+                "relative_path": "docs/unapproved_location.txt",
+                "sha256": "a" * 64
+            }]
+        }
+        with open(rec_file, 'w') as f:
+            json.dump(rec_data, f)
+        os.chmod(rec_file, 0o600)
+        rec_sha = operator_driver.sha256_file(rec_file)
+
+        with self.assertRaises(ValueError) as ctx:
+            operator_driver.verify_peer_clean_or_baseline_status(android_dir, rec_file, rec_sha)
+        self.assertIn("is not in approved peer output artifact allowlist", str(ctx.exception))
+
+    def test_prepare_manifest_refuses_mismatched_template_source_pin_without_writing_manifest_or_approval(self):
+        # Create a throwaway output directory
+        out_dir = os.path.join(self.test_dir, 'prepare_pin_mismatch_test')
+        os.makedirs(out_dir, mode=0o700)
+
+        # Read genuine template and tamper one of the 4 source pins (guard_test_sha256)
+        template_source_path = os.path.join(REPO_ROOT, 'docs/integration/mobile-v2-integration-manifest.json')
+        with open(template_source_path, 'r') as f:
+            template_data = json.load(f)
+
+        tampered_data = dict(template_data)
+        tampered_data['guard_test_sha256'] = 'f' * 64
+
+        tampered_template_path = os.path.join(self.test_dir, 'tampered_manifest_template.json')
+        with open(tampered_template_path, 'w') as f:
+            json.dump(tampered_data, f)
+        os.chmod(tampered_template_path, 0o600)
+
+        backend_head = 'a' * 40
+        pub_head = 'b' * 40
+        exe_head = 'c' * 40
+
+        # Must raise ValueError on stale/mismatched template pin BEFORE writing manifest or approval
+        with self.assertRaises(ValueError) as ctx:
+            root_operator_tool.prepare_manifest(
+                out_dir,
+                backend_head,
+                pub_head,
+                exe_head,
+                REPO_ROOT,
+                template_path=tampered_template_path
+            )
+        self.assertIn("Source pin mismatch vs manifest template", str(ctx.exception))
+        self.assertIn("Guard test", str(ctx.exception))
+
+        # Critical: Assert that NEITHER pairing-manifest.json NOR prestart.json was written
+        pairing_manifest_file = os.path.join(out_dir, 'pairing-manifest.json')
+        prestart_file = os.path.join(out_dir, 'prestart.json')
+        self.assertFalse(os.path.exists(pairing_manifest_file), "pairing-manifest.json must not be written on pin mismatch")
+        self.assertFalse(os.path.exists(prestart_file), "prestart.json must not be written on pin mismatch")
+
+    def test_prepare_manifest_succeeds_when_template_source_pins_match(self):
+        out_dir = os.path.join(self.test_dir, 'prepare_pin_match_test')
+        os.makedirs(out_dir, mode=0o700)
+
+        backend_head = 'a' * 40
+        pub_head = 'b' * 40
+        exe_head = 'c' * 40
+
+        manifest_path, manifest_sha = root_operator_tool.prepare_manifest(
+            out_dir,
+            backend_head,
+            pub_head,
+            exe_head,
+            REPO_ROOT
+        )
+        self.assertTrue(os.path.isfile(manifest_path))
+        self.assertEqual(len(manifest_sha), 64)
+        with open(manifest_path, 'r') as f:
+            prepared = json.load(f)
+        self.assertEqual(prepared['backend_execution_head_sha'], backend_head)
+        self.assertEqual(prepared['peer_android_approved_head_sha'], pub_head)
+        self.assertEqual(prepared['peer_android_executable_head_sha'], exe_head)
+        self.assertEqual(prepared['status'], root_operator_tool.REQUIRED_SCOPE)
+
+    def test_make_prestart_json_supports_advanced_scope_and_rejects_unauthorized(self):
+        backend_head = 'a' * 40
+        pub_head = 'b' * 40
+        exe_head = 'c' * 40
+        manifest_sha = 'd' * 64
+
+        # 1. Default scope is REQUIRED_SCOPE
+        prestart_default = root_operator_tool.make_prestart_json(
+            manifest_sha, backend_head, pub_head, exe_head, REPO_ROOT
+        )
+        self.assertEqual(prestart_default['scope'], root_operator_tool.REQUIRED_SCOPE)
+        self.assertTrue(prestart_default['root_coordination_granted'])
+
+        # 2. Explicit SCOPE_ADVANCED_EXECUTION
+        prestart_advanced = root_operator_tool.make_prestart_json(
+            manifest_sha, backend_head, pub_head, exe_head, REPO_ROOT,
+            scope=root_operator_tool.SCOPE_ADVANCED_EXECUTION
+        )
+        self.assertEqual(prestart_advanced['scope'], root_operator_tool.SCOPE_ADVANCED_EXECUTION)
+
+        # 3. Unauthorized / invented scope raises ValueError
+        with self.assertRaises(ValueError) as ctx:
+            root_operator_tool.make_prestart_json(
+                manifest_sha, backend_head, pub_head, exe_head, REPO_ROOT,
+                scope='UNAUTHORIZED_INVENTED_SCOPE'
+            )
+        self.assertIn("Invalid scope 'UNAUTHORIZED_INVENTED_SCOPE'", str(ctx.exception))
+
+    def test_build_parser_parses_expected_scope_and_advanced_probes(self):
+        parser = operator_driver.build_parser()
+
+        # Basic prepare-only without advanced flags
+        args = parser.parse_args([
+            '--output-dir', '/tmp/test_out',
+            '--android-dir', '/tmp/test_android',
+            '--expected-backend-head', 'a' * 40,
+            '--android-pub-head', 'b' * 40,
+            '--android-exe-head', 'c' * 40,
+            '--binding-record', '/tmp/test_binding.json',
+            '--expected-binding-sha', 'd' * 64,
+            '--prepare-only',
+        ])
+        self.assertIsNone(args.expected_scope)
+        self.assertFalse(args.advanced_probes)
+
+        # Execute with advanced scope and advanced probes
+        args_adv = parser.parse_args([
+            '--output-dir', '/tmp/test_out',
+            '--android-dir', '/tmp/test_android',
+            '--expected-backend-head', 'a' * 40,
+            '--android-pub-head', 'b' * 40,
+            '--android-exe-head', 'c' * 40,
+            '--binding-record', '/tmp/test_binding.json',
+            '--expected-binding-sha', 'd' * 64,
+            '--execute',
+            '--manifest', '/tmp/manifest.json',
+            '--root-approval-file', '/tmp/prestart.json',
+            '--root-live-approval-file', '/tmp/future_live.json',
+            '--expected-scope', 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            '--advanced-probes',
+        ])
+        self.assertEqual(args_adv.expected_scope, 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION')
+        self.assertTrue(args_adv.advanced_probes)
+
+
+if __name__ == '__main__':
+    unittest.main()
+

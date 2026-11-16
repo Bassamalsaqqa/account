@@ -1,0 +1,1099 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Support\Harness;
+
+use Symfony\Component\Process\Process;
+
+/**
+ * Supervised Mobile V2 Paired Financial Integration Drill CLI Driver.
+ *
+ * Enforces strict adversarial execution invariants across all lifecycle stages:
+ * - pcntl signal handling and process supervision.
+ * - Mandatory prestart Root approval with mandatory TTL (0600/0700/UID/no-symlinks).
+ * - App tree admission validation via assertAdmittedAppTree.
+ * - Manifest SHA override verified against actual file bytes.
+ * - Candidate handoff exposed, followed by bounded wait for independent external live Root approval.
+ * - Strict TLS GET 200 with loopback URL allowlist.
+ * - Triple-match of sample, parsed, and raw canonical JSON.
+ * - Company integer ID resolved via proof PDO (never int-cast ULID).
+ * - Hard-gated child alive and hold deadline bounds before and after every phase.
+ * - Private unique output directory outside checkouts (0700/0600) retaining all artifacts before cleanup.
+ * - Structured exact cleanup verifying schema absence, listener absence, and temp cleanup.
+ */
+
+if (PHP_SAPI !== 'cli') {
+    fwrite(STDERR, "Error: Supervisor must be run from CLI.\n");
+    exit(1);
+}
+
+// 0. pcntl extension availability check
+if (! function_exists('pcntl_signal') || ! function_exists('pcntl_signal_dispatch')) {
+    fwrite(STDERR, "Error: pcntl extension is required for safe supervised process execution.\n");
+    exit(1);
+}
+
+$repoRoot = dirname(__DIR__, 3);
+require_once $repoRoot . '/vendor/autoload.php';
+
+// Argument parsing
+$argvList = $_SERVER['argv'] ?? [];
+$isExecute = false;
+$androidPubHead = null;
+$androidExeHead = null;
+$pairedHoldSeconds = SupervisedPairedFinancialDrill::DEFAULT_HOLD_SECONDS;
+$manifestPath = $repoRoot . '/docs/integration/mobile-v2-integration-manifest.json';
+$manifestShaOverride = null;
+$rootApprovalFile = null;
+$rootLiveApprovalFile = null;
+$androidRepoDir = null;
+$customOutputDir = null;
+$expectedScope = SupervisedPairedFinancialDrill::REQUIRED_SCOPE;
+
+foreach (array_slice($argvList, 1) as $arg) {
+    if ($arg === '--execute') {
+        $isExecute = true;
+    } elseif (str_starts_with($arg, '--expected-scope=')) {
+        $parsedScope = substr($arg, 17);
+        if (! in_array($parsedScope, SupervisedPairedFinancialDrill::ALLOWED_SCOPES, true)) {
+            fwrite(STDERR, "Error: Invalid expected scope '{$parsedScope}'.\n");
+            exit(1);
+        }
+        $expectedScope = $parsedScope;
+    } elseif ($arg === '--advanced-probes') {
+        $expectedScope = SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE;
+    } elseif (str_starts_with($arg, '--android-pub-head=')) {
+        $androidPubHead = substr($arg, 19);
+    } elseif (str_starts_with($arg, '--android-exe-head=')) {
+        $androidExeHead = substr($arg, 19);
+    } elseif (str_starts_with($arg, '--paired-hold-seconds=')) {
+        $pairedHoldSeconds = (int) substr($arg, 22);
+    } elseif (str_starts_with($arg, '--manifest=')) {
+        $manifestPath = substr($arg, 11);
+    } elseif (str_starts_with($arg, '--manifest-sha=')) {
+        $manifestShaOverride = substr($arg, 15);
+    } elseif (str_starts_with($arg, '--root-approval-file=')) {
+        $rootApprovalFile = substr($arg, 21);
+    } elseif (str_starts_with($arg, '--root-live-approval-file=')) {
+        $rootLiveApprovalFile = substr($arg, 26);
+    } elseif (str_starts_with($arg, '--android-repo-dir=')) {
+        $androidRepoDir = substr($arg, 19);
+        SupervisedPairedFinancialDrill::assertNotProtectedWorktree($androidRepoDir);
+    } elseif (str_starts_with($arg, '--output-dir=')) {
+        $customOutputDir = substr($arg, 13);
+    } elseif ($arg === '--help' || $arg === '-h') {
+        echo "Usage: php " . basename(__FILE__) . " [options]\n\n";
+        echo "Options:\n";
+        echo "  --execute                          Live execution gate (requires --root-approval-file and --root-live-approval-file)\n";
+        echo "  --root-approval-file=<path>        Mandatory Root prestart coordination approval file\n";
+        echo "  --root-live-approval-file=<path>   Mandatory Root live witness approval file (post-handoff, pre-JVM)\n";
+        echo "  --android-pub-head=<40hex>         Root-approved peer Android publication HEAD SHA\n";
+        echo "  --android-exe-head=<40hex>         Root-approved peer Android executable HEAD SHA\n";
+        echo "  --paired-hold-seconds=<1..120>     Bounded hold duration in seconds (default: 120)\n";
+        echo "  --manifest=<path>                  Pairing manifest path\n";
+        echo "  --manifest-sha=<64hex>             Manifest SHA256 pin override\n";
+        echo "  --android-repo-dir=<path>          Path to Android checkout (for JVM execution)\n";
+        echo "  --output-dir=<path>                Private unique directory for retained artifacts (0700/0600)\n";
+        echo "  --help, -h                         Show this help message\n";
+        exit(0);
+    } else {
+        fwrite(STDERR, "Error: Unknown argument '{$arg}'. Use --help for usage.\n");
+        exit(1);
+    }
+}
+
+// 1. Inspect dynamic git HEAD and app tree
+$headProcess = new Process(['git', 'rev-parse', 'HEAD'], $repoRoot);
+$headProcess->mustRun();
+$backendHead = trim($headProcess->getOutput());
+
+$treeProcess = new Process(['git', 'rev-parse', 'HEAD:app'], $repoRoot);
+$treeProcess->mustRun();
+$backendAppTree = trim($treeProcess->getOutput());
+
+// Verify app tree admission via actual method
+try {
+    $admittedTree = DisposableMobileV2BackendHarness::assertAdmittedAppTree($backendAppTree, $repoRoot);
+} catch (\Throwable $e) {
+    fwrite(STDERR, "Error: App tree admission failed: {$e->getMessage()}\n");
+    exit(1);
+}
+
+// 2. Verify source fixture and manifest hashes
+if (! is_file($manifestPath)) {
+    fwrite(STDERR, "Error: Manifest not found at '{$manifestPath}'.\n");
+    exit(1);
+}
+
+$manifestFileSha = hash_file('sha256', $manifestPath);
+if ($manifestShaOverride !== null && ! hash_equals($manifestFileSha, $manifestShaOverride)) {
+    fwrite(STDERR, "Error: Manifest SHA override does not match manifest file bytes: expected '{$manifestFileSha}', got '{$manifestShaOverride}'.\n");
+    exit(1);
+}
+$manifestSha = $manifestFileSha;
+
+$manifestRaw = (string) file_get_contents($manifestPath);
+$manifestData = json_decode($manifestRaw, true);
+if (! is_array($manifestData)) {
+    fwrite(STDERR, "Error: Manifest contains invalid JSON.\n");
+    exit(1);
+}
+
+$srcHarnessSha = hash_file('sha256', $repoRoot . '/tests/Support/Harness/DisposableMobileV2BackendHarness.php');
+$guardTestSha = hash_file('sha256', $repoRoot . '/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php');
+$cliCmdSha = hash_file('sha256', $repoRoot . '/tests/Support/Harness/MobileV2HarnessCommand.php');
+$cliRunnerSha = hash_file('sha256', $repoRoot . '/tests/Support/Harness/mobile-v2-harness-cli.php');
+
+$pinsMatch = ($srcHarnessSha === ($manifestData['source_fixture_sha256'] ?? ''))
+    && ($guardTestSha === ($manifestData['guard_test_sha256'] ?? ''))
+    && ($cliCmdSha === ($manifestData['cli_command_sha256'] ?? ''))
+    && ($cliRunnerSha === ($manifestData['cli_runner_sha256'] ?? ''));
+
+if (! $pinsMatch) {
+    fwrite(STDERR, "Error: Source pins mismatch vs manifest template.\n");
+    exit(1);
+}
+
+// 3. Private Unique Output Directory Setup (0700 outside checkouts)
+if ($customOutputDir !== null) {
+    $outputDir = $customOutputDir;
+    if (! is_dir($outputDir)) {
+        mkdir($outputDir, 0700, true);
+    }
+} else {
+    $outputDir = sys_get_temp_dir() . '/supervised_drill_out_' . bin2hex(random_bytes(8));
+    mkdir($outputDir, 0700, true);
+}
+SupervisedPairedFinancialDrill::assertSecureDirectoryPermissions($outputDir, 'OUTPUT');
+
+echo "==============================================================================\n";
+echo "Mobile V2 Paired Financial Integration Supervisor\n";
+echo "==============================================================================\n";
+echo "  Backend Runtime HEAD : {$backendHead}\n";
+echo "  Backend App Tree     : {$backendAppTree} (" . ($admittedTree === DisposableMobileV2BackendHarness::QUALIFIED_APP_TREE_G1 ? 'G1 ADMITTED' : 'BASE ADMITTED') . ")\n";
+echo "  Source Harness SHA   : {$srcHarnessSha} (MATCH)\n";
+echo "  Guard Test SHA       : {$guardTestSha} (MATCH)\n";
+echo "  CLI Command SHA      : {$cliCmdSha} (MATCH)\n";
+echo "  CLI Runner SHA       : {$cliRunnerSha} (MATCH)\n";
+echo "  Manifest SHA-256     : {$manifestSha}\n";
+echo "  Paired Hold Seconds  : {$pairedHoldSeconds}s\n";
+echo "  Private Output Dir   : {$outputDir} (0700)\n";
+
+// 4. Execution Gate: FAIL-CLOSED by default
+if (! $isExecute) {
+    echo "\nSUPERVISOR STATUS: DRY-RUN OK (defaults to NO-EXECUTE).\n";
+    echo "Staged lifecycle supervisor is verified against manifest pins and tree admission.\n";
+    echo "To run live execution, Root must grant coordination via --execute and --root-approval-file=<path>.\n";
+    exit(0);
+}
+
+// 5. Gate 1: Strict Prestart Root Approval Verification (Mandatory TTL, 0600/0700/UID)
+if ($rootApprovalFile === null || $rootApprovalFile === '') {
+    fwrite(STDERR, "\nError: FAIL-CLOSED: Live paired financial execution requires an explicit Root prestart coordination approval file.\n");
+    fwrite(STDERR, "Pass --root-approval-file=<path> containing verified Root coordination pins.\n");
+    exit(1);
+}
+
+try {
+    $approval = SupervisedPairedFinancialDrill::verifyPrestartApproval(
+        $rootApprovalFile,
+        $manifestSha,
+        $backendHead,
+        $androidPubHead,
+        $androidExeHead,
+        $repoRoot,
+        $expectedScope
+    );
+    $androidPubHead = $approval['android_publication_head'];
+    $androidExeHead = $approval['android_executable_head'];
+} catch (\Throwable $e) {
+    fwrite(STDERR, "\nError: FAIL-CLOSED: Prestart Root approval verification failed: {$e->getMessage()}\n");
+    exit(1);
+}
+
+echo "  Root Prestart Gate   : GRANTED (verified from {$rootApprovalFile})\n";
+echo "  Android Pub HEAD     : {$androidPubHead}\n";
+echo "  Android Exe HEAD     : {$androidExeHead}\n";
+
+// 6. Setup Signal Handling (No direct exit in handler to preserve finally block)
+$aborted = false;
+$abortSignal = 0;
+$checkAborted = function () use (&$aborted): bool {
+    if (function_exists('pcntl_signal_dispatch')) {
+        pcntl_signal_dispatch();
+    }
+
+    return $aborted;
+};
+
+$sigHandler = function (int $signo) use (&$aborted, &$abortSignal): void {
+    $aborted = true;
+    $abortSignal = $signo;
+};
+pcntl_signal(SIGINT, $sigHandler);
+pcntl_signal(SIGTERM, $sigHandler);
+
+/** @var Process|null $childProcess */
+$childProcess = null;
+$schemaName = null;
+$harnessDir = null;
+$snapshot = null;
+$pdo = null;
+$manifestOut = null;
+$parentEnvToRestore = [];
+$cleanupExecuted = false;
+$exitCode = 0;
+
+try {
+    echo "\nLaunching single child paired lifecycle (--run)...\n";
+    $childStartTime = microtime(true);
+    $deadline = $childStartTime + (float) $pairedHoldSeconds;
+
+    $childCmd = [
+        PHP_BINARY,
+        $repoRoot . '/tests/Support/Harness/mobile-v2-harness-cli.php',
+        '--run',
+        '--backend-head=' . $backendHead,
+        '--android-head=' . $androidPubHead,
+        '--pairing-manifest=' . $manifestPath,
+        '--pairing-manifest-sha=' . $manifestSha,
+        '--paired-hold-seconds=' . $pairedHoldSeconds,
+        '--expected-scope=' . $expectedScope,
+    ];
+    if ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE) {
+        $childCmd[] = '--advanced-probes';
+    }
+    if ($rootApprovalFile !== null && $rootApprovalFile !== '') {
+        $childCmd[] = '--root-approval-file=' . $rootApprovalFile;
+    }
+    $liveApprovalFileForChild = $rootLiveApprovalFile ?? ($outputDir . '/live_root_approval.json');
+    $childCmd[] = '--root-live-approval-file=' . $liveApprovalFileForChild;
+
+    $childEnv = array_merge($_ENV, [
+        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'MOBILE_V2_HARNESS_START_LISTENER' => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+    ]);
+
+    $childProcess = new Process($childCmd, $repoRoot, $childEnv, null, (float) ($pairedHoldSeconds + 15));
+
+    $childOutput = '';
+    $caCertPath = null;
+    $transportActive = false;
+
+    $childProcess->start(function ($type, $buffer) use (&$childOutput, &$schemaName, &$caCertPath, &$transportActive): void {
+        $childOutput .= $buffer;
+        if ($type === Process::ERR) {
+            fwrite(STDERR, "[Child ERR] " . $buffer);
+        } else {
+            if ($schemaName === null && preg_match('/Provision OK — schema:\s+([a-zA-Z0-9_]+)/', $buffer, $m)) {
+                $schemaName = trim($m[1]);
+            }
+            if ($caCertPath === null && preg_match('/Test CA cert\s+:\s+(\S+)/', $buffer, $m)) {
+                $caCertPath = trim($m[1]);
+            }
+            if (! $transportActive && str_contains($buffer, 'Supervised transport active.')) {
+                $transportActive = true;
+            }
+        }
+    });
+
+    // Bounded wait for transport readiness
+    $startWait = microtime(true);
+    while (! $transportActive && (microtime(true) - $startWait) < 30.0) {
+        if ($checkAborted()) {
+            throw new \RuntimeException("Execution aborted by signal {$abortSignal}.");
+        }
+        if (! $childProcess->isRunning()) {
+            throw new \RuntimeException("Child harness terminated prematurely with code " . $childProcess->getExitCode() . ":\n" . $childOutput);
+        }
+        usleep(100000);
+    }
+
+    if (! $transportActive || $caCertPath === null || $schemaName === null) {
+        throw new \RuntimeException("Timed out awaiting child transport readiness or path discovery.");
+    }
+
+    echo "  [Child] Schema       : {$schemaName}\n";
+    echo "  [Child] CA Cert      : {$caCertPath}\n";
+
+    // 7. Discover & Verify Owned Directories & Artifacts (0700 dirs, 0600 files, no symlinks)
+    $bootstrapDir = dirname($caCertPath);
+    SupervisedPairedFinancialDrill::assertSecureDirectoryPermissions($bootstrapDir, 'BOOTSTRAP');
+    if (basename($bootstrapDir) !== 'bootstrap') {
+        throw new \RuntimeException("Invalid bootstrap directory name: '{$bootstrapDir}'.");
+    }
+    SupervisedPairedFinancialDrill::assertSecureFilePermissions($caCertPath, 'CA_CERT');
+
+    $harnessDir = dirname($bootstrapDir);
+    SupervisedPairedFinancialDrill::assertSecureDirectoryPermissions($harnessDir, 'HARNESS_TEMP');
+    if (! preg_match('/^v2_harness_[0-9a-f]{16}$/', basename($harnessDir))) {
+        throw new \RuntimeException("Invalid harness temporary directory naming: '{$harnessDir}'.");
+    }
+
+    $childConfigPath = $bootstrapDir . '/child_bootstrap_config.json';
+    SupervisedPairedFinancialDrill::assertSecureFilePermissions($childConfigPath, 'CHILD_CONFIG');
+
+    // 8. Capture Verified Owned Snapshot EARLIEST (BEFORE TLS probe & handoff validation)
+    //    Capturing snapshot immediately after child config discovery guarantees that ANY
+    //    subsequent pre-live failure (TLS probe failure, malformed handoff, witness timeout)
+    //    enters the finally block with a valid VerifiedOwnedSnapshot, ensuring automated child
+    //    reaping, admin schema drop on port 3342, and harness temp cleanup.
+    //
+    // Snapshot parent env allowlist from ALL THREE stores BEFORE any mutation:
+    $envAllowlist = [
+        'APP_ENV',
+        'MOBILE_V2_HARNESS_ENABLE',
+        'PHASE8_ALLOW_DISPOSABLE_DB',
+        'PHASE8_TEST_DB_HOST',
+        'PHASE8_TEST_DB_PORT',
+        'PHASE8_TEST_DB_USERNAME',
+        'PHASE8_TEST_DB_PASSWORD',
+        'PHASE8_TEST_DB_EMPTY_PASSWORD',
+        'PHASE8_DISPOSABLE_DB_PROOF',
+        'PHASE8_DISPOSABLE_DB_NONCE',
+    ];
+    $parentEnvToRestore = SupervisedPairedFinancialDrill::snapshotEnvironmentStores($envAllowlist);
+
+    // Set scoped testing flags required for DisposableMariaDbSchema::assertPrimarySchema validation
+    $scopedPreCaptureVars = [
+        'APP_ENV'                  => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE' => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+    ];
+    foreach ($scopedPreCaptureVars as $varName => $varVal) {
+        putenv("{$varName}={$varVal}");
+        $_ENV[$varName]    = $varVal;
+        $_SERVER[$varName] = $varVal;
+    }
+
+    // Load bootstrap credentials from child config
+    $creds = DisposableFinancialPostRunInspector::loadSecureBootstrapCredentials($childConfigPath, $schemaName);
+    $proofPath = $creds['proof_path'];
+    $proofNonce = $creds['proof_nonce'];
+
+    // Discover process PIDs path if written by harness (advanced execution)
+    $pidsPath = $bootstrapDir . '/process_pids.json';
+    $pidsJsonPath = is_file($pidsPath) ? $pidsPath : null;
+    $childPid = $childProcess->getPid();
+
+    // Capture verified owned snapshot: performs full proof/nonce/permissions/assertPrimarySchema and process ownership verification
+    $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
+        schemaName: $schemaName,
+        proofPath: $proofPath,
+        proofNonce: $proofNonce,
+        harnessDir: $harnessDir,
+        childPid: $childPid,
+        repoRoot: $repoRoot,
+        pidsJsonPath: $pidsJsonPath
+    );
+
+    // Construct explicit inspectorEnv array with testing flags and testing DB creds (subprocess env)
+    $inspectorEnv = array_merge($_ENV, [
+        'APP_ENV'                    => 'testing',
+        'MOBILE_V2_HARNESS_ENABLE'   => '1',
+        'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+        'PHASE8_TEST_DB_HOST'        => $creds['host'],
+        'PHASE8_TEST_DB_PORT'        => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME'    => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD'    => $creds['password'],
+        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
+        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
+    ]);
+    if ($creds['password'] === '') {
+        $inspectorEnv['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+    }
+
+    // Apply remaining scoped putenv mutations (host/port/user/password/proof) for parent process
+    $scopedPostCaptureVars = [
+        'PHASE8_TEST_DB_HOST'        => $creds['host'],
+        'PHASE8_TEST_DB_PORT'        => $creds['port'],
+        'PHASE8_TEST_DB_USERNAME'    => $creds['username'],
+        'PHASE8_TEST_DB_PASSWORD'    => $creds['password'],
+        'PHASE8_DISPOSABLE_DB_PROOF' => (string) $proofPath,
+        'PHASE8_DISPOSABLE_DB_NONCE' => (string) $proofNonce,
+    ];
+    if ($creds['password'] === '') {
+        $scopedPostCaptureVars['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+    }
+    foreach ($scopedPostCaptureVars as $varName => $varVal) {
+        putenv("{$varName}={$varVal}");
+        $_ENV[$varName]    = $varVal;
+        $_SERVER[$varName] = $varVal;
+    }
+
+    // 9. Discover & Validate Full Client Handoff Contract & Triple Match
+    $handoffPath = $harnessDir . '/runtime_client_handoff.json';
+    SupervisedPairedFinancialDrill::assertSecureFilePermissions($handoffPath, 'CLIENT_HANDOFF');
+
+    $handoffRaw = (string) file_get_contents($handoffPath);
+    $candidateHandoffSha = hash('sha256', $handoffRaw);
+    $handoff = json_decode($handoffRaw, true);
+    if (! is_array($handoff)) {
+        throw new \RuntimeException("Handoff file contains invalid JSON.");
+    }
+
+    DisposableMobileV2BackendHarness::validateClientHandoff($handoff);
+    SupervisedPairedFinancialDrill::verifyHandoffTripleMatch($handoff);
+
+    if (($handoff['lifecycle_phase'] ?? '') !== 'ACTIVE_TLS_READY') {
+        throw new \RuntimeException("Handoff lifecycle_phase must be ACTIVE_TLS_READY.");
+    }
+
+    $readinessUrl = (string) ($handoff['startup_tls']['readiness_url'] ?? '');
+    $readinessNonce = (string) ($handoff['startup_tls']['readiness_nonce'] ?? '');
+    $caCertSha = (string) ($handoff['startup_tls']['ca_cert_sha256'] ?? '');
+
+    if (! hash_equals(hash_file('sha256', $caCertPath), $caCertSha)) {
+        throw new \RuntimeException("CA cert SHA256 mismatch vs handoff startup_tls.");
+    }
+
+    // Strict TLS GET 200 with URL allowlist before JVM and external Root approval
+    echo "  [Probe] Performing strict TLS GET 200 check to allowlisted loopback URL...\n";
+    SupervisedPairedFinancialDrill::performStrictTlsReadinessCheck($readinessUrl, $caCertPath, $readinessNonce);
+    echo "  [Probe] Strict TLS probe verified 200 OK with matching nonce.\n";
+
+    // 10. Expose Candidate Handoff for Independent External Live Root Approval
+    echo "\n==============================================================================\n";
+    echo "CANDIDATE CLIENT HANDOFF EXPOSED FOR ROOT WITNESS RECORD:\n";
+    echo "  Path   : {$handoffPath}\n";
+    echo "  SHA256 : {$candidateHandoffSha}\n";
+    echo "==============================================================================\n";
+
+    // 11. Extract Payloads & Verified Canonical Digest (Receipt Semantics: profile digest != raw wire SHA)
+    $rawWirePayloadSha = (string) ($handoff['raw_wire_sample']['raw_wire_payload_sha256'] ?? '');
+    $rawProfileDigest = (string) ($handoff['canonical_intent_profile_digest'] ?? '');
+    $canonicalPayloadDigest = SupervisedPairedFinancialDrill::normalizeCanonicalDigest($rawProfileDigest);
+    $companyUlid = (string) ($handoff['fixture']['company_public_id'] ?? '');
+    $expectedEventId = (string) ($handoff['fixture']['sample_event_id'] ?? '');
+
+    // 12. Gate 2: Bounded Wait for Independent External Live Root Approval (45s humane bound)
+    $liveApprovalTarget = $rootLiveApprovalFile ?? $outputDir . '/live_root_approval.json';
+    echo "Awaiting independent external Root live approval at '{$liveApprovalTarget}'...\n";
+
+    $rootApprovedHandoffSha = SupervisedPairedFinancialDrill::awaitAndVerifyLiveRootApproval(
+        $liveApprovalTarget,
+        $handoffPath,
+        $candidateHandoffSha,
+        $backendHead,
+        $androidPubHead,
+        $androidExeHead,
+        $manifestSha,
+        $schemaName,
+        $childProcess,
+        $deadline,
+        $checkAborted,
+        45.0,
+        $expectedScope
+    );
+    echo "  Root Live Gate       : GRANTED (witnessed SHA: {$rootApprovedHandoffSha})\n";
+
+
+    // Connect proof PDO and resolve integer company_id (DB inspection strictly AFTER approvals)
+    $pdo = DisposableFinancialPostRunInspector::assertExecutionGates($schemaName);
+    $companyId = SupervisedPairedFinancialDrill::resolveCompanyIntegerId($pdo, $companyUlid);
+
+    echo "  [DB] Company Public ULID : {$companyUlid}\n";
+    echo "  [DB] Company Integer ID  : {$companyId} (resolved via proof PDO)\n";
+
+    // 12. Pre-Run Baseline Capture (Hard-gated before/after & bounded timeout)
+    if (! $childProcess->isRunning()) {
+        throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_BASELINE');
+    }
+    $remBaseline = SupervisedPairedFinancialDrill::computeRemainingDeadline($deadline, 30.0);
+    $baselineTimeout = min($remBaseline - 25.0, 15.0);
+
+    $baselineFile = $outputDir . '/pre_run_baseline.json';
+    $baselineCmd = [
+        PHP_BINARY,
+        $repoRoot . '/tests/Support/Harness/financial-inspector-cli.php',
+        '--baseline',
+        '--credentials-file=' . $childConfigPath,
+        '--schema=' . $schemaName,
+        '--company-id=' . $companyId,
+        '--output=' . $baselineFile,
+    ];
+    $baselineProc = new Process($baselineCmd, $repoRoot, $inspectorEnv, null, $baselineTimeout);
+    $baselineProc->mustRun();
+    chmod($baselineFile, 0600);
+
+    if (! $childProcess->isRunning()) {
+        throw new \RuntimeException('CHILD_HARNESS_TERMINATED_AFTER_BASELINE');
+    }
+
+    $baselineData = json_decode((string) file_get_contents($baselineFile), true);
+    if (! is_array($baselineData)) {
+        throw new \RuntimeException("Baseline output is not valid JSON.");
+    }
+    $canonicalBaselineHash = DisposableFinancialPostRunInspector::computeCanonicalBaselineHash(
+        $companyId,
+        $schemaName,
+        $baselineData
+    );
+    echo "  [Baseline] Hash      : {$canonicalBaselineHash} (canonical)\n";
+
+    // 12. Execute Android Test Under Host JVM (Strictly 7 Approved Env Vars, Bounded Timeout)
+    $targetAndroidDir = $androidRepoDir ?? $repoRoot . '/../android';
+    SupervisedPairedFinancialDrill::assertNotProtectedWorktree($targetAndroidDir);
+    if (! is_dir($targetAndroidDir)) {
+        throw new \RuntimeException("Android repo directory not found at '{$targetAndroidDir}'.");
+    }
+
+    $isAdvanced = ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE);
+
+    $evidenceRelPath = $isAdvanced
+        ? 'docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-advanced-evidence.json'
+        : 'docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json';
+    $evidenceFile = is_file($targetAndroidDir . '/' . $evidenceRelPath)
+        ? $targetAndroidDir . '/' . $evidenceRelPath
+        : $targetAndroidDir . '/app/' . $evidenceRelPath;
+
+    $preRunTime = time();
+    $preRunSha = is_file($evidenceFile) ? hash_file('sha256', $evidenceFile) : null;
+
+    if (! $childProcess->isRunning()) {
+        throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_GRADLE');
+    }
+    $remGradle = SupervisedPairedFinancialDrill::computeRemainingDeadline($deadline, 25.0);
+    $gradleTimeout = min($remGradle - 20.0, 90.0);
+
+    $androidTestTests = $isAdvanced
+        ? [
+            '--tests',
+            'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotAdvancedTest.executePairedOnlineCashPilotAdvancedProbes',
+        ]
+        : [
+            '--tests',
+            'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke',
+            '--tests',
+            'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.testCashPilotFinancialAcceptanceEnforcement',
+        ];
+
+    $gradleCmd = array_merge([
+        './gradlew',
+        'cleanTestDebugUnitTest',
+        'testDebugUnitTest',
+        '--no-build-cache',
+    ], $androidTestTests, [
+        '--max-workers=1',
+        '-Dorg.gradle.workers.max=1',
+        '-Dorg.gradle.jvmargs=-XX:ActiveProcessorCount=2 -XX:+UseSerialGC -Xmx1536m',
+        '-Pkotlin.compiler.execution.strategy=in-process',
+        '--no-daemon',
+    ]);
+
+    $gradleEnv = [
+        'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin',
+        'JAVA_HOME' => getenv('JAVA_HOME') ?: '',
+        'HOME' => getenv('HOME') ?: '',
+        'SMALL_TRADER_CASH_PILOT_HANDOFF' => $handoffPath,
+        'SMALL_TRADER_EXPECTED_BACKEND_SHA' => $backendHead,
+        'SMALL_TRADER_EXPECTED_CLIENT_SHA' => $androidPubHead,
+        'SMALL_TRADER_EXPECTED_CLIENT_EXECUTABLE_SHA' => $androidExeHead,
+        'SMALL_TRADER_EXPECTED_HANDOFF_SHA' => $candidateHandoffSha,
+        'SMALL_TRADER_EXPECTED_LIFECYCLE' => SupervisedPairedFinancialDrill::REQUIRED_LIFECYCLE_GRANT,
+        'SMALL_TRADER_ROOT_APPROVED_HANDOFF_SHA' => $rootApprovedHandoffSha,
+    ];
+
+    echo "\nExecuting Android client under host JVM (timeout: {$gradleTimeout}s)...\n";
+    $gradleProc = new Process($gradleCmd, $targetAndroidDir, $gradleEnv, null, $gradleTimeout);
+
+    $rawLogPath = $outputDir . '/raw_android_test_output.log';
+    $touchBytes = @file_put_contents($rawLogPath, '');
+    if ($touchBytes === false) {
+        throw new \RuntimeException("FAILED_TO_CREATE_ANDROID_LOG: unable to create '{$rawLogPath}'");
+    }
+    if (! @chmod($rawLogPath, 0600) || (fileperms($rawLogPath) & 0777) !== 0600) {
+        throw new \RuntimeException("FAILED_TO_CHMOD_ANDROID_LOG: failed to set 0600 on '{$rawLogPath}'");
+    }
+
+    $rawLogHandle = @fopen($rawLogPath, 'wb');
+    if ($rawLogHandle === false) {
+        throw new \RuntimeException("FAILED_TO_OPEN_ANDROID_LOG: unable to open '{$rawLogPath}' for writing");
+    }
+
+    $rawGradleOutput = '';
+    try {
+        $gradleProc->run(function ($type, $buffer) use (&$rawGradleOutput, $rawLogHandle, $rawLogPath): void {
+            $rawGradleOutput .= $buffer;
+            $written = @fwrite($rawLogHandle, $buffer);
+            if ($written === false || $written !== strlen($buffer)) {
+                throw new \RuntimeException("FAILED_TO_WRITE_ANDROID_LOG: fwrite failed on '{$rawLogPath}'");
+            }
+            if (! @fflush($rawLogHandle)) {
+                throw new \RuntimeException("FAILED_TO_FLUSH_ANDROID_LOG: fflush failed on '{$rawLogPath}'");
+            }
+        });
+    } finally {
+        if (is_resource($rawLogHandle)) {
+            @fclose($rawLogHandle);
+        }
+        if (is_file($rawLogPath)) {
+            @chmod($rawLogPath, 0600);
+        }
+    }
+
+    if (! $gradleProc->isSuccessful()) {
+        throw new \RuntimeException("Android test execution failed with exit code " . $gradleProc->getExitCode() . ".");
+    }
+
+    if (! $childProcess->isRunning()) {
+        throw new \RuntimeException("Child harness terminated after Gradle test execution.");
+    }
+
+    // 13. Verify Fresh Evidence and JUnit XML Results
+    $freshEvidence = SupervisedPairedFinancialDrill::verifyEvidenceFreshness(
+        $evidenceFile,
+        $preRunTime,
+        $preRunSha,
+        $backendHead,
+        $androidPubHead,
+        $androidExeHead,
+        $rootApprovedHandoffSha,
+        $expectedScope
+    );
+    $witnessedRunId = (string) ($freshEvidence['runId'] ?? '');
+    if ($witnessedRunId === '' || preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $witnessedRunId) !== 1) {
+        throw new \RuntimeException("Witnessed client runId missing or invalid UUID format.");
+    }
+    $expectedEvidenceSha = hash_file('sha256', $evidenceFile);
+
+    // Locate and verify JUnit XML report
+    $junitXml = null;
+    $possibleXmlDirs = [
+        $targetAndroidDir . '/app/build/test-results/testDebugUnitTest',
+        $targetAndroidDir . '/build/test-results/testDebugUnitTest',
+    ];
+    foreach ($possibleXmlDirs as $d) {
+        if (is_dir($d)) {
+            $files = glob($d . '/*.xml');
+            if (! empty($files)) {
+                $junitXml = $files[0];
+                break;
+            }
+        }
+    }
+    if ($junitXml === null) {
+        throw new \RuntimeException("JUnit XML test report not found in Android build directories.");
+    }
+
+    $minJunitTests = $isAdvanced ? 1 : 2;
+    $xmlResults = SupervisedPairedFinancialDrill::verifyJunitTestResults($junitXml, $preRunTime, $minJunitTests);
+    echo "  [JUnit] Tests Passed : {$xmlResults['tests']} (0 failures, 0 errors, 0 skipped)\n";
+
+    // Retain fresh artifacts in private output dir with 0600 permissions
+    $retainedEvidenceName = $isAdvanced
+        ? 'paired-online-cash-pilot-advanced-evidence.json'
+        : 'paired-online-cash-pilot-evidence.json';
+    $retainedEvidencePath = $outputDir . '/' . $retainedEvidenceName;
+    copy($evidenceFile, $retainedEvidencePath);
+    chmod($retainedEvidencePath, 0600);
+
+    $retainedXmlPath = $outputDir . '/junit-test-report.xml';
+    copy($junitXml, $retainedXmlPath);
+    chmod($retainedXmlPath, 0600);
+
+    // 14. In-Schema Inspection & Outer Evidence Validation (Hard-gated before/after)
+    if (! $childProcess->isRunning()) {
+        throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_DELTA_INSPECTION');
+    }
+    $remDelta = SupervisedPairedFinancialDrill::computeRemainingDeadline($deadline, 20.0);
+    $deltaTimeout = min($remDelta - 15.0, 15.0);
+
+    $deltaFile = $outputDir . '/delta_inspection.json';
+    $deltaCmd = [
+        PHP_BINARY,
+        $repoRoot . '/tests/Support/Harness/financial-inspector-cli.php',
+        '--inspect-delta',
+        '--credentials-file=' . $childConfigPath,
+        '--schema=' . $schemaName,
+        '--company-id=' . $companyId,
+        '--baseline-file=' . $baselineFile,
+        '--expected-event-id=' . $expectedEventId,
+        '--expected-payload-digest=' . $canonicalPayloadDigest,
+        '--output=' . $deltaFile,
+    ];
+    $deltaProc = new Process($deltaCmd, $repoRoot, $inspectorEnv, null, $deltaTimeout);
+    $deltaProc->mustRun();
+    chmod($deltaFile, 0600);
+
+    if (! $childProcess->isRunning()) {
+        throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_RECONCILIATION');
+    }
+    $remRecon = SupervisedPairedFinancialDrill::computeRemainingDeadline($deadline, 15.0);
+    $reconTimeout = min($remRecon - 10.0, 15.0);
+
+    $reconcileFile = $outputDir . '/reconciliation_results.json';
+    $reconcileCmd = [
+        PHP_BINARY,
+        $repoRoot . '/tests/Support/Harness/financial-inspector-cli.php',
+        '--reconcile',
+        '--credentials-file=' . $childConfigPath,
+        '--schema=' . $schemaName,
+        '--company-id=' . $companyId,
+        '--output=' . $reconcileFile,
+    ];
+    $reconcileProc = new Process($reconcileCmd, $repoRoot, $inspectorEnv, null, $reconTimeout);
+    $reconcileProc->mustRun();
+    chmod($reconcileFile, 0600);
+
+    // In advanced scope, execute rollback probe scanner and zero-delta verification across negative probes
+    if ($isAdvanced) {
+        if (! $childProcess->isRunning()) {
+            throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_ROLLBACK_PROBE_INSPECTION');
+        }
+        echo "  [Rollback] Performing post-run probe snapshot and zero-delta verification...\n";
+        $rollbackSnapshot = DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot(
+            $pdo,
+            $companyId,
+            $schemaName
+        );
+        $rollbackReportPath = $outputDir . '/rollback_probes_db_report.json';
+        file_put_contents($rollbackReportPath, json_encode($rollbackSnapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        chmod($rollbackReportPath, 0600);
+        echo "  [Rollback] Probe snapshot captured (row fingerprint: {$rollbackSnapshot['row_fingerprint_sha256']})\n";
+
+        // Read probe event IDs from advanced_control_packet.json referenced in runtime_credentials.json
+        $runtimeCredsPath = (string) ($handoff['credentials_path'] ?? ($harnessDir . '/runtime_credentials.json'));
+        SupervisedPairedFinancialDrill::assertSecureFilePermissions($runtimeCredsPath, 'RUNTIME_CREDENTIALS');
+        $runtimeCreds = json_decode((string) file_get_contents($runtimeCredsPath), true);
+        if (! is_array($runtimeCreds)) {
+            throw new \RuntimeException('INVALID_RUNTIME_CREDENTIALS_JSON');
+        }
+        $acpPath = (string) ($runtimeCreds['advanced_control_packet_path'] ?? '');
+        $acpSha = (string) ($runtimeCreds['advanced_control_packet_sha256'] ?? '');
+        if ($acpPath === '' || $acpSha === '') {
+            throw new \RuntimeException('MISSING_ADVANCED_CONTROL_PACKET_FILE');
+        }
+        $acpData = DisposableFinancialPostRunInspector::loadSecureContainedJsonFile(
+            $acpPath,
+            dirname($acpPath),
+            'advanced_control_packet.json',
+            'ADVANCED_CONTROL_PACKET',
+            $acpSha
+        );
+        $probeEventMap = DisposableFinancialPostRunInspector::validateAdvancedControlPacket($acpData, $expectedEventId);
+
+        $activeProbeIds = array_values($probeEventMap);
+        $inClause = implode(',', array_fill(0, count($activeProbeIds), '?'));
+        $queryParams = array_merge([$companyId], $activeProbeIds);
+
+        // Assert negative probe events never committed mobile_event_receipts
+        $receiptCheck = $pdo->prepare("SELECT COUNT(*) FROM mobile_event_receipts WHERE company_id = ? AND client_event_id IN ({$inClause})");
+        $receiptCheck->execute($queryParams);
+        $receiptCount = (int) $receiptCheck->fetchColumn();
+        if ($receiptCount > 0) {
+            throw new \RuntimeException("ROLLBACK_PROBE_RECEIPT_COMMITTED: expected 0, found {$receiptCount}");
+        }
+
+        // Assert negative probe events never committed sales_invoices (linked via mobile_event_receipts)
+        $invCheck = $pdo->prepare("SELECT COUNT(*) FROM sales_invoices si INNER JOIN mobile_event_receipts mer ON mer.sales_invoice_id = si.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
+        $invCheck->execute($queryParams);
+        $invCount = (int) $invCheck->fetchColumn();
+        if ($invCount > 0) {
+            throw new \RuntimeException("ROLLBACK_PROBE_INVOICE_COMMITTED: expected 0, found {$invCount}");
+        }
+
+        // Assert negative probe events never committed customer_payments (linked via mobile_event_receipts)
+        $payCheck = $pdo->prepare("SELECT COUNT(*) FROM customer_payments cp INNER JOIN mobile_event_receipts mer ON mer.customer_payment_id = cp.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
+        $payCheck->execute($queryParams);
+        $payCount = (int) $payCheck->fetchColumn();
+        if ($payCount > 0) {
+            throw new \RuntimeException("ROLLBACK_PROBE_PAYMENT_COMMITTED: expected 0, found {$payCount}");
+        }
+        echo "  [Rollback] Verified 0 rows committed for negative probe event IDs.\n";
+
+        // Verify exactly three probe reports at the declared owned path ($bootstrapDir)
+        $probeManifestPath = $bootstrapDir . '/probe_reports_manifest.json';
+        if (! is_file($probeManifestPath)) {
+            throw new \RuntimeException("MISSING_PROBE_REPORTS_MANIFEST: {$probeManifestPath}");
+        }
+        SupervisedPairedFinancialDrill::assertSecureFilePermissions($probeManifestPath, 'PROBE_REPORTS_MANIFEST');
+        $probeManifest = json_decode((string) file_get_contents($probeManifestPath), true);
+        if (! is_array($probeManifest)) {
+            throw new \RuntimeException('INVALID_PROBE_REPORTS_MANIFEST_JSON');
+        }
+
+        $expectedStatusMap = [
+            'permission_denial' => 403,
+            'insufficient_stock' => 422,
+            'controlled_fault_after_posting' => 500,
+        ];
+
+        $requiredServiceNames = [
+            'AccountingReconciliationService',
+            'InventoryReconciliationService',
+            'SalesReconciliationService',
+            'PayablesReconciliationService',
+            'MoneyReconciliationService',
+            'Phase7ReconciliationService',
+        ];
+
+        foreach ($probeEventMap as $pName => $expectedProbeId) {
+            $canonicalProbeName = DisposableFinancialPostRunInspector::normalizeRollbackProbeName($pName);
+            if ($canonicalProbeName === null) {
+                throw new \RuntimeException("UNKNOWN_PROBE_NAME: '{$pName}'");
+            }
+
+            $reportFile = $bootstrapDir . '/probe_' . $canonicalProbeName . '_report.json';
+            if (! is_file($reportFile)) {
+                throw new \RuntimeException("MISSING_ROLLBACK_PROBE_REPORT: probe '{$canonicalProbeName}' report not found at {$reportFile}");
+            }
+            SupervisedPairedFinancialDrill::assertSecureFilePermissions($reportFile, 'PROBE_REPORT_' . strtoupper($canonicalProbeName));
+            $reportRaw = (string) file_get_contents($reportFile);
+            $reportSha = hash('sha256', $reportRaw);
+
+            // Verify report hash against immutable manifest index
+            $manifestEntry = $probeManifest[$canonicalProbeName] ?? null;
+            if (! is_array($manifestEntry) || ! hash_equals((string) ($manifestEntry['report_sha256'] ?? ''), $reportSha)) {
+                throw new \RuntimeException("PROBE_REPORT_HASH_TAMPERED: probe '{$canonicalProbeName}' hash mismatch vs manifest index");
+            }
+
+            $rep = json_decode($reportRaw, true);
+            if (! is_array($rep)) {
+                throw new \RuntimeException("INVALID_PROBE_REPORT_JSON: probe '{$canonicalProbeName}'");
+            }
+
+            // Verify raw per-probe reconciliation artifact exists and matches SHA
+            $rawReconPath = $bootstrapDir . '/probe_' . $canonicalProbeName . '_reconciliation.json';
+            if (! is_file($rawReconPath)) {
+                throw new \RuntimeException("MISSING_RAW_RECON_ARTIFACT: probe '{$canonicalProbeName}'");
+            }
+            SupervisedPairedFinancialDrill::assertSecureFilePermissions($rawReconPath, 'RAW_RECON_' . strtoupper($canonicalProbeName));
+            $rawReconContent = (string) file_get_contents($rawReconPath);
+            $actualReconSha = hash('sha256', $rawReconContent);
+            if (! hash_equals((string) ($manifestEntry['reconciliation_sha256'] ?? ''), $actualReconSha)) {
+                throw new \RuntimeException("RAW_RECON_SHA_MISMATCH: probe '{$canonicalProbeName}' vs manifest");
+            }
+
+            $expectedHttpStatus = DisposableFinancialPostRunInspector::expectedRollbackProbeHttpStatus($canonicalProbeName);
+            if ($expectedHttpStatus === null) {
+                throw new \RuntimeException("MISSING_EXPECTED_STATUS_FOR_PROBE: '{$canonicalProbeName}'");
+            }
+
+            $expectedContext = [
+                'probe_name' => $canonicalProbeName,
+                'client_event_id' => $expectedProbeId,
+                'expected_http_status' => $expectedHttpStatus,
+                'schema_name' => $schemaName,
+                'company_id' => $companyId,
+                'backend_head' => $backendHead,
+                'handoff_sha256' => $candidateHandoffSha,
+            ];
+
+            $verifyResult = DisposableFinancialPostRunInspector::verifyProbeReportPayload($rep, $rawReconContent, $expectedContext);
+            if (! $verifyResult['is_valid']) {
+                throw new \RuntimeException("PROBE_REPORT_VERIFICATION_FAILED: probe '{$canonicalProbeName}': " . implode('; ', $verifyResult['errors']));
+            }
+
+            echo "  [Rollback] Verified proxy probe report for '{$canonicalProbeName}': zero-delta recomputed OK, 6 reconcilers healthy (0 issues), artifact SHA pinned.\n";
+        }
+        $probeManifestSha = hash_file('sha256', $probeManifestPath);
+        echo "  [Rollback] Verified all 3 rollback probe reports and immutable manifest (SHA: {$probeManifestSha}).\n";
+    }
+
+    if (! $childProcess->isRunning()) {
+        throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_REPORT_COMPOSE');
+    }
+    $remReport = SupervisedPairedFinancialDrill::computeRemainingDeadline($deadline, 10.0);
+    $reportTimeout = min($remReport - 5.0, 10.0);
+
+    $trustedDbReportFile = $outputDir . '/trusted_db_report.json';
+    $composeCmd = [
+        PHP_BINARY,
+        $repoRoot . '/tests/Support/Harness/financial-inspector-cli.php',
+        '--compose-trusted-report',
+        '--baseline-file=' . $baselineFile,
+        '--delta-file=' . $deltaFile,
+        '--reconcile-file=' . $reconcileFile,
+        '--schema=' . $schemaName,
+        '--company-id=' . $companyId,
+        '--run-id=' . $witnessedRunId,
+        '--expected-backend-head=' . $backendHead,
+        '--expected-handoff-digest=' . $candidateHandoffSha,
+        '--expected-event-id=' . $expectedEventId,
+        '--expected-scope=' . $expectedScope,
+        '--output=' . $trustedDbReportFile,
+    ];
+    if ($isAdvanced) {
+        if (! isset($probeManifestPath) || ! is_file($probeManifestPath)) {
+            throw new \RuntimeException('MISSING_MANDATORY_PROBE_REPORTS_MANIFEST_FOR_ADVANCED_COMPOSE');
+        }
+        $composeCmd[] = '--probe-reports-manifest=' . $probeManifestPath;
+        $composeCmd[] = '--expected-probe-manifest-sha=' . $probeManifestSha;
+        if (! isset($acpPath) || ! is_file($acpPath) || $acpSha === '') {
+            throw new \RuntimeException('MISSING_MANDATORY_ADVANCED_CONTROL_PACKET_FOR_ADVANCED_COMPOSE');
+        }
+        $composeCmd[] = '--acp-file=' . $acpPath;
+        $composeCmd[] = '--expected-acp-sha=' . $acpSha;
+    }
+    $composeProc = new Process($composeCmd, $repoRoot, $inspectorEnv, null, $reportTimeout);
+    $composeProc->mustRun();
+    chmod($trustedDbReportFile, 0600);
+    $expectedDbReportSha = hash_file('sha256', $trustedDbReportFile);
+
+    $validationFile = $outputDir . '/outer_evidence_validation.json';
+    $validateCmd = [
+        PHP_BINARY,
+        $repoRoot . '/tests/Support/Harness/financial-inspector-cli.php',
+        '--validate-evidence=' . $evidenceFile,
+        '--trusted-db-report=' . $trustedDbReportFile,
+        '--expected-evidence-sha=' . $expectedEvidenceSha,
+        '--expected-db-report-sha=' . $expectedDbReportSha,
+        '--expected-backend-head=' . $backendHead,
+        '--expected-android-pub=' . $androidPubHead,
+        '--expected-android-exe=' . $androidExeHead,
+        '--expected-handoff-digest=' . $candidateHandoffSha,
+        '--expected-baseline-hash=' . $canonicalBaselineHash,
+        '--expected-payload-digest=' . $canonicalPayloadDigest,
+        '--expected-scope=' . $expectedScope,
+        '--schema=' . $schemaName,
+        '--company-id=' . $companyId,
+        '--run-id=' . $witnessedRunId,
+        '--expected-event-id=' . $expectedEventId,
+        '--output=' . $validationFile,
+    ];
+    if ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE) {
+        $validateCmd[] = '--advanced-probes';
+        if (! isset($probeManifestPath) || ! is_file($probeManifestPath)) {
+            throw new \RuntimeException('MISSING_MANDATORY_PROBE_REPORTS_MANIFEST_FOR_ADVANCED_VALIDATION');
+        }
+        $validateCmd[] = '--probe-reports-manifest=' . $probeManifestPath;
+        $validateCmd[] = '--expected-probe-manifest-sha=' . $probeManifestSha;
+        if (! isset($acpPath) || ! is_file($acpPath) || $acpSha === '') {
+            throw new \RuntimeException('MISSING_MANDATORY_ADVANCED_CONTROL_PACKET_FOR_ADVANCED_VALIDATION');
+        }
+        $validateCmd[] = '--acp-file=' . $acpPath;
+        $validateCmd[] = '--expected-acp-sha=' . $acpSha;
+    }
+    $validateProc = new Process($validateCmd, $repoRoot, $inspectorEnv, null, 10.0);
+    $validateProc->mustRun();
+    chmod($validationFile, 0600);
+
+    // Write approval and artifact hashes manifest before cleanup
+    $hashesManifest = [
+        'backend_execution_head_sha' => $backendHead,
+        'peer_android_approved_head_sha' => $androidPubHead,
+        'peer_android_executable_head_sha' => $androidExeHead,
+        'prestart_approval_sha256' => hash_file('sha256', $rootApprovalFile),
+        'live_root_approval_sha256' => hash_file('sha256', $liveApprovalTarget),
+        'candidate_handoff_sha256' => $candidateHandoffSha,
+        'raw_wire_payload_sha256' => $rawWirePayloadSha,
+        'canonical_payload_digest' => $canonicalPayloadDigest,
+        'canonical_baseline_hash' => $canonicalBaselineHash,
+        'trusted_db_report_sha256' => $expectedDbReportSha,
+        'outer_evidence_sha256' => $expectedEvidenceSha,
+        'created_at' => date('c'),
+    ];
+    if (isset($probeManifestSha)) {
+        $hashesManifest['probe_reports_manifest_sha256'] = $probeManifestSha;
+    }
+    if (isset($acpSha) && $acpSha !== '') {
+        $hashesManifest['advanced_control_packet_sha256'] = $acpSha;
+    }
+    $manifestOut = $outputDir . '/approval_hashes_manifest.json';
+    $manifestEncoded = json_encode($hashesManifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+    $manifestBytes = @file_put_contents($manifestOut, $manifestEncoded);
+    if ($manifestBytes === false || $manifestBytes !== strlen($manifestEncoded)) {
+        throw new RuntimeException("MANIFEST_WRITE_FAILED: unable to write '{$manifestOut}'");
+    }
+    if (! @chmod($manifestOut, 0600) || (fileperms($manifestOut) & 0777) !== 0600) {
+        throw new RuntimeException("MANIFEST_CHMOD_FAILED: failed to set 0600 on '{$manifestOut}'");
+    }
+} catch (\Throwable $e) {
+    fwrite(STDERR, "\nSupervisor Error: {$e->getMessage()}\n");
+    $exitCode = 1;
+} finally {
+    if (! $cleanupExecuted) {
+        $cleanupExecuted = true;
+
+        // Preserve any available partial evidence/XML in outputDir even on failure (never claiming fresh PASS)
+        try {
+            SupervisedPairedFinancialDrill::preserveAvailablePartialFailureEvidence(
+                outputDir: $outputDir,
+                evidenceFile: $evidenceFile ?? null,
+                targetAndroidDir: $targetAndroidDir ?? null
+            );
+        } catch (\Throwable $preserveThrowable) {
+            fwrite(STDERR, "\n[Evidence Preservation Note] Failed to copy partial evidence: " . $preserveThrowable->getMessage() . "\n");
+        }
+
+        // Compute signal exit code BEFORE cleanup and witness persistence so that
+        // the witness accurately records the true abort status.
+        if ($aborted) {
+            $exitCode = ($abortSignal === SIGINT) ? 130 : 143;
+        }
+
+        try {
+            $cleanupResult = SupervisedPairedFinancialDrill::executeCleanupAndRestoreEnv(
+                $childProcess,
+                $snapshot,
+                $repoRoot,
+                $parentEnvToRestore,
+                $pdo
+            );
+        } catch (\Throwable $cleanupThrowable) {
+            fwrite(STDERR, "\n[Cleanup Failure] executeCleanupAndRestoreEnv threw: " . $cleanupThrowable->getMessage() . "\n");
+            $exitCode = ($exitCode === 0) ? 1 : $exitCode;
+            $cleanupResult = [
+                'child_reaped' => false,
+                'schema_absent' => false,
+                'listeners_closed' => false,
+                'temp_cleaned' => false,
+                'proof_parent_absent' => false,
+                'success' => false,
+                'errors' => ['CLEANUP_EXECUTION_THREW_EXCEPTION: ' . $cleanupThrowable->getMessage()],
+            ];
+        }
+
+        if (! ($cleanupResult['success'] ?? false)) {
+            fwrite(STDERR, "\n[Cleanup Failure] Structured cleanup check failed: " . implode('; ', (array) ($cleanupResult['errors'] ?? [])) . "\n");
+            $exitCode = ($exitCode === 0) ? 1 : $exitCode;
+        }
+
+        // Persist restricted hash-pinned POST-cleanup final witness
+        try {
+            $finalWitness = SupervisedPairedFinancialDrill::persistPostCleanupFinalWitness(
+                outputDir: $outputDir,
+                backendHead: $backendHead,
+                androidPubHead: $androidPubHead,
+                androidExeHead: $androidExeHead,
+                manifestSha: $manifestSha,
+                snapshot: $snapshot,
+                cleanupResult: $cleanupResult,
+                exitCode: $exitCode
+            );
+
+            echo "  [Final Witness] Recorded POST-cleanup witness: {$finalWitness['witness_path']} (SHA: {$finalWitness['witness_sha256']})\n";
+
+            // Persist artifact index with separate final witness SHA (avoiding circular hash with pre-cleanup manifest)
+            $artifactIndex = [
+                'approval_hashes_manifest_sha256' => ($manifestOut !== null && is_file($manifestOut)) ? hash_file('sha256', $manifestOut) : null,
+                'post_cleanup_final_witness_sha256' => $finalWitness['witness_sha256'],
+                'created_at' => gmdate('Y-m-d\TH:i:s\Z'),
+            ];
+            $artifactIndexPath = $outputDir . '/post_cleanup_artifact_index.json';
+            $indexEncoded = json_encode($artifactIndex, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $indexBytes = @file_put_contents($artifactIndexPath, $indexEncoded);
+            if ($indexBytes === false || $indexBytes !== strlen($indexEncoded)) {
+                throw new RuntimeException("ARTIFACT_INDEX_WRITE_FAILED: unable to write '{$artifactIndexPath}'");
+            }
+            if (! @chmod($artifactIndexPath, 0600) || (fileperms($artifactIndexPath) & 0777) !== 0600) {
+                throw new RuntimeException("ARTIFACT_INDEX_CHMOD_FAILED: failed to set 0600 on '{$artifactIndexPath}'");
+            }
+        } catch (\Throwable $witnessThrowable) {
+            fwrite(STDERR, "\n[Final Witness Failure] Failed to persist post-cleanup final witness: " . $witnessThrowable->getMessage() . "\n");
+            $exitCode = ($exitCode === 0) ? 1 : $exitCode;
+        }
+    }
+
+    if ($exitCode === 0 && ! $aborted && ($cleanupResult['success'] ?? false) && $manifestOut !== null) {
+        echo "\n==============================================================================\n";
+        echo "PAIRED FINANCIAL INTEGRATION DRILL COMPLETED SUCCESSFULLY\n";
+        echo "Retained Artifacts Manifest: {$manifestOut}\n";
+        echo "==============================================================================\n";
+    }
+}
+
+exit($exitCode);

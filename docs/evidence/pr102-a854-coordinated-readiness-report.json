@@ -1,0 +1,226 @@
+{
+  "report_version": "1.0.1",
+  "evidence_id": "root-readiness-bar7pq1o",
+  "review_context": {
+    "review_id": "5906317848",
+    "backend_execution_head_sha": "a8540ff83513b49988d90c77cf284831cfd5b2de",
+    "peer_android_approved_head_sha": "824cb7dac1f17a3530f178134f9d9168e7e50b94",
+    "peer_android_executable_head_sha": "753fb5133e28acb1284370dd7a84e3929e7b1a7d",
+    "qualified_core_sha": "6981511405d7bcd04cd8f8a09e64443ce0aaf47e",
+    "core_invariance_verified": true,
+    "client_handoff_schema_sha256": "edaef0309765e10d6462b36b5c660eb02f65c057c810ab72f756f7664e3ca275"
+  },
+  "runtime_pairing_manifest": {
+    "manifest_path": "/tmp/root-readiness-bar7pq1o/manifest.json",
+    "manifest_sha256": "76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b",
+    "status": "ROOT_AUTHORIZED_READINESS_ONLY",
+    "source_fixture_sha256": "ccb8c9f3852b4736675253d094659c8629d197df1c35a3caa7c99ba519da8152",
+    "guard_test_sha256": "cb601109631bd7c7899d3093fae079e0c8a5b8cb4f31582f016bc5cbf4bdd4fe",
+    "cli_command_sha256": "9bf4f389a034c52c62ea6aad796b20c06051f87dbf5a33b683572c4bff9bfd97",
+    "cli_runner_sha256": "5836790dcc58a9956868c1fcc1e6a0cc979a989d0bcf82a2a197b2787c548690"
+  },
+  "backend_hold_execution": {
+    "command": [
+      "php",
+      "tests/Support/Harness/mobile-v2-harness-cli.php",
+      "--readiness-only",
+      "--readiness-hold-seconds=120",
+      "--backend-head=a8540ff83513b49988d90c77cf284831cfd5b2de",
+      "--android-head=824cb7dac1f17a3530f178134f9d9168e7e50b94",
+      "--pairing-manifest=/tmp/root-readiness-bar7pq1o/manifest.json",
+      "--pairing-manifest-sha=76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b"
+    ],
+    "pid": 1185016,
+    "started_at": 1794681704.9371061,
+    "finished_at": 1794681785.0253246,
+    "exit_code": 1,
+    "interrupted_by_signal": "SIGTERM",
+    "abort_logged": "Readiness hold ABORTED by interrupt signal SIGTERM.",
+    "cleanup_completed": true,
+    "owned_schema": "accounting_p8_tmp_3a598a57cc05",
+    "owned_temp_dir": "/tmp/v2_harness_a7c718c045489fbb"
+  },
+  "root_tls_verification": {
+    "live_handoff_sha256": "3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253",
+    "ca_sha256": "b5f7f5b100a2d40c8746eba466e569178f988ea61a470a4906152738556c4066",
+    "tls_proxy_endpoint": "https://127.0.0.1:18443",
+    "probes": [
+      {
+        "method": "GET",
+        "path": "/_harness/readiness",
+        "status": 200,
+        "nonce_verified": true,
+        "ca_trusted": true,
+        "description": "Readiness probe verified HTTP 200 with matching nonce via CA-trusted TLS"
+      },
+      {
+        "method": "POST",
+        "path": "/_harness/readiness",
+        "status": 405,
+        "description": "HTTP 405 Method Not Allowed strictly enforced on probe route"
+      },
+      {
+        "method": "GET",
+        "path": "/_readiness_forbidden_probe",
+        "status": 403,
+        "description": "Safe non-readiness probe path returning HTTP 403 (readiness-only barrier strictly blocks non-readiness routes; zero financial routes called)"
+      }
+    ],
+    "wrong_ca_rejected": true,
+    "wrong_ca_verification_mode": "ACTUAL_TLS_NEGATIVE_PASS",
+    "nonce_comparison_check_passed": true,
+    "nonce_comparison_detail": "Local comparison check json_nonce != '0'*32 passed; live corrupted nonce over network / client path negative remains UNPROVEN",
+    "verified_at": 1794681744.315548
+  },
+  "android_client_execution": {
+    "jvm_invocations": 1,
+    "command": [
+      "./gradlew",
+      "cleanTestDebugUnitTest",
+      "testDebugUnitTest",
+      "--no-build-cache",
+      "--tests",
+      "com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke",
+      "--tests",
+      "com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.testCashPilotFinancialAcceptanceEnforcement",
+      "--max-workers=1",
+      "-Dorg.gradle.workers.max=1",
+      "-Dorg.gradle.jvmargs=-XX:ActiveProcessorCount=2 -XX:+UseSerialGC -Xmx1536m",
+      "-Pkotlin.compiler.execution.strategy=in-process",
+      "--no-daemon"
+    ],
+    "duration_seconds": 27.162948846817017,
+    "exit_code": 1,
+    "tests_total": 2,
+    "tests_passed": 1,
+    "tests_failed": 1,
+    "tests_skipped": 0,
+    "tests_errors": 0,
+    "test_results": [
+      {
+        "name": "testCashPilotFinancialAcceptanceEnforcement",
+        "status": "PASSED",
+        "time_seconds": 0.011
+      },
+      {
+        "name": "executePairedOnlineCashPilotSmoke",
+        "status": "FAILED",
+        "time_seconds": 0.069,
+        "failure_type": "java.lang.IllegalArgumentException",
+        "failure_message": "Peer Android executable HEAD pin mismatch: expected 824cb7dac1f17a3530f178134f9d9168e7e50b94, got 753fb5133e28acb1284370dd7a84e3929e7b1a7d",
+        "failure_location": "com.example.data.mobile.readclient.pilot.CashPilotHandoffConfig$Companion.parseBytes(CashPilotHandoffConfig.kt:603)",
+        "failure_stage": "CONFIG_PARSING_BEFORE_CLIENT_HTTP"
+      }
+    ],
+    "fresh_readiness_json_present": false,
+    "client_http_requests_sent": false,
+    "financial_requests_sent": false,
+    "pre_execution_state_json_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
+    "post_execution_state_json_sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
+    "state_json_note": "SHA-256 of android_pre.json and android_post.json tracking HEAD, status, and source file hashmap; NOT a git object tree hash",
+    "source_mutations": 0
+  },
+  "overall_run_outcome": {
+    "outcome_category": "JVM_PIN_VALIDATION_FAILED_BEFORE_CLIENT_HTTP",
+    "failure_first_stop_honored": true,
+    "automatic_restart_attempted": false,
+    "live_handoff_lifecycle": "TRANSIENT_RUNTIME_SNAPSHOT_DELETED",
+    "endpoint_reusable": false
+  },
+  "cleanup_verification": {
+    "scope": "EXACT_OWNED_RESOURCES_ONLY",
+    "schema_name": "accounting_p8_tmp_3a598a57cc05",
+    "schema_dropped": true,
+    "temp_dir": "/tmp/v2_harness_a7c718c045489fbb",
+    "temp_dir_deleted": true,
+    "ports_closed": [18080, 18443],
+    "ports_verification_method": "Python socket.connect_ex non-zero (connection refused)"
+  },
+  "historical_run_distinction": {
+    "prior_run_eb_1btu5": {
+      "commit": "9589edaa55531a2bfa2b2deb06ca9ca82f222e3a",
+      "cause": "OpenSSL / Python 3.13 strict CA certificate keyUsage extension validation failure",
+      "jvm_invocations": 0,
+      "backend_exit": 1,
+      "cleanup_verified": "accounting_p8_tmp_a5057b7ce693 dropped, temp absent, ports closed"
+    },
+    "current_run_bar7pq1o": {
+      "commit": "a8540ff83513b49988d90c77cf284831cfd5b2de",
+      "cause": "Android client parser publication vs executable HEAD pin mismatch in CashPilotHandoffConfig.kt:603 before HTTP",
+      "jvm_invocations": 1,
+      "backend_exit": 1,
+      "cleanup_verified": "accounting_p8_tmp_3a598a57cc05 dropped, temp absent, ports closed"
+    }
+  },
+  "retained_evidence_artifacts": {
+    "0-TEST-com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.xml": {
+      "sha256": "dc2340af6bfabddcef4fd1793a334de2ca5d47686e26b62d9fed1beaaa702e9d",
+      "bytes": 5392
+    },
+    "android_command.json": {
+      "sha256": "be6ca6ec0995080dc155528ee55f08e7aac0f39bdc66ddeb29e4b7afe14317f9",
+      "bytes": 1124
+    },
+    "android.log": {
+      "sha256": "d0cc29dcc956a8c2f80b3ada823e15fe8deccab599dc6983fd6b8b04d3b955b6",
+      "bytes": 3296
+    },
+    "android_post.json": {
+      "sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
+      "bytes": 27141
+    },
+    "android_pre.json": {
+      "sha256": "7280a75fcd482b311a15ed4f9996537b523423c666f3956a5ee64d5101ac72a8",
+      "bytes": 27141
+    },
+    "android_result.json": {
+      "sha256": "89469c9e6b8652a074e4dcac9b662f0920a2d157f4dc1394551b32b8a0991cec",
+      "bytes": 616
+    },
+    "backend_exit.json": {
+      "sha256": "cb8cd4906b5e40e60c90b877f8767d77fd9217bba6ab7e6ff490d024de788ea5",
+      "bytes": 46
+    },
+    "backend.log": {
+      "sha256": "65110f2352ec6a2979cf87766a6fa7203147f41cb98635655346fb81ab971304",
+      "bytes": 756
+    },
+    "live_handoff_snapshot.json": {
+      "sha256": "3c51b313c8307e85f2e1e4d9d8bc940b8d3ead5bb7999730859520d2c0805253",
+      "bytes": 5457
+    },
+    "live_verified.json": {
+      "sha256": "928b08e700b1ecbd1febc9ca8b947a3467097a1b94aa55df463110ac89907716",
+      "bytes": 654
+    },
+    "manifest.json": {
+      "sha256": "76a7326baa90c2dc43d89d75998518bded17856d5ad2752e0a7a676237456f3b",
+      "bytes": 5118
+    },
+    "operator.json": {
+      "sha256": "cf79dea8480ad890380916335efab393420d0db63e85b2c8592c832ee3d9677c",
+      "bytes": 515
+    },
+    "pid": {
+      "sha256": "68eb480291680e36768324c8a4f24a5f3b889e47a558ac7687ac97618ea21f1c",
+      "bytes": 7
+    },
+    "root_outcome.json": {
+      "sha256": "edc41299370fadfd6b633b022f5778e5e5953a8a18c449e9c0bcff6339b950d8",
+      "bytes": 700
+    }
+  },
+  "unexecuted_gaps_record": [
+    "Live corrupted nonce over network / client path negative (only local comparison json_nonce != '0'*32 executed; live transport negative unproven)",
+    "Live SIGINT abort drill (only SIGTERM was exercised on PID 1185016)",
+    "Intermediate proxy failure / crash during active client HTTP traffic",
+    "Financial pilot execution (strictly NOT RUN; readiness-only lifecycle scope forbids financial network requests)"
+  ],
+  "confidential_data_protection": {
+    "zero_credentials_published": true,
+    "zero_tokens_published": true,
+    "zero_private_keys_published": true,
+    "zero_raw_nonces_published": true,
+    "all_evidence_sanitized": true
+  }
+}

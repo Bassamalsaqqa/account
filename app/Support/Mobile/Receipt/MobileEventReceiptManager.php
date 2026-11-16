@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Mobile\Receipt;
 
+use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Application\Platform\SupportViewContext;
 use App\Models\Company;
 use App\Models\MobileAccessToken;
@@ -14,10 +15,13 @@ use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
 use App\Support\Mobile\Contract\StrictJsonObject;
 use App\Support\Mobile\Contract\StrictJsonParser;
+use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
+use App\Support\Mobile\Receipt\Exceptions\SecurityException;
 use App\Support\Tenancy\CompanyContext;
+use Closure;
 use Illuminate\Database\DeadlockException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -26,9 +30,15 @@ use PDOException;
 use RuntimeException;
 use Spatie\Permission\PermissionRegistrar;
 use Throwable;
+use WeakMap;
 
 final class MobileEventReceiptManager
 {
+    /** @var WeakMap<NativeFinancialExecutionCapability, array<string, mixed>>|null */
+    private static ?WeakMap $capabilityRegistry = null;
+
+    private static ?string $currentInvocationScopeId = null;
+
     private const int MAX_DEADLOCK_RETRIES = 5;
 
     private const int MAX_PAYLOAD_BYTES = 1048576; // 1 MiB
@@ -50,11 +60,14 @@ final class MobileEventReceiptManager
         'status',
         'sales_invoice_id',
         'sales_invoice_public_id',
+        'invoice_id',
         'invoice_public_id',
         'invoice_number',
         'customer_payment_id',
         'customer_payment_public_id',
+        'payment_id',
         'payment_public_id',
+        'payment_receipt_number',
         'command_receipt_id',
         'customer_id',
         'customer_public_id',
@@ -63,6 +76,9 @@ final class MobileEventReceiptManager
         'grand_total',
         'paid_amount',
         'amount',
+        'amount_paid',
+        'change_returned',
+        'posted_at',
         'lines_count',
     ];
 
@@ -228,21 +244,9 @@ final class MobileEventReceiptManager
                         $user->unsetRelation('roles')->unsetRelation('permissions');
 
                         // Cooperative row locks on model assignments serialize against concurrent assignment updates.
-                        // Note: Spatie registrar caches and definition changes (roles/permissions tables) are not fully linearizable without
-                        // cooperative writer locks across all administrative grant paths; ProductionDeny remains mandatory across all operations.
-                        $teamKey = (string) config('permission.column_names.team_foreign_key', 'company_id');
-                        DB::table('model_has_roles')
-                            ->where('model_type', User::class)
-                            ->where('model_id', $user->id)
-                            ->where($teamKey, $companyId)
-                            ->lockForUpdate()
-                            ->get();
-                        DB::table('model_has_permissions')
-                            ->where('model_type', User::class)
-                            ->where('model_id', $user->id)
-                            ->where($teamKey, $companyId)
-                            ->lockForUpdate()
-                            ->get();
+                        // In addition, lock assigned roles and role_has_permissions definitions and forget registrar cache
+                        // for fresh DB linearity.
+                        $this->verifyAndLockFreshRolePermissions($companyId, $user);
 
                         // 6. Verify payload context binding before admission when known context keys are present
                         $this->verifyPayloadContextBinding($decodedPayload, $company, $user, $device, $clientEventId);
@@ -288,10 +292,96 @@ final class MobileEventReceiptManager
                         $activeExecutor->authorize($company, $user, $device, 'execute', $decodedPayload);
 
                         $suffix = hash('sha256', $user->id.'|'.$device->device_id.'|'.$clientEventId);
-                        $financialResult = $activeExecutor->execute($company, $user, $device, $decodedPayload, $suffix);
 
-                        // 9. Strict entity ownership & public ID derivation from locked canonical entities
+                        $invocationScopeId = bin2hex(random_bytes(16));
+                        self::$currentInvocationScopeId = $invocationScopeId;
+                        if (self::$capabilityRegistry === null) {
+                            self::$capabilityRegistry = new WeakMap;
+                        }
+
+                        $cmu = isset($decodedPayload['currency_minor_units']) && is_int($decodedPayload['currency_minor_units'])
+                            ? $decodedPayload['currency_minor_units']
+                            : 2;
+
+                        $capability = (Closure::bind(
+                            fn () => new NativeFinancialExecutionCapability(
+                                companyId: (int) $company->id,
+                                companyPublicId: (string) $company->public_id,
+                                actorId: (int) $user->id,
+                                actorPublicId: (string) $user->public_id,
+                                deviceId: (string) $device->device_id,
+                                tokenPasswordEpoch: (string) $token->password_epoch,
+                                clientEventId: (string) $clientEventId,
+                                eventHash: (string) $payloadDigest,
+                                currencyMinorUnits: $cmu,
+                                connectionName: DB::connection()->getName(),
+                                rootTransactionLevel: 1,
+                                invocationScopeId: $invocationScopeId
+                            ),
+                            null,
+                            NativeFinancialExecutionCapability::class
+                        ))();
+
+                        self::$capabilityRegistry[$capability] = [
+                            'company_id' => (int) $company->id,
+                            'actor_id' => (int) $user->id,
+                            'device_id' => (string) $device->device_id,
+                            'token_password_epoch' => (string) $token->password_epoch,
+                            'client_event_id' => (string) $clientEventId,
+                            'event_hash' => (string) $payloadDigest,
+                            'currency_minor_units' => $cmu,
+                            'connection_name' => DB::connection()->getName(),
+                            'root_transaction_level' => 1,
+                            'invocation_scope_id' => $invocationScopeId,
+                            'active' => true,
+                            'consumed' => false,
+                            'composite_completed' => false,
+                            'completed_invoice_id' => null,
+                            'completed_payment_id' => null,
+                        ];
+
+                        try {
+                            $financialResult = $activeExecutor->execute($company, $user, $device, $decodedPayload, $suffix, $capability);
+                        } finally {
+                            if (self::$capabilityRegistry->offsetExists($capability)) {
+                                $capRec = self::$capabilityRegistry[$capability];
+                                $capRec['active'] = false;
+                                self::$capabilityRegistry[$capability] = $capRec;
+                            }
+                            self::$currentInvocationScopeId = null;
+                        }
+
+                        // 9. Financial execution validation: require capability consumption & closed composite completion
+                        $capRec = self::getCapabilityRecord($capability);
                         $invId = $financialResult['sales_invoice_id'] ?? null;
+                        $payId = $financialResult['customer_payment_id'] ?? null;
+
+                        if ($invId !== null || $payId !== null) {
+                            if ($representation !== 'v2_online_sale_intent') {
+                                throw new SecurityException("Unsupported financial representation [{$representation}] produced financial entities.");
+                            }
+
+                            if ($invId === null || $payId === null) {
+                                throw new SecurityException('Partial financial execution (invoice-only or payment-only) is prohibited.');
+                            }
+
+                            if (! ($capRec['consumed'] ?? false)) {
+                                throw new SecurityException('Financial execution failed to consume required capability.');
+                            }
+
+                            if (! ($capRec['composite_completed'] ?? false)) {
+                                throw new SecurityException('Financial execution failed to achieve verified closed composite completion.');
+                            }
+
+                            if ((int) $invId !== (int) ($capRec['completed_invoice_id'] ?? 0) ||
+                                (int) $payId !== (int) ($capRec['completed_payment_id'] ?? 0)) {
+                                throw new SecurityException('Financial entity IDs do not match closed composite completion.');
+                            }
+                        } elseif ($representation === 'v2_online_sale_intent') {
+                            throw new SecurityException('Online cash sale execution failed to produce required financial composite.');
+                        }
+
+                        // 10. Strict entity ownership & public ID derivation from locked canonical entities
                         $canonicalInvPublicId = null;
                         $invRow = null;
                         if ($invId !== null) {
@@ -332,7 +422,8 @@ final class MobileEventReceiptManager
                         }
 
                         // Relationship verification between invoice and customer payment
-                        if ($invId !== null && $payId !== null) {
+                        /** @phpstan-ignore notIdentical.alwaysTrue */
+                        if ($invRow !== null && $payRow !== null) {
                             if ((int) $invRow->customer_id !== (int) $payRow->customer_id) {
                                 throw new RuntimeException('Customer mismatch between sales invoice and customer payment.');
                             }
@@ -436,6 +527,7 @@ final class MobileEventReceiptManager
      * @return array{
      *     outcome: string,
      *     status: string,
+     *     payload_digest: string|null,
      *     sales_invoice_id: int|null,
      *     sales_invoice_public_id: string|null,
      *     customer_payment_id: int|null,
@@ -546,6 +638,9 @@ final class MobileEventReceiptManager
                 app(PermissionRegistrar::class)->setPermissionsTeamId($companyId);
                 $user->unsetRelation('roles')->unsetRelation('permissions');
 
+                // Enforce fresh role definition & permission concurrency locking on lookup path
+                $this->verifyAndLockFreshRolePermissions($companyId, $user);
+
                 // Check lookup authority through adapter (default deny denies lookup)
                 $this->getExecutor()->authorize($company, $user, $device, 'lookup', null);
 
@@ -566,6 +661,7 @@ final class MobileEventReceiptManager
                 return [
                     'outcome' => 'lookup',
                     'status' => $receipt->status,
+                    'payload_digest' => $receipt->payload_digest,
                     'sales_invoice_id' => $receipt->sales_invoice_id,
                     'sales_invoice_public_id' => $receipt->sales_invoice_public_id,
                     'customer_payment_id' => $receipt->customer_payment_id,
@@ -666,6 +762,48 @@ final class MobileEventReceiptManager
     }
 
     /**
+     * Fresh role definition and permission table verification under lock.
+     * Enforces serial concurrency against concurrent permission or role definition alterations.
+     */
+    private function verifyAndLockFreshRolePermissions(int $companyId, User $user): void
+    {
+        $teamKey = (string) config('permission.column_names.team_foreign_key', 'company_id');
+        $rolePivotRows = DB::table('model_has_roles')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->where($teamKey, $companyId)
+            ->lockForUpdate()
+            ->get();
+
+        DB::table('model_has_permissions')
+            ->where('model_type', User::class)
+            ->where('model_id', $user->id)
+            ->where($teamKey, $companyId)
+            ->lockForUpdate()
+            ->get();
+
+        $assignedRoleIds = $rolePivotRows->pluck('role_id')->filter()->map(fn ($id) => (int) $id)->values()->all();
+        if (! empty($assignedRoleIds)) {
+            sort($assignedRoleIds);
+            DB::table('roles')
+                ->whereIn('id', $assignedRoleIds)
+                ->where('company_id', $companyId)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            DB::table('role_has_permissions')
+                ->whereIn('role_id', $assignedRoleIds)
+                ->orderBy('role_id')
+                ->orderBy('permission_id')
+                ->lockForUpdate()
+                ->get();
+        }
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      */
     private function verifyPayloadContextBinding(
@@ -741,6 +879,9 @@ final class MobileEventReceiptManager
             if (isset($rawTerminal['invoice_public_id']) && ! hash_equals($canonicalInvPublicId, (string) $rawTerminal['invoice_public_id'])) {
                 throw new RuntimeException('Terminal canonical result invoice public ID mismatch.');
             }
+            if (isset($rawTerminal['invoice_id']) && ! hash_equals($canonicalInvPublicId, (string) $rawTerminal['invoice_id'])) {
+                throw new RuntimeException('Terminal canonical result invoice ID mismatch.');
+            }
         }
 
         if ($canonicalPayPublicId !== null) {
@@ -749,6 +890,9 @@ final class MobileEventReceiptManager
             }
             if (isset($rawTerminal['payment_public_id']) && ! hash_equals($canonicalPayPublicId, (string) $rawTerminal['payment_public_id'])) {
                 throw new RuntimeException('Terminal canonical result payment public ID mismatch.');
+            }
+            if (isset($rawTerminal['payment_id']) && ! hash_equals($canonicalPayPublicId, (string) $rawTerminal['payment_id'])) {
+                throw new RuntimeException('Terminal canonical result payment ID mismatch.');
             }
         }
 
@@ -793,5 +937,184 @@ final class MobileEventReceiptManager
         }
 
         return $this->validateEconomicPayload($canonicalBytes);
+    }
+
+    /**
+     * Checks if a native mobile execution context is currently active.
+     */
+    public static function isNativeExecutionContextActive(): bool
+    {
+        return self::$currentInvocationScopeId !== null;
+    }
+
+    private static function assertClosedActionCaller(): void
+    {
+        $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 6);
+        $callerFound = false;
+        foreach ($trace as $frame) {
+            if (($frame['class'] ?? null) === ExecuteImmediateOnlineCashSaleAction::class) {
+                $callerFound = true;
+                break;
+            }
+        }
+
+        if (! $callerFound) {
+            throw new SecurityException('Financial capability operations are restricted strictly to closed canonical action execution.');
+        }
+    }
+
+    /**
+     * Internal private capability consumption, strictly restricted to ExecuteImmediateOnlineCashSaleAction.
+     *
+     * @phpstan-ignore method.unused
+     */
+    private static function verifyAndConsumeCapabilityPrivately(
+        NativeFinancialExecutionCapability $capability,
+        int $companyId,
+        int $actorId,
+        string $deviceId,
+        string $clientEventId,
+        string $eventHash
+    ): void {
+        self::assertClosedActionCaller();
+
+        if (self::$capabilityRegistry === null || ! self::$capabilityRegistry->offsetExists($capability)) {
+            throw new SecurityException('Unauthorized financial capability: capability was not minted by an active admission.');
+        }
+
+        $record = self::$capabilityRegistry[$capability];
+
+        if ($record['consumed'] ?? false) {
+            throw new SecurityException('Native financial capability has already been consumed.');
+        }
+
+        if (! ($record['active'] ?? false)) {
+            throw new SecurityException('Native financial capability is expired or inactive.');
+        }
+
+        if (DB::transactionLevel() !== 1) {
+            throw new IllegalStateException('Capability consumption requires root database transaction level (depth 1).');
+        }
+
+        if (DB::connection()->getName() !== ($record['connection_name'] ?? '')) {
+            throw new SecurityException('Active database connection does not match capability admission connection.');
+        }
+
+        if ((int) ($record['company_id'] ?? 0) !== $companyId) {
+            throw new SecurityException('Capability company mismatch.');
+        }
+
+        if ((int) ($record['actor_id'] ?? 0) !== $actorId) {
+            throw new SecurityException('Capability actor mismatch.');
+        }
+
+        if ((string) ($record['device_id'] ?? '') !== $deviceId) {
+            throw new SecurityException('Capability device mismatch.');
+        }
+
+        if ((string) ($record['client_event_id'] ?? '') !== $clientEventId) {
+            throw new SecurityException('Capability client_event_id mismatch.');
+        }
+
+        if (! hash_equals((string) ($record['event_hash'] ?? ''), $eventHash)) {
+            throw new SecurityException('Capability event hash mismatch.');
+        }
+
+        if (self::$currentInvocationScopeId === null || ($record['invocation_scope_id'] ?? '') !== self::$currentInvocationScopeId) {
+            throw new SecurityException('Capability invocation scope mismatch.');
+        }
+
+        $record['consumed'] = true;
+        $record['active'] = false;
+        self::$capabilityRegistry[$capability] = $record;
+    }
+
+    /**
+     * Records closed composite completion for an attested capability.
+     * Strictly restricted to ExecuteImmediateOnlineCashSaleAction under active composite permit.
+     *
+     * @phpstan-ignore method.unused
+     */
+    private static function markCompositeCompletedPrivately(
+        NativeFinancialExecutionCapability $capability,
+        int $companyId,
+        int $actorId,
+        int $invoiceId,
+        int $paymentId
+    ): void {
+        self::assertClosedActionCaller();
+
+        if (! CompositeFinancialExecutionScope::isActive($companyId, $actorId)) {
+            throw new SecurityException('Composite completion can only be recorded while composite execution permit is actively held.');
+        }
+
+        if (self::$capabilityRegistry === null || ! self::$capabilityRegistry->offsetExists($capability)) {
+            throw new SecurityException('Unauthorized financial capability: capability was not minted by an active admission.');
+        }
+
+        $record = self::$capabilityRegistry[$capability];
+
+        if (! ($record['consumed'] ?? false)) {
+            throw new SecurityException('Capability must be consumed before marking composite completion.');
+        }
+
+        if ($record['composite_completed'] ?? false) {
+            throw new SecurityException('Composite completion has already been recorded for this capability.');
+        }
+
+        if ((int) ($record['company_id'] ?? 0) !== $companyId || (int) ($record['actor_id'] ?? 0) !== $actorId) {
+            throw new SecurityException('Scope mismatch on composite completion registration.');
+        }
+
+        // Freshness & tenant isolation validation: entities must not have pre-existing receipts
+        $existingInvoiceReceipt = DB::table('mobile_event_receipts')
+            ->where('company_id', $companyId)
+            ->where('sales_invoice_id', $invoiceId)
+            ->exists();
+        if ($existingInvoiceReceipt) {
+            throw new SecurityException("Sales invoice [{$invoiceId}] is already associated with an existing event receipt.");
+        }
+
+        $existingPaymentReceipt = DB::table('mobile_event_receipts')
+            ->where('company_id', $companyId)
+            ->where('customer_payment_id', $paymentId)
+            ->exists();
+        if ($existingPaymentReceipt) {
+            throw new SecurityException("Customer payment [{$paymentId}] is already associated with an existing event receipt.");
+        }
+
+        // Entity tenant verification
+        $invoiceValid = DB::table('sales_invoices')
+            ->where('id', $invoiceId)
+            ->where('company_id', $companyId)
+            ->exists();
+        if (! $invoiceValid) {
+            throw new SecurityException("Sales invoice [{$invoiceId}] does not belong to company [{$companyId}].");
+        }
+
+        $paymentValid = DB::table('customer_payments')
+            ->where('id', $paymentId)
+            ->where('company_id', $companyId)
+            ->exists();
+        if (! $paymentValid) {
+            throw new SecurityException("Customer payment [{$paymentId}] does not belong to company [{$companyId}].");
+        }
+
+        $record['composite_completed'] = true;
+        $record['completed_invoice_id'] = $invoiceId;
+        $record['completed_payment_id'] = $paymentId;
+        self::$capabilityRegistry[$capability] = $record;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function getCapabilityRecord(NativeFinancialExecutionCapability $capability): array
+    {
+        if (self::$capabilityRegistry === null || ! self::$capabilityRegistry->offsetExists($capability)) {
+            return [];
+        }
+
+        return self::$capabilityRegistry[$capability];
     }
 }

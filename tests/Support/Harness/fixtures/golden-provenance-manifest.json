@@ -1,0 +1,67 @@
+{
+  "fixtureName": "synthetic-financial-golden-fixture",
+  "purpose": "PHP outer validator cross-repo parity fixture",
+  "wireFormat": "Pure wire JSON output from CashPilotEvidence.toJsonString() without synthetic flags",
+  "wrapperFormat": "Provenance envelope with synthetic: true and cryptographic source hashes",
+  "sourceCommit": "88d40664272305a0505a4f262e8c47b3d99a80ac",
+  "serializerBlobSha": "edfba4bc03372131a245b1cf1826811fc9066d5a",
+  "pins": {
+    "clientPublicationHead": "c00aedb70ea06f28ae42282149c030df76dc300d",
+    "clientExecutableHead": "b7e61eb4ed0aed2f5040d9fc44f9764b310be530",
+    "clientHeadLegacyAlias": "b7e61eb4ed0aed2f5040d9fc44f9764b310be530",
+    "backendHead": "cfc28baaaaf52521ecbc88f1ba4c621afee17221",
+    "manifestDigest": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc"
+  },
+  "scenarios": {
+    "readiness_probe": {
+      "status": "PASS",
+      "httpStatusCode": 200
+    },
+    "financial_cash_fresh_commit_201": {
+      "status": "PASS",
+      "httpStatusCode": 201
+    },
+    "financial_cash_idempotent_replay_200": {
+      "status": "PASS",
+      "httpStatusCode": 200
+    },
+    "financial_cash_event_status_posted": {
+      "status": "PASS",
+      "httpStatusCode": 200
+    },
+    "financial_cash_tamper_409": {
+      "status": "PASS",
+      "httpStatusCode": 409
+    },
+    "transport_lost_ack_recovery": {
+      "status": "NOT_RUN",
+      "httpStatusCode": null
+    },
+    "stock_permission_rollback_probes": {
+      "status": "NOT_RUN",
+      "httpStatusCode": null
+    }
+  },
+  "artifacts": {
+    "TEST-com.example.data.mobile.readclient.pilot.CashPilotHandoffConfigTest.xml": {
+      "sha256": "3b679a13c9a332588a959568b7158706720d9444491a770470e2dc6dfffa5174",
+      "sizeBytes": 531
+    },
+    "golden-test-execution.log": {
+      "sha256": "86c49050ea8328572b254db009a644cae3abdd5fa3b0307c471d458cc1df2223",
+      "sizeBytes": 3029
+    },
+    "source-attestation-88d4.json": {
+      "sha256": "8a40f6aee8de16869263ea2b6300c2507e33bae49d9537b44d61e359303def14",
+      "sizeBytes": 37506
+    },
+    "synthetic-financial-golden-wire.json": {
+      "sha256": "25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6",
+      "sizeBytes": 2367
+    },
+    "synthetic-financial-golden-wrapper.json": {
+      "sha256": "7458f05b57fe149beec9e26ebec77015b45f2acfcc428687f10c216f80f1592d",
+      "sizeBytes": 2961
+    }
+  }
+}

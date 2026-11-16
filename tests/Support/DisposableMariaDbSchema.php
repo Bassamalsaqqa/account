@@ -154,27 +154,51 @@ final class DisposableMariaDbSchema
     {
         $name = $this->schemaName();
         if ($this->proofPath === null) {
-            $path = tempnam(sys_get_temp_dir(), 'p8_ownership_');
-            if ($path === false) {
-                throw new RuntimeException('Unable to create private schema ownership proof.');
+            $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+            $oldUmask = umask(0077);
+            try {
+                if (! is_dir($proofDir) && ! mkdir($proofDir, 0700, true)) {
+                    throw new RuntimeException('Unable to create private schema ownership proof directory.');
+                }
+                chmod($proofDir, 0700);
+
+                $path = $proofDir . '/proof.json';
+                $this->proofNonce = bin2hex(random_bytes(16));
+                file_put_contents($path, json_encode(['schema' => $name, 'host' => $this->settings['HOST'], 'port' => $this->settings['PORT'], 'nonce' => $this->proofNonce], JSON_THROW_ON_ERROR));
+                chmod($path, 0600);
+            } finally {
+                umask($oldUmask);
             }
             $this->tempFiles[] = $path;
-            chmod($path, 0600);
-            $this->proofNonce = bin2hex(random_bytes(16));
-            file_put_contents($path, json_encode(['schema' => $name, 'host' => $this->settings['HOST'], 'port' => $this->settings['PORT'], 'nonce' => $this->proofNonce], JSON_THROW_ON_ERROR));
+            $this->tempFiles[] = $proofDir;
             $this->proofPath = $path;
         }
 
-        return [
+        $env = [
             'PHASE8_DISPOSABLE_DB_PROOF' => $this->proofPath,
             'PHASE8_DISPOSABLE_DB_NONCE' => $this->proofNonce,
-            'APP_ENV' => 'testing', 'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-            'DB_URL' => '', 'DB_CONNECTION' => 'mysql', 'DB_HOST' => $this->settings['HOST'],
-            'DB_PORT' => $this->settings['PORT'], 'DB_USERNAME' => $this->settings['USERNAME'],
-            'DB_PASSWORD' => $this->settings['PASSWORD'], 'DB_DATABASE' => $name,
-            'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array',
+            'APP_ENV' => 'testing',
+            'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
+            'PHASE8_TEST_DB_HOST' => $this->settings['HOST'],
+            'PHASE8_TEST_DB_PORT' => $this->settings['PORT'],
+            'PHASE8_TEST_DB_USERNAME' => $this->settings['USERNAME'],
+            'PHASE8_TEST_DB_PASSWORD' => $this->settings['PASSWORD'],
+            'DB_URL' => '',
+            'DB_CONNECTION' => 'mysql',
+            'DB_HOST' => $this->settings['HOST'],
+            'DB_PORT' => $this->settings['PORT'],
+            'DB_USERNAME' => $this->settings['USERNAME'],
+            'DB_PASSWORD' => $this->settings['PASSWORD'],
+            'DB_DATABASE' => $name,
+            'CACHE_STORE' => 'array',
+            'SESSION_DRIVER' => 'array',
             'APP_CONFIG_CACHE' => sys_get_temp_dir().DIRECTORY_SEPARATOR.$name.'_nonexistent_config.php',
         ];
+        if ($this->settings['PASSWORD'] === '' || getenv('PHASE8_TEST_DB_EMPTY_PASSWORD') === '1') {
+            $env['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+        }
+
+        return $env;
     }
 
     public function migrate(): void
@@ -326,6 +350,8 @@ final class DisposableMariaDbSchema
             foreach ($this->tempFiles as $path) {
                 if (is_file($path)) {
                     unlink($path);
+                } elseif (is_dir($path)) {
+                    rmdir($path);
                 }
             }
             $this->tempFiles = [];

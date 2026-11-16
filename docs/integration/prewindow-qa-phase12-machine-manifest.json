@@ -1,0 +1,77 @@
+{
+  "contract_name": "Pre-Window QA & Prewarm Contemporaneous Machine Manifest (Phase 12)",
+  "nature": "CONTEMPORANEOUS_EXECUTION_ATTESTATION",
+  "phase": 12,
+  "execution_target_commit": "c501465bc64460468e0e70448c316f4db7939206",
+  "branch": "t3/recover-cash-writer",
+  "lease_scope": "Exclusive short PREWINDOW QA grant: Phase A focused pure SupervisedFinancialDrillTest.php (45 expected); Phase B bounded compile-only prewarm if Phase A passes.",
+  "grant_constraints": "Stop on first failure / first error; zero DB, zero listeners, zero TLS, zero JVM, ambient ports 1 (127.0.0.1:1), mocked PDO only; if FAIL STOP release no other commands.",
+  "retained_private_attachments_directory": "/home/t3dev/.t3/userdata/attachments/prewindow_qa_phase12_d3011083",
+  "private_artifacts_index": {
+    "phaseA_pre_backend.json": {
+      "sha256": "a306cde2d83832527e6f4c5da22574077bbed535eb1a49d0795dcf3a8dcf2b76",
+      "bytes": 300219,
+      "permissions": "0o600"
+    },
+    "phaseA_post_backend.json": {
+      "sha256": "1fea03231775c9835d06f969347a5f97d58e761f86fa0c1cc76801214255c271",
+      "bytes": 300219,
+      "permissions": "0o600"
+    },
+    "phaseA_junit.xml": {
+      "sha256": "4dcff9e5e4539130fa9ffd3f3d79945e3ffdf0b2ff81c79ccbf8df6021b1d8df",
+      "bytes": 18779,
+      "permissions": "0o600"
+    },
+    "phaseA_raw.txt": {
+      "sha256": "82f8d5de2dd43a8aab8d43e64c64937e3625c2da786e6a1611e707b7eeab77f7",
+      "bytes": 1507,
+      "permissions": "0o600"
+    },
+    "phaseA_meta.json": {
+      "sha256": "ce3f2dc3a6a61e6bf12524e29a9a953bd349ed109ae1c1cda3fdbdcbb9dcd3e8",
+      "bytes": 655,
+      "permissions": "0o600"
+    },
+    "machine_artifact_index.json": {
+      "sha256": "4500dc9786ea23e8a7b31e20eadd8974125229f061f4a9cec91b5d1c0f55acfc",
+      "bytes": 824,
+      "permissions": "0o600"
+    },
+    "run_summary.json": {
+      "sha256": "db34b8e2cf0e3452da5e2f7cda438f843d6ef01dc3800318a0862f50daf2a3ee",
+      "bytes": 229,
+      "permissions": "0o600"
+    }
+  },
+  "source_invariance": {
+    "head_unchanged": true,
+    "status_unchanged": true,
+    "source_hashes_identical": true
+  },
+  "phase_a_results": {
+    "runner": "PHPUnit 12.5.36 (PHP 8.4.27)",
+    "total_tests_expected": 45,
+    "total_tests_executed": 45,
+    "assertions_completed": 323,
+    "tests_passed": 44,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0,
+    "phpunit_notices": 15,
+    "exit_code": 1,
+    "failure_detail": {
+      "test": "Tests\\Unit\\Mobile\\Harness\\SupervisedFinancialDrillTest::test_preserve_available_partial_failure_evidence",
+      "message": "Failed asserting that '/home/t3dev/.t3/userdata/antigravity-tmp/ae3fd7ec8360/run-IX7K5n/supervised_drill_test_b45984d14fc83108/partial_evidence_test_out/partial_failure_diagnostics/partial_failure_index.json' is null."
+    }
+  },
+  "phase_b_status": {
+    "reached": false,
+    "reason": "STOP_POLICY_ENFORCED_ON_PHASE_A_FAILURE",
+    "commands_executed": 0
+  },
+  "process_absence": {
+    "all_processes_absent": true,
+    "active_processes": []
+  }
+}

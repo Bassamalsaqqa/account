@@ -1,0 +1,100 @@
+{
+  "contract_name": "Mobile V2 Paired Financial Drill Contemporaneous Manifest (Attempt 3)",
+  "nature": "ROOT_OPERATED_ATTEMPT_RECORD",
+  "attempt": 3,
+  "execution_pins": {
+    "backend_execution_head_sha": "9373589f009e006e8eed4082c7ced0be0b62bf3c",
+    "peer_android_approved_head_sha": "b0d5965e7dc5d0e483880afa0bf3ca6a025ee3e6",
+    "peer_android_executable_head_sha": "360ce78408f09ecff451381e595a4ffe2f116969",
+    "manifest_sha256": "bea3fbc0ef41ffbe999f4ccdfe3fadfa0fb1d3d19ebd053371c339bc242cb74b",
+    "handoff_whole_sha256": "d629ba4857025140fa3e6b40748e73644f38b331f88706f2e41a895d7d6d719f"
+  },
+  "branch": "t3/recover-cash-writer",
+  "retained_private_attachments_directory": "/home/t3dev/.t3/userdata/attachments/root-basic3-9373589",
+  "private_artifacts_index": {
+    "pre.json": {
+      "sha256": "80cea33f68ddad33270306aebdd5d5a09767e08aac6280268e99be32e2a2f4e0",
+      "bytes": 299435,
+      "permissions": "0o600"
+    },
+    "pre-both.json": {
+      "sha256": "2c125db72e6d5ecf3c1ea7441abae7efba06711ba47923995f64899d96cead15",
+      "bytes": 387874,
+      "permissions": "0o600"
+    },
+    "post-both.json": {
+      "sha256": "963e0396058e710ce776a8053e7cd36f9a3cf69432b316dc016f677f9def7579",
+      "bytes": 387874,
+      "permissions": "0o600"
+    },
+    "prestart.json": {
+      "sha256": "f414ce9ddb125a320f1b19bcfb8ac3e18ca4bfb50dfec99268bbb734bdebc5dd",
+      "bytes": 474,
+      "permissions": "0o600"
+    },
+    "live.json": {
+      "sha256": "4fa2a120c238520f7485b99b5badb76f7298ce097fe92e680bcca1a0fd6216b1",
+      "bytes": 786,
+      "permissions": "0o600"
+    },
+    "pre_run_baseline.json": {
+      "sha256": "f0af394ee2e43518ac06061e9410a7fd708f1b65e64cba2490011fbb82821ca8",
+      "bytes": 1149,
+      "permissions": "0o600"
+    },
+    "raw.log": {
+      "sha256": "e76c58ed445d85142f46e6a293b1d0c967d108f55fff26ed46b39a9b3ef022cb",
+      "bytes": 3446,
+      "permissions": "0o600"
+    },
+    "post_cleanup_final_witness.json": {
+      "sha256": "3f9ae785809b42a0a6983c3dde7d7fb1ef40c9be81db94584a201cc9189d6e27",
+      "bytes": 1225,
+      "permissions": "0o600"
+    },
+    "post_cleanup_artifact_index.json": {
+      "sha256": "af68adc0181304c6148a4aa2d0cae8f78c59f1b2c1c03907134c5873a63edc11",
+      "bytes": 199,
+      "permissions": "0o600"
+    },
+    "pairing-manifest.json": {
+      "sha256": "bea3fbc0ef41ffbe999f4ccdfe3fadfa0fb1d3d19ebd053371c339bc242cb74b",
+      "bytes": 5011,
+      "permissions": "0o600"
+    },
+    "argv.json": {
+      "sha256": "a519302d33e620abe7a76c9241913acfe1938f8dcf1d561b24bd48e28484cbcd",
+      "bytes": 795,
+      "permissions": "0o600"
+    },
+    "exit.json": {
+      "sha256": "7daa5896b75a3bb763519d651741d371c16968df8bd6c2eab309ead39e217d4e",
+      "bytes": 15,
+      "permissions": "0o600"
+    }
+  },
+  "candidate_ownership": {
+    "schema_name": "accounting_p8_tmp_ff0b72f41794",
+    "child_pid": 1774622,
+    "harness_dir": "/tmp/v2_harness_67d48fd0984d9bd5",
+    "proof_parent_dir": "/tmp/p8_proof_326b2bff95c44b5b",
+    "proof_evidence_sha256": "9c9ca71bc42821e57deb0ba4f15401e3e4d47a8fb4889c8305c0217594db2f78"
+  },
+  "cleanup_observations": {
+    "child_reaped": true,
+    "schema_absent": true,
+    "listeners_closed": true,
+    "harness_absent": true,
+    "proof_parent_absent": true,
+    "cleanup_success": true,
+    "cleanup_errors": []
+  },
+  "outcome": {
+    "exit_code": 1,
+    "overall_success": false,
+    "failure_reason": "PROCESS_TIMEOUT_DURING_JVM_TEST_EXECUTION",
+    "timeout_seconds": 76.914089202881,
+    "financial_http_outcomes": "UNKNOWN",
+    "zero_post_claim": false
+  }
+}

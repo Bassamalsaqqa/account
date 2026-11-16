@@ -101,7 +101,6 @@ final class ApplyCustomerPaymentCreditAction
         $usedAmount = BigDecimal::of($payment->amount)->minus($payment->unallocated_amount);
         $usedBase = BigDecimal::of($payment->amount_base)->minus($payment->unallocated_amount_base);
         $remaining = BigDecimal::of($payment->unallocated_amount);
-        $minor = $payment->currency_code === 'JOD' ? 3 : 2;
         $prepared = [];
         foreach ($intent as $input) {
             $invoice = SalesInvoice::where('company_id', $payment->company_id)->lockForUpdate()->find($input['sales_invoice_id']);

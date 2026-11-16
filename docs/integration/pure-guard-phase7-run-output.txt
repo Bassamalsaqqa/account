@@ -1,0 +1,19 @@
+PHPUnit 12.5.36 by Sebastian Bergmann and contributors.
+
+Runtime:       PHP 8.4.27
+Configuration: /tmp/pure_guard_qa_run_phase7_lixHFfDG/phpunit_pure_guard.xml
+
+...............................................................  63 / 128 ( 49%)
+.......................................N...F
+
+Time: 00:02.956, Memory: 32.50 MB
+
+There was 1 failure:
+
+1) Tests\Unit\Mobile\Harness\SupervisedFinancialDrillTest::test_verify_evidence_freshness_accepts_golden_25ae_fixture
+Failed asserting that file "/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Support/Harness/fixtures/synthetic-financial-golden-wire.json" exists.
+
+/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php:321
+
+FAILURES!
+Tests: 107, Assertions: 499, Failures: 1, PHPUnit Notices: 1.

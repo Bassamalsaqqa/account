@@ -8,6 +8,7 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Models\InventoryBalance;
 use App\Models\Product;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -30,7 +31,8 @@ final class SalesProductSelection
             $basePrice = $unit->default_sale_price_base === null
                 ? BigDecimal::of($product->default_sale_price_base ?? '0')->multipliedBy($unit->conversion_to_base)
                 : BigDecimal::of($unit->default_sale_price_base);
-            $price = $basePrice->dividedBy($rate, $currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP);
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveForCompany((int) $company->id, $currency);
+            $price = $basePrice->dividedBy($rate, $minorUnits, RoundingMode::HALF_UP);
             $available = null;
             if ($product->track_stock) {
                 $query = InventoryBalance::where('company_id', $company->id)->where('product_id', $productId);

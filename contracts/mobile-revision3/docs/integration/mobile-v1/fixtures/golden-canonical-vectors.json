@@ -1,0 +1,66 @@
+[
+  {
+    "name": "primitive_sorting",
+    "description": "Verifies key sorting and whitespace stripping on mixed primitives",
+    "input": {
+      "b": "hello",
+      "a": 123,
+      "c": true
+    },
+    "canonical_json": "{\"a\":123,\"b\":\"hello\",\"c\":true}",
+    "digest": "sha256:e81412a748b809981b56c60308332c03ce554771f754178efccce2081209f131"
+  },
+  {
+    "name": "currency_total",
+    "description": "Verifies string-encoded decimal amounts and UUIDs",
+    "input": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "currency": "ILS",
+      "total": "58.00"
+    },
+    "canonical_json": "{\"client_event_id\":\"3fa85f64-5717-4562-b3fc-2c963f66afa6\",\"currency\":\"ILS\",\"total\":\"58.00\"}",
+    "digest": "sha256:3ed9a38a923c28c5152850bdc48db9ee942a2b634220fe5d4ee1370498aa7a3c"
+  },
+  {
+    "name": "arabic_fractions",
+    "description": "Verifies nested arrays, Arabic UTF-8 text, and 3-decimal fractional quantities",
+    "input": {
+      "lines": [
+        {
+          "id": "line-1",
+          "qty": "0.333",
+          "price": "10.500"
+        },
+        {
+          "id": "line-2",
+          "qty": "1.000",
+          "price": "2.250"
+        }
+      ],
+      "note": "عميل نقدي / Walk-in"
+    },
+    "canonical_json": "{\"lines\":[{\"id\":\"line-1\",\"price\":\"10.500\",\"qty\":\"0.333\"},{\"id\":\"line-2\",\"price\":\"2.250\",\"qty\":\"1.000\"}],\"note\":\"عميل نقدي / Walk-in\"}",
+    "digest": "sha256:0c96a975675ae6c6b393837e4df5f01a7221abffbac9d12287019a4b552de487"
+  },
+  {
+    "name": "utf16_surrogate_key_ordering",
+    "description": "Verifies RFC 8785 UTF-16 code unit key sorting where surrogate pairs in supplementary planes (U+1F600) precede high BMP characters (U+FFFF)",
+    "input": {
+      "\uffff": "bmp_last",
+      "\ud83d\ude00": "supplementary_plane"
+    },
+    "canonical_json": "{\"😀\":\"supplementary_plane\",\"\uffff\":\"bmp_last\"}",
+    "digest": "sha256:0f6e2a5ec50588eebe12034a62dba2dea312e7419a3b4b35b07642405cc2fb06"
+  },
+  {
+    "name": "control_char_escaping",
+    "description": "Verifies RFC 8785 string escaping for control characters (\\t, \\n, and 2-byte \\u0000 hex escaping)",
+    "input": {
+      "tab": "a\tb",
+      "newline": "line1\nline2",
+      "null_char": "prefix\u0000suffix"
+    },
+    "canonical_json": "{\"newline\":\"line1\\nline2\",\"null_char\":\"prefix\\u0000suffix\",\"tab\":\"a\\tb\"}",
+    "digest": "sha256:0468796dc39483b190fca87ef8328eec7fea550efcdd53ac9aaaf117fd041244"
+  }
+]

@@ -1,0 +1,49 @@
+{
+  "request": {
+    "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+    "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+    "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+    "currency": "ILS",
+    "lines": [
+      {
+        "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+        "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+        "quantity": "2.000000",
+        "unit_price": "25.000000",
+        "tax_rate": "16.000000"
+      }
+    ],
+    "payment": {
+      "settlement_mode": "full",
+      "payment_method": "cash",
+      "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+      "amount": "58.000000"
+    }
+  },
+  "response": {
+    "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+    "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+    "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+    "currency": "ILS",
+    "subtotal": "50.000000",
+    "tax_total": "8.000000",
+    "grand_total": "58.000000",
+    "amount_due": "58.000000",
+    "change": "0.000000",
+    "lines": [
+      {
+        "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+        "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+        "quantity": "2.000000",
+        "unit_price": "25.000000",
+        "tax_rate": "16.000000",
+        "tax_amount": "8.000000",
+        "line_total": "58.000000"
+      }
+    ],
+    "payload_digest": "sha256:3c188e1b55840c7ec54224b06618e8a2df5d06cd9126984bcfcfcc6c6eebfb79",
+    "preview_token": "eyJ2ZXJzaW9uIjoxLCJjb21wYW55X3VsYWlkIjoiMDFKQ1Y4WDlNMk5RVzNUWVpEUjVTNjc4OUEiLCJkaWdlc3QiOiJzaGEyNTY6M2MxODhlMWI1NTg0MGM3ZWM1NDIyNGIwNjYxOGU4YTJkZjVkMDZjZDkxMjY5ODRiY2ZjZmNjNmM2ZWViZmI3OSJ9.sig_sample_preview_token_1234567890",
+    "expires_at": "2026-11-10T12:05:00Z"
+  }
+}

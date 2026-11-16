@@ -1,0 +1,78 @@
+{
+  "synthetic": true,
+  "purpose": "PHP outer validator cross-repo parity fixture",
+  "wireEvidence": {
+  "runId": "019ea456-0000-7000-8000-000000000001",
+  "timestamp": "2026-11-14T22:15:00Z",
+  "backendHead": "cfc28baaaaf52521ecbc88f1ba4c621afee17221",
+  "clientHead": "b7e61eb4ed0aed2f5040d9fc44f9764b310be530",
+  "clientPublicationHead": "c00aedb70ea06f28ae42282149c030df76dc300d",
+  "clientExecutableHead": "b7e61eb4ed0aed2f5040d9fc44f9764b310be530",
+  "manifestDigest": "8e48f3692a88f5ac3f333f81536d70eb3541228959968697fda03f68df44befc",
+  "baseUrl": "https://127.0.0.1:18443/api/mobile/v2",
+  "lifecycleGrant": "FINANCIAL_PAIRED_RUN",
+  "ttlExpiresAt": "2026-11-14T23:15:00Z",
+  "overallStatus": "PASS",
+  "scenarios": [
+    {
+      "name": "readiness_probe",
+      "status": "PASS",
+      "httpStatusCode": 200,
+      "latencyMs": 15,
+      "details": "Host loopback HTTPS GET probe verified HTTP 200 with matching nonce (JVM runner avoided emulator alias)"
+    },
+    {
+      "name": "financial_cash_fresh_commit_201",
+      "status": "PASS",
+      "httpStatusCode": 201,
+      "latencyMs": 42,
+      "details": "Fresh online cash sale committed atomically with invoice INV-2026-00001"
+    },
+    {
+      "name": "financial_cash_idempotent_replay_200",
+      "status": "PASS",
+      "httpStatusCode": 200,
+      "latencyMs": 25,
+      "details": "Idempotent replay returned byte-identical response with matching invoice number"
+    },
+    {
+      "name": "financial_cash_event_status_posted",
+      "status": "PASS",
+      "httpStatusCode": 200,
+      "latencyMs": 18,
+      "details": "Offline event status query confirmed 'posted' status with authoritative invoice and matching payment reference"
+    },
+    {
+      "name": "financial_cash_tamper_409",
+      "status": "PASS",
+      "httpStatusCode": 409,
+      "latencyMs": 12,
+      "details": "Duplicate clientEventId with balanced tampered payload strictly rejected with HTTP 409 Conflict"
+    },
+    {
+      "name": "transport_lost_ack_recovery",
+      "status": "NOT_RUN",
+      "httpStatusCode": null,
+      "latencyMs": 0,
+      "details": "Backend coordinated fault injection scenario absent; keeping explicit NOT_RUN without overclaim"
+    },
+    {
+      "name": "stock_permission_rollback_probes",
+      "status": "NOT_RUN",
+      "httpStatusCode": null,
+      "latencyMs": 0,
+      "details": "Backend stock/rollback probe scenario absent; keeping explicit NOT_RUN without overclaim"
+    }
+  ]
+}
+,
+  "provenance": {
+    "sourceCommit": "c00aedb70ea06f28ae42282149c030df76dc300d",
+    "clientPublicationHead": "c00aedb70ea06f28ae42282149c030df76dc300d",
+    "clientExecutableHead": "b7e61eb4ed0aed2f5040d9fc44f9764b310be530",
+    "backendHead": "cfc28baaaaf52521ecbc88f1ba4c621afee17221",
+    "serializerBlobSha": "edfba4bc03372131a245b1cf1826811fc9066d5a",
+    "goldenEvidenceSha256": "25ae020de247d03c5aa57538592cd82574d62d6e4041e845ad11ea835c7f6aa6",
+    "goldenSizeBytes": 2367
+  }
+}

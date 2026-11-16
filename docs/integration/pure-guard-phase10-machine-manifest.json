@@ -1,0 +1,101 @@
+{
+  "contract_name": "Pure Focused QA Suite Contemporaneous Machine Manifest (Phase 10)",
+  "nature": "CONTEMPORANEOUS_EXECUTION_ATTESTATION",
+  "phase": 10,
+  "execution_target_commit": "8c00888a8dc8d070631ac56adbc551b98422e203",
+  "publication_commit": "ba04b6f78e2f1bdf8c925a7a674baa98734a3baf",
+  "branch": "t3/recover-cash-writer",
+  "runner": "PHPUnit 12.5.36 (PHP 8.4.27)",
+  "lease_scope": "Exclusive short focused pure QA lease on SupervisedFinancialDrillTest.php (37 methods expected).",
+  "grant_constraints": "Zero DB, zero listeners, zero TLS, zero JVM, ambient DB port 1 (127.0.0.1:1), PHASE8_ALLOW_DISPOSABLE_DB=0, MOBILE_V2_HARNESS_ENABLE=0, stop-on-failure, stop-on-error, zero autofix, zero retry.",
+  "retained_private_attachments_directory": "/home/t3dev/.t3/userdata/attachments/pure_focused_qa_phase10_361cc622",
+  "private_artifacts_index": {
+    "pre.json": {
+      "sha256": "63f079a5f0c4df250e72c95a6682512b84925a48d86eff28a78124e294b07b65",
+      "bytes": 298397,
+      "permissions": "0o600"
+    },
+    "post.json": {
+      "sha256": "67346a0b8688952127f33d42b9783213cfe679ac82443a24877e1941e0876605",
+      "bytes": 298397,
+      "permissions": "0o600"
+    },
+    "junit.xml": {
+      "sha256": "e09daf77645a0c64be70e530b93625c2502602d7843221196610acf7cd74a578",
+      "bytes": 14982,
+      "permissions": "0o600"
+    },
+    "raw_stdout_stderr.txt": {
+      "sha256": "b2607f32c53859334d56c9a17ef74be664945bec5f2836ab0e63fbb3c7b3d03d",
+      "bytes": 818,
+      "permissions": "0o600"
+    },
+    "run_metadata.json": {
+      "sha256": "177cdf3180d0b2f9fea660496dcb33adfacdb619dc70374ba6cf6375324a7cc8",
+      "bytes": 948,
+      "permissions": "0o600"
+    },
+    "machine_artifact_index.json": {
+      "sha256": "fce87c98c8c8ec1cd41f620aed1233824a31bd5a9ea321bb0425335518ef4029",
+      "bytes": 774,
+      "permissions": "0o600"
+    }
+  },
+  "source_invariance": {
+    "head_unchanged": true,
+    "status_unchanged": true,
+    "source_hashes_identical": true
+  },
+  "process_absence": {
+    "all_processes_absent": true,
+    "active_processes": []
+  },
+  "argv": [
+    "vendor/bin/phpunit",
+    "--bootstrap",
+    "vendor/autoload.php",
+    "--no-configuration",
+    "--stop-on-failure",
+    "--stop-on-error",
+    "--log-junit=/home/t3dev/.t3/userdata/attachments/pure_focused_qa_phase10_361cc622/junit.xml",
+    "tests/Unit/Mobile/Harness/SupervisedFinancialDrillTest.php"
+  ],
+  "environment": {
+    "DB_HOST": "127.0.0.1",
+    "DB_PORT": "1",
+    "PHASE8_TEST_DB_HOST": "127.0.0.1",
+    "PHASE8_TEST_DB_PORT": "1",
+    "PHASE8_ALLOW_DISPOSABLE_DB": "0",
+    "MOBILE_V2_HARNESS_ENABLE": "0",
+    "APP_ENV": "testing"
+  },
+  "timing": {
+    "execution_start_utc": "2026-11-15T13:36:44.812618+00:00",
+    "execution_end_utc": "2026-11-15T13:36:45.016270+00:00",
+    "elapsed_seconds": 0.203652
+  },
+  "exit_code": 0,
+  "metrics": {
+    "total_tests_expected": 37,
+    "total_tests_executed": 37,
+    "assertions_completed": 241,
+    "tests_passed": 37,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "phpunit_notices": 10,
+    "suite_outcome": "ALL 37 TESTS PASSED",
+    "unreached_test_inventory": 0
+  },
+  "suite_breakdown": {
+    "SupervisedFinancialDrillTest.php": {
+      "tests_executed": 37,
+      "tests_passed": 37,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "assertions": 241,
+      "notices": 10
+    }
+  }
+}
