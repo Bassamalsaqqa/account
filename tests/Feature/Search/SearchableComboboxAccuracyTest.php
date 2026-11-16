@@ -33,7 +33,9 @@ final class SearchableComboboxAccuracyTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+
     protected Company $company;
+
     protected SearchableSelectorService $service;
 
     protected function setUp(): void
@@ -243,20 +245,20 @@ final class SearchableComboboxAccuracyTest extends TestCase
         $context = app(CompanyContext::class);
         $context->clear();
         try {
-        $otherCompany = $creator->execute($otherUser, [
-            'name_ar' => 'شركة منافسة أخرى',
-            'base_currency_code' => 'JOD',
-        ]);
-        $context->setCompany($otherCompany, $otherUser);
+            $otherCompany = $creator->execute($otherUser, [
+                'name_ar' => 'شركة منافسة أخرى',
+                'base_currency_code' => 'JOD',
+            ]);
+            $context->setCompany($otherCompany, $otherUser);
 
-        Customer::create([
-            'company_id' => $otherCompany->id,
-            'name_ar' => 'عميل سري خاص بالشركة الأخرى',
-            'name_en' => 'Secret Customer of Other Co',
-            'active' => true,
-            'status' => 'active',
-            'created_by' => $otherUser->id,
-        ]);
+            Customer::create([
+                'company_id' => $otherCompany->id,
+                'name_ar' => 'عميل سري خاص بالشركة الأخرى',
+                'name_en' => 'Secret Customer of Other Co',
+                'active' => true,
+                'status' => 'active',
+                'created_by' => $otherUser->id,
+            ]);
         } finally {
             $context->clear();
             $context->setCompany($this->company, $this->user);
@@ -288,7 +290,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
         $response = $this->service->search($this->company, $this->user, 'product', 'مكلفة', null, 25, ['context' => 'sales']);
         $this->assertNotEmpty($response['items']);
         $this->assertArrayNotHasKey('default_purchase_cost_base', $response['items'][0]['meta']);
-        $this->assertSame('250.00', $response['items'][0]['meta']['default_sale_price_base']);
+        $this->assertSame('250.000000', $response['items'][0]['meta']['default_sale_price_base']);
     }
 
     public function test_selected_record_hydration_retains_selection_outside_first_page(): void
