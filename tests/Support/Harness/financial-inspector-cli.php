@@ -42,6 +42,7 @@ $isRollbackProbeSnapshot = false;
 $isVerifyRollbackZeroDelta = false;
 $postProbeFile = null;
 $probeReportsManifestFile = null;
+$expectedProbeManifestSha = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--baseline' || $arg === '--capture-baseline') {
@@ -64,6 +65,8 @@ foreach ($argvList as $arg) {
         $postProbeFile = substr($arg, 18);
     } elseif (str_starts_with($arg, '--probe-reports-manifest=')) {
         $probeReportsManifestFile = substr($arg, 25);
+    } elseif (str_starts_with($arg, '--expected-probe-manifest-sha=')) {
+        $expectedProbeManifestSha = substr($arg, 30);
     } elseif (str_starts_with($arg, '--validate-evidence=')) {
         $evidenceFile = substr($arg, 20);
     } elseif (str_starts_with($arg, '--trusted-db-report=')) {
@@ -256,6 +259,12 @@ if ($evidenceFile !== null) {
             'cli_command_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
             'cli_runner_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
         ];
+        if ($probeReportsManifestFile !== null && is_file($probeReportsManifestFile) && ! is_link($probeReportsManifestFile)) {
+            $expectedPins['actualProbeReportsManifestSha'] = (string) hash_file('sha256', $probeReportsManifestFile);
+        }
+        if ($expectedProbeManifestSha !== null && $expectedProbeManifestSha !== '') {
+            $expectedPins['expectedProbeReportsManifestSha'] = $expectedProbeManifestSha;
+        }
         $validation = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
     } else {
         $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
@@ -331,6 +340,10 @@ if ($isComposeTrustedReport) {
         ];
 
         $probeReportsManifest = null;
+        if ($metadata['scope'] === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION' && $probeReportsManifestFile === null) {
+            fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --probe-reports-manifest=<path>.\n");
+            exit(1);
+        }
         if ($probeReportsManifestFile !== null) {
             if (! is_file($probeReportsManifestFile) || is_link($probeReportsManifestFile)) {
                 fwrite(STDERR, "Error: Insecure or missing probe reports manifest file.\n");

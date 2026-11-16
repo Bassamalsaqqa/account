@@ -1374,6 +1374,78 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
+     * Asserts that a file path is securely contained directly within an expected owned directory,
+     * with exact expected basename, no symlinks anywhere in its path hierarchy, mode 0600 owned by current UID,
+     * and parent directory mode 0700 owned by current UID.
+     *
+     * @param string $filePath Full path to target file
+     * @param string $expectedParentDir Expected containing directory path
+     * @param string $expectedBasename Expected filename
+     * @param string $context Error context identifier
+     *
+     * @throws RuntimeException
+     */
+    public static function assertSecureContainedFile(
+        string $filePath,
+        string $expectedParentDir,
+        string $expectedBasename,
+        string $context
+    ): void {
+        if (is_link($filePath)) {
+            throw new RuntimeException("{$context}_SYMLINK_REJECTED: '{$filePath}'");
+        }
+        if (! is_file($filePath)) {
+            throw new RuntimeException("{$context}_FILE_NOT_FOUND: '{$filePath}'");
+        }
+        if (basename($filePath) !== $expectedBasename) {
+            throw new RuntimeException("{$context}_BASENAME_MISMATCH: expected '{$expectedBasename}', got '" . basename($filePath) . "'");
+        }
+
+        $parent = dirname($filePath);
+        if (is_link($parent)) {
+            throw new RuntimeException("{$context}_PARENT_SYMLINK_REJECTED: '{$parent}'");
+        }
+        if (! is_dir($parent)) {
+            throw new RuntimeException("{$context}_PARENT_DIR_NOT_FOUND: '{$parent}'");
+        }
+
+        $realParent = realpath($parent);
+        $realExpected = realpath($expectedParentDir);
+        if ($realParent === false || $realExpected === false || $realParent !== $realExpected) {
+            throw new RuntimeException("{$context}_CONTAINMENT_VIOLATION: file parent '{$parent}' does not match expected directory '{$expectedParentDir}'");
+        }
+
+        // Validate no path components are symlinks
+        $normalized = str_replace('\\', '/', $filePath);
+        $parts = explode('/', trim($normalized, '/'));
+        $accum = (str_starts_with($normalized, '/')) ? '/' : '';
+        foreach ($parts as $part) {
+            $accum = rtrim($accum, '/') . '/' . $part;
+            if (is_link($accum)) {
+                throw new RuntimeException("{$context}_PATH_COMPONENT_SYMLINK_REJECTED: '{$accum}'");
+            }
+        }
+
+        $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+
+        $filePerms = fileperms($filePath) & 0777;
+        if ($filePerms !== 0600) {
+            throw new RuntimeException(sprintf("{$context}_INSECURE_PERMS: expected 0600, got %04o", $filePerms));
+        }
+        if (fileowner($filePath) !== $currentUid) {
+            throw new RuntimeException("{$context}_OWNER_MISMATCH");
+        }
+
+        $parentPerms = fileperms($parent) & 0777;
+        if ($parentPerms !== 0700) {
+            throw new RuntimeException(sprintf("{$context}_PARENT_INSECURE_PERMS: expected 0700, got %04o", $parentPerms));
+        }
+        if (fileowner($parent) !== $currentUid) {
+            throw new RuntimeException("{$context}_PARENT_OWNER_MISMATCH");
+        }
+    }
+
+    /**
      * Asserts that a specified directory path is not an active/protected development worktree lane.
      * Rejects any path matching protected patterns (e.g. t3-7ac8b73d / *7ac8*).
      *

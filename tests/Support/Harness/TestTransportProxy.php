@@ -52,6 +52,8 @@ class TestTransportProxy
     private bool $running = false;
     /** @var resource|null */
     private $serverSocket = null;
+    /** @var array<string, array<string, mixed>> */
+    private array $observedProbeReports = [];
 
     /**
      * @param array{
@@ -574,16 +576,32 @@ class TestTransportProxy
                     return;
                 }
 
-                // Validate owned child_bootstrap_config.json artifact before recon execution
-                $bootstrapConfigFile = (string) ($this->targetConfig['child_bootstrap_config_path'] ?? ($this->targetConfig['credentials_file'] ?? ''));
-                if ($bootstrapConfigFile === '' || ! is_file($bootstrapConfigFile) || is_link($bootstrapConfigFile)) {
-                    $this->sendHttpError($client, 500, "Internal Error: Missing or invalid bootstrap config file for rollback recon: {$bootstrapConfigFile}");
+                $witnessDir = dirname((string) ($this->targetConfig['witness_path'] ?? ''));
+
+                // Reject duplicate probe observation early
+                if (isset($this->observedProbeReports[$probeName])) {
+                    $this->sendHttpError($client, 500, "Internal Error: Duplicate probe {$probeName} already observed");
 
                     return;
                 }
-                $bPerms = fileperms($bootstrapConfigFile) & 0777;
-                if ($bPerms !== 0600) {
-                    $this->sendHttpError($client, 500, sprintf("Internal Error: Insecure bootstrap config file perms %04o", $bPerms));
+
+                // Validate owned child_bootstrap_config.json artifact before recon execution
+                // Shared secure path/UID/parent/components/containment validation without credentials_file fallback
+                $bootstrapConfigFile = (string) ($this->targetConfig['child_bootstrap_config_path'] ?? '');
+                if ($bootstrapConfigFile === '') {
+                    $this->sendHttpError($client, 500, "Internal Error: Missing child_bootstrap_config_path for rollback recon");
+
+                    return;
+                }
+                try {
+                    SupervisedPairedFinancialDrill::assertSecureContainedFile(
+                        $bootstrapConfigFile,
+                        $witnessDir,
+                        'child_bootstrap_config.json',
+                        'BOOTSTRAP_CONFIG'
+                    );
+                } catch (\Throwable $e) {
+                    $this->sendHttpError($client, 500, "Internal Error: Insecure bootstrap config file: {$e->getMessage()}");
 
                     return;
                 }
@@ -606,8 +624,16 @@ class TestTransportProxy
                     $inspectorEnv['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
                 }
 
-                // Finite remaining deadline bound
-                $remTimeout = max(1.0, min(15.0, $deadline - (hrtime(true) / 1e9)));
+                // Finite remaining deadline bound: refuse exhausted budget
+                $now = hrtime(true) / 1e9;
+                $remainingBudget = $deadline - $now;
+                if ($remainingBudget <= 0.0) {
+                    $this->sendHttpError($client, 504, "Gateway Timeout: Remaining deadline exhausted before rollback probe {$probeName} reconciliation");
+
+                    return;
+                }
+                $remTimeout = min(15.0, $remainingBudget);
+
                 $repoRoot = (string) ($this->targetConfig['repo_root'] ?? dirname(__DIR__, 3));
                 $reconCmd = [
                     PHP_BINARY,
@@ -624,6 +650,22 @@ class TestTransportProxy
                 $reconStderr = $reconProc->getErrorOutput();
                 $reconExitCode = $reconProc->getExitCode();
 
+                // Preserve raw recon output and stderr before evaluating or returning on failure (keep exact raw bytes)
+                $rawReconFile = $witnessDir . '/probe_' . $probeName . '_reconciliation.json';
+                $rawReconContent = $reconStdout !== '' ? $reconStdout : json_encode([
+                    'all_healthy' => false,
+                    'error' => "Reconciliation process exited with code {$reconExitCode}",
+                    'exit_code' => $reconExitCode,
+                    'stderr' => $reconStderr,
+                ], JSON_UNESCAPED_SLASHES);
+                $this->writeExclusiveSecureFile($rawReconFile, $rawReconContent);
+                $rawReconSha = hash_file('sha256', $rawReconFile);
+
+                if ($reconStderr !== '') {
+                    $rawStderrFile = $witnessDir . '/probe_' . $probeName . '_reconciliation.stderr';
+                    $this->writeExclusiveSecureFile($rawStderrFile, $reconStderr);
+                }
+
                 if (! $reconProc->isSuccessful() || $reconExitCode !== 0) {
                     $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} reconciliation execution failed with code {$reconExitCode}");
 
@@ -637,91 +679,42 @@ class TestTransportProxy
                     return;
                 }
 
-                // Validate all six actual named service class results
-                $requiredServices = [
-                    'accounting' => 'AccountingReconciliationService',
-                    'inventory' => 'InventoryReconciliationService',
-                    'sales' => 'SalesReconciliationService',
-                    'payables' => 'PayablesReconciliationService',
-                    'money' => 'MoneyReconciliationService',
-                    'phase7' => 'Phase7ReconciliationService',
-                ];
-
-                $reconcilersDict = [];
-                $totalIssueCount = 0;
-                $allSixPass = true;
-                foreach ($requiredServices as $shortKey => $fullServiceName) {
-                    $svcRes = $reconData['reconciler_results'][$fullServiceName] ?? null;
-                    if (! is_array($svcRes)) {
-                        $allSixPass = false;
-                        break;
-                    }
-                    $isHealthy = ($svcRes['healthy'] ?? false) === true;
-                    $issueCount = (int) ($svcRes['issue_count'] ?? -1);
-                    if (! $isHealthy || $issueCount !== 0) {
-                        $allSixPass = false;
-                    }
-                    $totalIssueCount += max(0, $issueCount);
-                    $reconcilersDict[$shortKey] = $isHealthy && ($issueCount === 0);
-                    $reconcilersDict[$fullServiceName] = [
-                        'healthy' => $isHealthy,
-                        'issue_count' => $issueCount,
-                    ];
-                }
-
-                $actualAllHealthy = ($reconData['all_healthy'] ?? false) === true;
-                if (! $allSixPass || ! $actualAllHealthy || $totalIssueCount !== 0) {
-                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} reconciliations failed verification");
-
-                    return;
-                }
-
-                $witnessDir = dirname((string) ($this->targetConfig['witness_path'] ?? ''));
-
-                // Preserve raw recon output artifact exclusively with mode 0600
-                $rawReconFile = $witnessDir . '/probe_' . $probeName . '_reconciliation.json';
-                $this->writeExclusiveSecureFile($rawReconFile, $reconStdout . "\n");
-                $rawReconSha = hash_file('sha256', $rawReconFile);
-
                 $bodyDecoded = json_decode($body, true);
                 $probeEventId = is_array($bodyDecoded) ? (string) ($bodyDecoded['client_event_id'] ?? '') : '';
 
-                // Build probe report with verified actual values (no hardcoded zeroes or booleans)
-                $probeReport = [
-                    'probe_name' => $probeName,
-                    'client_event_id' => $probeEventId,
-                    'expected_http_status' => $expectedStatus,
-                    'actual_http_status' => $responseStatus,
-                    'status_matched' => ($responseStatus === $expectedStatus),
-                    'schema_name' => (string) ($this->targetConfig['target_schema'] ?? ''),
-                    'company_id' => (int) ($this->targetConfig['target_company_id'] ?? 0),
-                    'company_public_id' => (string) ($this->targetConfig['target_company_public_id'] ?? ''),
-                    'backend_head' => (string) ($this->targetConfig['backend_head'] ?? ''),
-                    'handoff_sha256' => (string) ($this->targetConfig['handoff_sha256'] ?? ''),
-                    'economic_delta_zero' => ($zeroDeltaRes['is_zero_delta'] ?? false) === true,
-                    'zero_delta_verified' => ($zeroDeltaRes['is_zero_delta'] ?? false) === true,
-                    'reconciliations_healthy' => $allSixPass && $actualAllHealthy && ($totalIssueCount === 0),
-                    'issue_count' => $totalIssueCount,
-                    'total_issue_count' => $totalIssueCount,
-                    'reconciliations' => $reconcilersDict,
-                    'baseline_metrics' => $preProbeSnapshot,
-                    'post_metrics' => $postProbeSnapshot,
-                    'reconciliation_exit_code' => $reconExitCode,
-                    'reconciliation_artifact_sha256' => $rawReconSha,
-                    'generated_at' => (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
-                ];
+                // Build probe report with shared production helper (strictly typed issue_count 0 and boolean healthy true)
+                try {
+                    $probeReport = DisposableFinancialPostRunInspector::buildProbeReportPayload([
+                        'probe_name' => $probeName,
+                        'client_event_id' => $probeEventId,
+                        'expected_http_status' => $expectedStatus,
+                        'actual_http_status' => $responseStatus,
+                        'schema_name' => (string) ($this->targetConfig['target_schema'] ?? ''),
+                        'company_id' => (int) ($this->targetConfig['target_company_id'] ?? 0),
+                        'company_public_id' => (string) ($this->targetConfig['target_company_public_id'] ?? ''),
+                        'backend_head' => (string) ($this->targetConfig['backend_head'] ?? ''),
+                        'handoff_sha256' => (string) ($this->targetConfig['handoff_sha256'] ?? ''),
+                        'economic_delta_zero' => ($zeroDeltaRes['is_zero_delta'] ?? false) === true,
+                        'zero_delta_verified' => ($zeroDeltaRes['is_zero_delta'] ?? false) === true,
+                        'raw_reconciliation_data' => $reconData,
+                        'reconciliation_exit_code' => $reconExitCode,
+                        'reconciliation_stderr' => $reconStderr,
+                        'reconciliation_artifact_sha256' => $rawReconSha,
+                        'baseline_metrics' => $preProbeSnapshot,
+                        'post_metrics' => $postProbeSnapshot,
+                    ]);
+                } catch (\Throwable $e) {
+                    $this->sendHttpError($client, 500, "Internal Error: Failed building probe {$probeName} report: {$e->getMessage()}");
+
+                    return;
+                }
 
                 $probeReportFile = $witnessDir . '/probe_' . $probeName . '_report.json';
                 $this->writeExclusiveSecureFile($probeReportFile, json_encode($probeReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
                 $probeReportSha = hash_file('sha256', $probeReportFile);
 
-                // Update immutable manifest index file
-                $manifestFile = $witnessDir . '/probe_reports_manifest.json';
-                $currentManifest = [];
-                if (is_file($manifestFile) && ! is_link($manifestFile)) {
-                    $currentManifest = json_decode((string) file_get_contents($manifestFile), true) ?: [];
-                }
-                $currentManifest[$probeName] = [
+                // Register observed report
+                $this->observedProbeReports[$probeName] = [
                     'probe_name' => $probeName,
                     'client_event_id' => $probeEventId,
                     'expected_http_status' => $expectedStatus,
@@ -733,10 +726,14 @@ class TestTransportProxy
                     'zero_delta_verified' => true,
                     'reconciliations_healthy' => true,
                 ];
-                $tmpManifest = $witnessDir . '/.probe_reports_manifest.' . bin2hex(random_bytes(6)) . '.tmp';
-                $this->writeExclusiveSecureFile($tmpManifest, json_encode($currentManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-                rename($tmpManifest, $manifestFile);
-                chmod($manifestFile, 0600);
+
+                // When all 3 probes are observed, write final immutable 3-entry manifest index
+                if (count($this->observedProbeReports) === 3) {
+                    $manifestFile = $witnessDir . '/probe_reports_manifest.json';
+                    $manifestJson = json_encode($this->observedProbeReports, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+                    $this->writeExclusiveSecureFile($manifestFile, $manifestJson);
+                    chmod($manifestFile, 0600);
+                }
             }
 
             // 6. Normal passthrough: return upstream response to client

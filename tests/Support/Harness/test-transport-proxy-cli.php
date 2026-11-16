@@ -125,6 +125,10 @@ if ($credentialsFile === '') {
 try {
     verifyPathSecurity($credentialsFile, 'DB credentials file', 0600);
     $rawCreds = (string) file_get_contents($credentialsFile);
+    $creds = json_decode($rawCreds, true);
+    if (! is_array($creds)) {
+        throw new RuntimeException('Credentials file contains invalid JSON.');
+    }
     $dbUser = (string) ($creds['db_username'] ?? ($creds['db_user'] ?? ''));
     $dbPass = (string) ($creds['db_password'] ?? '');
     if ($dbUser === '') {

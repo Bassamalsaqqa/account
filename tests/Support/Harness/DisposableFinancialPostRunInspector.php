@@ -49,6 +49,23 @@ final class DisposableFinancialPostRunInspector
     /** Safe disposable schema name regex pattern. */
     public const string SCHEMA_REGEX = '/^accounting_p8_tmp_[a-f0-9]{12}$/D';
 
+    /** Canonical probe event keys in advanced control packet. */
+    public const array REQUIRED_PROBE_EVENT_KEYS = [
+        'controlled_fault_after_posting',
+        'insufficient_stock',
+        'permission_denial',
+    ];
+
+    /** Canonical 6 reconciler service names. */
+    public const array REQUIRED_RECONCILER_SERVICES = [
+        'AccountingReconciliationService',
+        'InventoryReconciliationService',
+        'SalesReconciliationService',
+        'PayablesReconciliationService',
+        'MoneyReconciliationService',
+        'Phase7ReconciliationService',
+    ];
+
     /**
      * Safely parses child_bootstrap_config.json credentials with strict POSIX permissions
      * (0600 file, 0700 parent directory, no symlinks, owner UID match) and maps lowercase
@@ -1477,7 +1494,56 @@ final class DisposableFinancialPostRunInspector
             'all_healthy' => $allHealthy,
             'reconciler_results' => $reconcileResult['reconciler_results'] ?? [],
         ];
-        if ($rollbackProbesManifest !== null) {
+
+        // Advanced scope mandates verified exact 3-probe rollback manifest
+        if ((string) $metadata['scope'] === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
+            if ($rollbackProbesManifest === null || ! is_array($rollbackProbesManifest)) {
+                throw new InvalidArgumentException('Missing mandatory rollback_probes_manifest for advanced scope report composition.');
+            }
+            $expectedProbeStatuses = [
+                'rollback_permission_denial' => 403,
+                'rollback_insufficient_stock' => 422,
+                'rollback_controlled_after_posting' => 500,
+            ];
+            $manifestKeys = array_keys($rollbackProbesManifest);
+            sort($manifestKeys);
+            $expectedKeys = array_keys($expectedProbeStatuses);
+            sort($expectedKeys);
+            if ($manifestKeys !== $expectedKeys) {
+                throw new InvalidArgumentException('rollback_probes_manifest must contain exactly the 3 required probe keys: '.implode(', ', $expectedKeys));
+            }
+            foreach ($expectedProbeStatuses as $pName => $expStatus) {
+                $entry = $rollbackProbesManifest[$pName];
+                if (! is_array($entry)) {
+                    throw new InvalidArgumentException("Invalid manifest entry for probe '{$pName}': expected array.");
+                }
+                if (($entry['probe_name'] ?? '') !== $pName) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' has mismatched probe_name.");
+                }
+                if (empty($entry['report_file']) || ! is_string($entry['report_file'])) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' missing valid report_file.");
+                }
+                if (empty($entry['report_sha256']) || ! preg_match('/^[0-9a-f]{64}$/', (string) $entry['report_sha256'])) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' missing valid 64-hex report_sha256.");
+                }
+                if (empty($entry['reconciliation_file']) || ! is_string($entry['reconciliation_file'])) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' missing valid reconciliation_file.");
+                }
+                if (empty($entry['reconciliation_sha256']) || ! preg_match('/^[0-9a-f]{64}$/', (string) $entry['reconciliation_sha256'])) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' missing valid 64-hex reconciliation_sha256.");
+                }
+                if (($entry['zero_delta_verified'] ?? null) !== true) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' zero_delta_verified must be boolean true.");
+                }
+                if (($entry['reconciliations_healthy'] ?? null) !== true) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' reconciliations_healthy must be boolean true.");
+                }
+                if (($entry['expected_http_status'] ?? 0) !== $expStatus || ($entry['actual_http_status'] ?? 0) !== $expStatus) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' status code mismatch: expected {$expStatus}.");
+                }
+            }
+            $coreDeterministicPayload['rollback_probes_manifest'] = $rollbackProbesManifest;
+        } elseif ($rollbackProbesManifest !== null) {
             $coreDeterministicPayload['rollback_probes_manifest'] = $rollbackProbesManifest;
         }
 
@@ -1502,11 +1568,303 @@ final class DisposableFinancialPostRunInspector
             'report_digest' => $reportDigest,
             'generated_at' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
         ];
-        if ($rollbackProbesManifest !== null) {
-            $reportResult['rollback_probes_manifest'] = $rollbackProbesManifest;
+        if (isset($coreDeterministicPayload['rollback_probes_manifest'])) {
+            $reportResult['rollback_probes_manifest'] = $coreDeterministicPayload['rollback_probes_manifest'];
         }
 
         return $reportResult;
+    }
+
+    /**
+     * Validates an ACP data structure ensuring exact 3 probe keys, valid UUID formats,
+     * mutual distinctness, and distinctness from the primary target event UUID.
+     * Fails closed on extra keys, missing keys, invalid UUIDs, or collisions.
+     *
+     * @param  array<string, mixed>  $acpData  Raw ACP decoded array
+     * @param  string  $primaryTargetEventId  Primary target event UUID
+     * @return array{permission_denial: string, insufficient_stock: string, controlled_fault_after_posting: string}
+     *
+     * @throws RuntimeException
+     */
+    public static function validateAdvancedControlPacket(array $acpData, string $primaryTargetEventId): array
+    {
+        $probeEventIds = $acpData['probe_event_ids'] ?? null;
+        if (! is_array($probeEventIds)) {
+            throw new RuntimeException('ACP_VALIDATION_FAILED: probe_event_ids must be an array.');
+        }
+
+        $keys = array_keys($probeEventIds);
+        sort($keys);
+        $expectedKeys = self::REQUIRED_PROBE_EVENT_KEYS;
+        sort($expectedKeys);
+        if ($keys !== $expectedKeys) {
+            throw new RuntimeException('ACP_VALIDATION_FAILED: probe_event_ids must contain exactly the 3 required keys without extra or missing entries: '.implode(', ', $expectedKeys));
+        }
+
+        $uuidPattern = '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/';
+        $permId = (string) $probeEventIds['permission_denial'];
+        $stockId = (string) $probeEventIds['insufficient_stock'];
+        $faultId = (string) $probeEventIds['controlled_fault_after_posting'];
+
+        foreach (['permission_denial' => $permId, 'insufficient_stock' => $stockId, 'controlled_fault_after_posting' => $faultId] as $name => $uuid) {
+            if (preg_match($uuidPattern, $uuid) !== 1) {
+                throw new RuntimeException("ACP_VALIDATION_FAILED: probe '{$name}' event ID '{$uuid}' is not a valid UUID.");
+            }
+        }
+
+        if (count(array_unique([$permId, $stockId, $faultId])) !== 3) {
+            throw new RuntimeException('ACP_VALIDATION_FAILED: probe UUIDs must be mutually distinct.');
+        }
+
+        if ($primaryTargetEventId !== '') {
+            foreach ([$permId, $stockId, $faultId] as $uuid) {
+                if (strcasecmp($uuid, $primaryTargetEventId) === 0) {
+                    throw new RuntimeException("ACP_VALIDATION_FAILED: probe UUID '{$uuid}' collides with primary target event ID '{$primaryTargetEventId}'.");
+                }
+            }
+        }
+
+        return [
+            'permission_denial' => $permId,
+            'insufficient_stock' => $stockId,
+            'controlled_fault_after_posting' => $faultId,
+        ];
+    }
+
+    /**
+     * Constructs a canonical, strictly-typed probe report payload.
+     * Enforces strict integer typed issue_count 0 and boolean healthy true across all 6 services.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array<string, mixed>
+     *
+     * @throws RuntimeException
+     */
+    public static function buildProbeReportPayload(array $params): array
+    {
+        $probeName = (string) ($params['probe_name'] ?? '');
+        $allowedProbes = ['rollback_permission_denial', 'rollback_insufficient_stock', 'rollback_controlled_after_posting'];
+        if (! in_array($probeName, $allowedProbes, true)) {
+            throw new RuntimeException("PROBE_REPORT_BUILD_FAILED: invalid probe name '{$probeName}'");
+        }
+
+        $clientEventId = (string) ($params['client_event_id'] ?? '');
+        if (! preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $clientEventId)) {
+            throw new RuntimeException("PROBE_REPORT_BUILD_FAILED: invalid client_event_id '{$clientEventId}'");
+        }
+
+        $expectedStatus = (int) ($params['expected_http_status'] ?? 0);
+        $actualStatus = (int) ($params['actual_http_status'] ?? 0);
+        if ($expectedStatus <= 0 || $actualStatus <= 0) {
+            throw new RuntimeException("PROBE_REPORT_BUILD_FAILED: invalid HTTP status codes (expected: {$expectedStatus}, actual: {$actualStatus})");
+        }
+
+        $rawReconData = $params['raw_reconciliation_data'] ?? null;
+        if (is_string($rawReconData)) {
+            $rawReconData = json_decode($rawReconData, true);
+        }
+        if (! is_array($rawReconData)) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: invalid raw reconciliation data');
+        }
+
+        // Validate all 6 canonical services with strict typing
+        $reconResults = $params['reconciler_results'] ?? ($rawReconData['reconciler_results'] ?? null);
+        if (! is_array($reconResults)) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: reconciler_results must be an array');
+        }
+
+        $canonicalReconcilerResults = [];
+        $totalIssueCount = 0;
+        foreach (self::REQUIRED_RECONCILER_SERVICES as $svcName) {
+            $svcData = $reconResults[$svcName] ?? null;
+            if (! is_array($svcData)) {
+                throw new RuntimeException("PROBE_REPORT_BUILD_FAILED: missing service '{$svcName}' in reconciler_results");
+            }
+            $isHealthy = $svcData['healthy'] ?? null;
+            if (! is_bool($isHealthy) || $isHealthy !== true) {
+                throw new RuntimeException("PROBE_REPORT_BUILD_FAILED: service '{$svcName}' healthy must be boolean true");
+            }
+            $issueCount = $svcData['issue_count'] ?? null;
+            if (! is_int($issueCount) || $issueCount !== 0) {
+                throw new RuntimeException("PROBE_REPORT_BUILD_FAILED: service '{$svcName}' issue_count must be strict integer 0");
+            }
+            $canonicalReconcilerResults[$svcName] = [
+                'healthy' => true,
+                'issue_count' => 0,
+            ];
+        }
+
+        if (($rawReconData['all_healthy'] ?? null) !== true) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: raw reconciliation data all_healthy must be boolean true');
+        }
+
+        $economicDeltaZero = $params['economic_delta_zero'] ?? null;
+        if (! is_bool($economicDeltaZero) || $economicDeltaZero !== true) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: economic_delta_zero must be boolean true');
+        }
+
+        $zeroDeltaVerified = $params['zero_delta_verified'] ?? null;
+        if (! is_bool($zeroDeltaVerified) || $zeroDeltaVerified !== true) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: zero_delta_verified must be boolean true');
+        }
+
+        if (! is_array($params['baseline_metrics'] ?? null) || ! is_array($params['post_metrics'] ?? null)) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: baseline_metrics and post_metrics are mandatory arrays');
+        }
+
+        $recomputedDelta = self::assertRollbackZeroDelta($params['baseline_metrics'], $params['post_metrics']);
+        if (! ($recomputedDelta['is_zero_delta'] ?? false)) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: pre/post metrics delta is not zero: '.implode(', ', $recomputedDelta['errors']));
+        }
+
+        $artifactSha = (string) ($params['reconciliation_artifact_sha256'] ?? '');
+        if (! preg_match('/^[0-9a-f]{64}$/', $artifactSha)) {
+            throw new RuntimeException('PROBE_REPORT_BUILD_FAILED: reconciliation_artifact_sha256 must be 64-hex lowercase SHA');
+        }
+
+        $generatedAt = (string) ($params['generated_at'] ?? (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM));
+
+        return [
+            'probe_name' => $probeName,
+            'client_event_id' => $clientEventId,
+            'expected_http_status' => $expectedStatus,
+            'actual_http_status' => $actualStatus,
+            'status_matched' => ($actualStatus === $expectedStatus),
+            'schema_name' => (string) ($params['schema_name'] ?? ''),
+            'company_id' => (int) ($params['company_id'] ?? 0),
+            'company_public_id' => (string) ($params['company_public_id'] ?? ''),
+            'backend_head' => (string) ($params['backend_head'] ?? ''),
+            'handoff_sha256' => (string) ($params['handoff_sha256'] ?? ''),
+            'economic_delta_zero' => true,
+            'zero_delta_verified' => true,
+            'reconciliations_healthy' => true,
+            'issue_count' => 0,
+            'total_issue_count' => 0,
+            'reconciler_results' => $canonicalReconcilerResults,
+            'reconciliations' => $canonicalReconcilerResults,
+            'baseline_metrics' => $params['baseline_metrics'],
+            'post_metrics' => $params['post_metrics'],
+            'reconciliation_exit_code' => (int) ($params['reconciliation_exit_code'] ?? 0),
+            'reconciliation_stderr' => (string) ($params['reconciliation_stderr'] ?? ''),
+            'reconciliation_artifact_sha256' => $artifactSha,
+            'generated_at' => $generatedAt,
+        ];
+    }
+
+    /**
+     * Verifies a probe report against expected execution context, recomputes zero-delta on pre/post metrics,
+     * and strictly parses and cross-checks raw reconciliation artifact JSON.
+     *
+     * @param  array<string, mixed>  $report
+     * @param  string  $rawReconContent  Raw bytes/content of reconciliation JSON artifact
+     * @param  array<string, mixed>  $expectedContext
+     * @return array{is_valid: bool, errors: array<string>}
+     */
+    public static function verifyProbeReportPayload(
+        array $report,
+        string $rawReconContent,
+        array $expectedContext
+    ): array {
+        $errors = [];
+
+        $pName = (string) ($report['probe_name'] ?? '');
+        $expName = (string) ($expectedContext['probe_name'] ?? '');
+        if ($pName === '' || ($expName !== '' && $pName !== $expName)) {
+            $errors[] = "probe_name mismatch: expected '{$expName}', got '{$pName}'";
+        }
+
+        $cEventId = (string) ($report['client_event_id'] ?? '');
+        $expEventId = (string) ($expectedContext['client_event_id'] ?? '');
+        if ($cEventId === '' || ($expEventId !== '' && $cEventId !== $expEventId)) {
+            $errors[] = "client_event_id mismatch: expected '{$expEventId}', got '{$cEventId}'";
+        }
+
+        $expStatus = (int) ($expectedContext['expected_http_status'] ?? ($report['expected_http_status'] ?? 0));
+        $actStatus = (int) ($report['actual_http_status'] ?? 0);
+        if ($actStatus !== $expStatus) {
+            $errors[] = "actual_http_status mismatch: expected {$expStatus}, got {$actStatus}";
+        }
+        if (($report['status_matched'] ?? null) !== true) {
+            $errors[] = 'status_matched must be boolean true';
+        }
+
+        foreach (['schema_name', 'company_id', 'backend_head', 'handoff_sha256'] as $ctxKey) {
+            if (isset($expectedContext[$ctxKey])) {
+                $expVal = (string) $expectedContext[$ctxKey];
+                $repVal = (string) ($report[$ctxKey] ?? '');
+                if (! hash_equals($expVal, $repVal)) {
+                    $errors[] = "{$ctxKey} mismatch: expected '{$expVal}', got '{$repVal}'";
+                }
+            }
+        }
+
+        if (($report['economic_delta_zero'] ?? null) !== true) {
+            $errors[] = 'economic_delta_zero must be boolean true';
+        }
+        if (($report['zero_delta_verified'] ?? null) !== true) {
+            $errors[] = 'zero_delta_verified must be boolean true';
+        }
+        if (($report['reconciliations_healthy'] ?? null) !== true) {
+            $errors[] = 'reconciliations_healthy must be boolean true';
+        }
+        if (! is_int($report['total_issue_count'] ?? null) || $report['total_issue_count'] !== 0) {
+            $errors[] = 'total_issue_count must be strict integer 0';
+        }
+
+        // Recompute zero-delta
+        if (! is_array($report['baseline_metrics'] ?? null) || ! is_array($report['post_metrics'] ?? null)) {
+            $errors[] = 'baseline_metrics and post_metrics are mandatory arrays in report';
+        } else {
+            $deltaRes = self::assertRollbackZeroDelta($report['baseline_metrics'], $report['post_metrics']);
+            if (! ($deltaRes['is_zero_delta'] ?? false)) {
+                $errors[] = 'Recomputed rollback zero delta failed: '.implode(', ', $deltaRes['errors']);
+            }
+        }
+
+        // Parse and cross-check raw recon artifact
+        $rawReconSha = hash('sha256', $rawReconContent);
+        $repReconSha = (string) ($report['reconciliation_artifact_sha256'] ?? '');
+        if (! hash_equals($rawReconSha, $repReconSha)) {
+            $errors[] = "Reconciliation artifact SHA mismatch: expected '{$repReconSha}', actual '{$rawReconSha}'";
+        }
+
+        $rawReconData = json_decode($rawReconContent, true);
+        if (! is_array($rawReconData)) {
+            $errors[] = 'Raw reconciliation artifact is not valid JSON';
+        } else {
+            if (($rawReconData['all_healthy'] ?? null) !== true) {
+                $errors[] = 'Raw reconciliation artifact all_healthy must be boolean true';
+            }
+            $rawResults = $rawReconData['reconciler_results'] ?? null;
+            $repResults = $report['reconciler_results'] ?? null;
+            if (! is_array($rawResults) || ! is_array($repResults)) {
+                $errors[] = 'reconciler_results missing in raw recon or report';
+            } else {
+                foreach (self::REQUIRED_RECONCILER_SERVICES as $svcName) {
+                    $rawSvc = $rawResults[$svcName] ?? null;
+                    $repSvc = $repResults[$svcName] ?? null;
+                    if (! is_array($rawSvc) || ! is_array($repSvc)) {
+                        $errors[] = "Service '{$svcName}' missing from reconciler_results";
+
+                        continue;
+                    }
+                    if (($rawSvc['healthy'] ?? null) !== true || ($repSvc['healthy'] ?? null) !== true) {
+                        $errors[] = "Service '{$svcName}' healthy must be boolean true in raw recon and report";
+                    }
+                    if (! is_int($rawSvc['issue_count'] ?? null) || $rawSvc['issue_count'] !== 0) {
+                        $errors[] = "Service '{$svcName}' raw issue_count must be strict integer 0";
+                    }
+                    if (! is_int($repSvc['issue_count'] ?? null) || $repSvc['issue_count'] !== 0) {
+                        $errors[] = "Service '{$svcName}' report issue_count must be strict integer 0";
+                    }
+                }
+            }
+        }
+
+        return [
+            'is_valid' => count($errors) === 0,
+            'errors' => $errors,
+        ];
     }
 
     /**
@@ -2793,9 +3151,58 @@ final class DisposableFinancialPostRunInspector
                 'all_healthy' => (bool) ($trustedDbReport['all_healthy'] ?? false),
                 'reconciler_results' => $trustedDbReport['reconciler_results'] ?? [],
             ];
-            if (isset($trustedDbReport['rollback_probes_manifest'])) {
-                $coreDeterministicPayload['rollback_probes_manifest'] = $trustedDbReport['rollback_probes_manifest'];
+            if (! isset($trustedDbReport['rollback_probes_manifest']) || ! is_array($trustedDbReport['rollback_probes_manifest'])) {
+                $errors[] = 'Trusted DB report in advanced scope must contain rollback_probes_manifest with exactly 3 probe entries.';
+            } else {
+                $manifest = $trustedDbReport['rollback_probes_manifest'];
+                $expectedProbeNames = [
+                    'rollback_permission_denial' => 403,
+                    'rollback_insufficient_stock' => 422,
+                    'rollback_controlled_after_posting' => 500,
+                ];
+                $mKeys = array_keys($manifest);
+                sort($mKeys);
+                $eKeys = array_keys($expectedProbeNames);
+                sort($eKeys);
+                if ($mKeys !== $eKeys) {
+                    $errors[] = 'rollback_probes_manifest must contain exactly the 3 required probe keys without extra or missing entries: '.implode(', ', $eKeys);
+                } else {
+                    foreach ($expectedProbeNames as $reqProbe => $expCode) {
+                        $mEntry = $manifest[$reqProbe] ?? null;
+                        if (! is_array($mEntry)) {
+                            $errors[] = "Manifest entry for '{$reqProbe}' is not an array.";
+                            continue;
+                        }
+                        if (($mEntry['probe_name'] ?? '') !== $reqProbe) {
+                            $errors[] = "Manifest entry for '{$reqProbe}' probe_name mismatch.";
+                        }
+                        if (($mEntry['zero_delta_verified'] ?? null) !== true) {
+                            $errors[] = "Manifest entry for '{$reqProbe}' zero_delta_verified must be boolean true.";
+                        }
+                        if (($mEntry['reconciliations_healthy'] ?? null) !== true) {
+                            $errors[] = "Manifest entry for '{$reqProbe}' reconciliations_healthy must be boolean true.";
+                        }
+                        if (($mEntry['expected_http_status'] ?? 0) !== $expCode || ($mEntry['actual_http_status'] ?? 0) !== $expCode) {
+                            $errors[] = "Manifest entry for '{$reqProbe}' status code mismatch: expected {$expCode}.";
+                        }
+                        if (empty($mEntry['report_file']) || empty($mEntry['report_sha256']) || empty($mEntry['reconciliation_file']) || empty($mEntry['reconciliation_sha256'])) {
+                            $errors[] = "Manifest entry for '{$reqProbe}' missing file or SHA references.";
+                        }
+                    }
+                }
+                $coreDeterministicPayload['rollback_probes_manifest'] = $manifest;
+
+                if (! empty($expectedPins['expectedProbeReportsManifestSha'])) {
+                    $actualManifestSha = (string) ($expectedPins['actualProbeReportsManifestSha'] ?? '');
+                    if ($actualManifestSha === '') {
+                        $actualManifestSha = hash('sha256', (string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                    }
+                    if (! hash_equals((string) $expectedPins['expectedProbeReportsManifestSha'], $actualManifestSha)) {
+                        $errors[] = "rollback_probes_manifest SHA mismatch: expected '{$expectedPins['expectedProbeReportsManifestSha']}', got '{$actualManifestSha}'.";
+                    }
+                }
             }
+
             $computedReportDigest = self::computeReportDigest($coreDeterministicPayload);
             $actualReportDigest = (string) ($trustedDbReport['report_digest'] ?? $trustedDbReport['digest'] ?? '');
             if ($actualReportDigest === '' || ! hash_equals($computedReportDigest, $actualReportDigest)) {

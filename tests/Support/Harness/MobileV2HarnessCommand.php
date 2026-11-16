@@ -471,16 +471,15 @@ class MobileV2HarnessCommand extends Command
 
                 // Obtain mandatory exact controlled_fault_after_posting UUID from verified owned ACP (path + SHA)
                 $acpPath = $harness->advancedControlPacketPath();
-                if ($acpPath === null || ! is_file($acpPath)) {
-                    throw new \RuntimeException('Advanced probe execution refused: advanced_control_packet.json not found.');
+                if ($acpPath === null) {
+                    throw new \RuntimeException('Advanced probe execution refused: advanced_control_packet.json path not set.');
                 }
-                if (is_link($acpPath)) {
-                    throw new \RuntimeException('Advanced probe execution refused: advanced_control_packet.json is a symlink.');
+                $harnessDir = $harness->harnessTempDir();
+                if ($harnessDir === null) {
+                    throw new \RuntimeException('Advanced probe execution refused: harness temp directory not set.');
                 }
-                $filePerms = fileperms($acpPath) & 0777;
-                if ($filePerms !== 0600) {
-                    throw new \RuntimeException(sprintf('Advanced probe execution refused: insecure ACP file permissions %04o, expected 0600.', $filePerms));
-                }
+                SupervisedPairedFinancialDrill::assertSecureContainedFile($acpPath, $harnessDir, 'advanced_control_packet.json', 'ACP');
+
                 $acpSha = $harness->advancedControlPacketSha256();
                 if ($acpSha === null || ! hash_equals($acpSha, (string) hash_file('sha256', $acpPath))) {
                     throw new \RuntimeException('Advanced probe execution refused: advanced_control_packet.json SHA-256 mismatch.');
@@ -490,22 +489,9 @@ class MobileV2HarnessCommand extends Command
                     throw new \RuntimeException('Advanced probe execution refused: invalid JSON in advanced_control_packet.json.');
                 }
 
-                // Require three exact distinct probe IDs
-                $probeEventIds = (array) ($acpData['probe_event_ids'] ?? []);
-                $permId = (string) ($probeEventIds['permission_denial'] ?? ($probeEventIds['rollback_permission_denial'] ?? ($acpData['probes']['probe_permission_denial']['event_id'] ?? '')));
-                $stockId = (string) ($probeEventIds['insufficient_stock'] ?? ($probeEventIds['rollback_insufficient_stock'] ?? ($acpData['probes']['probe_insufficient_stock']['event_id'] ?? '')));
-                $faultId = (string) ($probeEventIds['controlled_fault_after_posting'] ?? ($probeEventIds['rollback_controlled_after_posting'] ?? ($acpData['probes']['probe_controlled_fault_after_posting']['event_id'] ?? '')));
-
-                $uuidPattern = '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/';
-                if (! preg_match($uuidPattern, $permId) || ! preg_match($uuidPattern, $stockId) || ! preg_match($uuidPattern, $faultId)) {
-                    throw new \RuntimeException('Advanced probe execution refused: ACP does not contain all three valid UUID probe IDs.');
-                }
-
-                if (count(array_unique([$permId, $stockId, $faultId])) !== 3) {
-                    throw new \RuntimeException('Advanced probe execution refused: ACP probe IDs must be mutually distinct.');
-                }
-
-                $probeFaultEventId = $faultId;
+                // Require exact 3 probe keys and UUIDs distinct from target using shared production validator
+                $validatedProbes = DisposableFinancialPostRunInspector::validateAdvancedControlPacket($acpData, $targetEventId);
+                $probeFaultEventId = $validatedProbes['controlled_fault_after_posting'];
                 $harness->configureStageAllowlist([
                     $probeFaultEventId => 'after_posting',
                 ]);

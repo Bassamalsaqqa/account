@@ -446,6 +446,11 @@ final class DisposableMobileV2BackendHarness
         return null;
     }
 
+    public function harnessTempDir(): ?string
+    {
+        return $this->harnessTempDir;
+    }
+
     /**
      * @return array<string, string>
      */

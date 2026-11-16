@@ -866,84 +866,31 @@ try {
                 throw new \RuntimeException("INVALID_PROBE_REPORT_JSON: probe '{$pName}'");
             }
 
-            // Verify pinned identities
-            if (($rep['probe_name'] ?? '') !== $pName) {
-                throw new \RuntimeException("PROBE_REPORT_NAME_MISMATCH: expected '{$pName}', got '".($rep['probe_name'] ?? 'null')."'");
-            }
-            if (($rep['client_event_id'] ?? '') !== $expectedProbeId) {
-                throw new \RuntimeException("PROBE_REPORT_EVENT_ID_MISMATCH: expected '{$expectedProbeId}', got '".($rep['client_event_id'] ?? 'null')."'");
-            }
-            $expStatus = $expectedStatusMap[$pName];
-            if (($rep['expected_http_status'] ?? 0) !== $expStatus) {
-                throw new \RuntimeException("PROBE_REPORT_EXPECTED_STATUS_MISMATCH: expected {$expStatus}, got ".($rep['expected_http_status'] ?? 'null'));
-            }
-            if (($rep['actual_http_status'] ?? 0) !== $expStatus) {
-                throw new \RuntimeException("PROBE_REPORT_ACTUAL_STATUS_MISMATCH: expected {$expStatus}, got ".($rep['actual_http_status'] ?? 'null'));
-            }
-            if (($rep['status_matched'] ?? false) !== true) {
-                throw new \RuntimeException("PROBE_REPORT_STATUS_NOT_MATCHED: probe '{$pName}'");
-            }
-            if (($rep['schema_name'] ?? '') !== $schemaName) {
-                throw new \RuntimeException("PROBE_REPORT_SCHEMA_MISMATCH: expected '{$schemaName}', got '".($rep['schema_name'] ?? 'null')."'");
-            }
-            if ((int) ($rep['company_id'] ?? 0) !== $companyId) {
-                throw new \RuntimeException("PROBE_REPORT_COMPANY_ID_MISMATCH: expected {$companyId}, got ".($rep['company_id'] ?? 'null'));
-            }
-            if (($rep['company_public_id'] ?? '') !== $companyUlid) {
-                throw new \RuntimeException("PROBE_REPORT_COMPANY_PUBLIC_ID_MISMATCH: expected '{$companyUlid}', got '".($rep['company_public_id'] ?? 'null')."'");
-            }
-            if (($rep['backend_head'] ?? '') !== $backendHead) {
-                throw new \RuntimeException("PROBE_REPORT_BACKEND_HEAD_MISMATCH: expected '{$backendHead}', got '".($rep['backend_head'] ?? 'null')."'");
-            }
-            if (($rep['handoff_sha256'] ?? '') !== $candidateHandoffSha) {
-                throw new \RuntimeException("PROBE_REPORT_HANDOFF_SHA_MISMATCH: expected '{$candidateHandoffSha}', got '".($rep['handoff_sha256'] ?? 'null')."'");
-            }
-
-            // Recompute assertRollbackZeroDelta on retained pre/post metrics
-            if (! is_array($rep['baseline_metrics'] ?? null) || ! is_array($rep['post_metrics'] ?? null)) {
-                throw new \RuntimeException("PROBE_REPORT_METRICS_MISSING: probe '{$pName}'");
-            }
-            $recomputedDelta = DisposableFinancialPostRunInspector::assertRollbackZeroDelta(
-                $rep['baseline_metrics'],
-                $rep['post_metrics']
-            );
-            if (! ($recomputedDelta['is_zero_delta'] ?? false)) {
-                throw new \RuntimeException("ROLLBACK_PROBE_ZERO_DELTA_RECOMPUTE_FAILED: probe '{$pName}' delta is not zero: " . implode(', ', $recomputedDelta['errors']));
-            }
-
-            // Validate every individual reconciler result (not aggregate booleans alone)
-            $recResults = $rep['reconciler_results'] ?? null;
-            if (! is_array($recResults)) {
-                throw new \RuntimeException("PROBE_REPORT_RECONCILER_RESULTS_MISSING: probe '{$pName}'");
-            }
-            foreach ($requiredServiceNames as $svcFullName) {
-                $svcData = $recResults[$svcFullName] ?? null;
-                if (! is_array($svcData)) {
-                    throw new \RuntimeException("PROBE_REPORT_SERVICE_RESULT_MISSING: probe '{$pName}' service '{$svcFullName}'");
-                }
-                if (($svcData['healthy'] ?? false) !== true) {
-                    throw new \RuntimeException("PROBE_REPORT_SERVICE_UNHEALTHY: probe '{$pName}' service '{$svcFullName}'");
-                }
-                if ((int) ($svcData['issue_count'] ?? -1) !== 0) {
-                    throw new \RuntimeException("PROBE_REPORT_SERVICE_ISSUES: probe '{$pName}' service '{$svcFullName}' reported issues: " . $svcData['issue_count']);
-                }
-            }
-            if (($rep['reconciliations_healthy'] ?? false) !== true || (int) ($rep['total_issue_count'] ?? -1) !== 0) {
-                throw new \RuntimeException("PROBE_REPORT_AGGREGATE_UNHEALTHY: probe '{$pName}'");
-            }
-
             // Verify raw per-probe reconciliation artifact exists and matches SHA
             $rawReconPath = $bootstrapDir . '/probe_' . $pName . '_reconciliation.json';
             if (! is_file($rawReconPath)) {
                 throw new \RuntimeException("MISSING_RAW_RECON_ARTIFACT: probe '{$pName}'");
             }
             SupervisedPairedFinancialDrill::assertSecureFilePermissions($rawReconPath, 'RAW_RECON_' . strtoupper($pName));
-            $actualReconSha = hash_file('sha256', $rawReconPath);
-            if (! hash_equals((string) ($rep['reconciliation_artifact_sha256'] ?? ''), $actualReconSha)) {
-                throw new \RuntimeException("RAW_RECON_SHA_MISMATCH: probe '{$pName}' vs report");
-            }
+            $rawReconContent = (string) file_get_contents($rawReconPath);
+            $actualReconSha = hash('sha256', $rawReconContent);
             if (! hash_equals((string) ($manifestEntry['reconciliation_sha256'] ?? ''), $actualReconSha)) {
                 throw new \RuntimeException("RAW_RECON_SHA_MISMATCH: probe '{$pName}' vs manifest");
+            }
+
+            $expectedContext = [
+                'probe_name' => $pName,
+                'client_event_id' => $expectedProbeId,
+                'expected_http_status' => $expectedStatusMap[$pName],
+                'schema_name' => $schemaName,
+                'company_id' => $companyId,
+                'backend_head' => $backendHead,
+                'handoff_sha256' => $candidateHandoffSha,
+            ];
+
+            $verifyResult = DisposableFinancialPostRunInspector::verifyProbeReportPayload($rep, $rawReconContent, $expectedContext);
+            if (! $verifyResult['is_valid']) {
+                throw new \RuntimeException("PROBE_REPORT_VERIFICATION_FAILED: probe '{$pName}': " . implode('; ', $verifyResult['errors']));
             }
 
             echo "  [Rollback] Verified proxy probe report for '{$pName}': zero-delta recomputed OK, 6 reconcilers healthy (0 issues), artifact SHA pinned.\n";

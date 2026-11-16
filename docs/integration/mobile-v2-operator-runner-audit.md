@@ -1444,51 +1444,54 @@ Authored future process-only test `test_bounded_throwaway_advanced_three_child_l
 
 #### 18.10.7 Advanced Execution Integrity Closures: Verified ACP Allowlist Wiring, Isolated Inspector Bootstrap, Exclusive 0600 Creation, Manifest Indexing, and Authored Regression Suite
 
-Following Root review at commit `4815546d4d00ffe82d428fb490981f96b60cf5d9`, the remaining driver, proxy observer, post-run inspector, and test gaps were resolved under strict SOURCE-ONLY discipline:
+Following Root reviews at commits `4815546d4d00ffe82d428fb490981f96b60cf5d9` and `ebb8ed5c26f59cda34d10e5d864a6823ba2e686b`, the remaining driver, proxy observer, post-run inspector, and test gaps were resolved under strict SOURCE-ONLY discipline:
 
-1. **Mandatory Verified Owned ACP Allowlist Wiring (`MobileV2HarnessCommand.php`)**:
-   - Replaced reading removed fixture manifest key `probe_after_posting_fault_event_id` and resetting `configureStageAllowlist([])`.
-   - Mandates reading `advanced_control_packet.json` from the verified owned harness directory with strict security assertions: path within harness directory, owned by current UID, mode `0600`, not a symlink, and matching `$harness->advancedControlPacketSha256()`.
-   - Asserts exactly 3 distinct valid UUIDs for `permission_denial`, `insufficient_stock`, and `controlled_fault_after_posting`. Fails closed if missing, malformed, or colliding.
-   - Wires `$harness->configureStageAllowlist([$probeFaultEventId => 'after_posting'])` unconditionally prior to backend startup.
+1. **Canonical Producer->Consumer Contract & Strict Service Types (Review Item A)**:
+   - Eliminated contract drift between proxy observer and supervisor:
+     - `TestTransportProxy` and `DisposableFinancialPostRunInspector::buildProbeReportPayload()` emit both `reconciler_results` and `reconciliations` dictionaries populated with identical canonical results.
+     - Mandates strict typed integer `issue_count === 0` and strict boolean `healthy === true` across all 6 named canonical reconcilers (`AccountingReconciliationService`, `InventoryReconciliationService`, `SalesReconciliationService`, `PayablesReconciliationService`, `MoneyReconciliationService`, `Phase7ReconciliationService`). Rejects string numbers, truthy values, or non-zero counts.
+     - Production helper `DisposableFinancialPostRunInspector::verifyProbeReportPayload()` cross-checks the report against raw reconciliation artifact JSON, recomputes zero-delta on pre/post metrics, and validates all 6 service objects.
 
-2. **Isolated Inspector Bootstrap & Reconciler Service Verification (`TestTransportProxy.php`)**:
-   - Replaced `proxy_db_credentials.json` (db_user/db_password only) with canonical `child_bootstrap_config.json` containing complete `proof_path`, `proof_nonce`, and `schema_name`.
-   - Verified bootstrap configuration file exists, is owned by current UID, mode `0600`, and not a symlink.
-   - Configured an explicit isolated environment (`$inspectorEnv`) passing only `PATH`, `APP_ENV=testing`, `MOBILE_V2_HARNESS_ENABLE=1`, `PHASE8_ALLOW_DISPOSABLE_DB=1`, `PHASE8_TEST_DB_*`, `PHASE8_DISPOSABLE_DB_PROOF`, and `PHASE8_DISPOSABLE_DB_NONCE`.
-   - Bounded reconciler subprocess execution with finite remaining deadline and captured raw output, stderr, and exit status.
-   - Validates all 6 canonical reconciler service classes by full short class name:
-     - `AccountingReconciliationService`
-     - `InventoryReconciliationService`
-     - `SalesReconciliationService`
-     - `PayablesReconciliationService`
-     - `MoneyReconciliationService`
-     - `Phase7ReconciliationService`
-   - Recomputes `total_issue_count` and `all_healthy` dynamically (`healthy === true && issue_count === 0` for all 6); refuses hardcoded values.
+2. **Genuine Production Validators in real Call-Sites & Authored No-DB Regression Suite (Review Item B)**:
+   - Extracted shared production helpers in `DisposableFinancialPostRunInspector`:
+     - `validateAdvancedControlPacket(array $acpData, string $primaryTargetEventId)`: enforces exact 3 probe keys, valid UUID formats, mutual distinctness, and distinctness from primary target event ID.
+     - `buildProbeReportPayload(array $params)`: builds strictly-typed canonical probe report with verified reconcilers and zero-delta metrics.
+     - `verifyProbeReportPayload(array $report, string $rawReconContent, array $expectedContext)`: validates report keys, cross-checks raw recon artifact SHA and JSON, and recomputes rollback zero-delta.
+   - Wired these helpers directly into `MobileV2HarnessCommand`, `TestTransportProxy`, and `supervised-financial-drill.php`.
+   - In `DisposableMobileV2BackendHarnessGuardTest.php`, removed hand-built loops and mock Reflection instantiations. Added genuine unit tests exercising the full flow:
+     - `test_genuine_producer_to_supervisor_to_trusted_compose_to_advanced_validator_flow`: exercises producer report building -> supervisor report verification -> trusted DB report composition with 3-probe manifest -> advanced probe evidence validation.
+     - `test_verify_probe_report_payload_refuses_mismatched_keys_or_tampered_payload`: proves supervisor fails closed on wrong event ID, HTTP status mismatch, or tampered reconciliation artifact content.
+     - `test_verify_probe_report_payload_refuses_unhealthy_service_or_non_integer_issue_count`: proves supervisor refuses reports with an unhealthy service despite aggregate success.
+     - `test_compose_trusted_db_report_in_advanced_scope_refuses_missing_or_extra_manifest_keys`: proves trusted DB report composition refuses missing or invalid rollback manifests in advanced scope.
+     - `test_validate_advanced_control_packet_production_helper`: proves ACP validation enforces mutual distinctness and target event isolation.
+     - `test_assert_secure_contained_file_rejects_symlink_or_insecure_permissions`: validates directory containment and permission enforcement.
 
-3. **Atomic, Hash-Pinned, Immutable Report Creation & Manifest Indexing (`TestTransportProxy.php`)**:
-   - Implemented `writeExclusiveSecureFile(string $filePath, string $content)`:
-     - Enforces parent directory UID check, 0700 permissions, and no foreign group/other write permissions.
-     - Validates destination file does not exist and is not a symlink.
-     - Uses `fopen($filePath, 'xb')` (`O_CREAT | O_EXCL`) creating with mode `0600`.
-     - Validates complete byte write count, calls `fflush` + `fsync`, and closes handle.
-   - Preserves raw reconciliation artifact (`probe_{name}_reconciliation.json`) and probe report (`probe_{name}_report.json`) using exclusive writes.
-   - Maintains immutable manifest index (`probe_reports_manifest.json`) tracking report SHA-256 digests, updated atomically via temporary file rename.
+3. **Secure Immutable Final 3-Report Index & Full Failure Retention (Review Item C)**:
+   - In `TestTransportProxy`:
+     - Preserves raw stdout and stderr in `probe_{name}_reconciliation.json` and `probe_{name}_reconciliation.stderr` using exclusive writes (`writeExclusiveSecureFile`) BEFORE evaluating success or returning on failure, keeping exact raw bytes without newline modification.
+     - Enforces finite monotonic deadline budget: calculates `$remainingBudget = $deadline - $now`; if `<= 0.0`, returns HTTP 504 Gateway Timeout immediately, refusing to extend exhausted deadlines.
+     - Maintains in-memory `$observedProbeReports` map, rejecting duplicate probe observations early.
+     - Writes the final immutable `probe_reports_manifest.json` index file exclusively (`O_CREAT | O_EXCL`, mode `0600`) once all 3 distinct probes are observed, eliminating temporary rename rewrites.
 
-4. **Producer/Supervisor Coherence & Fail-Closed Assertions (`supervised-financial-drill.php`, `DisposableFinancialPostRunInspector.php`)**:
-   - Enforces aligned contract keys: requires both `economic_delta_zero` and `zero_delta_verified`.
-   - Removed path fallback searching and silent report skipping.
-   - Requires exactly 3 probe reports at declared owned path `$bootstrapDir` and verifies report SHA-256 against `$bootstrapDir.'/probe_reports_manifest.json'`.
-   - Recomputes `assertRollbackZeroDelta` on pre/post metrics and asserts every individual reconciler result is healthy with 0 issues.
-   - Verifies raw reconciliation artifact exists and matches SHA-256 against report and manifest.
-   - Passes `--probe-reports-manifest=` to `financial-inspector-cli.php compose-db-report`, which binds the manifest into deterministic payload and evidence verification.
+4. **Shared Owned ACP & Bootstrap Containment Validation (Review Item D)**:
+   - Added `SupervisedPairedFinancialDrill::assertSecureContainedFile()` enforcing:
+     - Target file not a symlink, exists, has exact expected basename, mode 0600 owned by current UID.
+     - Parent directory exists, not a symlink, mode 0700 owned by current UID, and matches expected parent path via `realpath()`.
+     - Zero symlinks across all components in the file path hierarchy.
+   - `MobileV2HarnessCommand` validates `advanced_control_packet.json` via `assertSecureContainedFile` within `$harness->harnessTempDir()`, requiring exact 3 probe keys and distinct UUIDs via `validateAdvancedControlPacket`.
+   - `TestTransportProxy` validates `child_bootstrap_config.json` via `assertSecureContainedFile` within `$witnessDir`, eliminating fallback to unrelated credentials files.
+   - Fixed JSON decode of credentials file in `test-transport-proxy-cli.php`.
 
-5. **Authored 6 Focused No-DB Regression Tests (`DisposableMobileV2BackendHarnessGuardTest.php`)**:
-   - Marked strictly `testsAUTHOREDUNRUN`:
-     1. `test_proxy_write_exclusive_secure_file_enforces_permissions_and_refuses_overwrite`: validates exclusive file creation (`0600`), prevents overwrite (`xb`), and verifies directory permission checks.
-     2. `test_proxy_write_exclusive_secure_file_refuses_symlink`: ensures symlinked target paths are rejected before file operations.
-     3. `test_probe_reports_manifest_hash_binding_and_producer_consumer_coherence`: verifies producer-emitted manifest hashes align with consumer expectations and deterministic digest binding.
-     4. `test_rollback_verification_refuses_mismatched_report_hash_or_tampered_payload`: proves supervisor fails closed when a probe report's content deviates from the manifest index.
-     5. `test_rollback_verification_refuses_unhealthy_individual_service_despite_aggregate_true`: proves supervisor rejects reports where individual reconciler service has `issue_count > 0` even if aggregate boolean is claimed true.
-     6. `test_harness_fault_uuid_propagation_requires_valid_acp_and_distinct_probe_ids`: tests that missing ACP, invalid permissions, or colliding probe UUIDs fail closed immediately.
+5. **Mandatory Verified 3-Report Manifest Binding in Standalone Compose & Validators (Review Item E)**:
+   - `DisposableFinancialPostRunInspector::composeTrustedDbReport()`:
+     - In advanced scope (`ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION`), strictly mandates a non-null `rollback_probes_manifest` with exactly the 3 required probe keys (`rollback_permission_denial`, `rollback_insufficient_stock`, `rollback_controlled_after_posting`).
+     - Asserts valid report files, 64-hex SHA-256 digests, zero delta verified, and healthy reconcilers.
+     - Basic scope (`ROOT_AUTHORIZED_PAIRED_EXECUTION`) remains byte-for-byte unchanged.
+   - `financial-inspector-cli.php`:
+     - Added `--expected-probe-manifest-sha=` flag.
+     - Binds `expectedProbeReportsManifestSha` and `actualProbeReportsManifestSha` into standalone outer evidence validation (`--validate-evidence=`).
+     - Mandates `--probe-reports-manifest=<path>` when composing trusted DB reports in advanced scope.
+   - `DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson()`:
+     - In advanced scope, mandates `rollback_probes_manifest` in the trusted DB report, validates each manifest entry against expected status codes and SHA pins, and checks manifest SHA against expected pin if provided.
+
 

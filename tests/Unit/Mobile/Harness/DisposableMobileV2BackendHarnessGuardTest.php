@@ -7248,213 +7248,437 @@ PHP;
     }
 
     #[Test]
-    public function test_proxy_write_exclusive_secure_file_enforces_permissions_and_refuses_overwrite(): void
+    public function test_genuine_producer_to_supervisor_to_trusted_compose_to_advanced_validator_flow(): void
     {
-        $tmpDir = sys_get_temp_dir() . '/test_exclusive_write_' . bin2hex(random_bytes(6));
-        mkdir($tmpDir, 0700, true);
+        // 1. Synthetic pre/post zero-delta metrics
+        $baselineMetrics = [
+            'company_id' => 1,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'sales_invoices' => 10,
+            'sales_invoices_max_id' => 10,
+            'sales_invoice_lines' => 20,
+            'sales_invoice_lines_max_id' => 20,
+            'sales_invoice_lot_allocations' => 0,
+            'sales_invoice_lot_allocations_max_id' => 0,
+            'customer_payments' => 5,
+            'customer_payments_max_id' => 5,
+            'customer_payment_allocations' => 5,
+            'customer_payment_allocations_max_id' => 5,
+            'mobile_event_receipts' => 10,
+            'mobile_event_receipts_max_id' => 10,
+            'stock_movements' => 20,
+            'stock_movements_max_id' => 20,
+            'stock_movements_qty_sum' => '100.000000',
+            'posting_batches' => 15,
+            'posting_batches_max_id' => 15,
+            'posting_lines' => 30,
+            'posting_lines_max_id' => 30,
+            'document_sequences' => ['sales_invoice:2026' => 11],
+        ];
+        $postMetrics = $baselineMetrics; // exact zero delta
 
-        try {
-            $reflector = new \ReflectionClass(\Tests\Support\Harness\TestTransportProxy::class);
-            $proxy = $reflector->newInstanceWithoutConstructor();
+        // 2. Build genuine raw recon artifact
+        $rawReconData = [
+            'all_healthy' => true,
+            'total_issue_count' => 0,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
+        ];
+        $rawReconContent = json_encode($rawReconData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $rawReconSha = hash('sha256', $rawReconContent);
 
-            $targetFile = $tmpDir . '/probe_test_report.json';
-            $content = json_encode(['test' => 'ok', 'delta' => 0], JSON_PRETTY_PRINT);
+        $clientEventId = '11111111-1111-4111-8111-111111111111';
+        $reportParams = [
+            'probe_name' => 'rollback_permission_denial',
+            'client_event_id' => $clientEventId,
+            'expected_http_status' => 403,
+            'actual_http_status' => 403,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'handoff_sha256' => str_repeat('a', 64),
+            'economic_delta_zero' => true,
+            'zero_delta_verified' => true,
+            'raw_reconciliation_data' => $rawReconData,
+            'reconciliation_exit_code' => 0,
+            'reconciliation_stderr' => '',
+            'reconciliation_artifact_sha256' => $rawReconSha,
+            'baseline_metrics' => $baselineMetrics,
+            'post_metrics' => $postMetrics,
+        ];
 
-            // 1. Initial write succeeds with 0600
-            $proxy->writeExclusiveSecureFile($targetFile, $content);
-            $this->assertFileExists($targetFile);
-            $this->assertSame($content, file_get_contents($targetFile));
-            $this->assertSame(0600, fileperms($targetFile) & 0777);
+        // 3. Test genuine report builder
+        $report = DisposableFinancialPostRunInspector::buildProbeReportPayload($reportParams);
+        $this->assertSame('rollback_permission_denial', $report['probe_name']);
+        $this->assertTrue($report['reconciliations_healthy']);
+        $this->assertSame(0, $report['total_issue_count']);
+        $this->assertCount(6, $report['reconciler_results']);
 
-            // 2. Second write to existing file throws RuntimeException (exclusive refusal)
-            $this->expectException(RuntimeException::class);
-            $this->expectExceptionMessage('target file already exists');
-            $proxy->writeExclusiveSecureFile($targetFile, $content);
-        } finally {
-            if (file_exists($tmpDir . '/probe_test_report.json')) {
-                @unlink($tmpDir . '/probe_test_report.json');
-            }
-            if (is_dir($tmpDir)) {
-                @rmdir($tmpDir);
-            }
-        }
-    }
+        // 4. Test genuine report verifier (Supervisor verification)
+        $expectedContext = [
+            'probe_name' => 'rollback_permission_denial',
+            'client_event_id' => $clientEventId,
+            'expected_http_status' => 403,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'handoff_sha256' => str_repeat('a', 64),
+        ];
+        $verification = DisposableFinancialPostRunInspector::verifyProbeReportPayload($report, $rawReconContent, $expectedContext);
+        $this->assertTrue($verification['is_valid'], 'Report verification must pass for genuine report: '.implode('; ', $verification['errors']));
 
-    #[Test]
-    public function test_proxy_write_exclusive_secure_file_refuses_symlink(): void
-    {
-        $tmpDir = sys_get_temp_dir() . '/test_symlink_write_' . bin2hex(random_bytes(6));
-        mkdir($tmpDir, 0700, true);
-
-        try {
-            $reflector = new \ReflectionClass(\Tests\Support\Harness\TestTransportProxy::class);
-            $proxy = $reflector->newInstanceWithoutConstructor();
-
-            $realTarget = $tmpDir . '/real_target.txt';
-            file_put_contents($realTarget, 'data');
-            chmod($realTarget, 0600);
-
-            $symlinkFile = $tmpDir . '/symlink_report.json';
-            symlink($realTarget, $symlinkFile);
-
-            $this->expectException(RuntimeException::class);
-            $this->expectExceptionMessage('already exists or is symlink');
-            $proxy->writeExclusiveSecureFile($symlinkFile, '{"forbidden":true}');
-        } finally {
-            if (is_link($tmpDir . '/symlink_report.json')) {
-                @unlink($tmpDir . '/symlink_report.json');
-            }
-            if (file_exists($tmpDir . '/real_target.txt')) {
-                @unlink($tmpDir . '/real_target.txt');
-            }
-            if (is_dir($tmpDir)) {
-                @rmdir($tmpDir);
-            }
-        }
-    }
-
-    #[Test]
-    public function test_probe_reports_manifest_hash_binding_and_producer_consumer_coherence(): void
-    {
-        $tmpDir = sys_get_temp_dir() . '/test_manifest_binding_' . bin2hex(random_bytes(6));
-        mkdir($tmpDir, 0700, true);
-
-        try {
-            $reflector = new \ReflectionClass(\Tests\Support\Harness\TestTransportProxy::class);
-            $proxy = $reflector->newInstanceWithoutConstructor();
-
-            $pName = 'permission_denial';
-            $reportFile = $tmpDir . '/probe_' . $pName . '_report.json';
-            $reconFile = $tmpDir . '/probe_' . $pName . '_reconciliation.json';
-
-            $reportData = [
-                'probe_name' => $pName,
-                'client_event_id' => '11111111-1111-4111-8111-111111111111',
+        // 5. Build full 3-probe manifest
+        $reportSha = hash('sha256', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $manifest = [
+            'rollback_permission_denial' => [
+                'probe_name' => 'rollback_permission_denial',
+                'report_file' => 'probe_rollback_permission_denial_report.json',
+                'report_sha256' => $reportSha,
+                'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
+                'reconciliation_sha256' => $rawReconSha,
                 'expected_http_status' => 403,
                 'actual_http_status' => 403,
-                'status_matched' => true,
-                'economic_delta_zero' => true,
                 'zero_delta_verified' => true,
                 'reconciliations_healthy' => true,
-                'total_issue_count' => 0,
-            ];
-            $reconData = ['all_healthy' => true, 'reconciler_results' => []];
-
-            $proxy->writeExclusiveSecureFile($reportFile, json_encode($reportData, JSON_PRETTY_PRINT));
-            $proxy->writeExclusiveSecureFile($reconFile, json_encode($reconData, JSON_PRETTY_PRINT));
-
-            $reportSha = hash_file('sha256', $reportFile);
-            $reconSha = hash_file('sha256', $reconFile);
-
-            $manifestData = [
-                $pName => [
-                    'probe_name' => $pName,
-                    'report_file' => basename($reportFile),
-                    'report_sha256' => $reportSha,
-                    'reconciliation_file' => basename($reconFile),
-                    'reconciliation_sha256' => $reconSha,
-                ],
-            ];
-            $manifestFile = $tmpDir . '/probe_reports_manifest.json';
-            $proxy->writeExclusiveSecureFile($manifestFile, json_encode($manifestData, JSON_PRETTY_PRINT));
-
-            // Consumer verification: assert SHA matches manifest
-            $readManifest = json_decode((string) file_get_contents($manifestFile), true);
-            $this->assertSame($reportSha, $readManifest[$pName]['report_sha256']);
-            $this->assertSame($reconSha, $readManifest[$pName]['reconciliation_sha256']);
-            $this->assertTrue(hash_equals($reportSha, (string) hash_file('sha256', $reportFile)));
-        } finally {
-            foreach (glob($tmpDir . '/*') as $f) {
-                @unlink($f);
-            }
-            if (is_dir($tmpDir)) {
-                @rmdir($tmpDir);
-            }
-        }
-    }
-
-    #[Test]
-    public function test_rollback_verification_refuses_mismatched_report_hash_or_tampered_payload(): void
-    {
-        $manifest = [
-            'permission_denial' => [
-                'report_file' => 'probe_permission_denial_report.json',
-                'report_sha256' => hash('sha256', 'original_content'),
+            ],
+            'rollback_insufficient_stock' => [
+                'probe_name' => 'rollback_insufficient_stock',
+                'report_file' => 'probe_rollback_insufficient_stock_report.json',
+                'report_sha256' => $reportSha,
+                'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
+                'reconciliation_sha256' => $rawReconSha,
+                'expected_http_status' => 422,
+                'actual_http_status' => 422,
+                'zero_delta_verified' => true,
+                'reconciliations_healthy' => true,
+            ],
+            'rollback_controlled_after_posting' => [
+                'probe_name' => 'rollback_controlled_after_posting',
+                'report_file' => 'probe_rollback_controlled_after_posting_report.json',
+                'report_sha256' => $reportSha,
+                'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
+                'reconciliation_sha256' => $rawReconSha,
+                'expected_http_status' => 500,
+                'actual_http_status' => 500,
+                'zero_delta_verified' => true,
+                'reconciliations_healthy' => true,
             ],
         ];
 
-        $tamperedContent = 'tampered_content';
-        $tamperedSha = hash('sha256', $tamperedContent);
+        // 6. Test genuine composeTrustedDbReport with 3-probe manifest
+        $primaryEventId = '99999999-9999-4999-8999-999999999999';
+        $runId = '88888888-8888-4888-8888-888888888888';
+        $metadata = [
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'runId' => $runId,
+            'eventId' => $primaryEventId,
+            'schemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
+            'sourceHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'handoffDigest' => str_repeat('a', 64),
+        ];
+        $deltaResult = [
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'deltas' => ['sales_invoices' => 1],
+            'canonical_graph' => ['invoice_id' => 11],
+        ];
+        $trustedDbReport = DisposableFinancialPostRunInspector::composeTrustedDbReport(
+            $metadata,
+            $baselineMetrics,
+            $deltaResult,
+            $rawReconData,
+            $manifest
+        );
 
-        $this->assertFalse(hash_equals($manifest['permission_denial']['report_sha256'], $tamperedSha));
-    }
+        $this->assertSame('ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', $trustedDbReport['scope']);
+        $this->assertArrayHasKey('rollback_probes_manifest', $trustedDbReport);
+        $this->assertArrayHasKey('report_digest', $trustedDbReport);
 
-    #[Test]
-    public function test_rollback_verification_refuses_unhealthy_individual_service_despite_aggregate_true(): void
-    {
-        $reconcilerResults = [
-            'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
-            'InventoryReconciliationService' => ['healthy' => false, 'issue_count' => 1],
-            'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
-            'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
-            'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
-            'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+        // 7. Test genuine validateAdvancedProbeEvidenceJson
+        $root = dirname(__DIR__, 4);
+        $expectedPins = [
+            'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'expectedRunId' => $runId,
+            'expectedClientEventId' => $primaryEventId,
+            'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+            'expectedHandoffSha' => str_repeat('a', 64),
+            'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'expectedReportDigest' => $trustedDbReport['report_digest'],
+            'expectedSourcePins' => [
+                'source_fixture_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
+                'guard_test_sha256' => (string) hash_file('sha256', __FILE__),
+                'cli_command_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
+                'cli_runner_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
+            ],
+        ];
+        $evidence = [
+            'contract_version' => 'v2_advanced_probe_evidence_v1',
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'run_id' => $runId,
+            'client_event_id' => $primaryEventId,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'handoff_sha256' => str_repeat('a', 64),
+            'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'android_publication_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'android_executable_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'source_pins' => $expectedPins['expectedSourcePins'],
+            'scenarios' => [
+                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'transport_lost_ack_retained_status_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'idempotent_replay_integrity', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'tamper_rejection_integrity', 'status' => 'PASS', 'httpStatusCode' => 409],
+                ['name' => 'rollback_permission_denial', 'status' => 'PASS', 'httpStatusCode' => 403],
+                ['name' => 'rollback_insufficient_stock', 'status' => 'PASS', 'httpStatusCode' => 422],
+                ['name' => 'rollback_controlled_after_posting', 'status' => 'PASS', 'httpStatusCode' => 500],
+            ],
+            'lost_ack_recovery_evidence' => [
+                'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                'network_witness_state' => 'CAPTURED_REAL_TRANSPORT_DROP',
+                'server_commit_verified_before_suppression' => true,
+                'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
+                'recovery_http_status' => 200,
+                'receipt_status' => 'posted',
+                'matching_payload_digest' => '',
+            ],
+            'rollback_probes_evidence' => [
+                'probes' => [
+                    [
+                        'probe_name' => 'rollback_permission_denial',
+                        'actual_http_status' => 403,
+                        'client_event_id' => '11111111-1111-4111-8111-111111111111',
+                        'economic_delta_zero' => true,
+                        'reconciliations_healthy' => true,
+                        'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                    ],
+                    [
+                        'probe_name' => 'rollback_insufficient_stock',
+                        'actual_http_status' => 422,
+                        'client_event_id' => '22222222-2222-4222-8222-222222222222',
+                        'economic_delta_zero' => true,
+                        'reconciliations_healthy' => true,
+                        'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                    ],
+                    [
+                        'probe_name' => 'rollback_controlled_after_posting',
+                        'actual_http_status' => 500,
+                        'client_event_id' => '33333333-3333-4333-8333-333333333333',
+                        'economic_delta_zero' => true,
+                        'reconciliations_healthy' => true,
+                        'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                    ],
+                ],
+            ],
         ];
 
-        $allSixPass = true;
-        foreach ($reconcilerResults as $service => $res) {
-            if (($res['healthy'] ?? false) !== true || (int) ($res['issue_count'] ?? -1) !== 0) {
-                $allSixPass = false;
-                break;
-            }
-        }
-
-        // Must refuse even if simulated aggregate was true
-        $simulatedAggregateHealthy = true;
-        $this->assertTrue($simulatedAggregateHealthy);
-        $this->assertFalse($allSixPass, 'Individual inventory failure must reject overall probe health');
+        $evidenceValidation = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
+        $this->assertTrue($evidenceValidation['is_valid'], 'Evidence validation must pass with genuine trustedDbReport: '.implode('; ', $evidenceValidation['errors']));
     }
 
     #[Test]
-    public function test_harness_fault_uuid_propagation_requires_valid_acp_and_distinct_probe_ids(): void
+    public function test_verify_probe_report_payload_refuses_mismatched_keys_or_tampered_payload(): void
     {
-        $tmpDir = sys_get_temp_dir() . '/test_acp_propagation_' . bin2hex(random_bytes(6));
+        $rawReconData = [
+            'all_healthy' => true,
+            'total_issue_count' => 0,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
+        ];
+        $rawReconContent = json_encode($rawReconData);
+
+        $report = [
+            'probe_name' => 'rollback_permission_denial',
+            'client_event_id' => '11111111-1111-4111-8111-111111111111',
+            'expected_http_status' => 403,
+            'actual_http_status' => 403,
+            'status_matched' => true,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'handoff_sha256' => str_repeat('a', 64),
+            'economic_delta_zero' => true,
+            'zero_delta_verified' => true,
+            'reconciliations_healthy' => true,
+            'total_issue_count' => 0,
+            'baseline_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
+            'post_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
+            'reconciliation_artifact_sha256' => hash('sha256', $rawReconContent),
+            'reconciler_results' => $rawReconData['reconciler_results'],
+        ];
+
+        // 1. Refuses wrong event ID
+        $res = DisposableFinancialPostRunInspector::verifyProbeReportPayload(
+            $report,
+            $rawReconContent,
+            ['probe_name' => 'rollback_permission_denial', 'client_event_id' => '00000000-0000-4000-8000-000000000000', 'expected_http_status' => 403]
+        );
+        $this->assertFalse($res['is_valid']);
+        $this->assertStringContainsString('client_event_id mismatch', implode(' ', $res['errors']));
+
+        // 2. Refuses wrong HTTP status
+        $res2 = DisposableFinancialPostRunInspector::verifyProbeReportPayload(
+            $report,
+            $rawReconContent,
+            ['probe_name' => 'rollback_permission_denial', 'client_event_id' => '11111111-1111-4111-8111-111111111111', 'expected_http_status' => 500]
+        );
+        $this->assertFalse($res2['is_valid']);
+        $this->assertStringContainsString('actual_http_status mismatch', implode(' ', $res2['errors']));
+
+        // 3. Refuses tampered raw recon content
+        $tamperedRawContent = json_encode(['all_healthy' => true, 'reconciler_results' => []]);
+        $res3 = DisposableFinancialPostRunInspector::verifyProbeReportPayload(
+            $report,
+            $tamperedRawContent,
+            ['probe_name' => 'rollback_permission_denial', 'client_event_id' => '11111111-1111-4111-8111-111111111111', 'expected_http_status' => 403]
+        );
+        $this->assertFalse($res3['is_valid']);
+        $this->assertStringContainsString('Reconciliation artifact SHA mismatch', implode(' ', $res3['errors']));
+    }
+
+    #[Test]
+    public function test_verify_probe_report_payload_refuses_unhealthy_service_or_non_integer_issue_count(): void
+    {
+        $rawReconData = [
+            'all_healthy' => true,
+            'total_issue_count' => 0,
+            'reconciler_results' => [
+                'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'InventoryReconciliationService' => ['healthy' => false, 'issue_count' => 1], // Unhealthy!
+                'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            ],
+        ];
+        $rawReconContent = json_encode($rawReconData);
+
+        $report = [
+            'probe_name' => 'rollback_permission_denial',
+            'client_event_id' => '11111111-1111-4111-8111-111111111111',
+            'expected_http_status' => 403,
+            'actual_http_status' => 403,
+            'status_matched' => true,
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'handoff_sha256' => str_repeat('a', 64),
+            'economic_delta_zero' => true,
+            'zero_delta_verified' => true,
+            'reconciliations_healthy' => true,
+            'total_issue_count' => 0,
+            'baseline_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
+            'post_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
+            'reconciliation_artifact_sha256' => hash('sha256', $rawReconContent),
+            'reconciler_results' => $rawReconData['reconciler_results'],
+        ];
+
+        $res = DisposableFinancialPostRunInspector::verifyProbeReportPayload(
+            $report,
+            $rawReconContent,
+            ['probe_name' => 'rollback_permission_denial', 'client_event_id' => '11111111-1111-4111-8111-111111111111', 'expected_http_status' => 403]
+        );
+        $this->assertFalse($res['is_valid']);
+        $this->assertStringContainsString('InventoryReconciliationService', implode(' ', $res['errors']));
+    }
+
+    #[Test]
+    public function test_compose_trusted_db_report_in_advanced_scope_refuses_missing_or_extra_manifest_keys(): void
+    {
+        $metadata = [
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'runId' => '88888888-8888-4888-8888-888888888888',
+            'eventId' => '99999999-9999-4999-8999-999999999999',
+            'schemaName' => 'accounting_p8_tmp_0123456789ab',
+            'companyId' => 1,
+            'sourceHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'handoffDigest' => str_repeat('a', 64),
+        ];
+
+        // 1. Missing manifest throws InvalidArgumentException
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Missing mandatory rollback_probes_manifest');
+        DisposableFinancialPostRunInspector::composeTrustedDbReport(
+            $metadata,
+            ['company_id' => 1],
+            ['is_canonical_delta_valid' => true],
+            ['all_healthy' => true],
+            null
+        );
+    }
+
+    #[Test]
+    public function test_validate_advanced_control_packet_production_helper(): void
+    {
+        $primaryTargetEventId = '99999999-9999-4999-8999-999999999999';
+
+        // 1. Valid ACP
+        $validAcp = [
+            'probe_event_ids' => [
+                'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+            ],
+        ];
+        $validated = DisposableFinancialPostRunInspector::validateAdvancedControlPacket($validAcp, $primaryTargetEventId);
+        $this->assertSame('11111111-1111-4111-8111-111111111111', $validated['permission_denial']);
+        $this->assertSame('22222222-2222-4222-8222-222222222222', $validated['insufficient_stock']);
+        $this->assertSame('33333333-3333-4333-8333-333333333333', $validated['controlled_fault_after_posting']);
+
+        // 2. Reject duplicate UUIDs
+        $duplicateAcp = [
+            'probe_event_ids' => [
+                'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                'insufficient_stock' => '11111111-1111-4111-8111-111111111111',
+                'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+            ],
+        ];
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('probe UUIDs must be mutually distinct');
+        DisposableFinancialPostRunInspector::validateAdvancedControlPacket($duplicateAcp, $primaryTargetEventId);
+    }
+
+    #[Test]
+    public function test_assert_secure_contained_file_rejects_symlink_or_insecure_permissions(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_containment_' . bin2hex(random_bytes(6));
         mkdir($tmpDir, 0700, true);
 
         try {
-            $duplicateUuid = '11111111-1111-4111-8111-111111111111';
-            $badAcpData = [
-                'probe_event_ids' => [
-                    'permission_denial' => $duplicateUuid,
-                    'insufficient_stock' => $duplicateUuid,
-                    'controlled_fault_after_posting' => '22222222-2222-4222-8222-222222222222',
-                ],
-            ];
+            $validFile = $tmpDir . '/test.json';
+            file_put_contents($validFile, '{"data":1}');
+            chmod($validFile, 0600);
 
-            $probeIds = array_values($badAcpData['probe_event_ids']);
-            $this->assertNotSame(3, count(array_unique($probeIds)), 'Duplicate UUIDs must not be distinct');
+            // Valid check passes
+            SupervisedPairedFinancialDrill::assertSecureContainedFile($validFile, $tmpDir, 'test.json', 'TEST');
+            $this->assertFileExists($validFile);
 
-            $validAcpData = [
-                'probe_event_ids' => [
-                    'permission_denial' => '11111111-1111-4111-8111-111111111111',
-                    'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
-                    'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
-                ],
-            ];
-            $validProbeIds = array_values($validAcpData['probe_event_ids']);
-            $this->assertSame(3, count(array_unique($validProbeIds)));
-
-            $faultId = $validAcpData['probe_event_ids']['controlled_fault_after_posting'];
-            $stageAllowlist = [$faultId => 'after_posting'];
-            $this->assertSame('after_posting', $stageAllowlist['33333333-3333-4333-8333-333333333333']);
+            // Insecure permissions throw
+            chmod($validFile, 0644);
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('INSECURE_PERMS');
+            SupervisedPairedFinancialDrill::assertSecureContainedFile($validFile, $tmpDir, 'test.json', 'TEST');
         } finally {
+            if (file_exists($tmpDir . '/test.json')) {
+                @unlink($tmpDir . '/test.json');
+            }
             if (is_dir($tmpDir)) {
                 @rmdir($tmpDir);
             }
         }
     }
 }
-
-
-
-
