@@ -240,10 +240,14 @@ final class SearchableComboboxAccuracyTest extends TestCase
     {
         $creator = app(CreateCompanyAction::class);
         $otherUser = User::factory()->create();
+        $context = app(CompanyContext::class);
+        $context->clear();
+        try {
         $otherCompany = $creator->execute($otherUser, [
             'name_ar' => 'شركة منافسة أخرى',
             'base_currency_code' => 'JOD',
         ]);
+        $context->setCompany($otherCompany, $otherUser);
 
         Customer::create([
             'company_id' => $otherCompany->id,
@@ -253,6 +257,10 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'status' => 'active',
             'created_by' => $otherUser->id,
         ]);
+        } finally {
+            $context->clear();
+            $context->setCompany($this->company, $this->user);
+        }
 
         $response = $this->service->search($this->company, $this->user, 'customer', 'سري', null, 25, ['context' => 'sales']);
         $this->assertEmpty($response['items']);
