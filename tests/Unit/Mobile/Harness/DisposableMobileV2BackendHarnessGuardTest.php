@@ -5695,6 +5695,71 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         }
     }
 
+    /**
+     * Executes a callback within a scoped mock disposable DB proof environment.
+     *
+     * @template T
+     * @param  string  $schemaName
+     * @param  callable(string $proofFile, string $nonce): T  $fn
+     * @return T
+     */
+    private function withScopedDisposableDbProof(string $schemaName, callable $fn): mixed
+    {
+        $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+        mkdir($proofDir, 0700, true);
+        $proofFile = $proofDir . '/proof.json';
+        $nonce = str_repeat('a', 32);
+
+        $proofData = [
+            'schema' => $schemaName,
+            'host' => '127.0.0.1',
+            'port' => '3342',
+            'nonce' => $nonce,
+        ];
+        file_put_contents($proofFile, json_encode($proofData, JSON_THROW_ON_ERROR));
+        chmod($proofFile, 0600);
+
+        $savedEnv = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
+            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
+            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
+            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+            'PHASE8_TEST_DB_EMPTY_PASSWORD' => getenv('PHASE8_TEST_DB_EMPTY_PASSWORD'),
+            'PHASE8_DISPOSABLE_DB_PROOF' => getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+            'PHASE8_DISPOSABLE_DB_NONCE' => getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+        ];
+
+        try {
+            putenv('APP_ENV=testing');
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            putenv('PHASE8_TEST_DB_USERNAME=root');
+            putenv('PHASE8_TEST_DB_PASSWORD=');
+            putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofFile}");
+            putenv("PHASE8_DISPOSABLE_DB_NONCE={$nonce}");
+
+            return $fn($proofFile, $nonce);
+        } finally {
+            if (file_exists($proofFile)) {
+                @unlink($proofFile);
+            }
+            if (is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
+            foreach ($savedEnv as $k => $v) {
+                if ($v === false) {
+                    putenv($k);
+                } else {
+                    putenv("{$k}={$v}");
+                }
+            }
+        }
+    }
+
     #[Test]
     public function test_capture_rollback_probe_snapshot_rejects_non_positive_company_id(): void
     {
@@ -5703,54 +5768,100 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('captureRollbackProbeSnapshot requires positive companyId');
 
-        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 0);
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 0, 'accounting_p8_tmp_0123456789ab');
     }
 
     #[Test]
     public function test_capture_rollback_probe_snapshot_rejects_non_disposable_schema(): void
     {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('fetch')->willReturn(['db' => 'production_main', 'port' => '3342']);
+        $pdo = (new \ReflectionClass(\PDO::class))->newInstanceWithoutConstructor();
 
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('query')->willReturn($stmt);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('captureRollbackProbeSnapshot requires valid disposable expectedSchemaName');
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('PDO schema mismatch');
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, 'production_main');
+    }
 
-        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_rejects_already_in_transaction(): void
+    {
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $this->withScopedDisposableDbProof($schemaName, function () use ($schemaName) {
+            $pdo = $this->createMock(\PDO::class);
+            $pdo->method('inTransaction')->willReturn(true);
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('PDO connection is already in transaction before captureRollbackProbeSnapshot');
+
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, $schemaName);
+        });
+    }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_propagates_rollback_failure(): void
+    {
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $this->withScopedDisposableDbProof($schemaName, function () use ($schemaName) {
+            $gateStmt = $this->createMock(\PDOStatement::class);
+            $gateStmt->method('fetch')->willReturn(['db' => $schemaName, 'port' => '3342']);
+
+            $pdo = $this->createMock(\PDO::class);
+            $pdo->method('inTransaction')->willReturn(false);
+            $pdo->method('query')->willReturn($gateStmt);
+            $pdo->method('exec')->willReturnCallback(function (string $sql) {
+                if ($sql === 'ROLLBACK') {
+                    throw new \PDOException('ROLLBACK failed on database connection');
+                }
+
+                return 1;
+            });
+            $pdo->method('prepare')->willThrowException(new \RuntimeException('Query failed in try'));
+
+            $this->expectException(\PDOException::class);
+            $this->expectExceptionMessage('ROLLBACK failed on database connection');
+
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, $schemaName);
+        });
     }
 
     #[Test]
     public function test_capture_rollback_probe_snapshot_rejects_wrong_port(): void
     {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3306']);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $this->withScopedDisposableDbProof($schemaName, function () use ($schemaName) {
+            $stmt = $this->createMock(\PDOStatement::class);
+            $stmt->method('fetch')->willReturn(['db' => $schemaName, 'port' => '3306']);
 
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('query')->willReturn($stmt);
+            $pdo = $this->createMock(\PDO::class);
+            $pdo->method('inTransaction')->willReturn(false);
+            $pdo->method('query')->willReturn($stmt);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('PDO port mismatch: expected port 3342');
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('PDO port mismatch: expected port 3342');
 
-        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, $schemaName);
+        });
     }
 
     #[Test]
     public function test_capture_rollback_probe_snapshot_propagates_sql_failures(): void
     {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $this->withScopedDisposableDbProof($schemaName, function () use ($schemaName) {
+            $stmt = $this->createMock(\PDOStatement::class);
+            $stmt->method('fetch')->willReturn(['db' => $schemaName, 'port' => '3342']);
 
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('query')->willReturn($stmt);
-        $pdo->method('exec')->willReturn(1);
-        $pdo->method('prepare')->willThrowException(new \PDOException("Table 'sales_invoices' does not exist", 1146));
+            $pdo = $this->createMock(\PDO::class);
+            $pdo->method('inTransaction')->willReturn(false);
+            $pdo->method('query')->willReturn($stmt);
+            $pdo->method('exec')->willReturn(1);
+            $pdo->method('prepare')->willThrowException(new \PDOException("Table 'sales_invoices' does not exist", 1146));
 
-        $this->expectException(\PDOException::class);
-        $this->expectExceptionMessage("Table 'sales_invoices' does not exist");
+            $this->expectException(\PDOException::class);
+            $this->expectExceptionMessage("Table 'sales_invoices' does not exist");
 
-        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, $schemaName);
+        });
     }
 
     #[Test]
@@ -5951,91 +6062,103 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_capture_rollback_probe_snapshot_rejects_expected_schema_mismatch(): void
     {
-        $stmt = $this->createMock(\PDOStatement::class);
-        $stmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+        $expectedSchema = 'accounting_p8_tmp_fedcba987654';
+        $this->withScopedDisposableDbProof($expectedSchema, function () use ($expectedSchema) {
+            $stmt = $this->createMock(\PDOStatement::class);
+            $stmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
 
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('query')->willReturn($stmt);
+            $pdo = $this->createMock(\PDO::class);
+            $pdo->method('inTransaction')->willReturn(false);
+            $pdo->method('query')->willReturn($stmt);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage("PDO schema mismatch: expected 'accounting_p8_tmp_fedcba987654', got 'accounting_p8_tmp_0123456789ab'");
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage("PDO schema mismatch: expected '{$expectedSchema}', got 'accounting_p8_tmp_0123456789ab'");
 
-        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, 'accounting_p8_tmp_fedcba987654');
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, $expectedSchema);
+        });
     }
 
     #[Test]
     public function test_capture_rollback_probe_snapshot_rejects_lossy_float_in_row(): void
     {
-        $gateStmt = $this->createMock(\PDOStatement::class);
-        $gateStmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $this->withScopedDisposableDbProof($schemaName, function () use ($schemaName) {
+            $gateStmt = $this->createMock(\PDOStatement::class);
+            $gateStmt->method('fetch')->willReturn(['db' => $schemaName, 'port' => '3342']);
 
-        $tableStmt = $this->createMock(\PDOStatement::class);
-        $tableStmt->method('fetch')->willReturnOnConsecutiveCalls(
-            ['id' => 1, 'amount' => 58.00],
-            false
-        );
+            $tableStmt = $this->createMock(\PDOStatement::class);
+            $tableStmt->method('fetch')->willReturnOnConsecutiveCalls(
+                ['id' => 1, 'amount' => 58.00],
+                false
+            );
 
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('query')->willReturn($gateStmt);
-        $pdo->method('prepare')->willReturn($tableStmt);
+            $pdo = $this->createMock(\PDO::class);
+            $pdo->method('inTransaction')->willReturn(false);
+            $pdo->method('query')->willReturn($gateStmt);
+            $pdo->method('prepare')->willReturn($tableStmt);
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Lossy native float detected in column sales_invoices.amount: decimal strings strictly required from PDO.');
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Lossy native float detected in column sales_invoices.amount: decimal strings strictly required from PDO.');
 
-        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+            \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, $schemaName);
+        });
     }
 
     #[Test]
     public function test_capture_rollback_probe_snapshot_positive_full_row_scan_and_zero_delta(): void
     {
-        $gateStmt = $this->createMock(\PDOStatement::class);
-        $gateStmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $this->withScopedDisposableDbProof($schemaName, function () use ($schemaName) {
+            $gateStmt = $this->createMock(\PDOStatement::class);
+            $gateStmt->method('fetch')->willReturn(['db' => $schemaName, 'port' => '3342']);
 
-        $tableStmt = $this->createMock(\PDOStatement::class);
-        $tableStmt->method('fetch')->willReturnOnConsecutiveCalls(
-            ['id' => 1, 'document_number' => 'INV-001', 'total_amount' => '58.000000'],
-            false
-        );
+            $tableStmt = $this->createMock(\PDOStatement::class);
+            $tableStmt->method('fetch')->willReturnOnConsecutiveCalls(
+                ['id' => 1, 'document_number' => 'INV-001', 'total_amount' => '58.000000'],
+                false
+            );
 
-        $seqStmt = $this->createMock(\PDOStatement::class);
-        $seqStmt->method('fetch')->willReturnOnConsecutiveCalls(
-            ['document_type' => 'invoice', 'year' => 2026, 'next_number' => 2],
-            false
-        );
+            $seqStmt = $this->createMock(\PDOStatement::class);
+            $seqStmt->method('fetch')->willReturnOnConsecutiveCalls(
+                ['document_type' => 'invoice', 'year' => 2026, 'next_number' => 2],
+                false
+            );
 
-        $sumStmt = $this->createMock(\PDOStatement::class);
-        $sumStmt->method('fetchColumn')->willReturn('10.000000');
+            $sumStmt = $this->createMock(\PDOStatement::class);
+            $sumStmt->method('fetchColumn')->willReturn('10.000000');
 
-        $pdo = $this->createMock(\PDO::class);
-        $pdo->method('query')->willReturn($gateStmt);
-        $pdo->method('prepare')->willReturnCallback(function (string $sql) use ($tableStmt, $seqStmt, $sumStmt) {
-            if (str_contains($sql, 'document_sequences')) {
-                return $seqStmt;
-            }
-            if (str_contains($sql, 'SUM(`quantity')) {
-                return $sumStmt;
-            }
+            $pdo = $this->createMock(\PDO::class);
+            $pdo->method('inTransaction')->willReturn(false);
+            $pdo->method('query')->willReturn($gateStmt);
+            $pdo->method('prepare')->willReturnCallback(function (string $sql) use ($tableStmt, $seqStmt, $sumStmt) {
+                if (str_contains($sql, 'document_sequences')) {
+                    return $seqStmt;
+                }
+                if (str_contains($sql, 'SUM(`quantity')) {
+                    return $sumStmt;
+                }
 
-            return $tableStmt;
+                return $tableStmt;
+            });
+
+            $snapshot = \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, $schemaName);
+
+            $this->assertIsArray($snapshot);
+            $this->assertSame(1, $snapshot['sales_invoices']);
+            $this->assertSame('10.000000', $snapshot['stock_movements_qty_delta_base']);
+            $this->assertSame(['invoice:2026' => 2], $snapshot['document_sequences']);
+            $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $snapshot['row_fingerprint_sha256']);
+
+            $zeroDelta = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($snapshot, $snapshot);
+            $this->assertTrue($zeroDelta['is_zero_delta']);
+            $this->assertEmpty($zeroDelta['errors']);
+
+            $mutatedSnapshot = $snapshot;
+            $mutatedSnapshot['row_fingerprint_sha256'] = hash('sha256', 'mutated_row_values');
+            $deltaCheck = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($snapshot, $mutatedSnapshot);
+            $this->assertFalse($deltaCheck['is_zero_delta']);
+            $this->assertStringContainsString('Aggregate canonical row fingerprint mutated', implode('; ', $deltaCheck['errors']));
         });
-
-        $snapshot = \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, 'accounting_p8_tmp_0123456789ab');
-
-        $this->assertIsArray($snapshot);
-        $this->assertSame(1, $snapshot['sales_invoices']);
-        $this->assertSame('10.000000', $snapshot['stock_movements_qty_delta_base']);
-        $this->assertSame(['invoice:2026' => 2], $snapshot['document_sequences']);
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $snapshot['row_fingerprint_sha256']);
-
-        $zeroDelta = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($snapshot, $snapshot);
-        $this->assertTrue($zeroDelta['is_zero_delta']);
-        $this->assertEmpty($zeroDelta['errors']);
-
-        $mutatedSnapshot = $snapshot;
-        $mutatedSnapshot['row_fingerprint_sha256'] = hash('sha256', 'mutated_row_values');
-        $deltaCheck = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($snapshot, $mutatedSnapshot);
-        $this->assertFalse($deltaCheck['is_zero_delta']);
-        $this->assertStringContainsString('Aggregate canonical row fingerprint mutated', implode('; ', $deltaCheck['errors']));
     }
 
     #[Test]
@@ -6698,6 +6821,332 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             }
             if (file_exists($throwawayScript)) {
                 @unlink($throwawayScript);
+            }
+            if (is_dir($harnessDir)) {
+                @rmdir($harnessDir);
+            }
+            foreach ($savedEnv as $k => $v) {
+                if ($v === false) {
+                    putenv($k);
+                } else {
+                    putenv("{$k}={$v}");
+                }
+            }
+        }
+    }
+
+    #[Test]
+    public function test_harness_configure_stage_allowlist_validates_and_stores_mapping(): void
+    {
+        $harness = new \Tests\Support\Harness\DisposableMobileV2BackendHarness();
+        $this->assertSame([], $harness->getStageAllowlist());
+
+        $validUuid = 'c0686be5-888f-4890-90bf-1f05f416a19a';
+        $harness->configureStageAllowlist([
+            $validUuid => 'after_posting',
+        ]);
+        $this->assertSame([$validUuid => 'after_posting'], $harness->getStageAllowlist());
+
+        // Rejects invalid UUID
+        try {
+            $harness->configureStageAllowlist(['not-a-uuid' => 'after_posting']);
+            $this->fail('Expected InvalidArgumentException for invalid event UUID');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid event UUID in stage allowlist', $e->getMessage());
+        }
+
+        // Rejects unsupported stage
+        try {
+            $harness->configureStageAllowlist([$validUuid => 'unsupported_stage']);
+            $this->fail('Expected InvalidArgumentException for unsupported stage');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Unsupported fault stage in allowlist', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function test_verify_evidence_freshness_accepts_advanced_scope_seven_pass_scenarios(): void
+    {
+        class_exists(SupervisedPairedFinancialDrill::class);
+
+        $tmpDir = sys_get_temp_dir() . '/adv_ev_' . bin2hex(random_bytes(8));
+        mkdir($tmpDir, 0700, true);
+        $evidenceFile = $tmpDir . '/evidence.json';
+
+        $backendHead = str_repeat('a', 40);
+        $pubHead = str_repeat('b', 40);
+        $exeHead = str_repeat('c', 40);
+        $handoffSha = str_repeat('d', 64);
+        $runId = '01234567-89ab-cdef-0123-456789abcdef';
+
+        $advancedEvidence = [
+            'runId' => $runId,
+            'backendHead' => $backendHead,
+            'clientPublicationHead' => $pubHead,
+            'clientExecutableHead' => $exeHead,
+            'manifestDigest' => $handoffSha,
+            'overallStatus' => 'PASS',
+            'lifecycleGrant' => SupervisedPairedFinancialDrill::REQUIRED_LIFECYCLE_GRANT,
+            'scenarios' => [
+                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201],
+                ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409],
+                ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'stock_permission_rollback_probes', 'status' => 'PASS', 'httpStatusCode' => 422],
+            ],
+            'lost_ack_recovery_evidence' => [
+                'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                'network_witness_state' => 'CAPTURED_REAL_TRANSPORT_DROP',
+            ],
+        ];
+
+        try {
+            file_put_contents($evidenceFile, json_encode($advancedEvidence, JSON_THROW_ON_ERROR));
+            chmod($evidenceFile, 0600);
+
+            $preRunTime = time() - 5;
+            $parsed = SupervisedPairedFinancialDrill::verifyEvidenceFreshness(
+                evidencePath: $evidenceFile,
+                preRunTime: $preRunTime,
+                preRunSha: null,
+                expectedBackend: $backendHead,
+                expectedPub: $pubHead,
+                expectedExe: $exeHead,
+                expectedHandoffSha: $handoffSha,
+                expectedScope: SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE
+            );
+
+            $this->assertSame($runId, $parsed['runId']);
+            $this->assertSame('PASS', $parsed['overallStatus']);
+            $this->assertCount(7, $parsed['scenarios']);
+        } finally {
+            @unlink($evidenceFile);
+            @rmdir($tmpDir);
+        }
+    }
+
+    #[Test]
+    public function test_bounded_throwaway_advanced_three_child_lineage_and_lifecycle(): void
+    {
+        // Guarded: requires explicit Root process-only execution grant.
+        // Under current SOURCE-ONLY review, no OS child processes may be spawned.
+        if (getenv('ROOT_PROCESS_LIFECYCLE_GRANT') !== '1') {
+            $this->markTestSkipped('Requires explicit ROOT_PROCESS_LIFECYCLE_GRANT=1 (no child process execution during source-only qualification).');
+        }
+
+        class_exists(SupervisedPairedFinancialDrill::class);
+
+        $repoRoot = dirname(__DIR__, 4);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $proofNonce = str_repeat('a', 32);
+
+        $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+        mkdir($proofDir, 0700, true);
+        $proofFile = $proofDir . '/proof.json';
+
+        $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+        $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+        mkdir($harnessDir, 0700, true);
+
+        // Scripts for 3-child lineage:
+        // Child 1 (CLI) spawns Backend, Proxy, Caddy, writes process_pids.json (0600), and sleeps 5s
+        $backendScript = $harnessDir . '/backend.php';
+        file_put_contents($backendScript, "<?php usleep(5000000);\n");
+        chmod($backendScript, 0700);
+
+        $proxyScript = $harnessDir . '/proxy.php';
+        file_put_contents($proxyScript, "<?php usleep(5000000);\n");
+        chmod($proxyScript, 0700);
+
+        $caddyScript = $harnessDir . '/caddy.php';
+        file_put_contents($caddyScript, "<?php usleep(5000000);\n");
+        chmod($caddyScript, 0700);
+
+        $pidsJsonPath = $harnessDir . '/process_pids.json';
+
+        $cliScript = $harnessDir . '/mobile-v2-harness-cli.php';
+        $cliCode = <<<PHP
+<?php
+\$backend = proc_open([PHP_BINARY, '{$backendScript}'], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], \$bPipes);
+\$proxy = proc_open([PHP_BINARY, '{$proxyScript}'], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], \$pPipes);
+\$caddy = proc_open([PHP_BINARY, '{$caddyScript}'], [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], \$cPipes);
+
+\$bStatus = proc_get_status(\$backend);
+\$pStatus = proc_get_status(\$proxy);
+\$cStatus = proc_get_status(\$caddy);
+
+\$pidsData = [
+    'backend_pid' => (int) \$bStatus['pid'],
+    'proxy_pid' => (int) \$pStatus['pid'],
+    'caddy_pid' => (int) \$cStatus['pid'],
+];
+file_put_contents('{$pidsJsonPath}', json_encode(\$pidsData, JSON_THROW_ON_ERROR));
+chmod('{$pidsJsonPath}', 0600);
+
+usleep(5000000);
+
+proc_terminate(\$backend);
+proc_terminate(\$proxy);
+proc_terminate(\$caddy);
+PHP;
+        file_put_contents($cliScript, $cliCode);
+        chmod($cliScript, 0700);
+
+        // Spawn Child 1 (CLI harness)
+        $process = new Process([PHP_BINARY, $cliScript]);
+        $process->setTimeout(10.0);
+        $process->start();
+
+        // Wait up to 1.5s for process_pids.json to be written
+        $wStart = hrtime(true) / 1e9;
+        while (! file_exists($pidsJsonPath) && ((hrtime(true) / 1e9) - $wStart) < 1.5) {
+            usleep(25000);
+        }
+        $childPid = $process->getPid();
+        $this->assertNotNull($childPid, 'Child 1 PID must be available');
+        $this->assertFileExists($pidsJsonPath, 'process_pids.json must be created');
+
+        $pidsRaw = json_decode((string) file_get_contents($pidsJsonPath), true);
+        $this->assertIsArray($pidsRaw);
+        $bPid = (int) $pidsRaw['backend_pid'];
+        $pPid = (int) $pidsRaw['proxy_pid'];
+        $cPid = (int) $pidsRaw['caddy_pid'];
+
+        $savedEnv = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
+            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
+            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
+            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+            'PHASE8_TEST_DB_EMPTY_PASSWORD' => getenv('PHASE8_TEST_DB_EMPTY_PASSWORD'),
+            'PHASE8_DISPOSABLE_DB_PROOF' => getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+            'PHASE8_DISPOSABLE_DB_NONCE' => getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+        ];
+
+        try {
+            putenv('APP_ENV=testing');
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            putenv('PHASE8_TEST_DB_USERNAME=root');
+            putenv('PHASE8_TEST_DB_PASSWORD=');
+            putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofFile}");
+            putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+
+            $proofData = [
+                'schema' => $schemaName,
+                'host' => '127.0.0.1',
+                'port' => '3342',
+                'nonce' => $proofNonce,
+            ];
+            file_put_contents($proofFile, json_encode($proofData, JSON_THROW_ON_ERROR));
+            chmod($proofFile, 0600);
+
+            // Construct advanced snapshot via REAL public factory with process_pids.json
+            $snapshot = \Tests\Support\Harness\VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: $schemaName,
+                proofPath: $proofFile,
+                proofNonce: $proofNonce,
+                harnessDir: $harnessDir,
+                childPid: $childPid,
+                repoRoot: $repoRoot,
+                pidsJsonPath: $pidsJsonPath
+            );
+
+            // Assert all 4 processes verified in snapshot
+            $this->assertSame($childPid, $snapshot->childPid);
+            $this->assertSame($bPid, $snapshot->backendPid);
+            $this->assertSame($pPid, $snapshot->proxyPid);
+            $this->assertSame($cPid, $snapshot->caddyPid);
+            $this->assertNotNull($snapshot->childStartIdentity);
+            $this->assertNotNull($snapshot->backendStartIdentity);
+            $this->assertNotNull($snapshot->proxyStartIdentity);
+            $this->assertNotNull($snapshot->caddyStartIdentity);
+
+            // Mock PDO expects exact port check, schema presence, DROP, and schema absence
+            $mockPortStmt = $this->createMock(\PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+            $mockSchemaStmt = $this->createMock(\PDOStatement::class);
+            $mockSchemaStmt->expects($this->exactly(2))
+                ->method('execute')
+                ->with([$schemaName]);
+            $mockSchemaStmt->method('fetch')
+                ->willReturnOnConsecutiveCalls(['SCHEMA_NAME' => $schemaName], false);
+
+            $mockPdo = $this->createMock(\PDO::class);
+            $mockPdo->expects($this->once())
+                ->method('query')
+                ->with('SELECT @@port AS port')
+                ->willReturn($mockPortStmt);
+            $mockPdo->expects($this->once())
+                ->method('prepare')
+                ->with('SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1')
+                ->willReturn($mockSchemaStmt);
+            $mockPdo->expects($this->once())
+                ->method('exec')
+                ->with("DROP DATABASE IF EXISTS `{$schemaName}`")
+                ->willReturn(1);
+
+            // Execute exact cleanup across all 4 verified processes
+            $cleanResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: $process,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+
+            // Assert all 4 processes reaped and cleanup fully successful
+            $this->assertFalse($process->isRunning(), 'Child 1 must be reaped');
+            $this->assertFalse(SupervisedPairedFinancialDrill::isProcessAlive($bPid), 'Backend child must be reaped');
+            $this->assertFalse(SupervisedPairedFinancialDrill::isProcessAlive($pPid), 'Proxy child must be reaped');
+            $this->assertFalse(SupervisedPairedFinancialDrill::isProcessAlive($cPid), 'Caddy child must be reaped');
+
+            $this->assertTrue($cleanResult['child_reaped'], 'child_reaped must be true');
+            $this->assertTrue($cleanResult['schema_absent'], 'schema_absent must be true');
+            $this->assertTrue($cleanResult['temp_cleaned'], 'temp_cleaned must be true');
+            $this->assertTrue($cleanResult['success'], 'cleanup success must be true');
+            $this->assertEmpty($cleanResult['errors'], 'cleanup errors must be empty');
+
+            $this->assertDirectoryDoesNotExist($harnessDir, 'Harness temp directory must be removed by cleanup');
+            $this->assertDirectoryDoesNotExist($proofDir, 'Proof directory must be removed by cleanup');
+        } finally {
+            if ($process->isRunning()) {
+                $process->stop(1.0);
+            }
+            if (isset($bPid) && SupervisedPairedFinancialDrill::isProcessAlive($bPid)) {
+                @posix_kill($bPid, SIGKILL);
+            }
+            if (isset($pPid) && SupervisedPairedFinancialDrill::isProcessAlive($pPid)) {
+                @posix_kill($pPid, SIGKILL);
+            }
+            if (isset($cPid) && SupervisedPairedFinancialDrill::isProcessAlive($cPid)) {
+                @posix_kill($cPid, SIGKILL);
+            }
+            if (file_exists($proofFile)) {
+                @unlink($proofFile);
+            }
+            if (is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
+            if (file_exists($pidsJsonPath)) {
+                @unlink($pidsJsonPath);
+            }
+            if (file_exists($cliScript)) {
+                @unlink($cliScript);
+            }
+            if (file_exists($backendScript)) {
+                @unlink($backendScript);
+            }
+            if (file_exists($proxyScript)) {
+                @unlink($proxyScript);
+            }
+            if (file_exists($caddyScript)) {
+                @unlink($caddyScript);
             }
             if (is_dir($harnessDir)) {
                 @rmdir($harnessDir);

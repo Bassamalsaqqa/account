@@ -907,6 +907,10 @@ class SupervisedPairedFinancialDrill
      * @return array<string, mixed> Parsed evidence array
      *
      * @throws RuntimeException
+     * @param  string  $expectedScope  Expected coordination scope (basic vs advanced)
+     * @return array<string, mixed>
+     *
+     * @throws RuntimeException
      */
     public static function verifyEvidenceFreshness(
         string $evidencePath,
@@ -915,7 +919,8 @@ class SupervisedPairedFinancialDrill
         string $expectedBackend,
         string $expectedPub,
         string $expectedExe,
-        string $expectedHandoffSha
+        string $expectedHandoffSha,
+        string $expectedScope = self::REQUIRED_SCOPE
     ): array {
         if (! is_file($evidencePath)) {
             throw new RuntimeException("EVIDENCE_FILE_NOT_FOUND: '{$evidencePath}'");
@@ -978,23 +983,11 @@ class SupervisedPairedFinancialDrill
             throw new RuntimeException("EVIDENCE_LIFECYCLE_GRANT_MISMATCH: expected " . self::REQUIRED_LIFECYCLE_GRANT . ", got '" . ($data['lifecycleGrant'] ?? '') . "'");
         }
 
-        // Validate scenarios: sequential array list of exactly 7 items (5 PASS, 2 NOT_RUN)
+        // Validate scenarios: sequential array list of exactly 7 items
         $scenarios = $data['scenarios'] ?? null;
         if (! is_array($scenarios) || ! array_is_list($scenarios) || count($scenarios) !== 7) {
             throw new RuntimeException('EVIDENCE_SCENARIOS_INVALID_COUNT: scenarios must be list of exactly 7 items');
         }
-
-        $activeScenarios = [
-            'readiness_probe' => 200,
-            'financial_cash_fresh_commit_201' => 201,
-            'financial_cash_idempotent_replay_200' => 200,
-            'financial_cash_event_status_posted' => 200,
-            'financial_cash_tamper_409' => 409,
-        ];
-        $notRunScenarios = [
-            'transport_lost_ack_recovery' => null,
-            'stock_permission_rollback_probes' => null,
-        ];
 
         $scenarioMap = [];
         foreach ($scenarios as $s) {
@@ -1004,21 +997,78 @@ class SupervisedPairedFinancialDrill
             $scenarioMap[$s['name']] = $s;
         }
 
-        foreach ($activeScenarios as $name => $expectedCode) {
-            if (! isset($scenarioMap[$name])) {
-                throw new RuntimeException("EVIDENCE_SCENARIO_MISSING: {$name}");
-            }
-            if (($scenarioMap[$name]['status'] ?? '') !== 'PASS' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== $expectedCode) {
-                throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: {$name}");
-            }
-        }
+        if ($expectedScope === self::REQUIRED_ADVANCED_SCOPE) {
+            $expectedScenarios = [
+                'readiness_probe' => 200,
+                'financial_cash_fresh_commit_201' => 201,
+                'financial_cash_idempotent_replay_200' => 200,
+                'financial_cash_event_status_posted' => 200,
+                'financial_cash_tamper_409' => 409,
+                'transport_lost_ack_recovery' => 200,
+            ];
 
-        foreach ($notRunScenarios as $name => $expectedCode) {
-            if (! isset($scenarioMap[$name])) {
-                throw new RuntimeException("EVIDENCE_SCENARIO_MISSING: {$name}");
+            foreach ($expectedScenarios as $name => $expectedCode) {
+                if (! isset($scenarioMap[$name])) {
+                    throw new RuntimeException("EVIDENCE_SCENARIO_MISSING: {$name}");
+                }
+                if (($scenarioMap[$name]['status'] ?? '') !== 'PASS' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== $expectedCode) {
+                    throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: {$name}");
+                }
             }
-            if (($scenarioMap[$name]['status'] ?? '') !== 'NOT_RUN' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== null) {
-                throw new RuntimeException("EVIDENCE_SCENARIO_NOT_RUN_FAILED: {$name}");
+
+            if (! isset($scenarioMap['stock_permission_rollback_probes'])) {
+                throw new RuntimeException('EVIDENCE_SCENARIO_MISSING: stock_permission_rollback_probes');
+            }
+            $rollbackScenario = $scenarioMap['stock_permission_rollback_probes'];
+            if (($rollbackScenario['status'] ?? '') !== 'PASS') {
+                throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: stock_permission_rollback_probes (expected status 'PASS')");
+            }
+            $rollbackCode = $rollbackScenario['httpStatusCode'] ?? null;
+            if (! in_array($rollbackCode, [403, 422, 500], true)) {
+                throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: stock_permission_rollback_probes (expected HTTP 403, 422, or 500, got {$rollbackCode})");
+            }
+
+            // Validate lost_ack_recovery_evidence block
+            $lostAck = $data['lost_ack_recovery_evidence'] ?? null;
+            if (! is_array($lostAck)) {
+                throw new RuntimeException('EVIDENCE_LOST_ACK_BLOCK_MISSING');
+            }
+            if (($lostAck['suppression_mode'] ?? '') !== 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP') {
+                throw new RuntimeException("EVIDENCE_LOST_ACK_INVALID_SUPPRESSION_MODE: got '" . ($lostAck['suppression_mode'] ?? '') . "'");
+            }
+            if (($lostAck['network_witness_state'] ?? '') !== 'CAPTURED_REAL_TRANSPORT_DROP') {
+                throw new RuntimeException("EVIDENCE_LOST_ACK_INVALID_WITNESS_STATE: got '" . ($lostAck['network_witness_state'] ?? '') . "'");
+            }
+        } else {
+            // Frozen basic exact (5 PASS, 2 NOT_RUN)
+            $activeScenarios = [
+                'readiness_probe' => 200,
+                'financial_cash_fresh_commit_201' => 201,
+                'financial_cash_idempotent_replay_200' => 200,
+                'financial_cash_event_status_posted' => 200,
+                'financial_cash_tamper_409' => 409,
+            ];
+            $notRunScenarios = [
+                'transport_lost_ack_recovery' => null,
+                'stock_permission_rollback_probes' => null,
+            ];
+
+            foreach ($activeScenarios as $name => $expectedCode) {
+                if (! isset($scenarioMap[$name])) {
+                    throw new RuntimeException("EVIDENCE_SCENARIO_MISSING: {$name}");
+                }
+                if (($scenarioMap[$name]['status'] ?? '') !== 'PASS' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== $expectedCode) {
+                    throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: {$name}");
+                }
+            }
+
+            foreach ($notRunScenarios as $name => $expectedCode) {
+                if (! isset($scenarioMap[$name])) {
+                    throw new RuntimeException("EVIDENCE_SCENARIO_MISSING: {$name}");
+                }
+                if (($scenarioMap[$name]['status'] ?? '') !== 'NOT_RUN' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== null) {
+                    throw new RuntimeException("EVIDENCE_SCENARIO_NOT_RUN_FAILED: {$name}");
+                }
             }
         }
 
@@ -1026,15 +1076,16 @@ class SupervisedPairedFinancialDrill
     }
 
     /**
-     * Parses JUnit XML test report and enforces 2 PASS, 0 FAIL, 0 ERROR, 0 SKIP.
+     * Parses JUnit XML test report and enforces 0 FAIL, 0 ERROR, 0 SKIP.
      *
      * @param  string  $xmlPath  Path to JUnit XML file
      * @param  int  $preRunTime  Timestamp before Gradle launch
+     * @param  int  $minTests    Minimum required tests (default 2 for basic, 1 for advanced)
      * @return array{tests: int, failures: int, errors: int, skipped: int}
      *
      * @throws RuntimeException
      */
-    public static function verifyJunitTestResults(string $xmlPath, int $preRunTime): array
+    public static function verifyJunitTestResults(string $xmlPath, int $preRunTime, int $minTests = 2): array
     {
         if (! is_file($xmlPath)) {
             throw new RuntimeException("JUNIT_XML_NOT_FOUND: '{$xmlPath}'");
@@ -1070,8 +1121,8 @@ class SupervisedPairedFinancialDrill
             }
         }
 
-        if ($tests < 2) {
-            throw new RuntimeException("JUNIT_XML_INSUFFICIENT_TESTS: expected at least 2, got {$tests}");
+        if ($tests < $minTests) {
+            throw new RuntimeException("JUNIT_XML_INSUFFICIENT_TESTS: expected at least {$minTests}, got {$tests}");
         }
         if ($failures > 0) {
             throw new RuntimeException("JUNIT_XML_FAILURES_DETECTED: {$failures} failed tests");

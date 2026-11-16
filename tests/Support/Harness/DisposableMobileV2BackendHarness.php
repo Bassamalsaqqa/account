@@ -314,6 +314,9 @@ final class DisposableMobileV2BackendHarness
      */
     private ?string $simulatedFaultStage = null;
 
+    /** @var array<string, string> */
+    private array $stageAllowlist = [];
+
     /**
      * Configures single-response test-transport suppression for advanced lost-ACK testing.
      * Defaults to null (default-deny).
@@ -393,6 +396,35 @@ final class DisposableMobileV2BackendHarness
     public function getSimulatedFaultStage(): ?string
     {
         return $this->simulatedFaultStage;
+    }
+
+    /**
+     * Configure strict event ID stage allowlist for per-probe rollback faults.
+     *
+     * @param  array<string, string>  $allowlist  Map of event UUID => fault stage
+     */
+    public function configureStageAllowlist(array $allowlist): void
+    {
+        $allowed = ['after_draft', 'after_posting', 'after_payment', 'after_composite_completion'];
+        $validated = [];
+        foreach ($allowlist as $eventId => $stage) {
+            if (! is_string($eventId) || preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $eventId) !== 1) {
+                throw new \InvalidArgumentException("Invalid event UUID in stage allowlist: '{$eventId}'");
+            }
+            if (! is_string($stage) || ! in_array($stage, $allowed, true)) {
+                throw new \InvalidArgumentException("Unsupported fault stage in allowlist: '{$stage}'");
+            }
+            $validated[$eventId] = $stage;
+        }
+        $this->stageAllowlist = $validated;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function getStageAllowlist(): array
+    {
+        return $this->stageAllowlist;
     }
 
     /**
@@ -1293,8 +1325,23 @@ if (\$routeResult !== null) {
         \\Tests\\Support\\QualifiedCashFinancialExecutionAdapter::class
     );
 
-    if (! empty(\$config['simulated_fault_stage'])) {
+    // Per-probe stage control: strict Root-owned event stage allowlist, fault after posting, reset between fresh cases
+    \$stageAllowlist = \$config['stage_allowlist'] ?? [];
+    \$targetEventId = null;
+    \$rawInput = @file_get_contents('php://input');
+    if (\$rawInput !== false && \$rawInput !== '') {
+        \$decodedBody = json_decode(\$rawInput, true);
+        if (is_array(\$decodedBody) && isset(\$decodedBody['client_event_id']) && is_string(\$decodedBody['client_event_id'])) {
+            \$targetEventId = \$decodedBody['client_event_id'];
+        }
+    }
+
+    if (! empty(\$stageAllowlist) && is_array(\$stageAllowlist) && \$targetEventId !== null && isset(\$stageAllowlist[\$targetEventId])) {
+        \\App\\Actions\\Sales\\ExecuteImmediateOnlineCashSaleAction::\$simulatedFaultStage = (string) \$stageAllowlist[\$targetEventId];
+    } elseif (! empty(\$config['simulated_fault_stage']) && empty(\$stageAllowlist)) {
         \\App\\Actions\\Sales\\ExecuteImmediateOnlineCashSaleAction::\$simulatedFaultStage = (string) \$config['simulated_fault_stage'];
+    } else {
+        \\App\\Actions\\Sales\\ExecuteImmediateOnlineCashSaleAction::\$simulatedFaultStage = null;
     }
 });
 
@@ -2091,6 +2138,9 @@ PHP;
         }
         if ($this->simulatedFaultStage !== null) {
             $childConfigPayload['simulated_fault_stage'] = $this->simulatedFaultStage;
+        }
+        if (! empty($this->stageAllowlist)) {
+            $childConfigPayload['stage_allowlist'] = $this->stageAllowlist;
         }
         file_put_contents($childConfigPath, json_encode($childConfigPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         chmod($childConfigPath, 0600);

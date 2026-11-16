@@ -3039,13 +3039,25 @@ final class DisposableFinancialPostRunInspector
      *
      * @param  PDO  $pdo  Read-only PDO connection to verified disposable database
      * @param  int  $companyId  Company internal ID
-     * @param  string|null  $expectedSchemaName  Optional exact expected disposable schema name
+     * @param  string  $expectedSchemaName  Mandatory exact expected disposable schema name
      * @return array<string, mixed>
      */
-    public static function captureRollbackProbeSnapshot(PDO $pdo, int $companyId, ?string $expectedSchemaName = null): array
+    public static function captureRollbackProbeSnapshot(PDO $pdo, int $companyId, string $expectedSchemaName): array
     {
         if ($companyId <= 0) {
             throw new InvalidArgumentException("captureRollbackProbeSnapshot requires positive companyId, got {$companyId}.");
+        }
+
+        if ($expectedSchemaName === '' || ! preg_match(self::SCHEMA_REGEX, $expectedSchemaName)) {
+            throw new InvalidArgumentException("captureRollbackProbeSnapshot requires valid disposable expectedSchemaName, got '{$expectedSchemaName}'.");
+        }
+
+        // Must verify private schema ownership proof BEFORE attempting database queries
+        DisposableMariaDbSchema::assertPrimarySchema($expectedSchemaName);
+
+        // Reject if connection is already in an active transaction to prevent implicit commit
+        if ($pdo->inTransaction()) {
+            throw new RuntimeException('PDO connection is already in transaction before captureRollbackProbeSnapshot; refusing to START TRANSACTION to prevent implicit commit.');
         }
 
         // 1. Owned PDO identity/schema/read-only gate BEFORE any query
@@ -3056,11 +3068,7 @@ final class DisposableFinancialPostRunInspector
         }
 
         $dbName = (string) ($gateRow['db'] ?? '');
-        if (! preg_match('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $dbName)) {
-            throw new RuntimeException("PDO schema mismatch: expected disposable schema matching /^accounting_p8_tmp_[a-f0-9]{12}$/D, got '{$dbName}'.");
-        }
-
-        if ($expectedSchemaName !== null && ! hash_equals($expectedSchemaName, $dbName)) {
+        if (! hash_equals($expectedSchemaName, $dbName)) {
             throw new RuntimeException("PDO schema mismatch: expected '{$expectedSchemaName}', got '{$dbName}'.");
         }
 
@@ -3164,11 +3172,7 @@ final class DisposableFinancialPostRunInspector
                 'row_fingerprint_sha256' => $aggregateFingerprint,
             ];
         } finally {
-            try {
-                $pdo->exec('ROLLBACK');
-            } catch (\Throwable) {
-                // Ignore rollback exceptions in finally
-            }
+            $pdo->exec('ROLLBACK');
         }
     }
 }

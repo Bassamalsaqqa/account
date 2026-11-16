@@ -540,7 +540,11 @@ try {
         throw new \RuntimeException("Android repo directory not found at '{$targetAndroidDir}'.");
     }
 
-    $evidenceRelPath = 'docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json';
+    $isAdvanced = ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE);
+
+    $evidenceRelPath = $isAdvanced
+        ? 'docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-advanced-evidence.json'
+        : 'docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json';
     $evidenceFile = is_file($targetAndroidDir . '/' . $evidenceRelPath)
         ? $targetAndroidDir . '/' . $evidenceRelPath
         : $targetAndroidDir . '/app/' . $evidenceRelPath;
@@ -554,21 +558,30 @@ try {
     $remGradle = SupervisedPairedFinancialDrill::computeRemainingDeadline($deadline, 25.0);
     $gradleTimeout = min($remGradle - 20.0, 90.0);
 
-    $gradleCmd = [
+    $androidTestTests = $isAdvanced
+        ? [
+            '--tests',
+            'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotAdvancedTest.executePairedOnlineCashPilotAdvancedProbes',
+        ]
+        : [
+            '--tests',
+            'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke',
+            '--tests',
+            'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.testCashPilotFinancialAcceptanceEnforcement',
+        ];
+
+    $gradleCmd = array_merge([
         './gradlew',
         'cleanTestDebugUnitTest',
         'testDebugUnitTest',
         '--no-build-cache',
-        '--tests',
-        'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.executePairedOnlineCashPilotSmoke',
-        '--tests',
-        'com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotSmokeTest.testCashPilotFinancialAcceptanceEnforcement',
+    ], $androidTestTests, [
         '--max-workers=1',
         '-Dorg.gradle.workers.max=1',
         '-Dorg.gradle.jvmargs=-XX:ActiveProcessorCount=2 -XX:+UseSerialGC -Xmx1536m',
         '-Pkotlin.compiler.execution.strategy=in-process',
         '--no-daemon',
-    ];
+    ]);
 
     $gradleEnv = [
         'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin',
@@ -637,7 +650,8 @@ try {
         $backendHead,
         $androidPubHead,
         $androidExeHead,
-        $rootApprovedHandoffSha
+        $rootApprovedHandoffSha,
+        $expectedScope
     );
     $witnessedRunId = (string) ($freshEvidence['runId'] ?? '');
     if ($witnessedRunId === '' || preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iD', $witnessedRunId) !== 1) {
@@ -664,11 +678,15 @@ try {
         throw new \RuntimeException("JUnit XML test report not found in Android build directories.");
     }
 
-    $xmlResults = SupervisedPairedFinancialDrill::verifyJunitTestResults($junitXml, $preRunTime);
+    $minJunitTests = $isAdvanced ? 1 : 2;
+    $xmlResults = SupervisedPairedFinancialDrill::verifyJunitTestResults($junitXml, $preRunTime, $minJunitTests);
     echo "  [JUnit] Tests Passed : {$xmlResults['tests']} (0 failures, 0 errors, 0 skipped)\n";
 
     // Retain fresh artifacts in private output dir with 0600 permissions
-    $retainedEvidencePath = $outputDir . '/paired-online-cash-pilot-evidence.json';
+    $retainedEvidenceName = $isAdvanced
+        ? 'paired-online-cash-pilot-advanced-evidence.json'
+        : 'paired-online-cash-pilot-evidence.json';
+    $retainedEvidencePath = $outputDir . '/' . $retainedEvidenceName;
     copy($evidenceFile, $retainedEvidencePath);
     chmod($retainedEvidencePath, 0600);
 

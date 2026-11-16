@@ -1358,6 +1358,56 @@ Audited and aligned mock query expectations in `test_bounded_throwaway_owned_chi
 3. Admin Drop Execution:
    - `$mockPdo->expects($this->once())->method('exec')->with("DROP DATABASE IF EXISTS `{$schemaName}`")->willReturn(1)`.
 
+### 18.10 Root Process-Only Verification & Advanced Financial Driver Architecture
+
+#### 18.10.1 Run Provenance & Invariance State (`root-owned-process-lifecycle-d48kr_kl`)
+Root evaluated the process-only lifecycle implementation on commit `2e8f48e68e9b49fe6242033f25b45ebc86c7826c` (recorded in `/home/t3dev/.t3/userdata/attachments/root-owned-process-lifecycle-d48kr_kl`):
+- **Invocation**: `php vendor/bin/phpunit --no-configuration --bootstrap vendor/autoload.php --stop-on-failure --stop-on-error --filter test_bounded_throwaway_owned_child_ --log-junit ... tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`
+- **Execution Outcome**: 2 tests executed, 2 PASS, 28 assertions, 1 PHPUnit notice (`No code coverage driver available`), exit code 0, elapsed 0.759s.
+- **Process & Resource Invariance**:
+  - `test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo`: Successfully verified real owned Symfony child process lifecycle, verified `SIGTERM` dispatch via verified owned snapshot, and confirmed child termination and process reap.
+  - `test_bounded_throwaway_owned_child_refuses_cleanup_when_process_handle_omitted`: Successfully asserted fail-closed behavior when an owned child is confirmed alive without an active `Process` handle; verified `child_reaped = false`, destructive actions skipped, and mock PDO executed zero `DROP` commands.
+  - Closed-port probe verification only; zero actual DB connections, zero network listeners, zero JVM or Android invocations.
+  - Post-run process table audit confirmed zero lingering `php`, `java`, or `gradle` processes.
+- **Provenance Integrity**: Full record preserved alongside prior `07d4d2625c74e0c0ec759be8cc5255cbf3c4adaa` autoload error (`root-owned-process-lifecycle-fdrz7tb3`).
+
+#### 18.10.2 Database Probe Scanner Atomicity & Mandatory Proof Contract
+Hardened `DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot`:
+1. **Transaction Atomicity Guard**: Checks `$pdo->inTransaction()` prior to invoking `START TRANSACTION`. If already in a transaction, immediately throws `RuntimeException` (`Cannot start rollback probe snapshot transaction: connection is already in an active transaction`), preventing MySQL/MariaDB implicit commit side-effects.
+2. **Mandatory Schema & Ownership Verification**: Requires `$expectedSchemaName` as a mandatory string parameter. Validates schema name format via regex (`/^[a-zA-Z0-9_]{1,64}$/`) and enforces ownership proof via `DisposableMariaDbSchema::assertPrimarySchema($expectedSchemaName)`.
+3. **Fail-Closed Rollback Propagation**: The `finally` block executes `ROLLBACK` if the transaction was started. Any rollback `Throwable` is propagated immediately without swallowing, ensuring database disconnects or rollback failures fail-closed.
+
+#### 18.10.3 Separate Advanced Entrypoint & 7 PASS Scenario Validation
+Established distinct advanced driver entrypoints in `supervised-financial-drill.php` and `SupervisedPairedFinancialDrill.php`:
+1. **Scope Parameterization**:
+   - Basic Scope (`online_cash_pilot_basic`): Filter `SmallTraderOnlineCashPilotSmokeTest`, evidence artifact `docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`, `$minTests = 2`, expecting 5 PASS scenarios and 2 NOT_RUN scenarios.
+   - Advanced Scope (`online_cash_pilot_advanced`): Filter `com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotAdvancedTest.executePairedOnlineCashPilotAdvancedProbes`, evidence artifact `docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-advanced-evidence.json`, `$minTests = 1`.
+2. **Evidence Freshness Contract**:
+   - `SupervisedPairedFinancialDrill::verifyEvidenceFreshness()` validates all 7 scenarios in advanced mode:
+     - `readiness_probe` (`HTTP 200`)
+     - `fresh_commit` (`HTTP 201`)
+     - `idempotent_replay` (`HTTP 200`)
+     - `status_query` (`HTTP 200`)
+     - `payload_tamper_conflict` (`HTTP 409`)
+     - `lost_ack_recovery` (`HTTP 200` with required `lost_ack_recovery_evidence` block asserting `suppression_mode: "TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP"` and `network_witness_state: "CAPTURED_REAL_TRANSPORT_DROP"`)
+     - `rollback_integrity` (`HTTP 403`, `HTTP 422`, or `HTTP 500`)
+   - Rejects stale evidence timestamps (> 300s) and mismatched manifest SHA-256 digests.
+
+#### 18.10.4 Backend Per-Probe Fault Stage Control
+Implemented probe-specific fault injection isolation in `DisposableMobileV2BackendHarness`:
+1. **Stage Allowlist Property & Configuration**: Added `$stageAllowlist` mapping event UUIDs to simulated fault stages (e.g., `[$rollbackProbeEventId => 'after_posting']`).
+2. **Per-Request Router Verification**: `generateBackendRouterScript()` intercepts incoming requests, extracts the event UUID from the payload or headers, and verifies whether the UUID matches the configured allowlist.
+3. **Automatic Fault Stage Reset**: If matched, sets `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_posting'`; for all other events (fresh commit, replay, status query, lost ACK), resets `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null`, preventing cross-scenario test contamination.
+4. **Child Process Configuration**: Propagates `stage_allowlist` into the child backend JSON configuration payload.
+
+#### 18.10.5 Authored 3-Child Lineage Lifecycle Test
+Authored future process-only test `test_bounded_throwaway_advanced_three_child_lineage_and_lifecycle` in `DisposableMobileV2BackendHarnessGuardTest.php`:
+- Guarded by `ROOT_PROCESS_LIFECYCLE_GRANT === '1'`.
+- Spawns 3 throwaway Symfony child processes representing backend, proxy, and Caddy with bounded 10s timeouts.
+- Captures child PIDs and creates `process_pids.json` (mode 0600) with proven process ownership.
+- Executes `executeExactCleanup()` to verify signal dispatch, process reaping, and directory cleanup across all three child processes without lingering orphans.
+
+
 
 
 
