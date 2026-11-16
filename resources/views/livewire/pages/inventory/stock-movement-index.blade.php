@@ -14,12 +14,28 @@
     <x-refinement-filters :active-count="(int) filled($productFilter) + (int) filled($warehouseFilter) + (int) filled($typeFilter) + (int) filled($fromDate) + (int) filled($toDate)">
 
 
-        <select aria-label="{{ __('inventory.all_products') }}" wire:model.live="productFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface">
-                    <option value="">{{ __('inventory.all_products') }}</option>
-                    @foreach ($products as $p)
-                        <option value="{{ $p->id }}">{{ $p->name() }}</option>
-                    @endforeach
-                </select>
+        @php
+            $selectedProd = $productFilter ? $products->firstWhere('id', (int) $productFilter) : null;
+            $prodLabel = $selectedProd ? $selectedProd->name() : '';
+            $prodOptions = $products->map(fn($p) => [
+                'id' => (string) $p->id,
+                'label' => $p->name(),
+                'sublabel' => $p->sku,
+            ])->values()->all();
+        @endphp
+        <div class="min-w-[200px] flex-1">
+            <x-searchable-combobox
+                id="stock-movement-product-filter"
+                type="product"
+                context="inventory"
+                wire-model="productFilter"
+                :selected-id="$productFilter"
+                :selected-label="$prodLabel"
+                :options="$prodOptions"
+                :placeholder="__('inventory.all_products')"
+                :aria-label="__('inventory.all_products')"
+            />
+        </div>
         <select aria-label="{{ __('inventory.all_warehouses') }}" wire:model.live="warehouseFilter" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface">
                     <option value="">{{ __('inventory.all_warehouses') }}</option>
                     @foreach ($warehouses as $w)

@@ -50,31 +50,36 @@
                     </label>
 
                 </div>
-                @if($customers->count() >= 50 || trim($customerSearch) !== '')
-<div class="flex gap-2 mb-1.5">
-                    <input id="quotation-customer-search" aria-label="{{ __('workflow.search_customers') }}" type="text"
-                           wire:model.live.debounce.300ms="customerSearch"
-                           placeholder="{{ __('workflow.search_customers') }}"
-                           class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                </div>
-                @endif
-                <div class="party-picker">
-<select wire:model.live="customer_id"
+                @php
+                    $selectedCustomer = $customer_id ? $customers->firstWhere('id', $customer_id) : null;
+                    $customerLabel = $selectedCustomer ? $selectedCustomer->displayName() . ($selectedCustomer->default_currency_code ? ' (' . $selectedCustomer->default_currency_code . ')' : '') : '';
+                    $customerOptions = $customers->map(fn($c) => [
+                        'id' => (string) $c->id,
+                        'label' => $c->displayName() . ($c->default_currency_code ? ' (' . $c->default_currency_code . ')' : ''),
+                        'sublabel' => $c->code ?: $c->phone,
+                    ])->values()->all();
+                @endphp
+                <div class="party-picker flex gap-2 items-center">
+                    <x-searchable-combobox
+                        id="quotation-customer-id"
+                        type="customer"
+                        context="quotation"
+                        wire-model="customer_id"
+                        :selected-id="$customer_id"
+                        :selected-label="$customerLabel"
+                        :options="$customerOptions"
+                        :placeholder="__('sales.select_customer')"
+                        :aria-label="__('sales.customer')"
                         required
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
-                    <option value="">{{ __('sales.select_customer') }}</option>
-                    @foreach ($customers as $c)
-                        <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code }})</option>
-                    @endforeach
-                </select>
-@if ($canManageCustomers)
+                    />
+                    @if ($canManageCustomers)
                         <button type="button"
                                 wire:click="openQuickCustomerModal"
-                                class="party-create-button" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
+                                class="party-create-button shrink-0" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
                             + {{ __('workflow.quick_customer') }}
                         </button>
                     @endif
-</div>
+                </div>
                 @error('customer_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
 
             </div>
@@ -208,15 +213,28 @@
                             <tr wire:key="line-{{ $index }}">
                                 <td class="py-2 px-2 align-top space-y-1">
 <div class="entry-product-fields">
-                                    <select wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
-                                        <option value="">-- {{ __('sales.product') }} --</option>
-                                        @foreach ($products as $p)
-                                            <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
-                                                {{ $p->displayName() }} ({{ $p->sku }})
-                                            </option>
-                                        @endforeach
-                                    </select>
+                                    @php
+                                        $lineProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                                        $lineProductLabel = $lineProduct ? $lineProduct->displayName() . ($lineProduct->sku ? ' (' . $lineProduct->sku . ')' : '') : '';
+                                        $productOptions = $products->map(fn($p) => [
+                                            'id' => (string) $p->id,
+                                            'label' => $p->displayName() . ($p->sku ? ' (' . $p->sku . ')' : ''),
+                                            'sublabel' => $p->sku,
+                                        ])->values()->all();
+                                    @endphp
+                                    <x-searchable-combobox
+                                        id="quotation-desktop-line-{{ $index }}-product-id"
+                                        type="product"
+                                        context="sales"
+                                        :selected-id="$line['product_id'] ?? null"
+                                        :selected-label="$lineProductLabel"
+                                        :options="$productOptions"
+                                        on-select="selectProduct"
+                                        :extra-args="[$index]"
+                                        compact
+                                        :placeholder="__('sales.product')"
+                                        :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                                    />
                                     <input type="text"
                                            wire:model="lines.{{ $index }}.item_description"
                                            placeholder="{{ __('sales.description') }}..."
@@ -350,15 +368,22 @@
                         <!-- Product & Description -->
                         <div class="space-y-1">
                             <label class="block text-sm font-bold text-text-secondary">{{ __('sales.product') }}</label>
-                            <select wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                    class="w-full h-8 px-2 rounded-control border border-border bg-surface text-sm" :disabled="documentBusy || saving">
-                                <option value="">-- {{ __('sales.product') }} --</option>
-                                @foreach ($products as $p)
-                                    <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
-                                        {{ $p->displayName() }} ({{ $p->sku }})
-                                    </option>
-                                @endforeach
-                            </select>
+                            @php
+                                $mobileProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                                $mobileProductLabel = $mobileProduct ? $mobileProduct->displayName() . ($mobileProduct->sku ? ' (' . $mobileProduct->sku . ')' : '') : '';
+                            @endphp
+                            <x-searchable-combobox
+                                id="quotation-mobile-line-{{ $index }}-product-id"
+                                type="product"
+                                context="sales"
+                                :selected-id="$line['product_id'] ?? null"
+                                :selected-label="$mobileProductLabel"
+                                :options="$productOptions ?? []"
+                                on-select="selectProduct"
+                                :extra-args="[$index]"
+                                :placeholder="__('sales.product')"
+                                :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                            />
                             <input type="text"
                                    wire:model="lines.{{ $index }}.item_description"
                                    placeholder="{{ __('sales.description') }}..."

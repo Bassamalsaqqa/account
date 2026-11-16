@@ -49,7 +49,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
-use Symfony\Component\HttpKernel\Exception\HttpException;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 
 #[Layout('layouts.app')]
 class InvoiceForm extends Component
@@ -57,6 +57,7 @@ class InvoiceForm extends Component
     use AdjustsDocumentQuantity;
     use AiUnsavedForm;
     use CameraBarcodeScan;
+    use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -537,13 +538,33 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId): bool
+    public function selectProduct(int $index, int $productId, ?int $productUnitId = null): bool
     {
         if ($this->showPreview) {
             $this->cancelPreview();
         }
 
-        $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, $this->warehouse_id);
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
+        $user = auth()->user();
+        abort_unless($user->hasPermissionTo($this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'), 403);
+
+        $product = Product::where('company_id', $this->pageCompanyId)
+            ->where('id', $productId)
+            ->where('active', true)
+            ->first();
+
+        if (! $product) {
+            return false;
+        }
+
+        $selected = app(SalesProductSelection::class)->select(
+            $productId,
+            $productUnitId,
+            $this->currency_code,
+            $this->exchange_rate,
+            $this->warehouse_id
+        );
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
 

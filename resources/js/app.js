@@ -11,6 +11,7 @@ import './mobile-shell';
 import './document-operations';
 import './camera-scanner';
 import './global-search';
+import './searchable-combobox';
 import './barcode-entry';
 import './profile-two-factor';
 import './company-data-download';

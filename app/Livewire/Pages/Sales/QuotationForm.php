@@ -40,11 +40,14 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
+use App\Livewire\Concerns\HandlesSearchableSelectors;
+
 #[Layout('layouts.app')]
 class QuotationForm extends Component
 {
     use AdjustsDocumentQuantity;
     use CameraBarcodeScan;
+    use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -469,10 +472,20 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId): bool
+    public function selectProduct(int $index, int $productId, ?int $productUnitId = null): bool
     {
         $this->authorizeQuoteAction();
-        $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, null);
+
+        $product = Product::where('company_id', $this->pageCompanyId)
+            ->where('id', $productId)
+            ->where('active', true)
+            ->first();
+
+        if (! $product) {
+            return false;
+        }
+
+        $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->currency_code, $this->exchange_rate, null);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
 

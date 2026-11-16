@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Inventory;
 
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\HasTablePageSize;
 use App\Models\Product;
 use App\Models\StockMovement;
@@ -19,6 +20,7 @@ use Livewire\WithPagination;
 #[Layout('layouts.app')]
 class StockMovementIndex extends Component
 {
+    use HandlesSearchableSelectors;
     use HasTablePageSize;
     use WithPagination;
 
@@ -105,7 +107,21 @@ class StockMovementIndex extends Component
 
         $movements = $query->orderByDesc('movement_date')->orderByDesc('id')->paginate($this->tablePageSize());
 
-        $products = Product::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en', 'sku']);
+        $products = Product::where('company_id', $company->id)
+            ->orderBy('name_ar')
+            ->orderBy('id')
+            ->limit(25)
+            ->get(['id', 'name_ar', 'name_en', 'sku']);
+
+        if ($this->productFilter !== '' && $this->productFilter !== null && ! $products->contains('id', (int) $this->productFilter)) {
+            $selected = Product::where('company_id', $company->id)
+                ->where('id', (int) $this->productFilter)
+                ->first(['id', 'name_ar', 'name_en', 'sku']);
+            if ($selected) {
+                $products->prepend($selected);
+            }
+        }
+
         $warehouses = Warehouse::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar']);
 
         $movementTypes = [

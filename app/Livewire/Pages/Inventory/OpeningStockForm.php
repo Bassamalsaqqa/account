@@ -17,6 +17,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -25,6 +26,7 @@ class OpeningStockForm extends Component
 {
     use AuthorizesInventoryPages;
     use HandlesInventoryDraftControls;
+    use HandlesSearchableSelectors;
 
     public ?int $product_id = null;
 
@@ -167,12 +169,17 @@ class OpeningStockForm extends Component
         $user = auth()->user();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
 
-        $products = Product::where('company_id', $company->id)
+        $productsQuery = Product::where('company_id', $company->id)
             ->where('active', true)
-            ->where('track_stock', true)
-            ->with(['baseUnit', 'productUnits.unit'])
-            ->orderBy('name_ar')
-            ->get();
+            ->where('track_stock', true);
+
+        $products = (clone $productsQuery)->orderBy('name_ar')->orderBy('id')->limit(25)->get();
+        if ($this->product_id && ! $products->contains('id', $this->product_id)) {
+            $selected = Product::where('company_id', $company->id)->where('id', $this->product_id)->first();
+            if ($selected) {
+                $products->prepend($selected);
+            }
+        }
 
         $warehouses = Warehouse::where('company_id', $company->id)
             ->where('active', true)
@@ -180,7 +187,9 @@ class OpeningStockForm extends Component
             ->orderBy('name_ar')
             ->get();
 
-        $selectedProduct = $this->product_id ? $products->firstWhere('id', $this->product_id) : null;
+        $selectedProduct = $this->product_id
+            ? Product::with(['baseUnit', 'productUnits.unit'])->where('company_id', $company->id)->find($this->product_id)
+            : null;
 
         $availableUnits = collect();
         if ($selectedProduct) {

@@ -37,27 +37,34 @@
                 <label for="purchase-vendor" class="block text-sm font-bold">{{ __('purchasing.vendor') }}</label>
 
             </div>
-            @if($vendors->count() >= 50 || trim($vendorSearch) !== '')
-<div class="flex gap-2 mb-1.5">
-                <input id="purchase-vendor-search" aria-label="{{ __('workflow.search_vendors') }}" type="text"
-                       wire:model.live.debounce.300ms="vendorSearch"
-                       placeholder="{{ __('workflow.search_vendors') }}"
-                       class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-            </div>
-                @endif
-            <div class="party-picker">
-<select id="purchase-vendor" wire:model.live="vendor_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
-                <option value="">{{ __('purchasing.select_vendor') }}</option>
-                @foreach($vendors as $vendor)
-                    <option value="{{ $vendor->id }}">{{ $vendor->displayName() }}</option>
-                @endforeach
-            </select>
-@if ($canManageVendors)
-                    <button type="button" wire:click="openQuickVendorModal" class="party-create-button" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
+            @php
+                $selectedVendor = $vendor_id ? $vendors->firstWhere('id', $vendor_id) : null;
+                $vendorLabel = $selectedVendor ? $selectedVendor->displayName() : '';
+                $vendorOptions = $vendors->map(fn($v) => [
+                    'id' => (string) $v->id,
+                    'label' => $v->displayName(),
+                    'sublabel' => $v->code ?: $v->phone,
+                ])->values()->all();
+            @endphp
+            <div class="party-picker flex gap-2 items-center">
+                <x-searchable-combobox
+                    id="purchase-vendor"
+                    type="vendor"
+                    context="purchasing"
+                    wire-model="vendor_id"
+                    :selected-id="$vendor_id"
+                    :selected-label="$vendorLabel"
+                    :options="$vendorOptions"
+                    :placeholder="__('purchasing.select_vendor')"
+                    :aria-label="__('purchasing.vendor')"
+                    required
+                />
+                @if ($canManageVendors)
+                    <button type="button" wire:click="openQuickVendorModal" class="party-create-button shrink-0" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
                         + {{ __('workflow.quick_vendor') }}
                     </button>
                 @endif
-</div>
+            </div>
 
         </div>
         @foreach(['purchase_date' => 'purchase_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-sm font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
@@ -106,10 +113,30 @@
             <article wire:key="purchase-line-{{ $index }}-{{ $line['product_id'] ?? 'new' }}" class="bg-surface border border-border rounded-card p-4 space-y-3">
                 <div class="flex justify-between items-center gap-2"><h3 class="text-xs font-bold">{{ __('purchasing.line') }} <bdi>{{ $index + 1 }}</bdi></h3><button type="button" wire:click="removeLine({{ $index }})" class="min-h-[44px] px-3 text-danger text-sm font-bold cursor-pointer hover:bg-danger/10 rounded-control" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">{{ __('purchasing.remove_line') }}</button></div>
                 <div class="grid grid-cols-2 lg:grid-cols-12 gap-3">
-                    <div class="col-span-2 lg:col-span-4"><label for="line-product-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.product') }}</label><select id="line-product-{{ $index }}" wire:change="selectProduct({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_product') }}</option>
-                        @if(!empty($line['product_id']) && !$products->contains('id', $line['product_id']))<option selected value="{{ $line['product_id'] }}">{{ $line['item_description'] }}</option>@endif
-                        @foreach($products as $product)<option value="{{ $product->id }}" @selected(($line['product_id'] ?? null) == $product->id)>{{ $product->displayName() }} {{ $product->sku }}</option>@endforeach
-                    </select></div>
+                    <div class="col-span-2 lg:col-span-4">
+                        <label for="line-product-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.product') }}</label>
+                        @php
+                            $lineProd = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                            $lineProdLabel = $lineProd ? $lineProd->displayName() . ($lineProd->sku ? ' (' . $lineProd->sku . ')' : '') : ($line['item_description'] ?? '');
+                            $prodOptions = $products->map(fn($p) => [
+                                'id' => (string) $p->id,
+                                'label' => $p->displayName() . ($p->sku ? ' (' . $p->sku . ')' : ''),
+                                'sublabel' => $p->sku,
+                            ])->values()->all();
+                        @endphp
+                        <x-searchable-combobox
+                            id="line-product-{{ $index }}"
+                            type="product"
+                            context="purchasing"
+                            :selected-id="$line['product_id'] ?? null"
+                            :selected-label="$lineProdLabel"
+                            :options="$prodOptions"
+                            on-select="selectProduct"
+                            :extra-args="[$index]"
+                            :placeholder="__('purchasing.select_product')"
+                            :aria-label="__('purchasing.product') . ' ' . ($index + 1)"
+                        />
+                    </div>
                     <div class="lg:col-span-2"><label for="line-unit-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.unit') }}</label><select id="line-unit-{{ $index }}" wire:change="changeUnit({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_unit') }}</option>@foreach($unitOptions[$index] ?? [] as $unit)<option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>@endforeach</select></div>
                     <div class="lg:col-span-2">
                         <label for="line-quantity-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.quantity') }}</label>

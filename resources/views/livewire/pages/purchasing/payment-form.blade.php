@@ -55,14 +55,27 @@
                 <label for="purchasing-payment-{{ $this->getId() }}-vendor_id" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('purchasing.vendor') }} <span class="text-danger">*</span>
                 </label>
-                <select id="purchasing-payment-{{ $this->getId() }}-vendor_id" wire:model.live="vendor_id"
-                        required
-                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
-                    <option value="">{{ __('purchasing.select_vendor') }}</option>
-                    @foreach ($vendors as $v)
-                        <option value="{{ $v->id }}">{{ $v->displayName() }}</option>
-                    @endforeach
-                </select>
+                @php
+                    $selectedVendor = $vendor_id ? $vendors->firstWhere('id', $vendor_id) : null;
+                    $vendorLabel = $selectedVendor ? $selectedVendor->displayName() : '';
+                    $vendorOptions = $vendors->map(fn($v) => [
+                        'id' => (string) $v->id,
+                        'label' => $v->displayName(),
+                        'sublabel' => $v->code ?: $v->phone,
+                    ])->values()->all();
+                @endphp
+                <x-searchable-combobox
+                    id="purchasing-payment-{{ $this->getId() }}-vendor_id"
+                    type="vendor"
+                    context="payment"
+                    wire-model="vendor_id"
+                    :selected-id="$vendor_id"
+                    :selected-label="$vendorLabel"
+                    :options="$vendorOptions"
+                    :placeholder="__('purchasing.select_vendor')"
+                    :aria-label="__('purchasing.vendor')"
+                    required
+                />
                 @error('vendor_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 

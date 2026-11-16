@@ -51,13 +51,27 @@
                 </div>
                 <!-- Product -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.product') }} *</label>
-                    <select wire:model.live="product_id" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
-                        <option value="">{{ __('inventory.select_product') }}</option>
-                        @foreach ($products as $p)
-                            <option value="{{ $p->id }}">{{ app()->getLocale() === 'en' ? ($p->name_en ?: $p->name_ar) : $p->name_ar }} {{ $p->sku ? "({$p->sku})" : '' }}</option>
-                        @endforeach
-                    </select>
+                    @php
+                        $selectedProd = $product_id ? $products->firstWhere('id', $product_id) : null;
+                        $prodLabel = $selectedProd ? (app()->getLocale() === 'en' ? ($selectedProd->name_en ?: $selectedProd->name_ar) : $selectedProd->name_ar) . ($selectedProd->sku ? ' (' . $selectedProd->sku . ')' : '') : '';
+                        $prodOptions = $products->map(fn($p) => [
+                            'id' => (string) $p->id,
+                            'label' => (app()->getLocale() === 'en' ? ($p->name_en ?: $p->name_ar) : $p->name_ar) . ($p->sku ? ' (' . $p->sku . ')' : ''),
+                            'sublabel' => $p->sku,
+                        ])->values()->all();
+                    @endphp
+                    <x-searchable-combobox
+                        id="stock-adjustment-product-id"
+                        type="product"
+                        context="inventory"
+                        wire-model="product_id"
+                        :selected-id="$product_id"
+                        :selected-label="$prodLabel"
+                        :options="$prodOptions"
+                        :placeholder="__('inventory.select_product')"
+                        :aria-label="__('inventory.product')"
+                        required
+                    />
                     @error('product_id') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
 
