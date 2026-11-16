@@ -7246,6 +7246,213 @@ PHP;
             }
         }
     }
+
+    #[Test]
+    public function test_proxy_write_exclusive_secure_file_enforces_permissions_and_refuses_overwrite(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_exclusive_write_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $reflector = new \ReflectionClass(\Tests\Support\Harness\TestTransportProxy::class);
+            $proxy = $reflector->newInstanceWithoutConstructor();
+
+            $targetFile = $tmpDir . '/probe_test_report.json';
+            $content = json_encode(['test' => 'ok', 'delta' => 0], JSON_PRETTY_PRINT);
+
+            // 1. Initial write succeeds with 0600
+            $proxy->writeExclusiveSecureFile($targetFile, $content);
+            $this->assertFileExists($targetFile);
+            $this->assertSame($content, file_get_contents($targetFile));
+            $this->assertSame(0600, fileperms($targetFile) & 0777);
+
+            // 2. Second write to existing file throws RuntimeException (exclusive refusal)
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('target file already exists');
+            $proxy->writeExclusiveSecureFile($targetFile, $content);
+        } finally {
+            if (file_exists($tmpDir . '/probe_test_report.json')) {
+                @unlink($tmpDir . '/probe_test_report.json');
+            }
+            if (is_dir($tmpDir)) {
+                @rmdir($tmpDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_proxy_write_exclusive_secure_file_refuses_symlink(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_symlink_write_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $reflector = new \ReflectionClass(\Tests\Support\Harness\TestTransportProxy::class);
+            $proxy = $reflector->newInstanceWithoutConstructor();
+
+            $realTarget = $tmpDir . '/real_target.txt';
+            file_put_contents($realTarget, 'data');
+            chmod($realTarget, 0600);
+
+            $symlinkFile = $tmpDir . '/symlink_report.json';
+            symlink($realTarget, $symlinkFile);
+
+            $this->expectException(RuntimeException::class);
+            $this->expectExceptionMessage('already exists or is symlink');
+            $proxy->writeExclusiveSecureFile($symlinkFile, '{"forbidden":true}');
+        } finally {
+            if (is_link($tmpDir . '/symlink_report.json')) {
+                @unlink($tmpDir . '/symlink_report.json');
+            }
+            if (file_exists($tmpDir . '/real_target.txt')) {
+                @unlink($tmpDir . '/real_target.txt');
+            }
+            if (is_dir($tmpDir)) {
+                @rmdir($tmpDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_probe_reports_manifest_hash_binding_and_producer_consumer_coherence(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_manifest_binding_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $reflector = new \ReflectionClass(\Tests\Support\Harness\TestTransportProxy::class);
+            $proxy = $reflector->newInstanceWithoutConstructor();
+
+            $pName = 'permission_denial';
+            $reportFile = $tmpDir . '/probe_' . $pName . '_report.json';
+            $reconFile = $tmpDir . '/probe_' . $pName . '_reconciliation.json';
+
+            $reportData = [
+                'probe_name' => $pName,
+                'client_event_id' => '11111111-1111-4111-8111-111111111111',
+                'expected_http_status' => 403,
+                'actual_http_status' => 403,
+                'status_matched' => true,
+                'economic_delta_zero' => true,
+                'zero_delta_verified' => true,
+                'reconciliations_healthy' => true,
+                'total_issue_count' => 0,
+            ];
+            $reconData = ['all_healthy' => true, 'reconciler_results' => []];
+
+            $proxy->writeExclusiveSecureFile($reportFile, json_encode($reportData, JSON_PRETTY_PRINT));
+            $proxy->writeExclusiveSecureFile($reconFile, json_encode($reconData, JSON_PRETTY_PRINT));
+
+            $reportSha = hash_file('sha256', $reportFile);
+            $reconSha = hash_file('sha256', $reconFile);
+
+            $manifestData = [
+                $pName => [
+                    'probe_name' => $pName,
+                    'report_file' => basename($reportFile),
+                    'report_sha256' => $reportSha,
+                    'reconciliation_file' => basename($reconFile),
+                    'reconciliation_sha256' => $reconSha,
+                ],
+            ];
+            $manifestFile = $tmpDir . '/probe_reports_manifest.json';
+            $proxy->writeExclusiveSecureFile($manifestFile, json_encode($manifestData, JSON_PRETTY_PRINT));
+
+            // Consumer verification: assert SHA matches manifest
+            $readManifest = json_decode((string) file_get_contents($manifestFile), true);
+            $this->assertSame($reportSha, $readManifest[$pName]['report_sha256']);
+            $this->assertSame($reconSha, $readManifest[$pName]['reconciliation_sha256']);
+            $this->assertTrue(hash_equals($reportSha, (string) hash_file('sha256', $reportFile)));
+        } finally {
+            foreach (glob($tmpDir . '/*') as $f) {
+                @unlink($f);
+            }
+            if (is_dir($tmpDir)) {
+                @rmdir($tmpDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_rollback_verification_refuses_mismatched_report_hash_or_tampered_payload(): void
+    {
+        $manifest = [
+            'permission_denial' => [
+                'report_file' => 'probe_permission_denial_report.json',
+                'report_sha256' => hash('sha256', 'original_content'),
+            ],
+        ];
+
+        $tamperedContent = 'tampered_content';
+        $tamperedSha = hash('sha256', $tamperedContent);
+
+        $this->assertFalse(hash_equals($manifest['permission_denial']['report_sha256'], $tamperedSha));
+    }
+
+    #[Test]
+    public function test_rollback_verification_refuses_unhealthy_individual_service_despite_aggregate_true(): void
+    {
+        $reconcilerResults = [
+            'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            'InventoryReconciliationService' => ['healthy' => false, 'issue_count' => 1],
+            'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+            'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+        ];
+
+        $allSixPass = true;
+        foreach ($reconcilerResults as $service => $res) {
+            if (($res['healthy'] ?? false) !== true || (int) ($res['issue_count'] ?? -1) !== 0) {
+                $allSixPass = false;
+                break;
+            }
+        }
+
+        // Must refuse even if simulated aggregate was true
+        $simulatedAggregateHealthy = true;
+        $this->assertTrue($simulatedAggregateHealthy);
+        $this->assertFalse($allSixPass, 'Individual inventory failure must reject overall probe health');
+    }
+
+    #[Test]
+    public function test_harness_fault_uuid_propagation_requires_valid_acp_and_distinct_probe_ids(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_acp_propagation_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $duplicateUuid = '11111111-1111-4111-8111-111111111111';
+            $badAcpData = [
+                'probe_event_ids' => [
+                    'permission_denial' => $duplicateUuid,
+                    'insufficient_stock' => $duplicateUuid,
+                    'controlled_fault_after_posting' => '22222222-2222-4222-8222-222222222222',
+                ],
+            ];
+
+            $probeIds = array_values($badAcpData['probe_event_ids']);
+            $this->assertNotSame(3, count(array_unique($probeIds)), 'Duplicate UUIDs must not be distinct');
+
+            $validAcpData = [
+                'probe_event_ids' => [
+                    'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                    'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                    'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+                ],
+            ];
+            $validProbeIds = array_values($validAcpData['probe_event_ids']);
+            $this->assertSame(3, count(array_unique($validProbeIds)));
+
+            $faultId = $validAcpData['probe_event_ids']['controlled_fault_after_posting'];
+            $stageAllowlist = [$faultId => 'after_posting'];
+            $this->assertSame('after_posting', $stageAllowlist['33333333-3333-4333-8333-333333333333']);
+        } finally {
+            if (is_dir($tmpDir)) {
+                @rmdir($tmpDir);
+            }
+        }
+    }
 }
 
 

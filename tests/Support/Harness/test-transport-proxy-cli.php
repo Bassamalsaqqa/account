@@ -125,12 +125,11 @@ if ($credentialsFile === '') {
 try {
     verifyPathSecurity($credentialsFile, 'DB credentials file', 0600);
     $rawCreds = (string) file_get_contents($credentialsFile);
-    $creds = json_decode($rawCreds, true);
-    if (! is_array($creds) || ! isset($creds['db_user']) || ! isset($creds['db_password'])) {
-        throw new RuntimeException('Credentials file must contain db_user and db_password.');
+    $dbUser = (string) ($creds['db_username'] ?? ($creds['db_user'] ?? ''));
+    $dbPass = (string) ($creds['db_password'] ?? '');
+    if ($dbUser === '') {
+        throw new RuntimeException('Credentials file must contain db_username or db_user.');
     }
-    $dbUser = (string) $creds['db_user'];
-    $dbPass = (string) $creds['db_password'];
 } catch (\Throwable $e) {
     fwrite(STDERR, "Error: Credentials verification failed: {$e->getMessage()}\n");
     exit(1);
@@ -231,6 +230,9 @@ $proxyConfig = [
     'advanced_control_packet_path' => (string) ($config['advanced_control_packet_path'] ?? ''),
     'probe_event_ids' => (array) ($config['probe_event_ids'] ?? []),
     'credentials_file' => $credentialsFile,
+    'child_bootstrap_config_path' => (string) ($config['child_bootstrap_config_path'] ?? $credentialsFile),
+    'proof_path' => (string) ($config['proof_path'] ?? ($creds['proof_path'] ?? '')),
+    'proof_nonce' => (string) ($config['proof_nonce'] ?? ($creds['proof_nonce'] ?? '')),
     'repo_root' => $repoRoot,
 ];
 

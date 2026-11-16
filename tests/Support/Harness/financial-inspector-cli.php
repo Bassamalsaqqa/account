@@ -41,6 +41,7 @@ $isAdvancedProbes = false;
 $isRollbackProbeSnapshot = false;
 $isVerifyRollbackZeroDelta = false;
 $postProbeFile = null;
+$probeReportsManifestFile = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--baseline' || $arg === '--capture-baseline') {
@@ -61,6 +62,8 @@ foreach ($argvList as $arg) {
         $isVerifyRollbackZeroDelta = true;
     } elseif (str_starts_with($arg, '--post-probe-file=')) {
         $postProbeFile = substr($arg, 18);
+    } elseif (str_starts_with($arg, '--probe-reports-manifest=')) {
+        $probeReportsManifestFile = substr($arg, 25);
     } elseif (str_starts_with($arg, '--validate-evidence=')) {
         $evidenceFile = substr($arg, 20);
     } elseif (str_starts_with($arg, '--trusted-db-report=')) {
@@ -327,11 +330,30 @@ if ($isComposeTrustedReport) {
             'handoffDigest' => $expectedHandoffDigest,
         ];
 
+        $probeReportsManifest = null;
+        if ($probeReportsManifestFile !== null) {
+            if (! is_file($probeReportsManifestFile) || is_link($probeReportsManifestFile)) {
+                fwrite(STDERR, "Error: Insecure or missing probe reports manifest file.\n");
+                exit(1);
+            }
+            $pPerms = fileperms($probeReportsManifestFile) & 0777;
+            if ($pPerms !== 0600) {
+                fwrite(STDERR, sprintf("Error: Insecure probe reports manifest file perms %04o, expected 0600.\n", $pPerms));
+                exit(1);
+            }
+            $probeReportsManifest = json_decode((string) file_get_contents($probeReportsManifestFile), true);
+            if (! is_array($probeReportsManifest)) {
+                fwrite(STDERR, "Error: Invalid JSON in probe reports manifest file.\n");
+                exit(1);
+            }
+        }
+
         $report = DisposableFinancialPostRunInspector::composeTrustedDbReport(
             $metadata,
             $baselineData,
             $deltaData,
-            $reconcileData
+            $reconcileData,
+            $probeReportsManifest
         );
 
         $outJson = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

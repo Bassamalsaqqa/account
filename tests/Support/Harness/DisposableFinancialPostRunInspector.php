@@ -1428,13 +1428,15 @@ final class DisposableFinancialPostRunInspector
      * @param  array<string, mixed>  $baseline
      * @param  array<string, mixed>  $deltaResult
      * @param  array<string, mixed>  $reconcileResult
+     * @param  array<string, mixed>|null  $rollbackProbesManifest
      * @return array<string, mixed>
      */
     public static function composeTrustedDbReport(
         array $metadata,
         array $baseline,
         array $deltaResult,
-        array $reconcileResult
+        array $reconcileResult,
+        ?array $rollbackProbesManifest = null
     ): array {
         foreach (['scope', 'runId', 'eventId', 'schemaName', 'companyId', 'sourceHead', 'handoffDigest'] as $mKey) {
             if (! isset($metadata[$mKey]) || $metadata[$mKey] === '' || $metadata[$mKey] === 0) {
@@ -1475,10 +1477,13 @@ final class DisposableFinancialPostRunInspector
             'all_healthy' => $allHealthy,
             'reconciler_results' => $reconcileResult['reconciler_results'] ?? [],
         ];
+        if ($rollbackProbesManifest !== null) {
+            $coreDeterministicPayload['rollback_probes_manifest'] = $rollbackProbesManifest;
+        }
 
         $reportDigest = self::computeReportDigest($coreDeterministicPayload);
 
-        return [
+        $reportResult = [
             'scope' => (string) $metadata['scope'],
             'run_id' => (string) $metadata['runId'],
             'event_id' => (string) $metadata['eventId'],
@@ -1497,6 +1502,11 @@ final class DisposableFinancialPostRunInspector
             'report_digest' => $reportDigest,
             'generated_at' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s\Z'),
         ];
+        if ($rollbackProbesManifest !== null) {
+            $reportResult['rollback_probes_manifest'] = $rollbackProbesManifest;
+        }
+
+        return $reportResult;
     }
 
     /**
@@ -2783,6 +2793,9 @@ final class DisposableFinancialPostRunInspector
                 'all_healthy' => (bool) ($trustedDbReport['all_healthy'] ?? false),
                 'reconciler_results' => $trustedDbReport['reconciler_results'] ?? [],
             ];
+            if (isset($trustedDbReport['rollback_probes_manifest'])) {
+                $coreDeterministicPayload['rollback_probes_manifest'] = $trustedDbReport['rollback_probes_manifest'];
+            }
             $computedReportDigest = self::computeReportDigest($coreDeterministicPayload);
             $actualReportDigest = (string) ($trustedDbReport['report_digest'] ?? $trustedDbReport['digest'] ?? '');
             if ($actualReportDigest === '' || ! hash_equals($computedReportDigest, $actualReportDigest)) {

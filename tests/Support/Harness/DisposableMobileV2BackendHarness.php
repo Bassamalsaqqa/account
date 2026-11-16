@@ -437,6 +437,15 @@ final class DisposableMobileV2BackendHarness
         return $this->advancedControlPacketPath;
     }
 
+    public function advancedControlPacketSha256(): ?string
+    {
+        if ($this->advancedControlPacketPath !== null && is_file($this->advancedControlPacketPath)) {
+            return (string) hash_file('sha256', $this->advancedControlPacketPath);
+        }
+
+        return null;
+    }
+
     /**
      * @return array<string, string>
      */
@@ -2509,7 +2518,9 @@ PHP;
                     'target_company_public_id' => $this->companyPublicId,
                     'target_nonce_hash' => $targetNonceHash,
                     'expected_digest' => $expectedDigest,
-                    'credentials_file' => $dbCredentialsPath,
+                    'credentials_file' => $bootstrapDir.'/child_bootstrap_config.json',
+                    'child_bootstrap_config_path' => $bootstrapDir.'/child_bootstrap_config.json',
+                    'db_credentials_file' => $dbCredentialsPath,
                     'proof_path' => $this->proofPath,
                     'proof_nonce' => $this->proofNonce,
                     'witness_path' => $bootstrapDir.'/lost_ack_suppression_witness.json',

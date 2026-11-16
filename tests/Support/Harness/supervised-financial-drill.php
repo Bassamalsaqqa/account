@@ -775,76 +775,178 @@ try {
             throw new \RuntimeException('INVALID_ADVANCED_CONTROL_PACKET_JSON');
         }
 
-        $activeProbeIds = [];
-        if (! empty($acpData['probe_event_ids']) && is_array($acpData['probe_event_ids'])) {
-            foreach ($acpData['probe_event_ids'] as $pId) {
-                if (! empty($pId) && is_string($pId)) {
-                    $activeProbeIds[] = $pId;
-                }
-            }
-        } elseif (! empty($acpData['probes']) && is_array($acpData['probes'])) {
-            foreach ($acpData['probes'] as $pDef) {
-                if (! empty($pDef['event_id']) && is_string($pDef['event_id'])) {
-                    $activeProbeIds[] = (string) $pDef['event_id'];
-                }
+        $probeEventMap = [
+            'permission_denial' => (string) ($acpData['probe_event_ids']['permission_denial'] ?? ($acpData['probe_event_ids']['rollback_permission_denial'] ?? ($acpData['probes']['probe_permission_denial']['event_id'] ?? ''))),
+            'insufficient_stock' => (string) ($acpData['probe_event_ids']['insufficient_stock'] ?? ($acpData['probe_event_ids']['rollback_insufficient_stock'] ?? ($acpData['probes']['probe_insufficient_stock']['event_id'] ?? ''))),
+            'controlled_fault_after_posting' => (string) ($acpData['probe_event_ids']['controlled_fault_after_posting'] ?? ($acpData['probe_event_ids']['rollback_controlled_after_posting'] ?? ($acpData['probes']['probe_controlled_fault_after_posting']['event_id'] ?? ''))),
+        ];
+
+        $uuidPattern = '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/';
+        foreach ($probeEventMap as $pName => $pId) {
+            if (! preg_match($uuidPattern, $pId)) {
+                throw new \RuntimeException("ACP probe event ID for '{$pName}' is invalid or missing: '{$pId}'.");
             }
         }
-        $activeProbeIds = array_values(array_unique($activeProbeIds));
+        if (count(array_unique(array_values($probeEventMap))) !== 3) {
+            throw new \RuntimeException('ACP probe event IDs must be mutually distinct.');
+        }
 
-        if (! empty($activeProbeIds)) {
-            $inClause = implode(',', array_fill(0, count($activeProbeIds), '?'));
-            $queryParams = array_merge([$companyId], $activeProbeIds);
+        $activeProbeIds = array_values($probeEventMap);
+        $inClause = implode(',', array_fill(0, count($activeProbeIds), '?'));
+        $queryParams = array_merge([$companyId], $activeProbeIds);
 
-            // Assert negative probe events never committed mobile_event_receipts
-            $receiptCheck = $pdo->prepare("SELECT COUNT(*) FROM mobile_event_receipts WHERE company_id = ? AND client_event_id IN ({$inClause})");
-            $receiptCheck->execute($queryParams);
-            $receiptCount = (int) $receiptCheck->fetchColumn();
-            if ($receiptCount > 0) {
-                throw new \RuntimeException("ROLLBACK_PROBE_RECEIPT_COMMITTED: expected 0, found {$receiptCount}");
-            }
+        // Assert negative probe events never committed mobile_event_receipts
+        $receiptCheck = $pdo->prepare("SELECT COUNT(*) FROM mobile_event_receipts WHERE company_id = ? AND client_event_id IN ({$inClause})");
+        $receiptCheck->execute($queryParams);
+        $receiptCount = (int) $receiptCheck->fetchColumn();
+        if ($receiptCount > 0) {
+            throw new \RuntimeException("ROLLBACK_PROBE_RECEIPT_COMMITTED: expected 0, found {$receiptCount}");
+        }
 
-            // Assert negative probe events never committed sales_invoices (linked via mobile_event_receipts)
-            $invCheck = $pdo->prepare("SELECT COUNT(*) FROM sales_invoices si INNER JOIN mobile_event_receipts mer ON mer.sales_invoice_id = si.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
-            $invCheck->execute($queryParams);
-            $invCount = (int) $invCheck->fetchColumn();
-            if ($invCount > 0) {
-                throw new \RuntimeException("ROLLBACK_PROBE_INVOICE_COMMITTED: expected 0, found {$invCount}");
-            }
+        // Assert negative probe events never committed sales_invoices (linked via mobile_event_receipts)
+        $invCheck = $pdo->prepare("SELECT COUNT(*) FROM sales_invoices si INNER JOIN mobile_event_receipts mer ON mer.sales_invoice_id = si.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
+        $invCheck->execute($queryParams);
+        $invCount = (int) $invCheck->fetchColumn();
+        if ($invCount > 0) {
+            throw new \RuntimeException("ROLLBACK_PROBE_INVOICE_COMMITTED: expected 0, found {$invCount}");
+        }
 
-            // Assert negative probe events never committed customer_payments (linked via mobile_event_receipts)
-            $payCheck = $pdo->prepare("SELECT COUNT(*) FROM customer_payments cp INNER JOIN mobile_event_receipts mer ON mer.customer_payment_id = cp.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
-            $payCheck->execute($queryParams);
-            $payCount = (int) $payCheck->fetchColumn();
-            if ($payCount > 0) {
-                throw new \RuntimeException("ROLLBACK_PROBE_PAYMENT_COMMITTED: expected 0, found {$payCount}");
-            }
+        // Assert negative probe events never committed customer_payments (linked via mobile_event_receipts)
+        $payCheck = $pdo->prepare("SELECT COUNT(*) FROM customer_payments cp INNER JOIN mobile_event_receipts mer ON mer.customer_payment_id = cp.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
+        $payCheck->execute($queryParams);
+        $payCount = (int) $payCheck->fetchColumn();
+        if ($payCount > 0) {
+            throw new \RuntimeException("ROLLBACK_PROBE_PAYMENT_COMMITTED: expected 0, found {$payCount}");
         }
         echo "  [Rollback] Verified 0 rows committed for negative probe event IDs.\n";
 
-        // Verify TestTransportProxy per-probe zero-delta reports
-        $probeReportNames = ['permission_denial', 'insufficient_stock', 'controlled_fault_after_posting'];
-        foreach ($probeReportNames as $pName) {
-            $candidateReports = [
-                $bootstrapDir . '/probe_' . $pName . '_report.json',
-                $outputDir . '/probe_' . $pName . '_report.json',
-                $bootstrapDir . '/probe_rollback_' . $pName . '_report.json',
-                $outputDir . '/probe_rollback_' . $pName . '_report.json',
-            ];
-            $foundReport = null;
-            foreach ($candidateReports as $candidate) {
-                if (is_file($candidate)) {
-                    $foundReport = $candidate;
-                    break;
+        // Verify exactly three probe reports at the declared owned path ($bootstrapDir)
+        $probeManifestPath = $bootstrapDir . '/probe_reports_manifest.json';
+        if (! is_file($probeManifestPath)) {
+            throw new \RuntimeException("MISSING_PROBE_REPORTS_MANIFEST: {$probeManifestPath}");
+        }
+        SupervisedPairedFinancialDrill::assertSecureFilePermissions($probeManifestPath, 'PROBE_REPORTS_MANIFEST');
+        $probeManifest = json_decode((string) file_get_contents($probeManifestPath), true);
+        if (! is_array($probeManifest)) {
+            throw new \RuntimeException('INVALID_PROBE_REPORTS_MANIFEST_JSON');
+        }
+
+        $expectedStatusMap = [
+            'permission_denial' => 403,
+            'insufficient_stock' => 422,
+            'controlled_fault_after_posting' => 500,
+        ];
+
+        $requiredServiceNames = [
+            'AccountingReconciliationService',
+            'InventoryReconciliationService',
+            'SalesReconciliationService',
+            'PayablesReconciliationService',
+            'MoneyReconciliationService',
+            'Phase7ReconciliationService',
+        ];
+
+        foreach ($probeEventMap as $pName => $expectedProbeId) {
+            $reportFile = $bootstrapDir . '/probe_' . $pName . '_report.json';
+            if (! is_file($reportFile)) {
+                throw new \RuntimeException("MISSING_ROLLBACK_PROBE_REPORT: probe '{$pName}' report not found at {$reportFile}");
+            }
+            SupervisedPairedFinancialDrill::assertSecureFilePermissions($reportFile, 'PROBE_REPORT_' . strtoupper($pName));
+            $reportRaw = (string) file_get_contents($reportFile);
+            $reportSha = hash('sha256', $reportRaw);
+
+            // Verify report hash against immutable manifest index
+            $manifestEntry = $probeManifest[$pName] ?? null;
+            if (! is_array($manifestEntry) || ! hash_equals((string) ($manifestEntry['report_sha256'] ?? ''), $reportSha)) {
+                throw new \RuntimeException("PROBE_REPORT_HASH_TAMPERED: probe '{$pName}' hash mismatch vs manifest index");
+            }
+
+            $rep = json_decode($reportRaw, true);
+            if (! is_array($rep)) {
+                throw new \RuntimeException("INVALID_PROBE_REPORT_JSON: probe '{$pName}'");
+            }
+
+            // Verify pinned identities
+            if (($rep['probe_name'] ?? '') !== $pName) {
+                throw new \RuntimeException("PROBE_REPORT_NAME_MISMATCH: expected '{$pName}', got '".($rep['probe_name'] ?? 'null')."'");
+            }
+            if (($rep['client_event_id'] ?? '') !== $expectedProbeId) {
+                throw new \RuntimeException("PROBE_REPORT_EVENT_ID_MISMATCH: expected '{$expectedProbeId}', got '".($rep['client_event_id'] ?? 'null')."'");
+            }
+            $expStatus = $expectedStatusMap[$pName];
+            if (($rep['expected_http_status'] ?? 0) !== $expStatus) {
+                throw new \RuntimeException("PROBE_REPORT_EXPECTED_STATUS_MISMATCH: expected {$expStatus}, got ".($rep['expected_http_status'] ?? 'null'));
+            }
+            if (($rep['actual_http_status'] ?? 0) !== $expStatus) {
+                throw new \RuntimeException("PROBE_REPORT_ACTUAL_STATUS_MISMATCH: expected {$expStatus}, got ".($rep['actual_http_status'] ?? 'null'));
+            }
+            if (($rep['status_matched'] ?? false) !== true) {
+                throw new \RuntimeException("PROBE_REPORT_STATUS_NOT_MATCHED: probe '{$pName}'");
+            }
+            if (($rep['schema_name'] ?? '') !== $schemaName) {
+                throw new \RuntimeException("PROBE_REPORT_SCHEMA_MISMATCH: expected '{$schemaName}', got '".($rep['schema_name'] ?? 'null')."'");
+            }
+            if ((int) ($rep['company_id'] ?? 0) !== $companyId) {
+                throw new \RuntimeException("PROBE_REPORT_COMPANY_ID_MISMATCH: expected {$companyId}, got ".($rep['company_id'] ?? 'null'));
+            }
+            if (($rep['company_public_id'] ?? '') !== $companyUlid) {
+                throw new \RuntimeException("PROBE_REPORT_COMPANY_PUBLIC_ID_MISMATCH: expected '{$companyUlid}', got '".($rep['company_public_id'] ?? 'null')."'");
+            }
+            if (($rep['backend_head'] ?? '') !== $backendHead) {
+                throw new \RuntimeException("PROBE_REPORT_BACKEND_HEAD_MISMATCH: expected '{$backendHead}', got '".($rep['backend_head'] ?? 'null')."'");
+            }
+            if (($rep['handoff_sha256'] ?? '') !== $candidateHandoffSha) {
+                throw new \RuntimeException("PROBE_REPORT_HANDOFF_SHA_MISMATCH: expected '{$candidateHandoffSha}', got '".($rep['handoff_sha256'] ?? 'null')."'");
+            }
+
+            // Recompute assertRollbackZeroDelta on retained pre/post metrics
+            if (! is_array($rep['baseline_metrics'] ?? null) || ! is_array($rep['post_metrics'] ?? null)) {
+                throw new \RuntimeException("PROBE_REPORT_METRICS_MISSING: probe '{$pName}'");
+            }
+            $recomputedDelta = DisposableFinancialPostRunInspector::assertRollbackZeroDelta(
+                $rep['baseline_metrics'],
+                $rep['post_metrics']
+            );
+            if (! ($recomputedDelta['is_zero_delta'] ?? false)) {
+                throw new \RuntimeException("ROLLBACK_PROBE_ZERO_DELTA_RECOMPUTE_FAILED: probe '{$pName}' delta is not zero: " . implode(', ', $recomputedDelta['errors']));
+            }
+
+            // Validate every individual reconciler result (not aggregate booleans alone)
+            $recResults = $rep['reconciler_results'] ?? null;
+            if (! is_array($recResults)) {
+                throw new \RuntimeException("PROBE_REPORT_RECONCILER_RESULTS_MISSING: probe '{$pName}'");
+            }
+            foreach ($requiredServiceNames as $svcFullName) {
+                $svcData = $recResults[$svcFullName] ?? null;
+                if (! is_array($svcData)) {
+                    throw new \RuntimeException("PROBE_REPORT_SERVICE_RESULT_MISSING: probe '{$pName}' service '{$svcFullName}'");
+                }
+                if (($svcData['healthy'] ?? false) !== true) {
+                    throw new \RuntimeException("PROBE_REPORT_SERVICE_UNHEALTHY: probe '{$pName}' service '{$svcFullName}'");
+                }
+                if ((int) ($svcData['issue_count'] ?? -1) !== 0) {
+                    throw new \RuntimeException("PROBE_REPORT_SERVICE_ISSUES: probe '{$pName}' service '{$svcFullName}' reported issues: " . $svcData['issue_count']);
                 }
             }
-            if ($foundReport !== null) {
-                SupervisedPairedFinancialDrill::assertSecureFilePermissions($foundReport, 'PROBE_REPORT_' . strtoupper($pName));
-                $rep = json_decode((string) file_get_contents($foundReport), true);
-                if (! is_array($rep) || ($rep['zero_delta_verified'] ?? false) !== true || ($rep['reconciliations_healthy'] ?? false) !== true) {
-                    throw new \RuntimeException("ROLLBACK_PROBE_REPORT_UNHEALTHY: probe {$pName}");
-                }
-                echo "  [Rollback] Verified proxy probe report for '{$pName}': zero-delta OK, reconciliations OK.\n";
+            if (($rep['reconciliations_healthy'] ?? false) !== true || (int) ($rep['total_issue_count'] ?? -1) !== 0) {
+                throw new \RuntimeException("PROBE_REPORT_AGGREGATE_UNHEALTHY: probe '{$pName}'");
             }
+
+            // Verify raw per-probe reconciliation artifact exists and matches SHA
+            $rawReconPath = $bootstrapDir . '/probe_' . $pName . '_reconciliation.json';
+            if (! is_file($rawReconPath)) {
+                throw new \RuntimeException("MISSING_RAW_RECON_ARTIFACT: probe '{$pName}'");
+            }
+            SupervisedPairedFinancialDrill::assertSecureFilePermissions($rawReconPath, 'RAW_RECON_' . strtoupper($pName));
+            $actualReconSha = hash_file('sha256', $rawReconPath);
+            if (! hash_equals((string) ($rep['reconciliation_artifact_sha256'] ?? ''), $actualReconSha)) {
+                throw new \RuntimeException("RAW_RECON_SHA_MISMATCH: probe '{$pName}' vs report");
+            }
+            if (! hash_equals((string) ($manifestEntry['reconciliation_sha256'] ?? ''), $actualReconSha)) {
+                throw new \RuntimeException("RAW_RECON_SHA_MISMATCH: probe '{$pName}' vs manifest");
+            }
+
+            echo "  [Rollback] Verified proxy probe report for '{$pName}': zero-delta recomputed OK, 6 reconcilers healthy (0 issues), artifact SHA pinned.\n";
         }
     }
 
@@ -871,6 +973,9 @@ try {
         '--expected-scope=' . $expectedScope,
         '--output=' . $trustedDbReportFile,
     ];
+    if ($isAdvanced && isset($probeManifestPath) && is_file($probeManifestPath)) {
+        $composeCmd[] = '--probe-reports-manifest=' . $probeManifestPath;
+    }
     $composeProc = new Process($composeCmd, $repoRoot, $inspectorEnv, null, $reportTimeout);
     $composeProc->mustRun();
     chmod($trustedDbReportFile, 0600);
