@@ -239,3 +239,14 @@ test('changed query immediately removes old rows and refuses stale selection', a
     assert.equal(comp.selectedId, null);
     comp.setCompany(null); // Cancels the pending debounce without starting a request.
 });
+
+test('Livewire absent-property function proxies do not block search; real busy flags do', () => {
+    const comp = createComponent();
+    comp.$wire = { documentBusy: () => {}, saving: () => {} };
+    assert.equal(comp.isBlocked(), false);
+    comp.$wire.documentBusy = true;
+    assert.equal(comp.isBlocked(), true);
+    comp.$wire.documentBusy = false;
+    comp.$wire.saving = true;
+    assert.equal(comp.isBlocked(), true);
+});

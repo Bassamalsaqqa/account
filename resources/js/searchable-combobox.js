@@ -104,7 +104,7 @@ export function searchableCombobox(config) {
             if (typeof window !== 'undefined' && typeof window.isDocumentBlocked === 'function' && window.isDocumentBlocked(this.$wire)) {
                 return true;
             }
-            if (this.$wire && (this.$wire.documentBusy || this.$wire.saving)) {
+            if (this.$wire && (this.$wire.documentBusy === true || this.$wire.saving === true)) {
                 return true;
             }
             return false;
