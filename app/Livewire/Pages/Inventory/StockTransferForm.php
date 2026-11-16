@@ -78,12 +78,16 @@ class StockTransferForm extends Component
     {
         $this->lot_id = null;
         $company = $this->authorizeInventory('inventory.stock.transfer');
-        $this->unit_id = null;
         if ($this->product_id) {
             $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
-                $this->unit_id = $product->base_unit_id;
+                $unitValid = $this->unit_id && ($this->unit_id === $product->base_unit_id || \App\Models\ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('unit_id', $this->unit_id)->where('active', true)->exists());
+                if (! $unitValid) {
+                    $this->unit_id = $product->base_unit_id;
+                }
             }
+        } else {
+            $this->unit_id = null;
         }
     }
 

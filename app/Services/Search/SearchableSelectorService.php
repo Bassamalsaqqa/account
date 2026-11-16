@@ -6,21 +6,16 @@ namespace App\Services\Search;
 
 use App\Models\Company;
 use App\Models\Customer;
-use App\Models\Employee;
-use App\Models\ExpenseCategory;
-use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\ProductBarcode;
-use App\Models\ProductCategory;
 use App\Models\ProductUnit;
+use App\Models\Purchase;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 final class SearchableSelectorService
 {
@@ -31,7 +26,7 @@ final class SearchableSelectorService
     public const MAX_LIMIT = 50;
 
     /**
-     * Map of selector types to capability allowlists.
+     * Map of selector types to capability allowlists per workflow context.
      *
      * @var array<string, array<string, list<string>>>
      */
@@ -39,7 +34,6 @@ final class SearchableSelectorService
         'customer' => [
             'sales' => ['sales.invoice.view', 'sales.invoice.create', 'sales.invoice.edit_draft'],
             'quotation' => ['sales.quote.view', 'sales.quote.create', 'sales.quote.edit'],
-            'returns' => ['sales.return.view', 'sales.return.create'],
             'receipt' => ['money.receipt.view', 'money.receipt.create'],
             'statement' => ['sales.statement.view', 'customers.statement.view'],
             'management' => ['customers.view', 'customers.manage'],
@@ -47,7 +41,6 @@ final class SearchableSelectorService
         ],
         'vendor' => [
             'purchasing' => ['purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.view'],
-            'returns' => ['purchasing.return.view', 'purchasing.return.manage'],
             'payment' => ['money.vendor_payment.view', 'money.vendor_payment.create', 'purchasing.payment.create'],
             'statement' => ['vendors.statement.view'],
             'management' => ['vendors.view', 'vendors.manage'],
@@ -56,17 +49,11 @@ final class SearchableSelectorService
         'product' => [
             'sales' => ['sales.invoice.create', 'sales.invoice.edit_draft', 'sales.quote.create', 'sales.quote.edit', 'sales.return.create', 'sales.invoice.view'],
             'purchasing' => ['purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.return.manage', 'purchasing.purchase.view'],
-            'inventory' => ['inventory.stock.view', 'inventory.product.manage', 'inventory.stock.transfer', 'inventory.movement.view'],
+            'inventory' => ['inventory.stock.view', 'inventory.product.manage', 'inventory.stock.transfer', 'inventory.movement.view', 'inventory.stock.adjust'],
             'reports' => ['reports.inventory.view', 'reports.sales.view', 'reports.purchases.view'],
         ],
         'warehouse' => [
-            'general' => ['sales.invoice.create', 'sales.invoice.edit_draft', 'purchasing.purchase.create', 'inventory.stock.view', 'inventory.stock.transfer', 'reports.inventory.view'],
-        ],
-        'employee' => [
-            'payroll' => ['payroll.salary.manage', 'payroll.advance.manage', 'payroll.view', 'reports.payroll.view'],
-        ],
-        'money_account' => [
-            'money' => ['money.account.view', 'money.receipt.create', 'money.vendor_payment.create', 'money.transfer.manage', 'reports.financial.view'],
+            'general' => ['sales.invoice.create', 'sales.invoice.edit_draft', 'purchasing.purchase.create', 'inventory.stock.view', 'inventory.stock.transfer', 'reports.inventory.view', 'inventory.stock.adjust'],
         ],
     ];
 
@@ -78,10 +65,7 @@ final class SearchableSelectorService
      * Perform a bounded, tenant-isolated, capability-checked search for selectors.
      *
      * @param array{
-     *     capability?: string,
      *     context?: string,
-     *     include_cost?: bool,
-     *     only_stock?: bool,
      *     exclude_ids?: list<int>,
      *     locale?: string
      * } $options
@@ -118,14 +102,13 @@ final class SearchableSelectorService
             'vendor' => $this->searchVendors($company, $actor, $term, $selectedId, $limit, $locale, $options),
             'product' => $this->searchProducts($company, $actor, $term, $selectedId, $limit, $locale, $options),
             'warehouse' => $this->searchWarehouses($company, $actor, $term, $selectedId, $limit, $locale, $options),
-            'employee' => $this->searchEmployees($company, $actor, $term, $selectedId, $limit, $locale, $options),
-            'money_account' => $this->searchMoneyAccounts($company, $actor, $term, $selectedId, $limit, $locale, $options),
             default => throw new \InvalidArgumentException("Unsupported selector type [{$type}]."),
         };
     }
 
     /**
      * Authorize that the actor has appropriate scoped capability without leaking permissions.
+     * Derives permissions strictly on the server; client options are never authority.
      *
      * @param array<string, mixed> $options
      */
@@ -140,22 +123,12 @@ final class SearchableSelectorService
             throw new AuthorizationException('Actor does not belong to the requested company.');
         }
 
-        // If explicit capability specified, verify actor has it directly
-        if (! empty($options['capability'])) {
-            if (! $actor->hasPermissionTo($options['capability'])) {
-                throw new AuthorizationException("Actor lacks required capability [{$options['capability']}].");
-            }
-
-            return;
-        }
-
-        // If context specified, verify actor has any permission in that context
-        $context = $options['context'] ?? null;
         $allowlists = self::CAPABILITIES[$type] ?? null;
-
         if ($allowlists === null) {
-            return;
+            throw new AuthorizationException("Unsupported selector type [{$type}].");
         }
+
+        $context = $options['context'] ?? null;
 
         if ($context !== null && isset($allowlists[$context])) {
             foreach ($allowlists[$context] as $perm) {
@@ -163,10 +136,11 @@ final class SearchableSelectorService
                     return;
                 }
             }
+
             throw new AuthorizationException("Actor lacks permissions for [{$type}] in context [{$context}].");
         }
 
-        // Check if actor has ANY recognized permission for this type across all contexts
+        // Check if actor has ANY recognized permission for this type across allowed contexts
         foreach ($allowlists as $perms) {
             foreach ($perms as $perm) {
                 if ($actor->hasPermissionTo($perm)) {
@@ -176,22 +150,6 @@ final class SearchableSelectorService
         }
 
         throw new AuthorizationException("Actor lacks authorization to search [{$type}].");
-    }
-
-    /**
-     * Re-authorize and fetch an entity for canonical form selection.
-     */
-    public function authorizeAndResolve(Company $company, User $actor, string $type, int $id, array $options = []): ?object
-    {
-        $this->authorize($company, $actor, $type, $options);
-
-        return match ($type) {
-            'customer' => Customer::where('company_id', $company->id)->where('status', 'active')->whereKey($id)->first(),
-            'vendor' => Vendor::where('company_id', $company->id)->where('status', 'active')->whereKey($id)->first(),
-            'product' => Product::where('company_id', $company->id)->where('active', true)->whereKey($id)->first(),
-            'warehouse' => Warehouse::where('company_id', $company->id)->where('active', true)->whereKey($id)->first(),
-            default => null,
-        };
     }
 
     /**
@@ -256,10 +214,10 @@ final class SearchableSelectorService
         }
 
         // Retain selected record hydration bounded independently
-        $selectedRecord = null;
         if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
             $selectedRecord = Customer::where('company_id', $company->id)
                 ->where('id', $selectedId)
+                ->where('status', 'active')
                 ->first();
             if ($selectedRecord !== null) {
                 $records->prepend($selectedRecord);
@@ -309,6 +267,7 @@ final class SearchableSelectorService
 
     /**
      * Search vendors with priority: exact code/phone -> prefix -> contains.
+     * In payment context, includes soft-deleted vendors with posted purchases.
      *
      * @param array<string, mixed> $options
      * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
@@ -322,8 +281,19 @@ final class SearchableSelectorService
         string $locale,
         array $options
     ): array {
-        $query = Vendor::where('company_id', $company->id)
-            ->where('status', 'active');
+        $context = $options['context'] ?? 'purchasing';
+        $isPayment = ($context === 'payment');
+
+        $query = Vendor::where('company_id', $company->id);
+
+        if ($isPayment) {
+            $query->withTrashed()->where(function (Builder $q): void {
+                $q->where(fn ($active) => $active->where('status', 'active')->whereNull('deleted_at'))
+                    ->orWhereHas('purchases', fn ($p) => $p->where('status', Purchase::STATUS_POSTED));
+            });
+        } else {
+            $query->where('status', 'active');
+        }
 
         if (! empty($options['exclude_ids'])) {
             $query->whereNotIn('id', $options['exclude_ids']);
@@ -358,11 +328,17 @@ final class SearchableSelectorService
             $records = $records->slice(0, $limit);
         }
 
-        $selectedRecord = null;
         if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selectedRecord = Vendor::where('company_id', $company->id)
-                ->where('id', $selectedId)
-                ->first();
+            $selQuery = Vendor::where('company_id', $company->id)->where('id', $selectedId);
+            if ($isPayment) {
+                $selQuery->withTrashed()->where(function (Builder $q): void {
+                    $q->where(fn ($active) => $active->where('status', 'active')->whereNull('deleted_at'))
+                        ->orWhereHas('purchases', fn ($p) => $p->where('status', Purchase::STATUS_POSTED));
+                });
+            } else {
+                $selQuery->where('status', 'active');
+            }
+            $selectedRecord = $selQuery->first();
             if ($selectedRecord !== null) {
                 $records->prepend($selectedRecord);
             }
@@ -382,7 +358,8 @@ final class SearchableSelectorService
             $en = (string) ($vendor->name_en ?? '');
             $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
             $curr = $vendor->default_currency_code ?: $baseCurrency;
-            $label = $vendor->code ? "{$name} ({$vendor->code})" : "{$name} ({$curr})";
+            $label = "{$name} ({$curr})";
+
             $sublabel = $vendor->code ?: $vendor->phone;
             $isSelected = ($selectedId !== null && (int) $vendor->id === $selectedId);
 
@@ -409,6 +386,7 @@ final class SearchableSelectorService
 
     /**
      * Search products with exact barcode unit resolution and cost redaction.
+     * Server derives stock-only predicate for inventory and purchasing contexts.
      *
      * @param array<string, mixed> $options
      * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
@@ -423,6 +401,8 @@ final class SearchableSelectorService
         array $options
     ): array {
         $context = $options['context'] ?? 'sales';
+        $isStockOnly = in_array($context, ['inventory', 'purchasing'], true);
+
         $canViewCost = match ($context) {
             'purchasing' => $actor->hasPermissionTo('purchasing.cost.view'),
             'inventory' => $actor->hasPermissionTo('inventory.cost.view'),
@@ -441,10 +421,15 @@ final class SearchableSelectorService
                 ->first();
 
             if ($exactBarcode !== null) {
-                $exactBarcodeProduct = Product::where('company_id', $company->id)
+                $barcodeProductQuery = Product::where('company_id', $company->id)
                     ->where('id', $exactBarcode->product_id)
-                    ->where('active', true)
-                    ->first();
+                    ->where('active', true);
+
+                if ($isStockOnly) {
+                    $barcodeProductQuery->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
+                }
+
+                $exactBarcodeProduct = $barcodeProductQuery->first();
 
                 if ($exactBarcodeProduct !== null && $exactBarcode->unit_id !== null) {
                     $matchedUnitId = (int) $exactBarcode->unit_id;
@@ -461,7 +446,7 @@ final class SearchableSelectorService
         $query = Product::where('company_id', $company->id)
             ->where('active', true);
 
-        if (! empty($options['only_stock'])) {
+        if ($isStockOnly) {
             $query->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
         }
 
@@ -505,9 +490,15 @@ final class SearchableSelectorService
 
         // Selected record hydration
         if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selectedRecord = Product::where('company_id', $company->id)
+            $selQuery = Product::where('company_id', $company->id)
                 ->where('id', $selectedId)
-                ->first();
+                ->where('active', true);
+
+            if ($isStockOnly) {
+                $selQuery->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
+            }
+
+            $selectedRecord = $selQuery->first();
             if ($selectedRecord !== null) {
                 $records->prepend($selectedRecord);
             }
@@ -603,7 +594,7 @@ final class SearchableSelectorService
         }
 
         if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selected = Warehouse::where('company_id', $company->id)->where('id', $selectedId)->first();
+            $selected = Warehouse::where('company_id', $company->id)->where('id', $selectedId)->where('active', true)->first();
             if ($selected !== null) {
                 $records->prepend($selected);
             }
@@ -625,142 +616,6 @@ final class SearchableSelectorService
                 sublabel: $w->code,
                 meta: ['code' => $w->code, 'is_default' => (bool) $w->is_default],
                 selected: ($selectedId !== null && (int) $w->id === $selectedId)
-            ))->toArray();
-        }
-
-        return [
-            'items' => $items,
-            'has_more' => $hasMore,
-            'limit' => $limit,
-            'total' => count($items),
-        ];
-    }
-
-    /**
-     * Search employees for active company.
-     *
-     * @param array<string, mixed> $options
-     * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
-     */
-    private function searchEmployees(
-        Company $company,
-        User $actor,
-        string $term,
-        ?int $selectedId,
-        int $limit,
-        string $locale,
-        array $options
-    ): array {
-        $query = Employee::where('company_id', $company->id)
-            ->whereNull('deleted_at');
-
-        if ($term !== '') {
-            $like = '%' . self::escapeLike($term) . '%';
-            $query->where(function (Builder $q) use ($like) {
-                $q->where('name', 'LIKE', $like)
-                    ->orWhere('code', 'LIKE', $like);
-            });
-        }
-
-        $query->orderBy('name', 'ASC')->orderBy('id', 'ASC');
-
-        $records = (clone $query)->limit($limit + 1)->get();
-        $hasMore = $records->count() > $limit;
-        if ($hasMore) {
-            $records = $records->slice(0, $limit);
-        }
-
-        if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selected = Employee::where('company_id', $company->id)->where('id', $selectedId)->first();
-            if ($selected !== null) {
-                $records->prepend($selected);
-            }
-        }
-
-        $items = [];
-        $seen = [];
-        foreach ($records as $emp) {
-            if (isset($seen[$emp->id])) {
-                continue;
-            }
-            $seen[$emp->id] = true;
-            $label = $emp->code ? "{$emp->name} ({$emp->code})" : $emp->name;
-
-            $items[] = (new SearchableOptionDTO(
-                id: (string) $emp->id,
-                label: $label,
-                sublabel: $emp->code,
-                meta: ['code' => $emp->code],
-                selected: ($selectedId !== null && (int) $emp->id === $selectedId)
-            ))->toArray();
-        }
-
-        return [
-            'items' => $items,
-            'has_more' => $hasMore,
-            'limit' => $limit,
-            'total' => count($items),
-        ];
-    }
-
-    /**
-     * Search money accounts for active company.
-     *
-     * @param array<string, mixed> $options
-     * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
-     */
-    private function searchMoneyAccounts(
-        Company $company,
-        User $actor,
-        string $term,
-        ?int $selectedId,
-        int $limit,
-        string $locale,
-        array $options
-    ): array {
-        $query = MoneyAccount::where('company_id', $company->id)
-            ->whereNull('deleted_at');
-
-        if ($term !== '') {
-            $like = '%' . self::escapeLike($term) . '%';
-            $query->where(function (Builder $q) use ($like) {
-                $q->where('name_ar', 'LIKE', $like)
-                    ->orWhere('name_en', 'LIKE', $like)
-                    ->orWhere('account_number', 'LIKE', $like);
-            });
-        }
-
-        $query->orderBy('sort_order', 'ASC')->orderBy('name_ar', 'ASC');
-
-        $records = (clone $query)->limit($limit + 1)->get();
-        $hasMore = $records->count() > $limit;
-        if ($hasMore) {
-            $records = $records->slice(0, $limit);
-        }
-
-        if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selected = MoneyAccount::where('company_id', $company->id)->where('id', $selectedId)->first();
-            if ($selected !== null) {
-                $records->prepend($selected);
-            }
-        }
-
-        $items = [];
-        $seen = [];
-        foreach ($records as $acc) {
-            if (isset($seen[$acc->id])) {
-                continue;
-            }
-            $seen[$acc->id] = true;
-            $name = $locale === 'ar' ? ($acc->name_ar ?: $acc->name_en) : ($acc->name_en ?: $acc->name_ar);
-            $label = "{$name} ({$acc->currency_code})";
-
-            $items[] = (new SearchableOptionDTO(
-                id: (string) $acc->id,
-                label: $label,
-                sublabel: $acc->account_number,
-                meta: ['currency_code' => $acc->currency_code, 'account_type' => $acc->account_type],
-                selected: ($selectedId !== null && (int) $acc->id === $selectedId)
             ))->toArray();
         }
 

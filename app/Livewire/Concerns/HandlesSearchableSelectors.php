@@ -8,12 +8,56 @@ use App\Models\Company;
 use App\Models\User;
 use App\Services\Search\SearchableSelectorService;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 
 trait HandlesSearchableSelectors
 {
     /**
+     * Allowed selector types for this component.
+     * Derived server-side; client cannot query arbitrary types.
+     *
+     * @return list<string>
+     */
+    protected function allowedSearchableSelectorTypes(): array
+    {
+        return match (static::class) {
+            \App\Livewire\Pages\Sales\InvoiceForm::class,
+            \App\Livewire\Pages\Sales\QuotationForm::class => ['customer', 'product'],
+            \App\Livewire\Pages\Purchasing\PurchaseForm::class => ['vendor', 'product'],
+            \App\Livewire\Pages\Sales\PaymentForm::class => ['customer'],
+            \App\Livewire\Pages\Purchasing\PaymentForm::class => ['vendor'],
+            \App\Livewire\Pages\Inventory\OpeningStockForm::class,
+            \App\Livewire\Pages\Inventory\StockAdjustmentForm::class,
+            \App\Livewire\Pages\Inventory\StockTransferForm::class,
+            \App\Livewire\Pages\Inventory\StockMovementIndex::class => ['product'],
+            default => ['customer', 'vendor', 'product', 'warehouse'],
+        };
+    }
+
+    /**
+     * Scoped workflow context for permission checks and eligibility derivation.
+     * Derived server-side; client cannot choose authority or context.
+     */
+    protected function searchableSelectorContext(): string
+    {
+        return match (static::class) {
+            \App\Livewire\Pages\Sales\InvoiceForm::class,
+            \App\Livewire\Pages\Sales\QuotationForm::class => 'sales',
+            \App\Livewire\Pages\Purchasing\PurchaseForm::class => 'purchasing',
+            \App\Livewire\Pages\Sales\PaymentForm::class => 'receipt',
+            \App\Livewire\Pages\Purchasing\PaymentForm::class => 'payment',
+            \App\Livewire\Pages\Inventory\OpeningStockForm::class,
+            \App\Livewire\Pages\Inventory\StockAdjustmentForm::class,
+            \App\Livewire\Pages\Inventory\StockTransferForm::class,
+            \App\Livewire\Pages\Inventory\StockMovementIndex::class => 'inventory',
+            default => 'sales',
+        };
+    }
+
+    /**
      * Search options for direct in-field comboboxes.
      * Callable directly from Alpine via $wire.searchSelector(type, query, selectedId, options).
+     * Public client options are sanitized: query, limit, and generation only.
      *
      * @param array<string, mixed> $options
      * @return array{
@@ -36,6 +80,12 @@ trait HandlesSearchableSelectors
 
         abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === $companyId, 403);
 
+        // Verify type is strictly allowed by this component
+        $allowedTypes = $this->allowedSearchableSelectorTypes();
+        if (! in_array($type, $allowedTypes, true)) {
+            throw new AuthorizationException("Selector type [{$type}] is not allowed for this workflow.");
+        }
+
         /** @var User $actor */
         $actor = auth()->user();
         /** @var Company $company */
@@ -43,6 +93,11 @@ trait HandlesSearchableSelectors
 
         $clientGeneration = (int) ($options['generation'] ?? 0);
         $limit = isset($options['limit']) ? (int) $options['limit'] : SearchableSelectorService::DEFAULT_LIMIT;
+
+        // Build server-controlled options ONLY. Ignore all client-supplied authority/context overrides.
+        $serverOptions = [
+            'context' => $this->searchableSelectorContext(),
+        ];
 
         $service = app(SearchableSelectorService::class);
         $result = $service->search(
@@ -52,7 +107,7 @@ trait HandlesSearchableSelectors
             rawTerm: $query,
             selectedId: $selectedId,
             limit: $limit,
-            options: $options
+            options: $serverOptions
         );
 
         return array_merge($result, [

@@ -25,7 +25,7 @@ class StockMovementIndex extends Component
     use WithPagination;
 
     #[Url(as: 'product')]
-    public string $productFilter = '';
+    public ?string $productFilter = null;
 
     #[Url(as: 'warehouse')]
     public string $warehouseFilter = '';
@@ -85,7 +85,7 @@ class StockMovementIndex extends Component
         $query = StockMovement::where('company_id', $company->id)
             ->with(['product.baseUnit', 'warehouse', 'lot', 'user']);
 
-        if ($this->productFilter !== '') {
+        if ($this->productFilter !== '' && $this->productFilter !== null) {
             $query->where('product_id', $this->productFilter);
         }
 

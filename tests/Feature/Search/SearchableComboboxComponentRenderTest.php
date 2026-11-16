@@ -28,14 +28,13 @@ final class SearchableComboboxComponentRenderTest extends TestCase
         // Combobox input accessibility
         $this->assertStringContainsString('role="combobox"', $html);
         $this->assertStringContainsString('aria-autocomplete="list"', $html);
-        $this->assertStringContainsString('aria-expanded="false"', $html);
-        $this->assertStringContainsString('aria-haspopup="listbox"', $html);
-        $this->assertStringContainsString('aria-controls="test-customer-selector-listbox"', $html);
-        $this->assertStringContainsString(':aria-activedescendant="activeOptionId"', $html);
+        $this->assertStringContainsString(':aria-expanded="open.toString()"', $html);
+        $this->assertStringContainsString(':aria-controls="listboxId"', $html);
+        $this->assertStringContainsString(':aria-activedescendant="activeId"', $html);
 
         // Listbox popup accessibility
         $this->assertStringContainsString('role="listbox"', $html);
-        $this->assertStringContainsString('id="test-customer-selector-listbox"', $html);
+        $this->assertStringContainsString(':id="listboxId"', $html);
         $this->assertStringContainsString('role="option"', $html);
     }
 
@@ -53,8 +52,8 @@ final class SearchableComboboxComponentRenderTest extends TestCase
             />'
         );
 
-        // min-h-11 corresponds to 44px (11 * 0.25rem = 2.75rem = 44px)
-        $this->assertStringContainsString('min-h-11', $html);
+        // min-h-[44px] corresponds to 44px touch targets
+        $this->assertStringContainsString('min-h-[44px]', $html);
     }
 
     public function test_combobox_renders_bidi_isolation_tag_for_sku_and_codes(): void
@@ -90,9 +89,9 @@ final class SearchableComboboxComponentRenderTest extends TestCase
         );
 
         // Clear action button
-        $this->assertStringContainsString('@click.stop="clearSelection()"', $html);
+        $this->assertStringContainsString('@click.stop="clear()"', $html);
         // Loading indicator
-        $this->assertStringContainsString('x-show="loading"', $html);
+        $this->assertStringContainsString('x-show="searching"', $html);
         // Empty state announcement
         $this->assertStringContainsString('role="status"', $html);
     }

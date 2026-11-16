@@ -472,9 +472,26 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId, ?int $productUnitId = null): bool
+    public function selectProduct(int $index, ?int $productId = null, ?int $productUnitId = null): bool
     {
         $this->authorizeQuoteAction();
+        abort_unless(isset($this->lines[$index]), 422);
+
+        if ($productId === null || $productId === 0) {
+            $this->lines[$index] = [
+                'product_id' => null,
+                'product_unit_id' => null,
+                'item_description' => '',
+                'quantity' => '1',
+                'unit_price' => '0',
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+            ];
+            $this->recalculate();
+
+            return true;
+        }
 
         $product = Product::where('company_id', $this->pageCompanyId)
             ->where('id', $productId)

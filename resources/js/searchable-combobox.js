@@ -1,7 +1,7 @@
 /**
  * Searchable Combobox Component for Laravel / Livewire / Alpine
- * ARIA 1.2 Combobox pattern with keyboard navigation, debounce, stale response discard,
- * bidi isolation, and touch-first responsiveness.
+ * ARIA 1.2 Combobox pattern with keyboard navigation, debounce, generation tracking,
+ * stale response discard, bidi isolation, and touch-first responsiveness.
  */
 export function searchableCombobox(config) {
     let debounceTimer = null;
@@ -10,8 +10,6 @@ export function searchableCombobox(config) {
     return {
         id: config.id || 'combobox-' + Math.random().toString(36).substring(2, 9),
         type: config.type || 'customer',
-        context: config.context || null,
-        capability: config.capability || null,
         wireModel: config.wireModel || null,
         onSelect: config.onSelect || null,
         extraArgs: config.extraArgs || [],
@@ -21,7 +19,7 @@ export function searchableCombobox(config) {
 
         open: false,
         query: config.label || '',
-        selectedId: config.value !== undefined && config.value !== '' ? String(config.value) : null,
+        selectedId: config.value !== undefined && config.value !== '' && config.value !== null ? String(config.value) : null,
         selectedLabel: config.label || '',
         items: Array.isArray(config.options) ? config.options : [],
         activeIndex: -1,
@@ -30,9 +28,22 @@ export function searchableCombobox(config) {
         hasMore: false,
         failed: false,
         offline: false,
+        currentCompanyId: null,
 
         init() {
+            // Livewire model synchronization
             if (this.wireModel && this.$wire) {
+                this.$watch('selectedId', (val) => {
+                    const normVal = (val !== null && val !== undefined && val !== '') ? String(val) : null;
+                    if (this.wireModel && this.$wire) {
+                        const currentWireVal = this.$wire.get(this.wireModel);
+                        const normWireVal = (currentWireVal !== null && currentWireVal !== undefined && currentWireVal !== '') ? String(currentWireVal) : null;
+                        if (normWireVal !== normVal) {
+                            this.$wire.set(this.wireModel, normVal);
+                        }
+                    }
+                });
+
                 this.$wire.$watch(this.wireModel, (newVal) => {
                     const normVal = (newVal !== null && newVal !== undefined && newVal !== '') ? String(newVal) : null;
                     if (normVal !== this.selectedId) {
@@ -40,12 +51,18 @@ export function searchableCombobox(config) {
                         if (!normVal) {
                             this.selectedLabel = '';
                             this.query = '';
+                        } else {
+                            const found = this.items.find(i => String(i.id) === String(normVal));
+                            if (found) {
+                                this.selectedLabel = found.label;
+                                this.query = found.label;
+                            }
                         }
                     }
                 });
             }
 
-            // Sync initial selection
+            // Initial selection sync
             if (this.selectedId && !this.selectedLabel && this.items.length) {
                 const found = this.items.find(i => String(i.id) === String(this.selectedId));
                 if (found) {
@@ -55,203 +72,248 @@ export function searchableCombobox(config) {
             }
         },
 
-        get listboxId() {
-            return this.id + '-listbox';
-        },
-
         get isSelected() {
             return this.selectedId !== null && this.selectedId !== '';
         },
 
+        get listboxId() {
+            return this.id + '-listbox';
+        },
+
+        isBlocked() {
+            if (this.disabled) return true;
+            if (typeof window !== 'undefined' && typeof window.isDocumentBlocked === 'function' && window.isDocumentBlocked(this.$wire)) {
+                return true;
+            }
+            if (this.$wire && (this.$wire.documentBusy || this.$wire.saving)) {
+                return true;
+            }
+            return false;
+        },
+
         handleInput() {
-            if (this.disabled) return;
-            generation++;
+            if (this.isBlocked()) return;
             this.open = true;
             this.failed = false;
-            this.activeIndex = -1;
-            this.activeId = null;
-
-            if (debounceTimer) {
-                clearTimeout(debounceTimer);
-            }
-
+            clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 this.performSearch();
             }, 200);
         },
 
         handleFocus() {
-            if (this.disabled) return;
-            this.open = true;
-            if (!this.items.length && this.$wire) {
-                this.performSearch();
+            if (this.isBlocked()) return;
+            if (!this.open) {
+                this.open = true;
+                if (!this.items.length || (this.query && this.query !== this.selectedLabel)) {
+                    this.performSearch();
+                }
             }
         },
 
         async performSearch() {
-            if (!this.$wire || typeof this.$wire.searchSelector !== 'function') return;
-
-            this.offline = !navigator.onLine;
-            if (this.offline) {
-                this.failed = true;
+            if (!this.$wire || typeof this.$wire.searchSelector !== 'function') {
                 return;
             }
 
-            const currentGen = generation;
+            const currentGen = ++generation;
             this.searching = true;
             this.failed = false;
 
             try {
-                const options = {
-                    generation: currentGen,
-                    context: this.context,
-                    capability: this.capability,
-                    extraArgs: this.extraArgs,
-                };
-
-                const res = await this.$wire.searchSelector(
+                const response = await this.$wire.searchSelector(
                     this.type,
-                    this.query || '',
+                    this.query,
                     this.selectedId ? parseInt(this.selectedId, 10) : null,
-                    options
+                    {
+                        generation: currentGen,
+                        limit: 25,
+                    }
                 );
 
-                // Discard stale out-of-order response
-                if (res.generation !== generation) {
+                // Discard stale responses from older generations or company switches
+                if (response.generation !== generation) {
                     return;
                 }
+                if (this.currentCompanyId !== null && response.company_id && response.company_id !== this.currentCompanyId) {
+                    return;
+                }
+                if (response.company_id) {
+                    this.currentCompanyId = response.company_id;
+                }
 
-                this.items = res.items || [];
-                this.hasMore = Boolean(res.has_more);
-                this.searching = false;
+                this.items = Array.isArray(response.items) ? response.items : [];
+                this.hasMore = Boolean(response.has_more);
                 this.activeIndex = -1;
                 this.activeId = null;
+                this.open = true;
             } catch (err) {
                 if (currentGen === generation) {
                     this.failed = true;
+                }
+            } finally {
+                if (currentGen === generation) {
                     this.searching = false;
                 }
             }
         },
 
-        handleKeydown(event) {
-            if (this.disabled) return;
+        handleKeydown(e) {
+            if (this.isBlocked()) return;
 
-            switch (event.key) {
+            switch (e.key) {
                 case 'ArrowDown':
-                    event.preventDefault();
+                    e.preventDefault();
                     if (!this.open) {
                         this.open = true;
-                        this.performSearch();
-                        return;
-                    }
-                    if (this.items.length > 0) {
+                    } else if (this.items.length) {
                         this.activeIndex = (this.activeIndex + 1) % this.items.length;
-                        this.updateActiveItem();
+                        this.updateActiveId();
+                        this.scrollToActive();
                     }
                     break;
-
                 case 'ArrowUp':
-                    event.preventDefault();
-                    if (!this.open) {
-                        this.open = true;
-                        this.performSearch();
-                        return;
-                    }
-                    if (this.items.length > 0) {
-                        this.activeIndex = (this.activeIndex - 1 + this.items.length) % this.items.length;
-                        this.updateActiveItem();
+                    e.preventDefault();
+                    if (this.open && this.items.length) {
+                        this.activeIndex = this.activeIndex <= 0 ? this.items.length - 1 : this.activeIndex - 1;
+                        this.updateActiveId();
+                        this.scrollToActive();
                     }
                     break;
-
                 case 'Enter':
                     if (this.open && this.activeIndex >= 0 && this.items[this.activeIndex]) {
-                        event.preventDefault();
+                        e.preventDefault();
                         this.selectItem(this.items[this.activeIndex]);
                     }
                     break;
-
                 case 'Escape':
                     if (this.open) {
-                        event.preventDefault();
+                        e.preventDefault();
                         this.open = false;
                         this.query = this.selectedLabel;
                         this.activeIndex = -1;
                         this.activeId = null;
                     }
                     break;
-
                 case 'Tab':
-                    this.open = false;
-                    this.query = this.selectedLabel;
+                    if (this.open) {
+                        if (this.activeIndex >= 0 && this.items[this.activeIndex]) {
+                            this.selectItem(this.items[this.activeIndex]);
+                        } else {
+                            this.open = false;
+                            this.query = this.selectedLabel;
+                        }
+                    }
                     break;
             }
         },
 
-        updateActiveItem() {
+        updateActiveId() {
             if (this.activeIndex >= 0 && this.items[this.activeIndex]) {
-                const optId = this.id + '-opt-' + this.items[this.activeIndex].id;
-                this.activeId = optId;
-                this.$nextTick(() => {
-                    const el = document.getElementById(optId);
-                    if (el && typeof el.scrollIntoView === 'function') {
-                        el.scrollIntoView({ block: 'nearest' });
-                    }
-                });
+                this.activeId = this.id + '-option-' + this.items[this.activeIndex].id;
             } else {
                 this.activeId = null;
             }
         },
 
-        selectItem(item) {
-            this.selectedId = String(item.id);
-            this.selectedLabel = item.label;
-            this.query = item.label;
-            this.open = false;
-            this.activeIndex = -1;
-            this.activeId = null;
-
-            // Notify Livewire via wireModel or custom onSelect action
-            if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
-                const unitId = item.meta && item.meta.matched_product_unit_id !== undefined
-                    ? item.meta.matched_product_unit_id
-                    : null;
-                if (unitId !== null) {
-                    this.$wire[this.onSelect](...this.extraArgs, parseInt(item.id, 10), unitId);
-                } else {
-                    this.$wire[this.onSelect](...this.extraArgs, parseInt(item.id, 10));
+        scrollToActive() {
+            this.$nextTick(() => {
+                const el = document.getElementById(this.activeId);
+                if (el && el.scrollIntoView) {
+                    el.scrollIntoView({ block: 'nearest' });
                 }
-            } else if (this.wireModel && this.$wire) {
-                this.$wire.$set(this.wireModel, parseInt(item.id, 10));
-            }
-
-            this.$dispatch('combobox-selected', {
-                id: item.id,
-                label: item.label,
-                meta: item.meta || {},
             });
         },
 
-        clear() {
-            if (this.disabled) return;
-            generation++;
-            this.selectedId = null;
-            this.selectedLabel = '';
-            this.query = '';
-            this.open = false;
-            this.activeIndex = -1;
-            this.activeId = null;
+        async selectItem(item) {
+            if (this.isBlocked() || !item) return;
 
-            if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
-                this.$wire[this.onSelect](...this.extraArgs, null);
-            } else if (this.wireModel && this.$wire) {
-                this.$wire.$set(this.wireModel, null);
+            const prevId = this.selectedId;
+            const prevLabel = this.selectedLabel;
+            const prevQuery = this.query;
+
+            try {
+                if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
+                    // Canonical server action execution
+                    const success = await this.$wire[this.onSelect](
+                        ...this.extraArgs,
+                        parseInt(item.id, 10),
+                        item.meta?.matched_product_unit_id || null
+                    );
+                    if (success === false) {
+                        // Backend rejected selection; restore previous display
+                        this.selectedId = prevId;
+                        this.selectedLabel = prevLabel;
+                        this.query = prevQuery;
+                        return;
+                    }
+                } else if (this.wireModel && this.$wire) {
+                    await this.$wire.$set(this.wireModel, item.id);
+                }
+
+                // Canonical success confirmed
+                this.selectedId = String(item.id);
+                this.selectedLabel = item.label;
+                this.query = item.label;
+                this.open = false;
+                this.activeIndex = -1;
+                this.activeId = null;
+                this.failed = false;
+
+                this.$dispatch('combobox-selected', {
+                    id: this.id,
+                    type: this.type,
+                    value: item.id,
+                    item: item,
+                });
+            } catch (err) {
+                // Restore state on failure - NO fake optimistic cleared state!
+                this.selectedId = prevId;
+                this.selectedLabel = prevLabel;
+                this.query = prevQuery;
+                this.failed = true;
             }
+        },
 
-            this.$dispatch('combobox-cleared', { id: this.id });
-            this.$nextTick(() => {
-                this.$refs.searchInput?.focus();
-            });
+        async clear() {
+            if (this.isBlocked()) return;
+
+            const prevId = this.selectedId;
+            const prevLabel = this.selectedLabel;
+            const prevQuery = this.query;
+
+            try {
+                if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
+                    const success = await this.$wire[this.onSelect](...this.extraArgs, null, null);
+                    if (success === false) {
+                        this.selectedId = prevId;
+                        this.selectedLabel = prevLabel;
+                        this.query = prevQuery;
+                        return;
+                    }
+                } else if (this.wireModel && this.$wire) {
+                    await this.$wire.$set(this.wireModel, null);
+                }
+
+                // Confirm clear on client
+                this.selectedId = null;
+                this.selectedLabel = '';
+                this.query = '';
+                this.open = false;
+                this.activeIndex = -1;
+                this.activeId = null;
+                this.failed = false;
+
+                this.$dispatch('combobox-cleared', { id: this.id });
+                this.$nextTick(() => {
+                    this.$refs.searchInput?.focus();
+                });
+            } catch (err) {
+                this.selectedId = prevId;
+                this.selectedLabel = prevLabel;
+                this.query = prevQuery;
+                this.failed = true;
+            }
         },
 
         handleOutsideClick() {
@@ -266,6 +328,7 @@ export function searchableCombobox(config) {
 }
 
 if (typeof window !== 'undefined') {
+    window.searchableCombobox = searchableCombobox;
     const register = () => {
         if (window.Alpine && typeof window.Alpine.data === 'function') {
             window.Alpine.data('searchableCombobox', searchableCombobox);

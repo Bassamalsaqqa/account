@@ -49,6 +49,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 
 #[Layout('layouts.app')]
@@ -538,7 +539,7 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId, ?int $productUnitId = null): bool
+    public function selectProduct(int $index, ?int $productId = null, ?int $productUnitId = null): bool
     {
         if ($this->showPreview) {
             $this->cancelPreview();
@@ -548,6 +549,24 @@ class InvoiceForm extends Component
         abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
         $user = auth()->user();
         abort_unless($user->hasPermissionTo($this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'), 403);
+
+        abort_unless(isset($this->lines[$index]), 422);
+
+        if ($productId === null || $productId === 0) {
+            $this->lines[$index] = [
+                'product_id' => null,
+                'product_unit_id' => null,
+                'item_description' => '',
+                'quantity' => '1',
+                'unit_price' => '0',
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+            ];
+            $this->recalculate();
+
+            return true;
+        }
 
         $product = Product::where('company_id', $this->pageCompanyId)
             ->where('id', $productId)

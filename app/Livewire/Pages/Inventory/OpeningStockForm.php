@@ -87,17 +87,21 @@ class OpeningStockForm extends Component
         $this->expiry_date = '';
 
         $company = $this->authorizeInventoryContext();
-        $this->unit_id = null;
         if ($this->product_id) {
             $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
-                $this->unit_id = $product->base_unit_id;
+                $unitValid = $this->unit_id && ($this->unit_id === $product->base_unit_id || \App\Models\ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('unit_id', $this->unit_id)->where('active', true)->exists());
+                if (! $unitValid) {
+                    $this->unit_id = $product->base_unit_id;
+                }
                 /** @var User $user */
                 $user = auth()->user();
                 if ($user->hasPermissionTo('inventory.cost.view') && $product->default_purchase_cost_base !== null) {
                     $this->unit_cost_base = (string) $product->default_purchase_cost_base;
                 }
             }
+        } else {
+            $this->unit_id = null;
         }
     }
 

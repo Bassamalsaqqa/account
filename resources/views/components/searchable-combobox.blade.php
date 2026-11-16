@@ -2,7 +2,6 @@
     'id' => null,
     'type' => 'customer',
     'context' => null,
-    'capability' => null,
     'wireModel' => null,
     'selectedId' => null,
     'selectedLabel' => '',
@@ -22,16 +21,14 @@
     $ariaLabel = $ariaLabel ?? $placeholder;
     $initialOptionsJson = json_encode(array_values($options), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
     $extraArgsJson = json_encode($extraArgs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-    $selectedIdStr = $selectedId !== null ? (string) $selectedId : '';
+    $selectedIdStr = ($selectedId !== null && $selectedId !== '') ? (string) $selectedId : '';
 @endphp
 
 <div
     class="relative w-full searchable-combobox"
-    x-data="typeof window.searchableCombobox === 'function' ? window.searchableCombobox({
+    x-data="searchableCombobox({
         id: '{{ $id }}',
         type: '{{ $type }}',
-        context: {{ $context ? "'{$context}'" : 'null' }},
-        capability: {{ $capability ? "'{$capability}'" : 'null' }},
         wireModel: {{ $wireModel ? "'{$wireModel}'" : 'null' }},
         onSelect: {{ $onSelect ? "'{$onSelect}'" : 'null' }},
         extraArgs: {{ $extraArgsJson }},
@@ -41,99 +38,7 @@
         disabled: {{ $disabled ? 'true' : 'false' }},
         required: {{ $required ? 'true' : 'false' }},
         placeholder: @js($placeholder)
-    }) : {
-        open: false,
-        query: @js($selectedLabel),
-        selectedId: '{{ $selectedIdStr }}',
-        selectedLabel: @js($selectedLabel),
-        items: {{ $initialOptionsJson }},
-        activeIndex: -1,
-        activeId: null,
-        searching: false,
-        hasMore: false,
-        failed: false,
-        offline: false,
-        listboxId: '{{ $id }}-listbox',
-        get isSelected() { return this.selectedId !== null && this.selectedId !== ''; },
-        handleInput() {
-            this.open = true;
-            clearTimeout(this._timer);
-            this._timer = setTimeout(() => this.performSearch(), 200);
-        },
-        handleFocus() {
-            this.open = true;
-            if (!this.items.length && this.$wire) this.performSearch();
-        },
-        async performSearch() {
-            if (!this.$wire || typeof this.$wire.searchSelector !== 'function') return;
-            this.searching = true;
-            this.failed = false;
-            try {
-                const res = await this.$wire.searchSelector('{{ $type }}', this.query || '', this.selectedId ? parseInt(this.selectedId, 10) : null, { context: {{ $context ? "'{$context}'" : 'null' }} });
-                this.items = res.items || [];
-                this.hasMore = Boolean(res.has_more);
-                this.searching = false;
-            } catch (e) {
-                this.failed = true;
-                this.searching = false;
-            }
-        },
-        handleKeydown(e) {
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if (!this.open) { this.open = true; this.performSearch(); return; }
-                if (this.items.length) { this.activeIndex = (this.activeIndex + 1) % this.items.length; this.activeId = '{{ $id }}-opt-' + this.items[this.activeIndex].id; }
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if (!this.open) { this.open = true; this.performSearch(); return; }
-                if (this.items.length) { this.activeIndex = (this.activeIndex - 1 + this.items.length) % this.items.length; this.activeId = '{{ $id }}-opt-' + this.items[this.activeIndex].id; }
-            } else if (e.key === 'Enter') {
-                if (this.open && this.activeIndex >= 0 && this.items[this.activeIndex]) {
-                    e.preventDefault();
-                    this.selectItem(this.items[this.activeIndex]);
-                }
-            } else if (e.key === 'Escape') {
-                if (this.open) { e.preventDefault(); this.open = false; this.query = this.selectedLabel; }
-            } else if (e.key === 'Tab') {
-                this.open = false;
-                this.query = this.selectedLabel;
-            }
-        },
-        selectItem(item) {
-            this.selectedId = String(item.id);
-            this.selectedLabel = item.label;
-            this.query = item.label;
-            this.open = false;
-            @if($onSelect)
-                const unitId = item.meta && item.meta.matched_product_unit_id !== undefined ? item.meta.matched_product_unit_id : null;
-                if (unitId !== null) {
-                    this.$wire.{{ $onSelect }}(...{{ $extraArgsJson }}, parseInt(item.id, 10), unitId);
-                } else {
-                    this.$wire.{{ $onSelect }}(...{{ $extraArgsJson }}, parseInt(item.id, 10));
-                }
-            @elseif($wireModel)
-                this.$wire.$set('{{ $wireModel }}', parseInt(item.id, 10));
-            @endif
-        },
-        clear() {
-            this.selectedId = null;
-            this.selectedLabel = '';
-            this.query = '';
-            this.open = false;
-            @if($onSelect)
-                this.$wire.{{ $onSelect }}(...{{ $extraArgsJson }}, null);
-            @elseif($wireModel)
-                this.$wire.$set('{{ $wireModel }}', null);
-            @endif
-            this.$nextTick(() => this.$refs.searchInput?.focus());
-        },
-        handleOutsideClick() {
-            if (this.open) {
-                this.open = false;
-                this.query = this.selectedLabel;
-            }
-        }
-    }"
+    })"
     @click.outside="handleOutsideClick()"
     wire:ignore.self
 >
@@ -157,7 +62,7 @@
             @focus="handleFocus()"
             @keydown="handleKeydown($event)"
             placeholder="{{ $placeholder }}"
-            :disabled="{{ $disabled ? 'true' : 'false' }}"
+            :disabled="{{ $disabled ? 'true' : 'false' }} || (typeof documentBusy !== 'undefined' && documentBusy) || (typeof saving !== 'undefined' && saving)"
             autocomplete="off"
             spellcheck="false"
             class="w-full rounded-control border border-border bg-canvas px-3 text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden transition-colors {{ $compact ? 'min-h-[44px] md:min-h-8 md:h-8 py-1' : 'min-h-[44px] h-11 py-2' }} ltr:pr-8 rtl:pl-8"
@@ -174,6 +79,7 @@
                 @click.stop="clear()"
                 title="{{ __('search.clear_search') }}"
                 aria-label="{{ __('search.clear_search') }}"
+                :disabled="(typeof documentBusy !== 'undefined' && documentBusy) || (typeof saving !== 'undefined' && saving)"
                 class="min-h-[44px] min-w-[32px] md:min-h-7 md:min-w-7 flex items-center justify-center text-text-muted hover:text-danger rounded-control transition-colors cursor-pointer"
             >
                 <span class="text-base font-bold leading-none">&times;</span>

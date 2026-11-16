@@ -71,7 +71,7 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         DB::enableQueryLog();
 
         // Perform search across the 50 products
-        $results = $this->service->search('product', 'تجريبي', $this->company->id, null, 'sales');
+        $response = $this->service->search($this->company, $this->user, 'product', 'تجريبي', null, 25, ['context' => 'sales']);
 
         $queries = DB::getQueryLog();
         DB::disableQueryLog();
@@ -81,7 +81,7 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         // 2. Selected hydration query (if applicable)
         // Never N+1 queries for units or relationships!
         $this->assertLessThanOrEqual(2, count($queries), 'Search must not execute N+1 queries for relations.');
-        $this->assertNotEmpty($results);
+        $this->assertNotEmpty($response['items']);
     }
 
     public function test_result_payload_size_is_strictly_bounded(): void
@@ -112,10 +112,10 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         }
         Product::insert($records);
 
-        $results = $this->service->search('product', 'متكرر', $this->company->id, null, 'sales');
+        $response = $this->service->search($this->company, $this->user, 'product', 'متكرر', null, 25, ['context' => 'sales']);
 
         // Bounded result contract: default limit is 25 items
-        $this->assertCount(25, $results, 'Result count must be capped at 25 items regardless of total matches.');
+        $this->assertCount(25, $response['items'], 'Result count must be capped at 25 items regardless of total matches.');
     }
 
     public function test_customer_party_lookup_payload_is_bounded_and_deterministic(): void
@@ -135,12 +135,12 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         }
         Customer::insert($records);
 
-        $results = $this->service->search('customer', 'شركة', $this->company->id, null, 'sales');
+        $response = $this->service->search($this->company, $this->user, 'customer', 'شركة', null, 25, ['context' => 'sales']);
 
-        $this->assertCount(25, $results);
+        $this->assertCount(25, $response['items']);
 
         // Verify deterministic sorting: order must be stable
-        $labels = array_map(fn ($r) => $r->label, $results);
+        $labels = array_map(fn ($r) => $r['label'], $response['items']);
         $sortedLabels = $labels;
         sort($sortedLabels);
         $this->assertSame($sortedLabels, $labels, 'Customer search results must follow deterministic tie-breaker sorting.');

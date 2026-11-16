@@ -91,6 +91,7 @@
                         type="product"
                         context="inventory"
                         wire-model="product_id"
+                        on-select="selectProduct"
                         :selected-id="$product_id"
                         :selected-label="$prodLabel"
                         :options="$prodOptions"
