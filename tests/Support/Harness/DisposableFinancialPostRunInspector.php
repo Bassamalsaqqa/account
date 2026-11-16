@@ -2823,9 +2823,13 @@ final class DisposableFinancialPostRunInspector
             'stock_movements',
             'posting_batches',
             'posting_lines',
+            'document_sequences',
+            'table_fingerprints',
+            'stock_movements_qty_delta_base',
+            'lot_allocations_qty_allocated_base',
+            'row_fingerprint_sha256',
             'document_sequence_next_number',
             'inventory_balance_quantity_base',
-            'row_fingerprint_sha256',
         ];
         $requiredCountKeys = [
             'sales_invoices',
@@ -2837,7 +2841,6 @@ final class DisposableFinancialPostRunInspector
             'stock_movements',
             'posting_batches',
             'posting_lines',
-            'document_sequence_next_number',
         ];
 
         $deltas = [];
@@ -2864,6 +2867,7 @@ final class DisposableFinancialPostRunInspector
             }
         }
 
+        // 1. Check required 9 table entity counts
         foreach ($requiredCountKeys as $k) {
             if (! array_key_exists($k, $baseline)) {
                 $errors[] = "Baseline metrics missing required key '{$k}'.";
@@ -2898,31 +2902,81 @@ final class DisposableFinancialPostRunInspector
             }
         }
 
-        // Sequence preservation check
-        if (isset($baseline['document_sequence_next_number'], $postProbe['document_sequence_next_number'])) {
+        // 2. Strict document sequences comparison: full map comparison
+        if (isset($baseline['document_sequences']) || isset($postProbe['document_sequences'])) {
+            if (! isset($baseline['document_sequences']) || ! is_array($baseline['document_sequences'])) {
+                $errors[] = 'Baseline missing valid document_sequences map.';
+            } elseif (! isset($postProbe['document_sequences']) || ! is_array($postProbe['document_sequences'])) {
+                $errors[] = 'Post-probe missing valid document_sequences map.';
+            } else {
+                $baseSeq = $baseline['document_sequences'];
+                $postSeq = $postProbe['document_sequences'];
+                ksort($baseSeq);
+                ksort($postSeq);
+                if ($baseSeq !== $postSeq) {
+                    $errors[] = 'Document sequences map mutated: baseline ' . json_encode($baseSeq) . ' != post ' . json_encode($postSeq) . '.';
+                }
+            }
+        } elseif (isset($baseline['document_sequence_next_number'], $postProbe['document_sequence_next_number'])) {
             if ($baseline['document_sequence_next_number'] !== $postProbe['document_sequence_next_number']) {
                 $errors[] = "Document sequence leaked: baseline {$baseline['document_sequence_next_number']} != post {$postProbe['document_sequence_next_number']}.";
             }
         }
 
-        // Stock quantity preservation check
-        if (! isset($baseline['inventory_balance_quantity_base']) || ! isset($postProbe['inventory_balance_quantity_base'])) {
-            $errors[] = "Missing 'inventory_balance_quantity_base' metric in baseline or postProbe.";
-        } else {
-            $baseQty = (string) $baseline['inventory_balance_quantity_base'];
-            $postQty = (string) $postProbe['inventory_balance_quantity_base'];
-            if ($baseQty === '' || ! is_numeric($baseQty) || (float) $baseQty < 0.0) {
-                $errors[] = "Baseline inventory_balance_quantity_base must be non-negative numeric string, got '{$baseQty}'.";
+        // 3. Exact decimal string stock movements quantity delta sum
+        if (isset($baseline['stock_movements_qty_delta_base']) || isset($postProbe['stock_movements_qty_delta_base'])) {
+            $baseStock = (string) ($baseline['stock_movements_qty_delta_base'] ?? '');
+            $postStock = (string) ($postProbe['stock_movements_qty_delta_base'] ?? '');
+            if ($baseStock === '' || ! is_numeric($baseStock)) {
+                $errors[] = "Baseline stock_movements_qty_delta_base must be numeric decimal string, got '{$baseStock}'.";
             }
-            if ($postQty === '' || ! is_numeric($postQty) || (float) $postQty < 0.0) {
-                $errors[] = "Post-probe inventory_balance_quantity_base must be non-negative numeric string, got '{$postQty}'.";
+            if ($postStock === '' || ! is_numeric($postStock)) {
+                $errors[] = "Post-probe stock_movements_qty_delta_base must be numeric decimal string, got '{$postStock}'.";
             }
+            if ($baseStock !== '' && $postStock !== '' && $baseStock !== $postStock) {
+                $errors[] = "Stock movements quantity delta sum mutated: baseline '{$baseStock}' != post '{$postStock}'.";
+            }
+        } elseif (isset($baseline['inventory_balance_quantity_base']) || isset($postProbe['inventory_balance_quantity_base'])) {
+            $baseQty = (string) ($baseline['inventory_balance_quantity_base'] ?? '');
+            $postQty = (string) ($postProbe['inventory_balance_quantity_base'] ?? '');
             if ($baseQty !== $postQty) {
                 $errors[] = "Inventory stock quantity mutated: baseline '{$baseQty}' != post '{$postQty}'.";
             }
         }
 
-        // Full row fingerprint hash preservation check (64-hex lowercase)
+        // 4. Exact decimal string lot allocations quantity allocated sum
+        if (isset($baseline['lot_allocations_qty_allocated_base']) || isset($postProbe['lot_allocations_qty_allocated_base'])) {
+            $baseLot = (string) ($baseline['lot_allocations_qty_allocated_base'] ?? '');
+            $postLot = (string) ($postProbe['lot_allocations_qty_allocated_base'] ?? '');
+            if ($baseLot === '' || ! is_numeric($baseLot)) {
+                $errors[] = "Baseline lot_allocations_qty_allocated_base must be numeric decimal string, got '{$baseLot}'.";
+            }
+            if ($postLot === '' || ! is_numeric($postLot)) {
+                $errors[] = "Post-probe lot_allocations_qty_allocated_base must be numeric decimal string, got '{$postLot}'.";
+            }
+            if ($baseLot !== '' && $postLot !== '' && $baseLot !== $postLot) {
+                $errors[] = "Lot allocations quantity sum mutated: baseline '{$baseLot}' != post '{$postLot}'.";
+            }
+        }
+
+        // 5. Table fingerprints comparison
+        if (isset($baseline['table_fingerprints']) || isset($postProbe['table_fingerprints'])) {
+            if (! isset($baseline['table_fingerprints']) || ! is_array($baseline['table_fingerprints'])) {
+                $errors[] = 'Baseline missing valid table_fingerprints map.';
+            } elseif (! isset($postProbe['table_fingerprints']) || ! is_array($postProbe['table_fingerprints'])) {
+                $errors[] = 'Post-probe missing valid table_fingerprints map.';
+            } else {
+                foreach ($requiredCountKeys as $t) {
+                    $bFp = (string) ($baseline['table_fingerprints'][$t] ?? '');
+                    $pFp = (string) ($postProbe['table_fingerprints'][$t] ?? '');
+                    if ($bFp === '' || $pFp === '' || ! hash_equals($bFp, $pFp)) {
+                        $errors[] = "Table '{$t}' row fingerprint mismatch: baseline '{$bFp}' != post '{$pFp}'.";
+                    }
+                }
+            }
+        }
+
+        // 6. Aggregate row fingerprint SHA-256 preservation check
         if (! isset($baseline['row_fingerprint_sha256']) || ! isset($postProbe['row_fingerprint_sha256'])) {
             $errors[] = "Missing 'row_fingerprint_sha256' in baseline or postProbe.";
         } else {
@@ -2934,7 +2988,7 @@ final class DisposableFinancialPostRunInspector
             if (! preg_match('/^[0-9a-f]{64}$/', $postFp)) {
                 $errors[] = "Post-probe row_fingerprint_sha256 must be 64-hex lowercase SHA-256, got '{$postFp}'.";
             }
-            if ($baseFp !== '' && ! hash_equals($baseFp, $postFp)) {
+            if ($baseFp !== '' && $postFp !== '' && ! hash_equals($baseFp, $postFp)) {
                 $errors[] = "Row fingerprint mismatch: baseline '{$baseFp}' != post '{$postFp}'.";
             }
         }
@@ -2948,7 +3002,19 @@ final class DisposableFinancialPostRunInspector
 
     /**
      * Executes real PDO queries to capture pre/post probe snapshot for rollback zero-delta validation.
-     * Captures entity row counts, sequence state, stock balance, and full table row SHA-256 fingerprints.
+     * Enforces owned PDO identity/schema/read-only gate BEFORE any query:
+     * - Asserts port 3342
+     * - Asserts disposable database schema matching /^accounting_p8_tmp_[a-f0-9]{12}$/D
+     * - Configures read-only session: SET SESSION TRANSACTION READ ONLY
+     * Streams deterministic ordered full rows for all 9 canonical financial tables:
+     * sales_invoices, sales_invoice_lines, sales_invoice_lot_allocations, customer_payments,
+     * customer_payment_allocations, mobile_event_receipts, stock_movements, posting_batches, posting_lines.
+     * Each table query is scoped strictly to company_id and ordered by id ASC.
+     * Computes per-table row hash fingerprints and aggregate row_fingerprint_sha256 using CanonicalJsonSerializer.
+     * Captures stock_movements.quantity_delta_base and sales_invoice_lot_allocations.quantity_allocated_base
+     * as exact decimal strings (no float/int truncation).
+     * Captures full document_sequences(document_type, year, next_number) sorted map.
+     * Fails closed: NO catch SQL errors -> 0. SQL/schema failures propagate immediately.
      *
      * @param  PDO  $pdo  Read-only PDO connection to verified disposable database
      * @param  int  $companyId  Company internal ID
@@ -2960,6 +3026,26 @@ final class DisposableFinancialPostRunInspector
             throw new InvalidArgumentException("captureRollbackProbeSnapshot requires positive companyId, got {$companyId}.");
         }
 
+        // 1. Owned PDO identity/schema/read-only gate BEFORE any query
+        $gateStmt = $pdo->query('SELECT DATABASE() AS db, @@port AS port');
+        $gateRow = $gateStmt->fetch(PDO::FETCH_ASSOC);
+        if (! is_array($gateRow)) {
+            throw new RuntimeException('Failed to query database name and port from PDO connection.');
+        }
+
+        $dbName = (string) ($gateRow['db'] ?? '');
+        if (! preg_match('/^accounting_p8_tmp_[a-f0-9]{12}$/D', $dbName)) {
+            throw new RuntimeException("PDO schema mismatch: expected disposable schema matching /^accounting_p8_tmp_[a-f0-9]{12}$/D, got '{$dbName}'.");
+        }
+
+        $port = (string) ($gateRow['port'] ?? '');
+        if ($port !== '3342') {
+            throw new RuntimeException("PDO port mismatch: expected port 3342, got '{$port}'.");
+        }
+
+        $pdo->exec('SET SESSION TRANSACTION READ ONLY');
+
+        // 2. The 9 canonical financial tables
         $tables = [
             'sales_invoices',
             'sales_invoice_lines',
@@ -2973,44 +3059,71 @@ final class DisposableFinancialPostRunInspector
         ];
 
         $counts = [];
-        $fingerprintParts = [];
+        $tableFingerprints = [];
 
         foreach ($tables as $table) {
-            $stmt = $pdo->prepare("SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS max_id FROM `{$table}` WHERE company_id = ?");
+            $stmt = $pdo->prepare("SELECT * FROM `{$table}` WHERE `company_id` = ? ORDER BY `id` ASC");
             $stmt->execute([$companyId]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            $counts[$table] = (int) ($row['c'] ?? 0);
-            $fingerprintParts[] = "{$table}:count=".($row['c'] ?? 0).':max_id='.($row['max_id'] ?? 0);
+
+            $rowCount = 0;
+            $rowHashes = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $rowCount++;
+                $normalizedRow = [];
+                foreach ($row as $col => $val) {
+                    $normalizedRow[$col] = is_float($val) ? (string) $val : $val;
+                }
+                $rowHashes[] = hash('sha256', CanonicalJsonSerializer::serialize($normalizedRow));
+            }
+
+            $counts[$table] = $rowCount;
+            $tableFingerprints[$table] = hash('sha256', implode(';', $rowHashes));
         }
 
-        // Sequence check: query max sequence / next number if document_sequences table exists
-        $seqNext = 0;
-        try {
-            $seqStmt = $pdo->prepare('SELECT COALESCE(MAX(current_number), 0) AS cur FROM document_sequences WHERE company_id = ?');
-            $seqStmt->execute([$companyId]);
-            $seqRow = $seqStmt->fetch(PDO::FETCH_ASSOC);
-            $seqNext = (int) ($seqRow['cur'] ?? 0);
-        } catch (\Throwable) {
-            $seqNext = 0;
+        // 3. Document sequences sorted map: (document_type, year) => next_number
+        $stmtSeq = $pdo->prepare('SELECT `document_type`, `year`, `next_number` FROM `document_sequences` WHERE `company_id` = ? ORDER BY `document_type` ASC, `year` ASC');
+        $stmtSeq->execute([$companyId]);
+        $sequences = [];
+        while ($row = $stmtSeq->fetch(PDO::FETCH_ASSOC)) {
+            $key = ((string) $row['document_type']) . ':' . ((int) $row['year']);
+            $sequences[$key] = (int) $row['next_number'];
         }
-        $counts['document_sequence_next_number'] = $seqNext;
-        $fingerprintParts[] = "sequence:next={$seqNext}";
+        ksort($sequences);
 
-        // Inventory balance check
-        $stockQty = 0;
-        try {
-            $stockStmt = $pdo->prepare('SELECT COALESCE(SUM(quantity), 0) AS total_qty FROM inventory_transactions WHERE company_id = ?');
-            $stockStmt->execute([$companyId]);
-            $stockRow = $stockStmt->fetch(PDO::FETCH_ASSOC);
-            $stockQty = (int) ($stockRow['total_qty'] ?? 0);
-        } catch (\Throwable) {
-            $stockQty = 0;
-        }
-        $counts['inventory_balance_quantity_base'] = $stockQty;
-        $fingerprintParts[] = "stock:qty={$stockQty}";
+        // 4. Exact decimal string balances: stock_movements.quantity_delta_base and sales_invoice_lot_allocations.quantity_allocated_base
+        $stmtStock = $pdo->prepare('SELECT COALESCE(SUM(`quantity_delta_base`), 0.0) FROM `stock_movements` WHERE `company_id` = ?');
+        $stmtStock->execute([$companyId]);
+        $stockQtySum = (string) $stmtStock->fetchColumn();
 
-        $counts['row_fingerprint_sha256'] = hash('sha256', implode('|', $fingerprintParts));
+        $stmtLot = $pdo->prepare('SELECT COALESCE(SUM(`quantity_allocated_base`), 0.0) FROM `sales_invoice_lot_allocations` WHERE `company_id` = ?');
+        $stmtLot->execute([$companyId]);
+        $lotQtySum = (string) $stmtLot->fetchColumn();
 
-        return $counts;
+        // 5. Canonical aggregate row fingerprint
+        $fingerprintPayload = [
+            'table_fingerprints' => $tableFingerprints,
+            'document_sequences' => $sequences,
+            'stock_movements_qty_delta_base' => $stockQtySum,
+            'lot_allocations_qty_allocated_base' => $lotQtySum,
+        ];
+        $aggregateFingerprint = hash('sha256', CanonicalJsonSerializer::serialize($fingerprintPayload));
+
+        return [
+            'sales_invoices' => $counts['sales_invoices'],
+            'sales_invoice_lines' => $counts['sales_invoice_lines'],
+            'sales_invoice_lot_allocations' => $counts['sales_invoice_lot_allocations'],
+            'customer_payments' => $counts['customer_payments'],
+            'customer_payment_allocations' => $counts['customer_payment_allocations'],
+            'mobile_event_receipts' => $counts['mobile_event_receipts'],
+            'stock_movements' => $counts['stock_movements'],
+            'posting_batches' => $counts['posting_batches'],
+            'posting_lines' => $counts['posting_lines'],
+            'document_sequences' => $sequences,
+            'table_fingerprints' => $tableFingerprints,
+            'stock_movements_qty_delta_base' => $stockQtySum,
+            'lot_allocations_qty_allocated_base' => $lotQtySum,
+            'row_fingerprint_sha256' => $aggregateFingerprint,
+        ];
     }
 }
+

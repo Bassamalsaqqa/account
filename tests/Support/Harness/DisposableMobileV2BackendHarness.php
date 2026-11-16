@@ -134,6 +134,10 @@ final class DisposableMobileV2BackendHarness
 
     private ?string $proofNonce = null;
 
+    private ?string $rootPrestartApprovalPath = null;
+
+    private ?string $rootLiveApprovalPath = null;
+
     /** Owned PHP HTTP backend process (lifetime property). */
     private ?Process $backendProcess = null;
 
@@ -181,6 +185,26 @@ final class DisposableMobileV2BackendHarness
     public function getProxyPid(): ?int
     {
         return $this->proxyProcess?->getPid();
+    }
+
+    public function setRootPrestartApprovalPath(?string $path): void
+    {
+        $this->rootPrestartApprovalPath = $path;
+    }
+
+    public function getRootPrestartApprovalPath(): ?string
+    {
+        return $this->rootPrestartApprovalPath;
+    }
+
+    public function setRootLiveApprovalPath(?string $path): void
+    {
+        $this->rootLiveApprovalPath = $path;
+    }
+
+    public function getRootLiveApprovalPath(): ?string
+    {
+        return $this->rootLiveApprovalPath;
     }
 
     public function getCredentialsFilePath(): ?string
@@ -2194,6 +2218,14 @@ PHP;
                 $targetNonce = (string) ($this->lostAckSuppression['target_nonce'] ?? '');
                 $targetNonceHash = (string) ($this->lostAckSuppression['target_nonce_hash'] ?? hash('sha256', $targetNonce));
                 $expectedDigest = (string) ($this->lostAckSuppression['expected_digest'] ?? '');
+                $handoffSha = ($this->handoffFilePath !== null && is_file($this->handoffFilePath))
+                    ? hash_file('sha256', $this->handoffFilePath)
+                    : '';
+                $manifestSha = $manifestShaPin ?? ($this->lostAckSuppression['manifest_sha256'] ?? '');
+                if ($manifestSha === '' && $manifestPath !== null && is_file($manifestPath)) {
+                    $manifestSha = hash_file('sha256', $manifestPath);
+                }
+
                 $proxyConfigFile = $bootstrapDir.'/test_transport_proxy_config.json';
                 file_put_contents($proxyConfigFile, json_encode([
                     'scope' => self::SCOPE_ADVANCED_EXECUTION,
@@ -2213,6 +2245,16 @@ PHP;
                     'upstream_port' => self::BACKEND_INTERNAL_PORT,
                     'db_host' => '127.0.0.1',
                     'db_port' => 3342,
+                    'root_prestart_path' => $this->lostAckSuppression['root_prestart_path'] ?? ($this->rootPrestartApprovalPath ?? ''),
+                    'manifest_path' => $manifestPath ?? ($this->lostAckSuppression['manifest_path'] ?? ''),
+                    'manifest_sha256' => $manifestSha,
+                    'backend_head' => $backendHead ?: ($this->lostAckSuppression['backend_head'] ?? ''),
+                    'android_publication_head' => $this->lostAckSuppression['android_publication_head'] ?? $peerAndroidHead,
+                    'android_executable_head' => $this->lostAckSuppression['android_executable_head'] ?? $peerAndroidHead,
+                    'repo_root' => $root,
+                    'root_live_approval_path' => $this->lostAckSuppression['root_live_approval_path'] ?? ($this->rootLiveApprovalPath ?? ''),
+                    'handoff_path' => $this->lostAckSuppression['handoff_path'] ?? ($this->handoffFilePath ?? ''),
+                    'handoff_sha256' => $this->lostAckSuppression['handoff_sha256'] ?? $handoffSha,
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
                 chmod($proxyConfigFile, 0600);
 

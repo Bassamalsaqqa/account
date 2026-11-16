@@ -136,7 +136,45 @@ try {
     exit(1);
 }
 
-// 5. Verified DisposableMariaDbSchema DB ownership proof assertion
+// 5. Root Prestart Coordination Approval Verification (Mandatory before ANY socket bind)
+$rootPrestartPath = (string) ($config['root_prestart_path'] ?? '');
+if ($rootPrestartPath === '') {
+    fwrite(STDERR, "Error: Config missing mandatory root_prestart_path.\n");
+    exit(1);
+}
+
+$manifestSha = (string) ($config['manifest_sha256'] ?? '');
+if ($manifestSha === '') {
+    fwrite(STDERR, "Error: Config missing mandatory manifest_sha256 pin.\n");
+    exit(1);
+}
+
+$backendHead = (string) ($config['backend_head'] ?? '');
+if ($backendHead === '') {
+    fwrite(STDERR, "Error: Config missing mandatory backend_head pin.\n");
+    exit(1);
+}
+
+$androidPubHead = (string) ($config['android_publication_head'] ?? '');
+$androidExeHead = (string) ($config['android_executable_head'] ?? '');
+$repoRoot = (string) ($config['repo_root'] ?? realpath(__DIR__.'/../../../'));
+
+try {
+    \Tests\Support\Harness\SupervisedPairedFinancialDrill::verifyPrestartApproval(
+        $rootPrestartPath,
+        $manifestSha,
+        $backendHead,
+        $androidPubHead,
+        $androidExeHead,
+        $repoRoot,
+        $expectedScope
+    );
+} catch (\Throwable $e) {
+    fwrite(STDERR, "Error: Root prestart approval verification failed: {$e->getMessage()}\n");
+    exit(1);
+}
+
+// 6. Verified DisposableMariaDbSchema DB ownership proof assertion
 $targetSchema = (string) ($config['target_schema'] ?? '');
 $proofPath = (string) ($config['proof_path'] ?? '');
 $proofNonce = (string) ($config['proof_nonce'] ?? '');
@@ -165,7 +203,7 @@ try {
     exit(1);
 }
 
-// 6. Construct proxy configuration with fixed loopback ports only
+// 7. Construct proxy configuration with fixed loopback ports only and Root approval bindings
 $proxyConfig = [
     'listen_port' => DisposableMobileV2BackendHarness::BACKEND_LOOPBACK_PORT,
     'upstream_port' => DisposableMobileV2BackendHarness::BACKEND_INTERNAL_PORT,
@@ -182,6 +220,14 @@ $proxyConfig = [
     'db_password' => $dbPass,
     'owner_pid' => (int) ($config['owner_pid'] ?? 0),
     'ttl_expires_at' => $ttlExpiresAt,
+    'root_live_approval_path' => (string) ($config['root_live_approval_path'] ?? ''),
+    'handoff_path' => (string) ($config['handoff_path'] ?? ''),
+    'handoff_sha256' => (string) ($config['handoff_sha256'] ?? ''),
+    'backend_head' => $backendHead,
+    'android_publication_head' => $androidPubHead,
+    'android_executable_head' => $androidExeHead,
+    'manifest_sha256' => $manifestSha,
+    'scope' => $expectedScope,
 ];
 
 try {

@@ -5702,6 +5702,248 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
         \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 0);
     }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_rejects_non_disposable_schema(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn(['db' => 'production_main', 'port' => '3342']);
+
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('query')->willReturn($stmt);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('PDO schema mismatch');
+
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+    }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_rejects_wrong_port(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3306']);
+
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('query')->willReturn($stmt);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('PDO port mismatch: expected port 3342');
+
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+    }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_propagates_sql_failures(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('query')->willReturn($stmt);
+        $pdo->method('exec')->willReturn(1);
+        $pdo->method('prepare')->willThrowException(new \PDOException("Table 'sales_invoices' does not exist", 1146));
+
+        $this->expectException(\PDOException::class);
+        $this->expectExceptionMessage("Table 'sales_invoices' does not exist");
+
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+    }
+
+    #[Test]
+    public function test_assert_rollback_zero_delta_detects_changed_row_with_equal_counts_and_max_id(): void
+    {
+        $tables = [
+            'sales_invoices',
+            'sales_invoice_lines',
+            'sales_invoice_lot_allocations',
+            'customer_payments',
+            'customer_payment_allocations',
+            'mobile_event_receipts',
+            'stock_movements',
+            'posting_batches',
+            'posting_lines',
+        ];
+
+        $baseCounts = [];
+        $baseFingerprints = [];
+        foreach ($tables as $t) {
+            $baseCounts[$t] = ($t === 'sales_invoices') ? 1 : 0;
+            $baseFingerprints[$t] = hash('sha256', "original_{$t}");
+        }
+
+        $baseline = array_merge($baseCounts, [
+            'document_sequences' => ['sales_invoice:2026' => 1],
+            'table_fingerprints' => $baseFingerprints,
+            'stock_movements_qty_delta_base' => '10.000000',
+            'lot_allocations_qty_allocated_base' => '0.000000',
+            'row_fingerprint_sha256' => hash('sha256', 'baseline_fingerprint_data'),
+        ]);
+
+        $postFingerprints = $baseFingerprints;
+        // Mutate one row in sales_invoices table fingerprint while count remains identical (1)
+        $postFingerprints['sales_invoices'] = hash('sha256', 'mutated_sales_invoices');
+
+        $postProbe = array_merge($baseCounts, [
+            'document_sequences' => ['sales_invoice:2026' => 1],
+            'table_fingerprints' => $postFingerprints,
+            'stock_movements_qty_delta_base' => '10.000000',
+            'lot_allocations_qty_allocated_base' => '0.000000',
+            'row_fingerprint_sha256' => hash('sha256', 'post_fingerprint_data'),
+        ]);
+
+        $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $postProbe);
+
+        $this->assertFalse($res['is_zero_delta']);
+        $errorStr = implode('; ', $res['errors']);
+        $this->assertStringContainsString("Table 'sales_invoices' row fingerprint mismatch", $errorStr);
+        $this->assertStringContainsString('Row fingerprint mismatch', $errorStr);
+    }
+
+    #[Test]
+    public function test_assert_rollback_zero_delta_detects_sequence_map_mutation(): void
+    {
+        $tables = [
+            'sales_invoices',
+            'sales_invoice_lines',
+            'sales_invoice_lot_allocations',
+            'customer_payments',
+            'customer_payment_allocations',
+            'mobile_event_receipts',
+            'stock_movements',
+            'posting_batches',
+            'posting_lines',
+        ];
+
+        $counts = array_fill_keys($tables, 0);
+        $fps = array_fill_keys($tables, hash('sha256', 'empty'));
+
+        $baseline = array_merge($counts, [
+            'document_sequences' => ['sales_invoice:2026' => 1],
+            'table_fingerprints' => $fps,
+            'stock_movements_qty_delta_base' => '0.000000',
+            'lot_allocations_qty_allocated_base' => '0.000000',
+            'row_fingerprint_sha256' => hash('sha256', 'seq_test'),
+        ]);
+
+        $postProbe = $baseline;
+        $postProbe['document_sequences'] = ['sales_invoice:2026' => 2];
+
+        $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $postProbe);
+        $this->assertFalse($res['is_zero_delta']);
+        $this->assertStringContainsString('Document sequences map mutated', implode('; ', $res['errors']));
+    }
+
+    #[Test]
+    public function test_assert_rollback_zero_delta_detects_stock_decimal_string_mutation(): void
+    {
+        $tables = [
+            'sales_invoices',
+            'sales_invoice_lines',
+            'sales_invoice_lot_allocations',
+            'customer_payments',
+            'customer_payment_allocations',
+            'mobile_event_receipts',
+            'stock_movements',
+            'posting_batches',
+            'posting_lines',
+        ];
+
+        $counts = array_fill_keys($tables, 0);
+        $fps = array_fill_keys($tables, hash('sha256', 'empty'));
+
+        $baseline = array_merge($counts, [
+            'document_sequences' => [],
+            'table_fingerprints' => $fps,
+            'stock_movements_qty_delta_base' => '50.000000',
+            'lot_allocations_qty_allocated_base' => '0.000000',
+            'row_fingerprint_sha256' => hash('sha256', 'stock_test'),
+        ]);
+
+        $postProbe = $baseline;
+        $postProbe['stock_movements_qty_delta_base'] = '50.000001';
+
+        $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseline, $postProbe);
+        $this->assertFalse($res['is_zero_delta']);
+        $this->assertStringContainsString('Stock movements quantity delta sum mutated', implode('; ', $res['errors']));
+    }
+
+    #[Test]
+    public function test_proxy_cli_entry_refuses_when_root_prestart_path_missing(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/guard_proxy_entry_' . bin2hex(random_bytes(8));
+        mkdir($tmpDir, 0700, true);
+        $configFile = $tmpDir . '/proxy_config.json';
+        $credsFile = $tmpDir . '/creds.json';
+
+        try {
+            file_put_contents($credsFile, json_encode(['db_user' => 'u', 'db_password' => 'p']));
+            chmod($credsFile, 0600);
+
+            file_put_contents($configFile, json_encode([
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'owner_pid' => getmypid(),
+                'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+                'credentials_file' => $credsFile,
+            ]));
+            chmod($configFile, 0600);
+
+            $cliPath = dirname(__DIR__, 3) . '/Support/Harness/test-transport-proxy-cli.php';
+            $proc = new Process([PHP_BINARY, $cliPath, '--config=' . $configFile]);
+            $proc->run();
+
+            $this->assertSame(1, $proc->getExitCode());
+            $this->assertStringContainsString('Config missing mandatory root_prestart_path', $proc->getErrorOutput());
+        } finally {
+            @unlink($configFile);
+            @unlink($credsFile);
+            @rmdir($tmpDir);
+        }
+    }
+
+    #[Test]
+    public function test_proxy_cli_entry_refuses_when_root_prestart_not_granted(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/guard_proxy_grant_' . bin2hex(random_bytes(8));
+        mkdir($tmpDir, 0700, true);
+        $configFile = $tmpDir . '/proxy_config.json';
+        $credsFile = $tmpDir . '/creds.json';
+        $approvalFile = $tmpDir . '/approval.json';
+
+        try {
+            file_put_contents($credsFile, json_encode(['db_user' => 'u', 'db_password' => 'p']));
+            chmod($credsFile, 0600);
+
+            file_put_contents($approvalFile, json_encode([
+                'root_coordination_granted' => false,
+                'expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+            ]));
+            chmod($approvalFile, 0600);
+
+            file_put_contents($configFile, json_encode([
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'owner_pid' => getmypid(),
+                'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+                'credentials_file' => $credsFile,
+                'root_prestart_path' => $approvalFile,
+                'manifest_sha256' => str_repeat('a', 64),
+                'backend_head' => str_repeat('b', 40),
+            ]));
+            chmod($configFile, 0600);
+
+            $cliPath = dirname(__DIR__, 3) . '/Support/Harness/test-transport-proxy-cli.php';
+            $proc = new Process([PHP_BINARY, $cliPath, '--config=' . $configFile]);
+            $proc->run();
+
+            $this->assertSame(1, $proc->getExitCode());
+            $this->assertStringContainsString('Root prestart approval verification failed', $proc->getErrorOutput());
+        } finally {
+            @unlink($approvalFile);
+            @unlink($configFile);
+            @unlink($credsFile);
+            @rmdir($tmpDir);
+        }
+    }
 }
 
 

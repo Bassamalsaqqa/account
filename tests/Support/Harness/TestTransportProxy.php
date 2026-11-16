@@ -443,6 +443,32 @@ class TestTransportProxy
                 }
 
                 if ($responseStatus === 201) {
+                    // Enforce independent live Root approval verification BEFORE executing fault suppression
+                    $liveApprovalPath = (string) ($this->targetConfig['root_live_approval_path'] ?? '');
+                    if ($liveApprovalPath === '') {
+                        $this->sendHttpError($client, 500, 'Internal Error: Missing Root Live Approval Path');
+
+                        return;
+                    }
+
+                    try {
+                        SupervisedPairedFinancialDrill::verifyLiveRootApproval(
+                            $liveApprovalPath,
+                            (string) ($this->targetConfig['handoff_path'] ?? ''),
+                            (string) ($this->targetConfig['handoff_sha256'] ?? ''),
+                            (string) ($this->targetConfig['backend_head'] ?? ''),
+                            (string) ($this->targetConfig['android_publication_head'] ?? ''),
+                            (string) ($this->targetConfig['android_executable_head'] ?? ''),
+                            (string) ($this->targetConfig['manifest_sha256'] ?? ''),
+                            (string) ($this->targetConfig['target_schema'] ?? ''),
+                            (string) ($this->targetConfig['scope'] ?? SupervisedPairedFinancialDrill::REQUIRED_SCOPE)
+                        );
+                    } catch (\Throwable $e) {
+                        $this->sendHttpError($client, 500, 'Internal Error: Live Root Approval Verification Failed: '.$e->getMessage());
+
+                        return;
+                    }
+
                     // Verify commit directly in disposable schema via read-only PDO
                     $commitInfo = $this->verifyCommitInDatabase();
 

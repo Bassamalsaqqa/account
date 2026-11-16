@@ -38,7 +38,9 @@ class MobileV2HarnessCommand extends Command
         {--pairing-manifest=     : Path to integration pairing manifest (defaults to docs/integration/mobile-v2-integration-manifest.json)}
         {--pairing-manifest-sha= : Mandatory SHA-256 pin of the pairing manifest}
         {--expected-scope=       : Expected execution scope (e.g. ROOT_AUTHORIZED_PAIRED_EXECUTION or ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION)}
-        {--advanced-probes       : Enable advanced probe execution (ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION)}';
+        {--advanced-probes       : Enable advanced probe execution (ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION)}
+        {--root-approval-file=   : Path to Root prestart coordination approval file}
+        {--root-live-approval-file= : Path to independent external Root live approval file}';
 
     protected $description = 'Drive the Mobile V2 paired HTTPS integration harness (source-only by default)';
 
@@ -110,12 +112,15 @@ class MobileV2HarnessCommand extends Command
             $expectedScope = DisposableMobileV2BackendHarness::SCOPE_ADVANCED_EXECUTION;
         }
 
+        $rootApprovalFile = $this->option('root-approval-file') ? (string) $this->option('root-approval-file') : null;
+        $rootLiveApprovalFile = $this->option('root-live-approval-file') ? (string) $this->option('root-live-approval-file') : null;
+
         if ($readinessOnly) {
             return $this->handleReadinessOnly($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $holdSeconds);
         }
 
         if ($run) {
-            return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $pairedHoldSeconds, $expectedScope ?: null, $advancedProbes);
+            return $this->handleRun($backendHead, $androidHead, $pairingManifest, $pairingManifestSha, $pairedHoldSeconds, $expectedScope ?: null, $advancedProbes, $rootApprovalFile, $rootLiveApprovalFile);
         }
 
         if ($start) {
@@ -333,7 +338,9 @@ class MobileV2HarnessCommand extends Command
         ?string $pairingManifestSha = null,
         int $pairedHoldSeconds = 0,
         ?string $expectedScope = null,
-        bool $advancedProbes = false
+        bool $advancedProbes = false,
+        ?string $rootApprovalFile = null,
+        ?string $rootLiveApprovalFile = null
     ): int {
         $this->line('Mobile V2 Harness — Foreground Paired Lifecycle (--run)');
         if ($advancedProbes) {
@@ -393,6 +400,12 @@ class MobileV2HarnessCommand extends Command
         }
 
         $harness = new DisposableMobileV2BackendHarness;
+        if ($rootApprovalFile !== null && $rootApprovalFile !== '') {
+            $harness->setRootPrestartApprovalPath($rootApprovalFile);
+        }
+        if ($rootLiveApprovalFile !== null && $rootLiveApprovalFile !== '') {
+            $harness->setRootLiveApprovalPath($rootLiveApprovalFile);
+        }
 
         try {
             // Safe interrupted setup check 1: before provision
@@ -452,6 +465,8 @@ class MobileV2HarnessCommand extends Command
                     'expected_digest' => $canonicalDigest,
                     'target_company_id' => $companyId,
                     'target_company_public_id' => $companyPublicId,
+                    'root_prestart_path' => $rootApprovalFile,
+                    'root_live_approval_path' => $rootLiveApprovalFile,
                 ]);
 
                 // Reset simulated fault stage to null for initial run; set per probe during probe execution
