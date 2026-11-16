@@ -50,6 +50,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        class_exists(SupervisedPairedFinancialDrill::class);
         $this->originalEnable = getenv('MOBILE_V2_HARNESS_ENABLE') ?: null;
         $this->originalHost = getenv('PHASE8_TEST_DB_HOST') ?: null;
         $this->originalPort = getenv('PHASE8_TEST_DB_PORT') ?: null;
@@ -6328,6 +6329,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_verified_owned_snapshot_from_live_ownership_rejects_supervisor_pid_in_child_pid(): void
     {
+        class_exists(SupervisedPairedFinancialDrill::class);
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('SNAPSHOT_REFUSED_SUPERVISOR_PID');
 
@@ -6344,6 +6346,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     #[Test]
     public function test_verified_owned_snapshot_from_live_ownership_rejects_missing_child_proc(): void
     {
+        class_exists(SupervisedPairedFinancialDrill::class);
         // Valid proof and harness paths, but non-existent child PID
         $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
         mkdir($proofDir, 0700, true);
@@ -6424,6 +6427,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $this->markTestSkipped('Requires explicit ROOT_PROCESS_LIFECYCLE_GRANT=1 (no child process execution during source-only qualification).');
         }
 
+        class_exists(SupervisedPairedFinancialDrill::class);
+
         $repoRoot = dirname(__DIR__, 4);
         $schemaName = 'accounting_p8_tmp_0123456789ab';
         $proofNonce = str_repeat('a', 32);
@@ -6503,17 +6508,22 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $mockPortStmt = $this->createMock(\PDOStatement::class);
             $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
 
-            $queryCount = 0;
             $mockSchemaStmt = $this->createMock(\PDOStatement::class);
-            $mockSchemaStmt->method('fetch')->willReturnCallback(function () use (&$queryCount, $schemaName) {
-                $queryCount++;
-
-                return $queryCount === 1 ? ['SCHEMA_NAME' => $schemaName] : false;
-            });
+            $mockSchemaStmt->expects($this->exactly(2))
+                ->method('execute')
+                ->with([$schemaName]);
+            $mockSchemaStmt->method('fetch')
+                ->willReturnOnConsecutiveCalls(['SCHEMA_NAME' => $schemaName], false);
 
             $mockPdo = $this->createMock(\PDO::class);
-            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
-            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+            $mockPdo->expects($this->once())
+                ->method('query')
+                ->with('SELECT @@port AS port')
+                ->willReturn($mockPortStmt);
+            $mockPdo->expects($this->once())
+                ->method('prepare')
+                ->with('SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1')
+                ->willReturn($mockSchemaStmt);
             $mockPdo->expects($this->once())
                 ->method('exec')
                 ->with("DROP DATABASE IF EXISTS `{$schemaName}`")
@@ -6572,6 +6582,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         if (getenv('ROOT_PROCESS_LIFECYCLE_GRANT') !== '1') {
             $this->markTestSkipped('Requires explicit ROOT_PROCESS_LIFECYCLE_GRANT=1 (no child process execution during source-only qualification).');
         }
+
+        class_exists(SupervisedPairedFinancialDrill::class);
 
         $repoRoot = dirname(__DIR__, 4);
         $schemaName = 'accounting_p8_tmp_0123456789ab';

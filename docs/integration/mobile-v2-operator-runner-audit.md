@@ -1332,6 +1332,33 @@ flowchart TD
     Cleanup -->|private sendVerifiedSignal (allowOrphanAdoptedByInit)| CaddyProc
 ```
 
+### 18.9 Root Process-Only Lifecycle Grant Execution & Autoload Resolution
+
+#### 18.9.1 Run Preservation & Invariance State (`root-owned-process-lifecycle-fdrz7tb3`)
+Root performed process-only evaluation under grant run on commit `07d4d2625c74e0c0ec759be8cc5255cbf3c4adaa` (recorded in `/home/t3dev/.t3/userdata/attachments/root-owned-process-lifecycle-fdrz7tb3`):
+- **Invocation**: `php vendor/bin/phpunit --no-configuration --bootstrap vendor/autoload.php --stop-on-failure --stop-on-error --filter test_bounded_throwaway_owned_child_ --log-junit ... tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`
+- **Environment**: `ROOT_PROCESS_LIFECYCLE_GRANT=1`, `MOBILE_V2_HARNESS_ENABLE=0`, `PHASE8_ALLOW_DISPOSABLE_DB=0`, `DB_PORT=1`, `PHASE8_TEST_DB_PORT=1`.
+- **Exit Code**: `2` (Execution halted on first test error).
+- **Error**: `Fatal error: Uncaught Error: Class "Tests\Support\Harness\VerifiedOwnedSnapshot" not found` at `DisposableMobileV2BackendHarnessGuardTest.php:6490`.
+- **Process & Resource Invariance**: `php`, `java`, `gradle` process table verified completely empty after execution (`finally` block reaped the started throwaway Symfony process). Zero DB connections, zero listening sockets, zero Android/JVM calls made.
+- **Root Cause Analysis**: `VerifiedOwnedSnapshot` is co-located inside `SupervisedPairedFinancialDrill.php` rather than in an isolated PSR-4 file named `VerifiedOwnedSnapshot.php`. Under isolated filter runs using `--no-configuration`, Composer's autoloader does not know that `Tests\Support\Harness\VerifiedOwnedSnapshot` resides within `SupervisedPairedFinancialDrill.php` unless `SupervisedPairedFinancialDrill` has already been loaded into memory.
+
+#### 18.9.2 Standalone Autoload Resolution
+To ensure standalone execution with `vendor/autoload.php` alone under any single-method or pattern filter without class duplication or namespace displacement:
+1. Added explicit `class_exists(SupervisedPairedFinancialDrill::class);` to `setUp()` and immediately following the `ROOT_PROCESS_LIFECYCLE_GRANT` guard in both lifecycle tests (`test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo` and `test_bounded_throwaway_owned_child_refuses_cleanup_when_process_handle_omitted`), as well as in snapshot rejection unit tests.
+2. Verified that triggering the autoloader for `SupervisedPairedFinancialDrill` synchronously defines `VerifiedOwnedSnapshot` before any factory call is evaluated.
+
+#### 18.9.3 Exact Mock PDO Expectation Alignment
+Audited and aligned mock query expectations in `test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo` to match the exact SQL flow executed by `executeExactCleanup()`:
+1. DB Port Check: `$mockPdo->expects($this->once())->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt)` with `$mockPortStmt->method('fetch')->willReturn(['port' => '3342'])`.
+2. Schema Presence & Absence Verification:
+   - `$mockPdo->expects($this->once())->method('prepare')->with('SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ? LIMIT 1')->willReturn($mockSchemaStmt)`.
+   - `$mockSchemaStmt->expects($this->exactly(2))->method('execute')->with([$schemaName])`.
+   - `$mockSchemaStmt->method('fetch')->willReturnOnConsecutiveCalls(['SCHEMA_NAME' => $schemaName], false)`.
+3. Admin Drop Execution:
+   - `$mockPdo->expects($this->once())->method('exec')->with("DROP DATABASE IF EXISTS `{$schemaName}`")->willReturn(1)`.
+
+
 
 
 
