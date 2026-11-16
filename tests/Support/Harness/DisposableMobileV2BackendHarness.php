@@ -317,6 +317,11 @@ final class DisposableMobileV2BackendHarness
     /** @var array<string, string> */
     private array $stageAllowlist = [];
 
+    private ?string $advancedControlPacketPath = null;
+
+    /** @var array<string, string> */
+    private array $probeEventIds = [];
+
     /**
      * Configures single-response test-transport suppression for advanced lost-ACK testing.
      * Defaults to null (default-deny).
@@ -425,6 +430,19 @@ final class DisposableMobileV2BackendHarness
     public function getStageAllowlist(): array
     {
         return $this->stageAllowlist;
+    }
+
+    public function advancedControlPacketPath(): ?string
+    {
+        return $this->advancedControlPacketPath;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function probeEventIds(): array
+    {
+        return $this->probeEventIds;
     }
 
     /**
@@ -1813,26 +1831,44 @@ PHP;
                 'expires_at' => now()->addDays(7),
             ]);
 
-            // Seed unauthorized actor and second fixture token for permission denial probes
-            $unauthorizedStaff = User::factory()->create([
-                'email' => 'unauth_'.Str::random(8).'@example.com',
-                'password' => Hash::make('HarnessUnauthPass123!'),
-            ]);
-            CompanyUser::create([
-                'company_id' => $company->id,
-                'user_id' => $unauthorizedStaff->id,
-                'status' => 'active',
-                'is_owner' => false,
-            ]);
-            $rawUnauthorizedToken = 'st_m_unauth_'.bin2hex(random_bytes(32));
-            MobileAccessToken::create([
-                'token_hash' => hash('sha256', $rawUnauthorizedToken),
-                'device_id' => $deviceId,
-                'user_id' => $unauthorizedStaff->id,
-                'company_id' => $company->id,
-                'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $unauthorizedStaff->password), 0, 16),
-                'expires_at' => now()->addDays(7),
-            ]);
+            $manifestStatus = (string) ($manifestInfo['status'] ?? '');
+            $isAdvanced = ($manifestStatus === self::SCOPE_ADVANCED_EXECUTION);
+
+            // Seed unauthorized actor, distinct device, and second fixture token ONLY in advanced scope for permission denial probes
+            $unauthorizedStaff = null;
+            $unauthDevice = null;
+            $rawUnauthorizedToken = null;
+            if ($isAdvanced) {
+                $unauthorizedStaff = User::factory()->create([
+                    'email' => 'unauth_'.Str::random(8).'@example.com',
+                    'password' => Hash::make('HarnessUnauthPass123!'),
+                ]);
+                CompanyUser::create([
+                    'company_id' => $company->id,
+                    'user_id' => $unauthorizedStaff->id,
+                    'status' => 'active',
+                    'is_owner' => false,
+                ]);
+                $unauthDeviceId = (string) Str::uuid();
+                $unauthDevice = MobileDevice::create([
+                    'device_id' => $unauthDeviceId,
+                    'user_id' => $unauthorizedStaff->id,
+                    'device_name' => 'Android Unauthorized Client Integration Device',
+                    'platform' => 'android',
+                    'app_version' => '2.0.0',
+                    'os_version' => '14.0',
+                    'status' => 'active',
+                ]);
+                $rawUnauthorizedToken = 'st_m_unauth_'.bin2hex(random_bytes(32));
+                MobileAccessToken::create([
+                    'token_hash' => hash('sha256', $rawUnauthorizedToken),
+                    'device_id' => $unauthDeviceId,
+                    'user_id' => $unauthorizedStaff->id,
+                    'company_id' => $company->id,
+                    'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $unauthorizedStaff->password), 0, 16),
+                    'expires_at' => now()->addDays(7),
+                ]);
+            }
 
             $customer = Customer::create([
                 'company_id' => $company->id,
@@ -1936,17 +1972,12 @@ PHP;
             $this->companyId = (int) $company->id;
             $this->companyPublicId = (string) $company->public_id;
 
-            $probePermissionEventId = (string) Str::uuid();
-            $probeStockEventId = (string) Str::uuid();
-            $probeFaultEventId = (string) Str::uuid();
-
             $this->fixtureManifest = [
                 'schema_name' => $this->schema->schemaName(),
                 'company_public_id' => (string) $company->public_id,
                 'company_base_currency' => $currencyCode,
                 'currency_minor_units' => $minorUnits,
                 'staff_actor_public_id' => (string) $staff->public_id,
-                'unauthorized_staff_actor_public_id' => (string) $unauthorizedStaff->public_id,
                 'device_id' => (string) $device->device_id,
                 'customer_public_id' => (string) $customer->public_id,
                 'warehouse_public_id' => (string) $warehouse->public_id,
@@ -1955,9 +1986,6 @@ PHP;
                 'tax_rate_public_id' => (string) $taxRate->public_id,
                 'cash_account_public_id' => (string) $cashAccount->public_id,
                 'sample_event_id' => $sampleEventId,
-                'probe_permission_denial_event_id' => $probePermissionEventId,
-                'probe_insufficient_stock_event_id' => $probeStockEventId,
-                'probe_after_posting_fault_event_id' => $probeFaultEventId,
             ];
 
             $serverContext = [
@@ -1977,75 +2005,178 @@ PHP;
                 'parsed_request' => $sampleRequest,
             ];
 
-            // Generate dedicated private advanced control packet artifact (0600)
-            $advancedControlPacket = [
-                'scope' => self::SCOPE_ADVANCED_EXECUTION,
-                'canonical_committed_event' => [
-                    'event_id' => $sampleEventId,
-                    'stage' => null,
-                    'expected_http_status' => 200,
-                    'description' => 'Lost ACK event: upstream committed (201 in proxy witness), dropped at transport, recovered via GET status 200, replayed at 200, tampered at 409',
-                    'raw_wire_payload_sha256' => $rawWireSha256,
-                    'canonical_profile_digest' => $canonicalDigest,
-                ],
-                'probe_permission_denial' => [
-                    'event_id' => $probePermissionEventId,
-                    'stage' => null,
-                    'expected_http_status' => 403,
-                    'auth_token_ref' => 'unauthorized_raw_token',
-                    'expected_db_delta' => 0,
-                    'description' => 'Negative probe: valid payload with unauthorized secondary token denied by authorization check',
-                ],
-                'probe_insufficient_stock' => [
-                    'event_id' => $probeStockEventId,
-                    'stage' => null,
-                    'expected_http_status' => 422,
-                    'excess_quantity' => '999999.000000',
-                    'expected_db_delta' => 0,
-                    'description' => 'Negative probe: quantity exceeding stock balance rejected by stock check',
-                ],
-                'probe_after_posting_fault' => [
-                    'event_id' => $probeFaultEventId,
-                    'stage' => 'after_posting',
-                    'expected_http_status' => 500,
-                    'expected_db_delta' => 0,
-                    'description' => 'Negative probe: simulated fault after invoice posting triggers transaction rollback',
-                ],
-                'stage_allowlist' => [
-                    $probeFaultEventId => 'after_posting',
-                ],
-                'expected_scenarios' => [
-                    'readiness_probe' => 200,
-                    'transport_lost_ack_retained_status_recovery' => 200,
-                    'idempotent_replay_integrity' => 200,
-                    'tamper_rejection_integrity' => 409,
-                    'rollback_permission_denial' => 403,
-                    'rollback_insufficient_stock' => 422,
-                    'rollback_controlled_after_posting' => 500,
-                ],
-            ];
-            $controlPacketPath = $this->harnessTempDir.'/advanced_control_packet.json';
-            file_put_contents($controlPacketPath, json_encode($advancedControlPacket, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            chmod($controlPacketPath, 0600);
-            $this->stageAllowlist = [$probeFaultEventId => 'after_posting'];
-            $this->fixtureManifest['advanced_control_packet_path'] = $controlPacketPath;
+            // In advanced scope: generate canonical probe wire payloads, intent profiles, and dedicated private ACP (0600)
+            if ($isAdvanced && isset($unauthorizedStaff, $unauthDevice, $rawUnauthorizedToken)) {
+                $probePermissionEventId = (string) Str::uuid();
+                $probeStockEventId = (string) Str::uuid();
+                $probeFaultEventId = (string) Str::uuid();
+
+                // 1. Permission denial probe: authorized device for unauthorized staff actor with no cashier permissions
+                $permRequest = $sampleRequest;
+                $permRequest['client_event_id'] = $probePermissionEventId;
+                $permRequest['device_id'] = (string) $unauthDevice->device_id;
+                $permContext = [
+                    'company_id' => (string) $company->public_id,
+                    'actor_id' => (string) $unauthorizedStaff->public_id,
+                    'currency_minor_units' => $minorUnits,
+                ];
+                $permWireJson = CanonicalJsonSerializer::serialize($permRequest);
+                $permWireSha = hash('sha256', $permWireJson);
+                $permProfile = OnlineSaleIntentProfile::construct($permContext, $permRequest);
+                $permDigest = OnlineSaleIntentProfile::computeDigest($permProfile);
+
+                // 2. Insufficient stock probe: quantity 999999 exceeding stock balance with exact balanced payment
+                // 999999 * 50.000000 = 49999950.000000; VAT 16% = 7999992.000000; total = 57999942.000000
+                $stockRequest = $sampleRequest;
+                $stockRequest['client_event_id'] = $probeStockEventId;
+                $stockRequest['lines'] = [
+                    [
+                        'product_id' => (string) $product->public_id,
+                        'product_unit_id' => (string) $baseUnit->public_id,
+                        'conversion_to_base' => '1.000000',
+                        'quantity' => '999999.000000',
+                        'unit_price' => '50.000000',
+                        'tax_rate_id' => (string) $taxRate->public_id,
+                        'tax_rate' => '16.000000',
+                        'tax_inclusive' => false,
+                    ],
+                ];
+                $stockRequest['payment'] = [
+                    'settlement_mode' => 'full',
+                    'payment_method' => 'cash',
+                    'cash_account_id' => (string) $cashAccount->public_id,
+                    'amount' => '57999942.000000',
+                ];
+                $stockWireJson = CanonicalJsonSerializer::serialize($stockRequest);
+                $stockWireSha = hash('sha256', $stockWireJson);
+                $stockProfile = OnlineSaleIntentProfile::construct($serverContext, $stockRequest);
+                $stockDigest = OnlineSaleIntentProfile::computeDigest($stockProfile);
+
+                // 3. Controlled fault probe: simulated fault after invoice posting triggers transaction rollback
+                $faultRequest = $sampleRequest;
+                $faultRequest['client_event_id'] = $probeFaultEventId;
+                $faultWireJson = CanonicalJsonSerializer::serialize($faultRequest);
+                $faultWireSha = hash('sha256', $faultWireJson);
+                $faultProfile = OnlineSaleIntentProfile::construct($serverContext, $faultRequest);
+                $faultDigest = OnlineSaleIntentProfile::computeDigest($faultProfile);
+
+                $advancedControlPacket = [
+                    'contract_version' => 'v2_advanced_probe_evidence_v1',
+                    'scope' => self::SCOPE_ADVANCED_EXECUTION,
+                    'schema_name' => $this->schema->schemaName(),
+                    'company_id' => (int) $company->id,
+                    'company_public_id' => (string) $company->public_id,
+                    'harness_nonce' => $this->harnessNonce,
+                    'canonical_committed_event' => [
+                        'event_id' => $sampleEventId,
+                        'stage' => null,
+                        'expected_http_status' => 200,
+                        'auth_token_ref' => 'raw_token',
+                        'description' => 'Lost ACK event: upstream committed (201 in proxy witness), dropped at transport, recovered via GET status 200, replayed at 200, tampered at 409',
+                        'wire_payload' => $sampleRequest,
+                        'raw_wire_payload_json' => $rawWireJson,
+                        'raw_wire_payload_sha256' => $rawWireSha256,
+                        'server_context' => $serverContext,
+                        'canonical_profile' => $profile,
+                        'canonical_profile_digest' => $canonicalDigest,
+                    ],
+                    'probe_permission_denial' => [
+                        'probe_name' => 'permission_denial',
+                        'event_id' => $probePermissionEventId,
+                        'stage' => null,
+                        'expected_http_status' => 403,
+                        'auth_token_ref' => 'unauthorized_raw_token',
+                        'expected_db_delta' => 0,
+                        'wire_payload' => $permRequest,
+                        'raw_wire_payload_json' => $permWireJson,
+                        'raw_wire_payload_sha256' => $permWireSha,
+                        'server_context' => $permContext,
+                        'canonical_profile' => $permProfile,
+                        'canonical_profile_digest' => $permDigest,
+                    ],
+                    'probe_insufficient_stock' => [
+                        'probe_name' => 'insufficient_stock',
+                        'event_id' => $probeStockEventId,
+                        'stage' => null,
+                        'expected_http_status' => 422,
+                        'auth_token_ref' => 'raw_token',
+                        'excess_quantity' => '999999.000000',
+                        'expected_db_delta' => 0,
+                        'wire_payload' => $stockRequest,
+                        'raw_wire_payload_json' => $stockWireJson,
+                        'raw_wire_payload_sha256' => $stockWireSha,
+                        'server_context' => $serverContext,
+                        'canonical_profile' => $stockProfile,
+                        'canonical_profile_digest' => $stockDigest,
+                    ],
+                    'probe_controlled_fault_after_posting' => [
+                        'probe_name' => 'controlled_fault_after_posting',
+                        'event_id' => $probeFaultEventId,
+                        'stage' => 'after_posting',
+                        'expected_http_status' => 500,
+                        'auth_token_ref' => 'raw_token',
+                        'expected_db_delta' => 0,
+                        'wire_payload' => $faultRequest,
+                        'raw_wire_payload_json' => $faultWireJson,
+                        'raw_wire_payload_sha256' => $faultWireSha,
+                        'server_context' => $serverContext,
+                        'canonical_profile' => $faultProfile,
+                        'canonical_profile_digest' => $faultDigest,
+                    ],
+                    'stage_allowlist' => [
+                        $probeFaultEventId => 'after_posting',
+                    ],
+                    'probe_event_ids' => [
+                        'permission_denial' => $probePermissionEventId,
+                        'insufficient_stock' => $probeStockEventId,
+                        'controlled_fault_after_posting' => $probeFaultEventId,
+                    ],
+                    'expected_scenarios' => [
+                        'readiness_probe' => 200,
+                        'transport_lost_ack_retained_status_recovery' => 200,
+                        'idempotent_replay_integrity' => 200,
+                        'tamper_rejection_integrity' => 409,
+                        'rollback_permission_denial' => 403,
+                        'rollback_insufficient_stock' => 422,
+                        'rollback_controlled_after_posting' => 500,
+                    ],
+                ];
+
+                $controlPacketPath = $this->harnessTempDir.'/advanced_control_packet.json';
+                file_put_contents($controlPacketPath, json_encode($advancedControlPacket, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                chmod($controlPacketPath, 0600);
+
+                $this->advancedControlPacketPath = $controlPacketPath;
+                $this->probeEventIds = [
+                    'permission_denial' => $probePermissionEventId,
+                    'insufficient_stock' => $probeStockEventId,
+                    'controlled_fault_after_posting' => $probeFaultEventId,
+                ];
+                $this->stageAllowlist = [$probeFaultEventId => 'after_posting'];
+            }
 
             // Write private runtime credentials artifact to harnessTempDir (chmod 0600)
             // Credentials are NEVER returned in public arrays or printed to stdout.
+            $credentialsData = [
+                'raw_token' => $rawToken,
+                'token_hash' => hash('sha256', $rawToken),
+                'device_id' => (string) $device->device_id,
+                'staff_email' => $staff->email,
+                'schema' => $this->schema->schemaName(),
+            ];
+            if ($isAdvanced && isset($unauthorizedStaff, $unauthDevice, $rawUnauthorizedToken, $controlPacketPath)) {
+                $credentialsData['unauthorized_raw_token'] = $rawUnauthorizedToken;
+                $credentialsData['unauthorized_token_hash'] = hash('sha256', $rawUnauthorizedToken);
+                $credentialsData['unauthorized_device_id'] = (string) $unauthDevice->device_id;
+                $credentialsData['unauthorized_staff_email'] = $unauthorizedStaff->email;
+                $credentialsData['advanced_control_packet_path'] = $controlPacketPath;
+                $credentialsData['advanced_control_packet_sha256'] = (string) hash_file('sha256', $controlPacketPath);
+            }
+
             $this->credentialsFilePath = $this->harnessTempDir.'/runtime_credentials.json';
             file_put_contents(
                 $this->credentialsFilePath,
-                json_encode([
-                    'raw_token' => $rawToken,
-                    'token_hash' => hash('sha256', $rawToken),
-                    'unauthorized_raw_token' => $rawUnauthorizedToken,
-                    'unauthorized_token_hash' => hash('sha256', $rawUnauthorizedToken),
-                    'device_id' => $device->device_id,
-                    'staff_email' => $staff->email,
-                    'unauthorized_staff_email' => $unauthorizedStaff->email,
-                    'schema' => $this->schema->schemaName(),
-                    'advanced_control_packet_path' => $controlPacketPath,
-                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                json_encode($credentialsData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
             );
             chmod($this->credentialsFilePath, 0600);
             $root = dirname(__DIR__, 3);
@@ -2396,6 +2527,8 @@ PHP;
                     'root_live_approval_path' => $this->lostAckSuppression['root_live_approval_path'] ?? ($this->rootLiveApprovalPath ?? ''),
                     'handoff_path' => $this->lostAckSuppression['handoff_path'] ?? ($this->handoffFilePath ?? ''),
                     'handoff_sha256' => $this->lostAckSuppression['handoff_sha256'] ?? $handoffSha,
+                    'advanced_control_packet_path' => $this->advancedControlPacketPath ?? '',
+                    'probe_event_ids' => $this->probeEventIds,
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
                 chmod($proxyConfigFile, 0600);
 

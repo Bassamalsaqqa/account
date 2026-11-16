@@ -752,32 +752,100 @@ try {
         $rollbackReportPath = $outputDir . '/rollback_probes_db_report.json';
         file_put_contents($rollbackReportPath, json_encode($rollbackSnapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
         chmod($rollbackReportPath, 0600);
-        echo "  [Rollback] Probe snapshot captured (aggregate fingerprint: {$rollbackSnapshot['aggregate_fingerprint_sha256']})\n";
+        echo "  [Rollback] Probe snapshot captured (row fingerprint: {$rollbackSnapshot['row_fingerprint_sha256']})\n";
 
-        // Assert negative probe events never committed rows in database
-        $probeEventIds = [
-            (string) ($handoff['fixture']['probe_permission_denial_event_id'] ?? ''),
-            (string) ($handoff['fixture']['probe_insufficient_stock_event_id'] ?? ''),
-            (string) ($handoff['fixture']['probe_after_posting_fault_event_id'] ?? ''),
-        ];
-        $activeProbeIds = array_values(array_filter($probeEventIds, fn ($id) => $id !== ''));
+        // Read probe event IDs from advanced_control_packet.json referenced in runtime_credentials.json
+        $runtimeCredsPath = (string) ($handoff['credentials_path'] ?? ($harnessDir . '/runtime_credentials.json'));
+        SupervisedPairedFinancialDrill::assertSecureFilePermissions($runtimeCredsPath, 'RUNTIME_CREDENTIALS');
+        $runtimeCreds = json_decode((string) file_get_contents($runtimeCredsPath), true);
+        if (! is_array($runtimeCreds)) {
+            throw new \RuntimeException('INVALID_RUNTIME_CREDENTIALS_JSON');
+        }
+        $acpPath = (string) ($runtimeCreds['advanced_control_packet_path'] ?? '');
+        $acpSha = (string) ($runtimeCreds['advanced_control_packet_sha256'] ?? '');
+        if ($acpPath === '' || ! is_file($acpPath)) {
+            throw new \RuntimeException('MISSING_ADVANCED_CONTROL_PACKET_FILE');
+        }
+        SupervisedPairedFinancialDrill::assertSecureFilePermissions($acpPath, 'ADVANCED_CONTROL_PACKET');
+        if (! hash_equals($acpSha, (string) hash_file('sha256', $acpPath))) {
+            throw new \RuntimeException('ADVANCED_CONTROL_PACKET_SHA_MISMATCH');
+        }
+        $acpData = json_decode((string) file_get_contents($acpPath), true);
+        if (! is_array($acpData)) {
+            throw new \RuntimeException('INVALID_ADVANCED_CONTROL_PACKET_JSON');
+        }
+
+        $activeProbeIds = [];
+        if (! empty($acpData['probe_event_ids']) && is_array($acpData['probe_event_ids'])) {
+            foreach ($acpData['probe_event_ids'] as $pId) {
+                if (! empty($pId) && is_string($pId)) {
+                    $activeProbeIds[] = $pId;
+                }
+            }
+        } elseif (! empty($acpData['probes']) && is_array($acpData['probes'])) {
+            foreach ($acpData['probes'] as $pDef) {
+                if (! empty($pDef['event_id']) && is_string($pDef['event_id'])) {
+                    $activeProbeIds[] = (string) $pDef['event_id'];
+                }
+            }
+        }
+        $activeProbeIds = array_values(array_unique($activeProbeIds));
+
         if (! empty($activeProbeIds)) {
             $inClause = implode(',', array_fill(0, count($activeProbeIds), '?'));
-            $invCheck = $pdo->prepare("SELECT COUNT(*) FROM sales_invoices WHERE client_event_id IN ({$inClause})");
-            $invCheck->execute($activeProbeIds);
+            $queryParams = array_merge([$companyId], $activeProbeIds);
+
+            // Assert negative probe events never committed mobile_event_receipts
+            $receiptCheck = $pdo->prepare("SELECT COUNT(*) FROM mobile_event_receipts WHERE company_id = ? AND client_event_id IN ({$inClause})");
+            $receiptCheck->execute($queryParams);
+            $receiptCount = (int) $receiptCheck->fetchColumn();
+            if ($receiptCount > 0) {
+                throw new \RuntimeException("ROLLBACK_PROBE_RECEIPT_COMMITTED: expected 0, found {$receiptCount}");
+            }
+
+            // Assert negative probe events never committed sales_invoices (linked via mobile_event_receipts)
+            $invCheck = $pdo->prepare("SELECT COUNT(*) FROM sales_invoices si INNER JOIN mobile_event_receipts mer ON mer.sales_invoice_id = si.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
+            $invCheck->execute($queryParams);
             $invCount = (int) $invCheck->fetchColumn();
             if ($invCount > 0) {
                 throw new \RuntimeException("ROLLBACK_PROBE_INVOICE_COMMITTED: expected 0, found {$invCount}");
             }
 
-            $payCheck = $pdo->prepare("SELECT COUNT(*) FROM customer_payments WHERE client_event_id IN ({$inClause})");
-            $payCheck->execute($activeProbeIds);
+            // Assert negative probe events never committed customer_payments (linked via mobile_event_receipts)
+            $payCheck = $pdo->prepare("SELECT COUNT(*) FROM customer_payments cp INNER JOIN mobile_event_receipts mer ON mer.customer_payment_id = cp.id WHERE mer.company_id = ? AND mer.client_event_id IN ({$inClause})");
+            $payCheck->execute($queryParams);
             $payCount = (int) $payCheck->fetchColumn();
             if ($payCount > 0) {
                 throw new \RuntimeException("ROLLBACK_PROBE_PAYMENT_COMMITTED: expected 0, found {$payCount}");
             }
         }
         echo "  [Rollback] Verified 0 rows committed for negative probe event IDs.\n";
+
+        // Verify TestTransportProxy per-probe zero-delta reports
+        $probeReportNames = ['permission_denial', 'insufficient_stock', 'controlled_fault_after_posting'];
+        foreach ($probeReportNames as $pName) {
+            $candidateReports = [
+                $bootstrapDir . '/probe_' . $pName . '_report.json',
+                $outputDir . '/probe_' . $pName . '_report.json',
+                $bootstrapDir . '/probe_rollback_' . $pName . '_report.json',
+                $outputDir . '/probe_rollback_' . $pName . '_report.json',
+            ];
+            $foundReport = null;
+            foreach ($candidateReports as $candidate) {
+                if (is_file($candidate)) {
+                    $foundReport = $candidate;
+                    break;
+                }
+            }
+            if ($foundReport !== null) {
+                SupervisedPairedFinancialDrill::assertSecureFilePermissions($foundReport, 'PROBE_REPORT_' . strtoupper($pName));
+                $rep = json_decode((string) file_get_contents($foundReport), true);
+                if (! is_array($rep) || ($rep['zero_delta_verified'] ?? false) !== true || ($rep['reconciliations_healthy'] ?? false) !== true) {
+                    throw new \RuntimeException("ROLLBACK_PROBE_REPORT_UNHEALTHY: probe {$pName}");
+                }
+                echo "  [Rollback] Verified proxy probe report for '{$pName}': zero-delta OK, reconciliations OK.\n";
+            }
+        }
     }
 
     if (! $childProcess->isRunning()) {

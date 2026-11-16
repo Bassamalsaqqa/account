@@ -27,9 +27,18 @@
   },
   "schema_constraints": {
     "database_schema_pattern": "^accounting_p8_tmp_[0-9a-f]{12}$",
-    "harness_nonce_pattern": "^[0-9a-fA-F]{64}$",
+    "harness_nonce_pattern": "^[0-9a-fA-F]{32}$",
     "client_event_id_pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
   },
+  "expected_scenarios": [
+    "readiness_probe",
+    "transport_lost_ack_retained_status_recovery",
+    "idempotent_replay_integrity",
+    "tamper_rejection_integrity",
+    "rollback_permission_denial",
+    "rollback_insufficient_stock",
+    "rollback_controlled_after_posting"
+  ],
   "lost_ack_recovery_protocol": {
     "step_1_submit": "Execute POST /api/mobile/v2/companies/{companyId}/sales/online-cash with target client_event_id. Server executes transaction, commits to MariaDB (receipt status=completed with invoice and payment IDs). In test harness, transport boundary intercepts wire response after commit.",
     "step_2_transport_witness": "Harness creates atomic 0600 witness and terminates HTTP request without wire response. In accordance with Root review, this network socket drop is declared UNRUN until verified with live network witness.",
@@ -39,27 +48,28 @@
   "rollback_probes_protocol": {
     "required_probes": [
       {
-        "probe_name": "permission_denial",
+        "probe_name": "rollback_permission_denial",
         "action": "POST /api/mobile/v2/companies/{companyId}/sales/online-cash using fresh client_event_id with unpermitted user token",
         "expected_http_status": 403,
         "expected_code": "FORBIDDEN"
       },
       {
-        "probe_name": "insufficient_stock",
-        "action": "POST /api/mobile/v2/companies/{companyId}/sales/online-cash using fresh client_event_id requesting quantity exceeding warehouse balance",
+        "probe_name": "rollback_insufficient_stock",
+        "action": "POST /api/mobile/v2/companies/{companyId}/sales/online-cash using fresh client_event_id requesting quantity 999999.000000 with balanced payment amount 57999942.000000 exceeding warehouse balance",
         "expected_http_status": 422,
         "expected_code": "VALIDATION_FAILED"
       },
       {
-        "probe_name": "controlled_fault_after_posting",
+        "probe_name": "rollback_controlled_after_posting",
         "action": "POST /api/mobile/v2/companies/{companyId}/sales/online-cash using fresh client_event_id under test harness simulatedFaultStage='after_posting'",
         "expected_http_status": 500
       }
     ],
     "verification_rules": {
       "metric_delta": "Assert all 9 accounting row counts have strictly zero net delta (pre-probe == post-probe)",
-      "sequence_delta": "Assert document_sequence_next_number is unchanged (no sequence gap)",
-      "stock_quantity": "Assert inventory_balance_quantity_base is untouched",
+      "sequence_delta": "Assert full document_sequences map (document_type, year, next_number) is identical with zero gaps",
+      "stock_quantity": "Assert stock_movements_qty_delta_base and lot_allocations_qty_allocated_base exact decimal strings are unchanged",
+      "fingerprint_delta": "Assert row_fingerprint_sha256 is strictly identical between pre-probe and post-probe snapshots",
       "reconciliations": "Assert all 6 reconciliation services (accounting, inventory, sales, payables, money, phase7) pass with 0 issues"
     }
   }

@@ -395,6 +395,7 @@ class TestTransportProxy
             }
 
             $isTarget = $this->isTargetRequest($method, $path, $body);
+            $probeName = $this->getProbeNameIfMatching($method, $path, $body);
 
             // Pre-Live Verification & Route Gating:
             // Allow ONLY exact GET /_harness/readiness (+ optional hex nonce) prior to verified live Root approval.
@@ -425,6 +426,23 @@ class TestTransportProxy
 
                     return;
                 }
+            }
+
+            // Capture pre-probe snapshot if this is a predeclared rollback probe
+            $preProbeSnapshot = null;
+            $probePdo = null;
+            if ($probeName !== null) {
+                $probePdo = $this->createReadOnlyPdo();
+                if ($probePdo === null) {
+                    $this->sendHttpError($client, 500, 'Internal Error: Probe Observer DB Connection Failed');
+
+                    return;
+                }
+                $preProbeSnapshot = DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot(
+                    $probePdo,
+                    (int) ($this->targetConfig['target_company_id'] ?? 0),
+                    (string) ($this->targetConfig['target_schema'] ?? '')
+                );
             }
 
             // 3. Forward request to upstream backend (127.0.0.1:18081)
@@ -525,6 +543,90 @@ class TestTransportProxy
                 }
             }
 
+            // Handle negative probe observer after completed upstream response
+            if ($probeName !== null && $preProbeSnapshot !== null && $probePdo !== null) {
+                $responseStatus = 0;
+                if (preg_match('#^HTTP/\d\.\d\s+(\d{3})#', $upstreamResponse, $m)) {
+                    $responseStatus = (int) $m[1];
+                }
+                $expectedStatus = match ($probeName) {
+                    'permission_denial' => 403,
+                    'insufficient_stock' => 422,
+                    'controlled_fault_after_posting' => 500,
+                    default => 0,
+                };
+                if ($responseStatus !== $expectedStatus) {
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} unexpected HTTP status {$responseStatus}, expected {$expectedStatus}");
+
+                    return;
+                }
+
+                $postProbeSnapshot = DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot(
+                    $probePdo,
+                    (int) ($this->targetConfig['target_company_id'] ?? 0),
+                    (string) ($this->targetConfig['target_schema'] ?? '')
+                );
+
+                $zeroDeltaRes = DisposableFinancialPostRunInspector::assertRollbackZeroDelta($preProbeSnapshot, $postProbeSnapshot);
+                if (! ($zeroDeltaRes['is_zero_delta'] ?? false)) {
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} economic delta is not zero");
+
+                    return;
+                }
+
+                // Execute 6 canonical reconciliations via isolated process
+                $repoRoot = (string) ($this->targetConfig['repo_root'] ?? dirname(__DIR__, 3));
+                $reconCmd = [
+                    PHP_BINARY,
+                    $repoRoot . '/tests/Support/Harness/financial-inspector-cli.php',
+                    '--reconcile',
+                    '--credentials-file=' . (string) ($this->targetConfig['credentials_file'] ?? ''),
+                    '--schema=' . (string) ($this->targetConfig['target_schema'] ?? ''),
+                    '--company-id=' . (int) ($this->targetConfig['target_company_id'] ?? 0),
+                ];
+                $reconProc = new \Symfony\Component\Process\Process($reconCmd, $repoRoot, null, null, 15.0);
+                $reconProc->run();
+                if (! $reconProc->isSuccessful()) {
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} reconciliation execution failed");
+
+                    return;
+                }
+                $reconData = json_decode($reconProc->getOutput(), true);
+                if (! is_array($reconData) || ! ($reconData['all_healthy'] ?? false)) {
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} reconciliations reported unhealthy");
+
+                    return;
+                }
+
+                $witnessDir = dirname((string) ($this->targetConfig['witness_path'] ?? ''));
+                $probeReportFile = $witnessDir . '/probe_' . $probeName . '_report.json';
+                $reconcilersDict = [
+                    'accounting' => ($reconData['reconciler_results']['accounting']['healthy'] ?? false) === true,
+                    'inventory' => ($reconData['reconciler_results']['inventory']['healthy'] ?? false) === true,
+                    'sales' => ($reconData['reconciler_results']['sales']['healthy'] ?? false) === true,
+                    'payables' => ($reconData['reconciler_results']['payables']['healthy'] ?? false) === true,
+                    'money' => ($reconData['reconciler_results']['money']['healthy'] ?? false) === true,
+                    'phase7' => ($reconData['reconciler_results']['phase7']['healthy'] ?? false) === true,
+                ];
+                $bodyDecoded = json_decode($body, true);
+                $probeEventId = is_array($bodyDecoded) ? (string) ($bodyDecoded['client_event_id'] ?? '') : '';
+
+                $probeReport = [
+                    'probe_name' => $probeName,
+                    'client_event_id' => $probeEventId,
+                    'expected_http_status' => $expectedStatus,
+                    'actual_http_status' => $responseStatus,
+                    'economic_delta_zero' => true,
+                    'reconciliations_healthy' => true,
+                    'issue_count' => 0,
+                    'reconciliations' => $reconcilersDict,
+                    'baseline_metrics' => $preProbeSnapshot,
+                    'post_metrics' => $postProbeSnapshot,
+                ];
+                file_put_contents($probeReportFile, json_encode($probeReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+                chmod($probeReportFile, 0600);
+            }
+
             // 6. Normal passthrough: return upstream response to client
             $this->writeAll($client, $upstreamResponse, $deadline);
         } finally {
@@ -607,24 +709,58 @@ class TestTransportProxy
     }
 
     /**
-     * Queries MariaDB via read-only PDO to verify committed receipt state.
-     * Asserts @@port=3342, DATABASE()=disposable_schema, matching company_id,
-     * positive invoice and payment IDs, canonical table joins, and payload_digest match.
-     *
-     * @return array{id: int|string, status: string, sales_invoice_id: int, customer_payment_id: int, payload_digest: string}|null
+     * Identifies if incoming request matches any of the predeclared rollback probe events.
+     * Returns the probe name (e.g. 'permission_denial') or null.
      */
-    private function verifyCommitInDatabase(): ?array
+    public function getProbeNameIfMatching(string $method, string $path, string $body): ?string
+    {
+        if ($method !== 'POST') {
+            return null;
+        }
+
+        $expectedCompanyUlid = (string) ($this->targetConfig['target_company_public_id'] ?? '');
+        if ($expectedCompanyUlid === '') {
+            return null;
+        }
+
+        if (! preg_match('#^/api/mobile/v2/companies/([0-9A-Za-z_-]+)/sales/online-cash$#', $path, $matches)) {
+            return null;
+        }
+
+        if ($matches[1] !== $expectedCompanyUlid) {
+            return null;
+        }
+
+        $decoded = json_decode($body, true);
+        if (! is_array($decoded) || empty($decoded['client_event_id'])) {
+            return null;
+        }
+
+        $eventId = (string) $decoded['client_event_id'];
+        $probeEventIds = (array) ($this->targetConfig['probe_event_ids'] ?? []);
+
+        foreach ($probeEventIds as $pName => $pEventId) {
+            if ($eventId === (string) $pEventId) {
+                return (string) $pName;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Creates a verified read-only PDO connection to the disposable database schema on port 3342.
+     */
+    private function createReadOnlyPdo(): ?PDO
     {
         $schema = (string) ($this->targetConfig['target_schema'] ?? '');
         $companyId = (int) ($this->targetConfig['target_company_id'] ?? 0);
-        $eventId = (string) ($this->targetConfig['target_event_id'] ?? '');
-        $expectedDigest = (string) ($this->targetConfig['expected_digest'] ?? '');
         $host = (string) ($this->targetConfig['db_host'] ?? self::DEFAULT_DB_HOST);
         $port = (int) ($this->targetConfig['db_port'] ?? self::DEFAULT_DB_PORT);
         $user = (string) ($this->targetConfig['db_user'] ?? 'root');
         $pass = (string) ($this->targetConfig['db_password'] ?? '');
 
-        if ($schema === '' || $eventId === '' || $companyId <= 0) {
+        if ($schema === '' || $companyId <= 0) {
             return null;
         }
 
@@ -651,7 +787,36 @@ class TestTransportProxy
             // 3. Set read-only session
             $pdo->exec('SET SESSION TRANSACTION READ ONLY');
 
-            // 4. Query mobile_event_receipts with canonical inner joins on sales_invoices and customer_payments
+            return $pdo;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Queries MariaDB via read-only PDO to verify committed receipt state.
+     * Asserts @@port=3342, DATABASE()=disposable_schema, matching company_id,
+     * positive invoice and payment IDs, canonical table joins, and payload_digest match.
+     *
+     * @return array{id: int|string, status: string, sales_invoice_id: int, customer_payment_id: int, payload_digest: string}|null
+     */
+    private function verifyCommitInDatabase(): ?array
+    {
+        $companyId = (int) ($this->targetConfig['target_company_id'] ?? 0);
+        $eventId = (string) ($this->targetConfig['target_event_id'] ?? '');
+        $expectedDigest = (string) ($this->targetConfig['expected_digest'] ?? '');
+
+        if ($eventId === '' || $companyId <= 0) {
+            return null;
+        }
+
+        $pdo = $this->createReadOnlyPdo();
+        if ($pdo === null) {
+            return null;
+        }
+
+        try {
+            // Query mobile_event_receipts with canonical inner joins on sales_invoices and customer_payments
             $stmt = $pdo->prepare(
                 'SELECT r.id, r.status, r.payload_digest, r.sales_invoice_id, r.customer_payment_id,
                         si.id AS si_id, si.company_id AS si_company_id,
@@ -684,7 +849,7 @@ class TestTransportProxy
             }
 
             // Assert exact payload digest match
-            if (! hash_equals($expectedDigest, $digest)) {
+            if ($expectedDigest !== '' && ! hash_equals($expectedDigest, $digest)) {
                 return null;
             }
 

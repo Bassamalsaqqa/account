@@ -228,6 +228,10 @@ $proxyConfig = [
     'android_executable_head' => $androidExeHead,
     'manifest_sha256' => $manifestSha,
     'scope' => $expectedScope,
+    'advanced_control_packet_path' => (string) ($config['advanced_control_packet_path'] ?? ''),
+    'probe_event_ids' => (array) ($config['probe_event_ids'] ?? []),
+    'credentials_file' => $credentialsFile,
+    'repo_root' => $repoRoot,
 ];
 
 try {

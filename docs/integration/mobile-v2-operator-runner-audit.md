@@ -1412,12 +1412,32 @@ Authored future process-only test `test_bounded_throwaway_advanced_three_child_l
 - All spawn and assertion steps are encapsulated inside an early `try { ... } finally { ... }` registration to prevent early error leaks.
 - `finally` block verifies live `/proc` process facts (UID, start ticks, expected PPID, harness directory) via `SupervisedPairedFinancialDrill::verifyProcessOwnership` before dispatching any signal, strictly preventing unverified signals or killing reused PIDs.
 
-
-
-
-
-
-
-
-
-
+#### 18.10.6 Consistency Batch: Request-Level Proxy Observer, Relational SQL, and 7-Scenario Harmonization
+1. **Request-Level Proxy Rollback Observer**:
+   - `TestTransportProxy` acts as an active request-level observer for the 3 predeclared negative probe events (`rollback_permission_denial`, `rollback_insufficient_stock`, `rollback_controlled_after_posting`).
+   - Prior to forwarding any probe request upstream, it opens a verified read-only PDO on port 3342 (`SET SESSION TRANSACTION READ ONLY; START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY`) and captures a `preProbeSnapshot`.
+   - Upon upstream completion, it asserts the response status matches the expected HTTP code (403 FORBIDDEN, 422 VALIDATION_FAILED, or 500 INTERNAL_SERVER_ERROR), captures `postProbeSnapshot`, and verifies strict zero economic delta via `DisposableFinancialPostRunInspector::assertRollbackZeroDelta`.
+   - Executes the 6 canonical reconciliations via an isolated CLI process (`financial-inspector-cli.php --reconcile`), asserts all services report healthy with 0 issues, and persists hash-pinned `probe_{name}_report.json` (mode 0600) into the witness directory.
+2. **Relational Schema Correction in Supervisor**:
+   - Replaced invalid `WHERE client_event_id` queries on `sales_invoices` and `customer_payments` in `supervised-financial-drill.php`. `client_event_id` lives strictly in `mobile_event_receipts`; invoices and payments link via receipt foreign keys (`sales_invoice_id`, `customer_payment_id`).
+   - Supervisor verifies zero committed rows across `mobile_event_receipts`, `sales_invoices`, and `customer_payments` scoped strictly to `company_id`.
+   - Fails closed: all SQL queries execute directly without catch-to-zero suppression, ensuring database or schema errors halt execution immediately.
+   - Fixed rollback snapshot scanner return key from `aggregate_fingerprint_sha256` to `row_fingerprint_sha256`.
+3. **Strict Fixture Schema & Credential Handoff Isolation**:
+   - Preserved `mobile-v2-client-handoff-schema.json` constraint (`additionalProperties: false`, exactly 13 fields).
+   - `$this->fixtureManifest` contains strictly the 13 canonical fields. Secondary unauthorized user, distinct device ID, unauthorized token, and ACP paths are excluded from `fixture` and carried strictly inside private `runtime_credentials.json` (mode 0600).
+   - Seeding of unauthorized actor and secondary device is conditional on `ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION`.
+4. **Harmonized 7-Scenario Nomenclature & Schema Contracts**:
+   - Updated `docs/integration/mobile-v2-advanced-probe-schema.json` and `docs/integration/mobile-v2-advanced-probe-packet.json` to use canonical names:
+     1. `readiness_probe` (200)
+     2. `transport_lost_ack_retained_status_recovery` (200)
+     3. `idempotent_replay_integrity` (200)
+     4. `tamper_rejection_integrity` (409)
+     5. `rollback_permission_denial` (403)
+     6. `rollback_insufficient_stock` (422)
+     7. `rollback_controlled_after_posting` (500)
+   - Updated probe schema to require full `document_sequences` object and exact decimal strings `stock_movements_qty_delta_base` and `lot_allocations_qty_allocated_base`.
+   - Aligned harness nonce pattern regex to `^[0-9a-fA-F]{32}$` matching `bin2hex(random_bytes(16))`.
+5. **Actor-Device Isolation & Exact Wire Balance**:
+   - Unauthorized staff user has dedicated `MobileDevice` ($unauthDeviceId) and token bound to it, preventing authentication failure (`401 UNAUTHENTICATED`) and ensuring clean authorization denial (`403 FORBIDDEN`).
+   - Insufficient stock probe payload uses exact balanced payment amount (`57999942.000000` for quantity `999999.000000` at unit price `50.00` + 16% VAT), preventing premature 422 wire validation rejection.

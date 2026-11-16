@@ -85,12 +85,12 @@
             "type": "string",
             "enum": [
               "readiness_probe",
-              "financial_cash_fresh_commit_201",
-              "financial_cash_idempotent_replay_200",
-              "financial_cash_event_status_posted",
-              "financial_cash_tamper_409",
-              "transport_lost_ack_recovery",
-              "stock_permission_rollback_probes"
+              "transport_lost_ack_retained_status_recovery",
+              "idempotent_replay_integrity",
+              "tamper_rejection_integrity",
+              "rollback_permission_denial",
+              "rollback_insufficient_stock",
+              "rollback_controlled_after_posting"
             ]
           },
           "status": {
@@ -238,8 +238,10 @@
                   "stock_movements",
                   "posting_batches",
                   "posting_lines",
-                  "document_sequence_next_number",
-                  "inventory_balance_quantity_base",
+                  "document_sequences",
+                  "table_fingerprints",
+                  "stock_movements_qty_delta_base",
+                  "lot_allocations_qty_allocated_base",
                   "row_fingerprint_sha256"
                 ],
                 "additionalProperties": false,
@@ -253,8 +255,10 @@
                   "stock_movements": { "type": "integer" },
                   "posting_batches": { "type": "integer" },
                   "posting_lines": { "type": "integer" },
-                  "document_sequence_next_number": { "type": "integer" },
-                  "inventory_balance_quantity_base": { "type": "string" },
+                  "document_sequences": { "type": "object" },
+                  "table_fingerprints": { "type": "object" },
+                  "stock_movements_qty_delta_base": { "type": "string" },
+                  "lot_allocations_qty_allocated_base": { "type": "string" },
                   "row_fingerprint_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }
                 }
               },
@@ -270,8 +274,10 @@
                   "stock_movements",
                   "posting_batches",
                   "posting_lines",
-                  "document_sequence_next_number",
-                  "inventory_balance_quantity_base",
+                  "document_sequences",
+                  "table_fingerprints",
+                  "stock_movements_qty_delta_base",
+                  "lot_allocations_qty_allocated_base",
                   "row_fingerprint_sha256"
                 ],
                 "additionalProperties": false,
@@ -285,8 +291,10 @@
                   "stock_movements": { "type": "integer" },
                   "posting_batches": { "type": "integer" },
                   "posting_lines": { "type": "integer" },
-                  "document_sequence_next_number": { "type": "integer" },
-                  "inventory_balance_quantity_base": { "type": "string" },
+                  "document_sequences": { "type": "object" },
+                  "table_fingerprints": { "type": "object" },
+                  "stock_movements_qty_delta_base": { "type": "string" },
+                  "lot_allocations_qty_allocated_base": { "type": "string" },
                   "row_fingerprint_sha256": { "type": "string", "pattern": "^[0-9a-fA-F]{64}$" }
                 }
               },
