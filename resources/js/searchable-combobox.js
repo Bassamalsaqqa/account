@@ -72,6 +72,23 @@ export function searchableCombobox(config) {
                     this.query = found.label;
                 }
             }
+
+            // Scope invalidation on type changes
+            if (this.$watch) {
+                this.$watch('type', () => {
+                    this.invalidateIntent();
+                    this.items = [];
+                    this.hasMore = false;
+                    this.nextCursor = null;
+                    this.open = false;
+                });
+            }
+
+            if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+                window.addEventListener('company-changed', (e) => {
+                    this.setCompany(e?.detail?.companyId ?? null);
+                });
+            }
         },
 
         get isSelected() {
@@ -93,14 +110,35 @@ export function searchableCombobox(config) {
             return false;
         },
 
+        invalidateIntent() {
+            const nextGen = ++generation;
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+                debounceTimer = null;
+            }
+            this.nextCursor = null;
+            this.loadingMore = false;
+            this.searching = false;
+            return nextGen;
+        },
+
+        setCompany(companyId) {
+            this.invalidateIntent();
+            this.currentCompanyId = companyId;
+            this.items = [];
+            this.hasMore = false;
+            this.nextCursor = null;
+            this.open = false;
+        },
+
         handleInput() {
             if (this.isBlocked()) return;
+            const currentGen = this.invalidateIntent();
             this.open = true;
             this.failed = false;
-            this.nextCursor = null;
-            clearTimeout(debounceTimer);
+            const capturedQuery = this.query;
             debounceTimer = setTimeout(() => {
-                this.performSearch();
+                this.performSearch(currentGen, capturedQuery);
             }, 200);
         },
 
@@ -114,20 +152,24 @@ export function searchableCombobox(config) {
             }
         },
 
-        async performSearch() {
+        async performSearch(expectedGen, expectedQuery) {
+            if (this.isBlocked()) return;
+            if (expectedGen !== undefined && expectedGen !== generation) return;
             if (!this.$wire || typeof this.$wire.searchSelector !== 'function') {
                 return;
             }
 
-            const currentGen = ++generation;
+            const currentGen = expectedGen !== undefined ? expectedGen : this.invalidateIntent();
+            const searchQuery = expectedQuery !== undefined ? expectedQuery : this.query;
+            const expectedCompanyId = this.currentCompanyId;
+
             this.searching = true;
             this.failed = false;
-            this.nextCursor = null;
 
             try {
                 const response = await this.$wire.searchSelector(
                     this.type,
-                    this.query,
+                    searchQuery,
                     this.selectedId ? parseInt(this.selectedId, 10) : null,
                     {
                         generation: currentGen,
@@ -135,11 +177,14 @@ export function searchableCombobox(config) {
                     }
                 );
 
-                // Discard stale responses from older generations or company switches
-                if (response.generation !== generation) {
+                // Discard stale responses from older generations, changed queries, or company switches
+                if (response.generation !== generation || currentGen !== generation) {
                     return;
                 }
-                if (this.currentCompanyId !== null && response.company_id && response.company_id !== this.currentCompanyId) {
+                if (this.query !== searchQuery) {
+                    return;
+                }
+                if (expectedCompanyId !== null && response.company_id && response.company_id !== expectedCompanyId) {
                     return;
                 }
                 if (response.company_id) {
@@ -149,6 +194,9 @@ export function searchableCombobox(config) {
                 this.items = Array.isArray(response.items) ? response.items : [];
                 this.hasMore = Boolean(response.has_more);
                 this.nextCursor = response.next_cursor || null;
+                if (response.selected_item && String(this.selectedId) === String(response.selected_item.id)) {
+                    this.selectedLabel = response.selected_item.label;
+                }
                 this.activeIndex = -1;
                 this.activeId = null;
                 this.open = true;
@@ -172,26 +220,33 @@ export function searchableCombobox(config) {
             }
 
             const currentGen = generation;
+            const currentQuery = this.query;
+            const expectedCompanyId = this.currentCompanyId;
+            const cursorToLoad = this.nextCursor;
+
             this.loadingMore = true;
             this.failed = false;
 
             try {
                 const response = await this.$wire.searchSelector(
                     this.type,
-                    this.query,
+                    currentQuery,
                     this.selectedId ? parseInt(this.selectedId, 10) : null,
                     {
                         generation: currentGen,
                         limit: 25,
-                        cursor: this.nextCursor,
+                        cursor: cursorToLoad,
                     }
                 );
 
-                // Discard stale responses from older generations or company switches
-                if (response.generation !== generation) {
+                // Discard stale responses from older generations, changed queries, or company switches
+                if (response.generation !== generation || currentGen !== generation) {
                     return;
                 }
-                if (this.currentCompanyId !== null && response.company_id && response.company_id !== this.currentCompanyId) {
+                if (this.query !== currentQuery) {
+                    return;
+                }
+                if (expectedCompanyId !== null && response.company_id && response.company_id !== expectedCompanyId) {
                     return;
                 }
 
@@ -288,6 +343,7 @@ export function searchableCombobox(config) {
         async selectItem(item) {
             if (this.isBlocked() || !item) return;
 
+            const currentGen = this.invalidateIntent();
             const prevId = this.selectedId;
             const prevLabel = this.selectedLabel;
             const prevQuery = this.query;
@@ -300,6 +356,9 @@ export function searchableCombobox(config) {
                         parseInt(item.id, 10),
                         item.meta?.matched_product_unit_id || null
                     );
+                    if (currentGen !== generation) {
+                        return;
+                    }
                     if (success === false) {
                         // Backend rejected selection; restore previous display
                         this.selectedId = prevId;
@@ -309,6 +368,13 @@ export function searchableCombobox(config) {
                     }
                 } else if (this.wireModel && this.$wire) {
                     await this.$wire.$set(this.wireModel, item.id);
+                    if (currentGen !== generation) {
+                        return;
+                    }
+                }
+
+                if (currentGen !== generation) {
+                    return;
                 }
 
                 // Canonical success confirmed
@@ -327,40 +393,63 @@ export function searchableCombobox(config) {
                     item: item,
                 });
             } catch (err) {
-                // Restore state on failure - NO fake optimistic cleared state!
-                this.selectedId = prevId;
-                this.selectedLabel = prevLabel;
-                this.query = prevQuery;
-                this.failed = true;
+                if (currentGen === generation) {
+                    // Restore state on failure - NO fake optimistic cleared state!
+                    this.selectedId = prevId;
+                    this.selectedLabel = prevLabel;
+                    this.query = prevQuery;
+                    this.failed = true;
+                }
             }
         },
 
         async clear() {
             if (this.isBlocked()) return;
 
+            const currentGen = this.invalidateIntent();
             const prevId = this.selectedId;
             const prevLabel = this.selectedLabel;
             const prevQuery = this.query;
+            const prevItems = this.items;
+            const prevHasMore = this.hasMore;
+
+            // Immediately cancel debounce, reset items, hasMore, nextCursor, loadingMore, searching, open
+            this.items = [];
+            this.hasMore = false;
+            this.nextCursor = null;
+            this.loadingMore = false;
+            this.searching = false;
+            this.open = false;
 
             try {
                 if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
                     const success = await this.$wire[this.onSelect](...this.extraArgs, null, null);
+                    if (currentGen !== generation) {
+                        return;
+                    }
                     if (success === false) {
                         this.selectedId = prevId;
                         this.selectedLabel = prevLabel;
                         this.query = prevQuery;
+                        this.items = prevItems;
+                        this.hasMore = prevHasMore;
                         return;
                     }
                 } else if (this.wireModel && this.$wire) {
                     await this.$wire.$set(this.wireModel, null);
+                    if (currentGen !== generation) {
+                        return;
+                    }
+                }
+
+                if (currentGen !== generation) {
+                    return;
                 }
 
                 // Confirm clear on client
                 this.selectedId = null;
                 this.selectedLabel = '';
                 this.query = '';
-                this.nextCursor = null;
-                this.open = false;
                 this.activeIndex = -1;
                 this.activeId = null;
                 this.failed = false;
@@ -370,11 +459,19 @@ export function searchableCombobox(config) {
                     this.$refs.searchInput?.focus();
                 });
             } catch (err) {
-                this.selectedId = prevId;
-                this.selectedLabel = prevLabel;
-                this.query = prevQuery;
-                this.failed = true;
+                if (currentGen === generation) {
+                    this.selectedId = prevId;
+                    this.selectedLabel = prevLabel;
+                    this.query = prevQuery;
+                    this.items = prevItems;
+                    this.hasMore = prevHasMore;
+                    this.failed = true;
+                }
             }
+        },
+
+        clearSelection() {
+            return this.clear();
         },
 
         handleOutsideClick() {

@@ -63,12 +63,20 @@ final class SearchableSelectorService
         private readonly CompanyContext $companyContext
     ) {}
 
+    public const CURSOR_VERSION = 1;
+    public const MAX_OFFSET = 100000;
+
     /**
-     * Encode an opaque, tenant-, type-, workflow-, and query-bound pagination cursor.
+     * Encode an opaque, versioned, integrity-protected cursor bound to tenant, type, context, and query.
      */
     public function encodeCursor(int $companyId, string $type, string $context, string $term, int $offset): string
     {
+        if ($offset < 0 || $offset > self::MAX_OFFSET) {
+            throw new \InvalidArgumentException('Pagination offset is out of valid bounds.');
+        }
+
         $payload = [
+            'v' => self::CURSOR_VERSION,
             'c' => $companyId,
             't' => $type,
             'ctx' => $context,
@@ -76,12 +84,17 @@ final class SearchableSelectorService
             'o' => $offset,
         ];
 
-        return rtrim(strtr(base64_encode(json_encode($payload, JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+        $json = json_encode($payload, JSON_THROW_ON_ERROR);
+        $key = (string) config('app.key');
+        $mac = hash_hmac('sha256', $json, $key);
+
+        return rtrim(strtr(base64_encode($json . '.' . $mac), '+/', '-_'), '=');
     }
 
     /**
-     * Decode and strictly validate a pagination cursor.
-     * Throws InvalidArgumentException on tamper, cross-tenant, cross-type, cross-workflow, or cross-query reuse.
+     * Decode and strictly validate an integrity-protected pagination cursor.
+     * Throws InvalidArgumentException on tamper, bad signature, bounds violation,
+     * malformed types, cross-tenant, cross-type, cross-context, or cross-query reuse.
      *
      * @return array{offset: int}
      */
@@ -91,24 +104,47 @@ final class SearchableSelectorService
             return ['offset' => 0];
         }
 
+        $decoded = base64_decode(strtr($cursor, '-_', '+/'), true);
+        if ($decoded === false) {
+            throw new \InvalidArgumentException('Malformed pagination cursor encoding.');
+        }
+
+        $lastDot = strrpos($decoded, '.');
+        if ($lastDot === false) {
+            throw new \InvalidArgumentException('Missing cursor integrity signature.');
+        }
+
+        $json = substr($decoded, 0, $lastDot);
+        $providedMac = substr($decoded, $lastDot + 1);
+
+        $key = (string) config('app.key');
+        $expectedMac = hash_hmac('sha256', $json, $key);
+
+        if (! hash_equals($expectedMac, $providedMac)) {
+            throw new \InvalidArgumentException('Tampered pagination cursor signature.');
+        }
+
         try {
-            $json = base64_decode(strtr($cursor, '-_', '+/'), true);
-            if ($json === false) {
-                throw new \InvalidArgumentException('Malformed pagination cursor.');
-            }
-            $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+            $data = json_decode($json, true, 16, JSON_THROW_ON_ERROR);
         } catch (\Throwable $e) {
-            throw new \InvalidArgumentException('Malformed pagination cursor.', 0, $e);
+            throw new \InvalidArgumentException('Malformed cursor payload JSON.', 0, $e);
         }
 
         if (! is_array($data)
-            || ! isset($data['c'], $data['t'], $data['ctx'], $data['qh'], $data['o'])
+            || ! isset($data['v'], $data['c'], $data['t'], $data['ctx'], $data['qh'], $data['o'])
+            || ! is_int($data['v'])
+            || $data['v'] !== self::CURSOR_VERSION
+            || ! is_int($data['c'])
+            || ! is_string($data['t'])
+            || ! is_string($data['ctx'])
+            || ! is_string($data['qh'])
             || ! is_int($data['o'])
-            || $data['o'] < 0) {
-            throw new \InvalidArgumentException('Invalid pagination cursor structure.');
+            || $data['o'] < 0
+            || $data['o'] > self::MAX_OFFSET) {
+            throw new \InvalidArgumentException('Invalid pagination cursor types or bounds.');
         }
 
-        if ((int) $data['c'] !== $companyId) {
+        if ($data['c'] !== $companyId) {
             throw new \InvalidArgumentException('Cross-tenant pagination cursor reuse is rejected.');
         }
 
@@ -121,7 +157,7 @@ final class SearchableSelectorService
         }
 
         $expectedHash = hash('xxh128', $term);
-        if (! hash_equals($expectedHash, (string) $data['qh'])) {
+        if (! hash_equals($expectedHash, $data['qh'])) {
             throw new \InvalidArgumentException('Cross-query pagination cursor reuse is rejected.');
         }
 
@@ -145,6 +181,13 @@ final class SearchableSelectorService
      *         meta: array<string, mixed>,
      *         selected: bool
      *     }>,
+     *     selected_item: ?array{
+     *         id: string,
+     *         label: string,
+     *         sublabel: ?string,
+     *         meta: array<string, mixed>,
+     *         selected: bool
+     *     },
      *     has_more: bool,
      *     next_cursor: ?string,
      *     limit: int,
@@ -242,7 +285,7 @@ final class SearchableSelectorService
      * Search customers with priority: exact code/phone -> prefix -> contains.
      *
      * @param array<string, mixed> $options
-     * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
+     * @return array{items: list<array<string, mixed>>, selected_item: ?array<string, mixed>, has_more: bool, next_cursor: ?string, limit: int, total: int}
      */
     private function searchCustomers(
         Company $company,
@@ -298,20 +341,10 @@ final class SearchableSelectorService
             $nextCursor = null;
         }
 
-        // Retain selected record hydration bounded independently on page 1 only
-        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selectedRecord = Customer::where('company_id', $company->id)
-                ->where('id', $selectedId)
-                ->where('status', 'active')
-                ->first();
-            if ($selectedRecord !== null) {
-                $records->prepend($selectedRecord);
-            }
-        }
-
         $baseCurrency = $company->base_currency_code;
         $items = [];
         $seen = [];
+        $selectedItem = null;
 
         foreach ($records as $customer) {
             if (isset($seen[$customer->id])) {
@@ -328,7 +361,7 @@ final class SearchableSelectorService
             $sublabel = $customer->code ?: $customer->phone;
             $isSelected = ($selectedId !== null && (int) $customer->id === $selectedId);
 
-            $items[] = (new SearchableOptionDTO(
+            $dto = (new SearchableOptionDTO(
                 id: (string) $customer->id,
                 label: $label,
                 sublabel: $sublabel,
@@ -340,10 +373,42 @@ final class SearchableSelectorService
                 ],
                 selected: $isSelected
             ))->toArray();
+
+            $items[] = $dto;
+            if ($isSelected) {
+                $selectedItem = $dto;
+            }
+        }
+
+        // Separate hydration: if selected record is outside this page, hydrate independently without corrupting stream
+        if ($selectedId !== null && $selectedItem === null && $offset === 0) {
+            $selectedRecord = Customer::where('company_id', $company->id)
+                ->where('id', $selectedId)
+                ->where('status', 'active')
+                ->first();
+            if ($selectedRecord !== null) {
+                $ar = (string) ($selectedRecord->name_ar ?? '');
+                $en = (string) ($selectedRecord->name_en ?? '');
+                $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
+                $curr = $selectedRecord->default_currency_code ?: $baseCurrency;
+                $selectedItem = (new SearchableOptionDTO(
+                    id: (string) $selectedRecord->id,
+                    label: "{$name} ({$curr})",
+                    sublabel: $selectedRecord->code ?: $selectedRecord->phone,
+                    meta: [
+                        'code' => $selectedRecord->code,
+                        'phone' => $selectedRecord->phone,
+                        'currency_code' => $curr,
+                        'tax_number' => $selectedRecord->tax_number,
+                    ],
+                    selected: true
+                ))->toArray();
+            }
         }
 
         return [
             'items' => $items,
+            'selected_item' => $selectedItem,
             'has_more' => $hasMore,
             'next_cursor' => $nextCursor,
             'limit' => $limit,
@@ -420,25 +485,10 @@ final class SearchableSelectorService
             $nextCursor = null;
         }
 
-        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selQuery = Vendor::where('company_id', $company->id)->where('id', $selectedId);
-            if ($isPayment) {
-                $selQuery->withTrashed()->where(function (Builder $q): void {
-                    $q->where(fn ($active) => $active->where('status', 'active')->whereNull('deleted_at'))
-                        ->orWhereHas('purchases', fn ($p) => $p->where('status', Purchase::STATUS_POSTED));
-                });
-            } else {
-                $selQuery->where('status', 'active');
-            }
-            $selectedRecord = $selQuery->first();
-            if ($selectedRecord !== null) {
-                $records->prepend($selectedRecord);
-            }
-        }
-
         $baseCurrency = $company->base_currency_code;
         $items = [];
         $seen = [];
+        $selectedItem = null;
 
         foreach ($records as $vendor) {
             if (isset($seen[$vendor->id])) {
@@ -455,7 +505,7 @@ final class SearchableSelectorService
             $sublabel = $vendor->code ?: $vendor->phone;
             $isSelected = ($selectedId !== null && (int) $vendor->id === $selectedId);
 
-            $items[] = (new SearchableOptionDTO(
+            $dto = (new SearchableOptionDTO(
                 id: (string) $vendor->id,
                 label: $label,
                 sublabel: $sublabel,
@@ -466,10 +516,47 @@ final class SearchableSelectorService
                 ],
                 selected: $isSelected
             ))->toArray();
+
+            $items[] = $dto;
+            if ($isSelected) {
+                $selectedItem = $dto;
+            }
+        }
+
+        // Separate hydration: if selected record is outside this page, hydrate independently without corrupting stream
+        if ($selectedId !== null && $selectedItem === null && $offset === 0) {
+            $selQuery = Vendor::where('company_id', $company->id)->where('id', $selectedId);
+            if ($isPayment) {
+                $selQuery->withTrashed()->where(function (Builder $q): void {
+                    $q->where(fn ($active) => $active->where('status', 'active')->whereNull('deleted_at'))
+                        ->orWhereHas('purchases', fn ($p) => $p->where('status', Purchase::STATUS_POSTED));
+                });
+            } else {
+                $selQuery->where('status', 'active');
+            }
+            $selectedRecord = $selQuery->first();
+            if ($selectedRecord !== null) {
+                $ar = (string) ($selectedRecord->name_ar ?? '');
+                $en = (string) ($selectedRecord->name_en ?? '');
+                $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
+                $curr = $selectedRecord->default_currency_code ?: $baseCurrency;
+                $selectedItem = (new SearchableOptionDTO(
+                    id: (string) $selectedRecord->id,
+                    label: "{$name} ({$curr})",
+                    sublabel: $selectedRecord->code ?: $selectedRecord->phone,
+                    meta: [
+                        'code' => $selectedRecord->code,
+                        'phone' => $selectedRecord->phone,
+                        'currency_code' => $curr,
+                    ],
+                    selected: true
+                ))->toArray();
+            }
         }
 
         return [
             'items' => $items,
+            'selected_item' => $selectedItem,
             'has_more' => $hasMore,
             'next_cursor' => $nextCursor,
             'limit' => $limit,
@@ -505,13 +592,14 @@ final class SearchableSelectorService
             default => false, // NEVER expose cost in sales or public contexts
         };
 
-        // 1. Check exact barcode match for product + unit mapping (page 1 only)
+        // 1. Check exact barcode match for product + unit mapping
         $exactBarcode = null;
         $exactBarcodeProduct = null;
+        $exactBarcodeId = 0;
         $matchedUnitId = null;
         $matchedProductUnitId = null;
 
-        if ($offset === 0 && $term !== '') {
+        if ($term !== '') {
             $exactBarcode = ProductBarcode::where('company_id', $company->id)
                 ->where('barcode', $term)
                 ->first();
@@ -527,14 +615,17 @@ final class SearchableSelectorService
 
                 $exactBarcodeProduct = $barcodeProductQuery->first();
 
-                if ($exactBarcodeProduct !== null && $exactBarcode->unit_id !== null) {
-                    $matchedUnitId = (int) $exactBarcode->unit_id;
-                    $matchedPu = ProductUnit::where('company_id', $company->id)
-                        ->where('product_id', $exactBarcodeProduct->id)
-                        ->where('unit_id', $matchedUnitId)
-                        ->where('active', true)
-                        ->first();
-                    $matchedProductUnitId = $matchedPu ? (int) $matchedPu->id : null;
+                if ($exactBarcodeProduct !== null) {
+                    $exactBarcodeId = (int) $exactBarcodeProduct->id;
+                    if ($exactBarcode->unit_id !== null) {
+                        $matchedUnitId = (int) $exactBarcode->unit_id;
+                        $matchedPu = ProductUnit::where('company_id', $company->id)
+                            ->where('product_id', $exactBarcodeProduct->id)
+                            ->where('unit_id', $matchedUnitId)
+                            ->where('active', true)
+                            ->first();
+                        $matchedProductUnitId = $matchedPu ? (int) $matchedPu->id : null;
+                    }
                 }
             }
         }
@@ -561,10 +652,10 @@ final class SearchableSelectorService
                     ->orWhereHas('barcodes', fn ($b) => $b->where('company_id', $company->id)->where('barcode', $term));
             });
 
-            // Priority: exact SKU/barcode match -> prefix SKU -> prefix name -> contains
+            // Priority: exact barcode match -> exact SKU -> prefix SKU -> prefix name -> contains
             $query->orderByRaw(
-                'CASE WHEN sku = ? THEN 0 WHEN sku LIKE ? THEN 1 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 2 ELSE 3 END ASC',
-                [$term, $prefix, $prefix, $prefix]
+                'CASE WHEN id = ? THEN 0 WHEN sku = ? THEN 1 WHEN sku LIKE ? THEN 2 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 3 ELSE 4 END ASC',
+                [$exactBarcodeId, $term, $prefix, $prefix, $prefix]
             );
         }
 
@@ -582,29 +673,9 @@ final class SearchableSelectorService
             $nextCursor = null;
         }
 
-        // If exact barcode matched a product not in the collection, prepend it (page 1 only)
-        if ($offset === 0 && $exactBarcodeProduct !== null && ! $records->contains('id', $exactBarcodeProduct->id)) {
-            $records->prepend($exactBarcodeProduct);
-        }
-
-        // Selected record hydration (page 1 only)
-        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selQuery = Product::where('company_id', $company->id)
-                ->where('id', $selectedId)
-                ->where('active', true);
-
-            if ($isStockOnly) {
-                $selQuery->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
-            }
-
-            $selectedRecord = $selQuery->first();
-            if ($selectedRecord !== null) {
-                $records->prepend($selectedRecord);
-            }
-        }
-
         $items = [];
         $seen = [];
+        $selectedItem = null;
 
         foreach ($records as $product) {
             if (isset($seen[$product->id])) {
@@ -638,17 +709,61 @@ final class SearchableSelectorService
 
             $isSelected = ($selectedId !== null && (int) $product->id === $selectedId);
 
-            $items[] = (new SearchableOptionDTO(
+            $dto = (new SearchableOptionDTO(
                 id: (string) $product->id,
                 label: $label,
                 sublabel: $sku,
                 meta: $meta,
                 selected: $isSelected
             ))->toArray();
+
+            $items[] = $dto;
+            if ($isSelected) {
+                $selectedItem = $dto;
+            }
+        }
+
+        // Separate hydration: if selected record is outside this page, hydrate independently without corrupting stream
+        if ($selectedId !== null && $selectedItem === null && $offset === 0) {
+            $selQuery = Product::where('company_id', $company->id)
+                ->where('id', $selectedId)
+                ->where('active', true);
+
+            if ($isStockOnly) {
+                $selQuery->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
+            }
+
+            $selectedRecord = $selQuery->first();
+            if ($selectedRecord !== null) {
+                $ar = (string) ($selectedRecord->name_ar ?? '');
+                $en = (string) ($selectedRecord->name_en ?? '');
+                $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
+                $sku = (string) ($selectedRecord->sku ?? '');
+                $label = $sku !== '' ? "{$name} ({$sku})" : $name;
+
+                $meta = [
+                    'sku' => $sku,
+                    'base_unit_id' => $selectedRecord->base_unit_id,
+                    'default_sale_price_base' => $selectedRecord->default_sale_price_base !== null ? (string) $selectedRecord->default_sale_price_base : null,
+                ];
+
+                if ($canViewCost && $selectedRecord->default_purchase_cost_base !== null) {
+                    $meta['default_purchase_cost_base'] = (string) $selectedRecord->default_purchase_cost_base;
+                }
+
+                $selectedItem = (new SearchableOptionDTO(
+                    id: (string) $selectedRecord->id,
+                    label: $label,
+                    sublabel: $sku,
+                    meta: $meta,
+                    selected: true
+                ))->toArray();
+            }
         }
 
         return [
             'items' => $items,
+            'selected_item' => $selectedItem,
             'has_more' => $hasMore,
             'next_cursor' => $nextCursor,
             'limit' => $limit,
@@ -660,7 +775,7 @@ final class SearchableSelectorService
      * Search warehouses for active company.
      *
      * @param array<string, mixed> $options
-     * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
+     * @return array{items: list<array<string, mixed>>, selected_item: ?array<string, mixed>, has_more: bool, next_cursor: ?string, limit: int, total: int}
      */
     private function searchWarehouses(
         Company $company,
@@ -700,15 +815,10 @@ final class SearchableSelectorService
             $nextCursor = null;
         }
 
-        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
-            $selected = Warehouse::where('company_id', $company->id)->where('id', $selectedId)->where('active', true)->first();
-            if ($selected !== null) {
-                $records->prepend($selected);
-            }
-        }
-
         $items = [];
         $seen = [];
+        $selectedItem = null;
+
         foreach ($records as $w) {
             if (isset($seen[$w->id])) {
                 continue;
@@ -716,18 +826,42 @@ final class SearchableSelectorService
             $seen[$w->id] = true;
             $name = $locale === 'ar' ? ($w->name_ar ?: $w->name_en) : ($w->name_en ?: $w->name_ar);
             $label = $w->code ? "{$name} ({$w->code})" : $name;
+            $isSelected = ($selectedId !== null && (int) $w->id === $selectedId);
 
-            $items[] = (new SearchableOptionDTO(
+            $dto = (new SearchableOptionDTO(
                 id: (string) $w->id,
                 label: $label,
                 sublabel: $w->code,
                 meta: ['code' => $w->code, 'is_default' => (bool) $w->is_default],
-                selected: ($selectedId !== null && (int) $w->id === $selectedId)
+                selected: $isSelected
             ))->toArray();
+
+            $items[] = $dto;
+            if ($isSelected) {
+                $selectedItem = $dto;
+            }
+        }
+
+        // Separate hydration: if selected record is outside this page, hydrate independently without corrupting stream
+        if ($selectedId !== null && $selectedItem === null && $offset === 0) {
+            $selected = Warehouse::where('company_id', $company->id)->where('id', $selectedId)->where('active', true)->first();
+            if ($selected !== null) {
+                $name = $locale === 'ar' ? ($selected->name_ar ?: $selected->name_en) : ($selected->name_en ?: $selected->name_ar);
+                $label = $selected->code ? "{$name} ({$selected->code})" : $name;
+
+                $selectedItem = (new SearchableOptionDTO(
+                    id: (string) $selected->id,
+                    label: $label,
+                    sublabel: $selected->code,
+                    meta: ['code' => $selected->code, 'is_default' => (bool) $selected->is_default],
+                    selected: true
+                ))->toArray();
+            }
         }
 
         return [
             'items' => $items,
+            'selected_item' => $selectedItem,
             'has_more' => $hasMore,
             'next_cursor' => $nextCursor,
             'limit' => $limit,

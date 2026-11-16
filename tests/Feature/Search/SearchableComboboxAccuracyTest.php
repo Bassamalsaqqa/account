@@ -318,8 +318,9 @@ final class SearchableComboboxAccuracyTest extends TestCase
         $response = $this->service->search($this->company, $this->user, 'customer', '', $selected->id, 25, ['context' => 'sales']);
 
         $this->assertNotEmpty($response['items']);
-        $containsSelected = collect($response['items'])->contains(fn ($item) => (int) $item['id'] === $selected->id);
-        $this->assertTrue($containsSelected, 'The selected record must be hydrated even when past first page limit.');
+        $this->assertLessThanOrEqual(25, count($response['items']), 'Items stream must not exceed limit 25.');
+        $this->assertNotNull($response['selected_item'], 'The selected record must be hydrated in selected_item without corrupting the items stream.');
+        $this->assertSame((string) $selected->id, (string) $response['selected_item']['id']);
     }
 
     public function test_payment_vendor_search_finds_soft_deleted_vendor_with_posted_purchases(): void
@@ -570,9 +571,9 @@ final class SearchableComboboxAccuracyTest extends TestCase
     {
         $baseUnit = $this->getOrCreateUnit('piece');
 
-        // Seed 35 products with matching term
+        // Seed 60 products matching term across 3 pages (25 + 25 + 10)
         $records = [];
-        for ($i = 1; $i <= 35; $i++) {
+        for ($i = 1; $i <= 60; $i++) {
             $records[] = [
                 'public_id' => (string) Str::ulid(),
                 'company_id' => $this->company->id,
@@ -616,28 +617,106 @@ final class SearchableComboboxAccuracyTest extends TestCase
             ['context' => 'sales', 'cursor' => $page1['next_cursor']]
         );
 
-        $this->assertCount(10, $page2['items']);
-        $this->assertFalse($page2['has_more']);
-        $this->assertNull($page2['next_cursor']);
+        $this->assertCount(25, $page2['items']);
+        $this->assertTrue($page2['has_more']);
+        $this->assertNotNull($page2['next_cursor']);
 
-        // Ensure full stream deduplication and no omission across pages
-        $page1Ids = array_column($page1['items'], 'id');
-        $page2Ids = array_column($page2['items'], 'id');
-        $intersect = array_intersect($page1Ids, $page2Ids);
-        $this->assertEmpty($intersect, 'Results across pages must not contain overlapping duplicate items.');
-        $allIds = array_merge($page1Ids, $page2Ids);
-        $this->assertCount(35, array_unique($allIds), 'Paging must return all 35 records without omission.');
-
-        // Tampered / cross-query cursor reuse must be rejected with InvalidArgumentException
-        $this->expectException(\InvalidArgumentException::class);
-        $this->service->search(
+        // Page 3: with page 2 next_cursor
+        $page3 = $this->service->search(
             $this->company,
             $this->user,
             'product',
-            'استعلام_مختلف',
+            'ترقيم',
             null,
             25,
-            ['context' => 'sales', 'cursor' => $page1['next_cursor']]
+            ['context' => 'sales', 'cursor' => $page2['next_cursor']]
         );
+
+        $this->assertCount(10, $page3['items']);
+        $this->assertFalse($page3['has_more']);
+        $this->assertNull($page3['next_cursor']);
+
+        // Ensure full stream deduplication and no omission across 3 pages
+        $page1Ids = array_column($page1['items'], 'id');
+        $page2Ids = array_column($page2['items'], 'id');
+        $page3Ids = array_column($page3['items'], 'id');
+
+        $this->assertEmpty(array_intersect($page1Ids, $page2Ids), 'Page 1 and Page 2 must not overlap.');
+        $this->assertEmpty(array_intersect($page2Ids, $page3Ids), 'Page 2 and Page 3 must not overlap.');
+        $this->assertEmpty(array_intersect($page1Ids, $page3Ids), 'Page 1 and Page 3 must not overlap.');
+
+        $allIds = array_merge($page1Ids, $page2Ids, $page3Ids);
+        $this->assertCount(60, array_unique($allIds), '3-page paging must return all 60 records without omission.');
+
+        // Cursor Security Validation 1: Cross-query cursor reuse rejected
+        try {
+            $this->service->search(
+                $this->company,
+                $this->user,
+                'product',
+                'استعلام_مختلف',
+                null,
+                25,
+                ['context' => 'sales', 'cursor' => $page1['next_cursor']]
+            );
+            $this->fail('Expected InvalidArgumentException for cross-query cursor reuse.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Cursor query mismatch', $e->getMessage());
+        }
+
+        // Cursor Security Validation 2: Cross-type cursor reuse rejected
+        try {
+            $this->service->search(
+                $this->company,
+                $this->user,
+                'customer',
+                'ترقيم',
+                null,
+                25,
+                ['context' => 'sales', 'cursor' => $page1['next_cursor']]
+            );
+            $this->fail('Expected InvalidArgumentException for cross-type cursor reuse.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Cursor type mismatch', $e->getMessage());
+        }
+
+        // Cursor Security Validation 3: Tampered offset payload rejected
+        $cursorToken = $page1['next_cursor'];
+        [$payloadBase64, $sig] = explode('.', $cursorToken, 2);
+        $tamperedPayload = json_decode(base64_decode($payloadBase64), true);
+        $tamperedPayload['o'] = 999;
+        $tamperedBase64 = base64_encode(json_encode($tamperedPayload));
+        $tamperedCursor = $tamperedBase64 . '.' . $sig;
+
+        try {
+            $this->service->search(
+                $this->company,
+                $this->user,
+                'product',
+                'ترقيم',
+                null,
+                25,
+                ['context' => 'sales', 'cursor' => $tamperedCursor]
+            );
+            $this->fail('Expected InvalidArgumentException for tampered offset in cursor.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Invalid cursor signature', $e->getMessage());
+        }
+
+        // Cursor Security Validation 4: Malformed cursor format rejected
+        try {
+            $this->service->search(
+                $this->company,
+                $this->user,
+                'product',
+                'ترقيم',
+                null,
+                25,
+                ['context' => 'sales', 'cursor' => 'not-a-valid-token']
+            );
+            $this->fail('Expected InvalidArgumentException for malformed cursor.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Malformed cursor token', $e->getMessage());
+        }
     }
 }
