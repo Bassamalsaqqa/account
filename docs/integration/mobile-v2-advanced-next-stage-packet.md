@@ -225,17 +225,20 @@ A critical architectural boundary exists between the test's internal mocking and
 - **No Outer DB Authority Exported:** The outer environment must strictly maintain poisoned DB ports (`port=1`), `ALLOW=0`, and `HARNESS=0`. No public copyable packet may export real DB authority or unpoisoned ports.
 - **No Execution Authority Granted Yet:** Root will inspect the actual test source code and process safety mechanisms before granting execution authority.
 
-#### 5.5.2 Root-Approved Outer Invocation Vector
+#### 5.5.2 Proposed Outer Invocation Vector — Pending Root Review
 To execute this test under controlled Root review, the exact outer execution vector is:
 
 ```bash
 # 1. Outer host environment: strictly poisoned DB ports, zero live DB permission, zero harness authorization
 export ROOT_PROCESS_LIFECYCLE_GRANT=1
 export APP_ENV=testing
+export DB_HOST=127.0.0.1
 export DB_PORT=1
+export DB_URL=""
+export PHASE8_TEST_DB_HOST=127.0.0.1
 export PHASE8_TEST_DB_PORT=1
 export PHASE8_ALLOW_DISPOSABLE_DB=0
-export HARNESS_ALLOW_LIVE=0
+export MOBILE_V2_HARNESS_ENABLE=0
 
 # 2. Strict PHPUnit command invocation vector
 php vendor/bin/phpunit \
