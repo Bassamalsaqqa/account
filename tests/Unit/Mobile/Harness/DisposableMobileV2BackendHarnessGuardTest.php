@@ -6424,9 +6424,6 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             $this->markTestSkipped('Requires explicit ROOT_PROCESS_LIFECYCLE_GRANT=1 (no child process execution during source-only qualification).');
         }
 
-        // When granted by Root, exercises real public factory fromLiveOwnership()
-        // with synthetic private proof fixture, real temporary harness directory,
-        // bounded throwaway child process, and mock admin PDO.
         $repoRoot = dirname(__DIR__, 4);
         $schemaName = 'accounting_p8_tmp_0123456789ab';
         $proofNonce = str_repeat('a', 32);
@@ -6439,22 +6436,171 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
         mkdir($harnessDir, 0700, true);
 
-        // Spawn a bounded throwaway child process matching the exact harness script path
+        // Throwaway script matching harness script path with bounded TTL <= 10s (2s sleep)
         $throwawayScript = $harnessDir . '/mobile-v2-harness-cli.php';
         file_put_contents($throwawayScript, "<?php usleep(2000000);\n");
         chmod($throwawayScript, 0700);
 
-        $descriptors = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-        $proc = proc_open(['php', $throwawayScript], $descriptors, $pipes);
-        if (! is_resource($proc)) {
-            $this->fail('Failed to spawn bounded throwaway child process');
+        // Symfony Process with bounded 10s timeout
+        $process = new Process([PHP_BINARY, $throwawayScript]);
+        $process->setTimeout(10.0);
+        $process->start();
+
+        // Wait up to 1.0s for process to be running and PID available
+        $waitStart = hrtime(true) / 1e9;
+        while (! $process->isRunning() && ((hrtime(true) / 1e9) - $waitStart) < 1.0) {
+            usleep(20000);
         }
-        $status = proc_get_status($proc);
-        $childPid = (int) $status['pid'];
+        $childPid = $process->getPid();
+        $this->assertNotNull($childPid, 'Child process PID must be available');
+
+        $savedEnv = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
+            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
+            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
+            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+            'PHASE8_TEST_DB_EMPTY_PASSWORD' => getenv('PHASE8_TEST_DB_EMPTY_PASSWORD'),
+            'PHASE8_DISPOSABLE_DB_PROOF' => getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+            'PHASE8_DISPOSABLE_DB_NONCE' => getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+        ];
+
+        try {
+            putenv('APP_ENV=testing');
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            putenv('PHASE8_TEST_DB_USERNAME=root');
+            putenv('PHASE8_TEST_DB_PASSWORD=');
+            putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofFile}");
+            putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+
+            $proofData = [
+                'schema' => $schemaName,
+                'host' => '127.0.0.1',
+                'port' => '3342',
+                'nonce' => $proofNonce,
+            ];
+            file_put_contents($proofFile, json_encode($proofData, JSON_THROW_ON_ERROR));
+            chmod($proofFile, 0600);
+
+            // Construct snapshot via REAL public factory from live /proc
+            $snapshot = \Tests\Support\Harness\VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: $schemaName,
+                proofPath: $proofFile,
+                proofNonce: $proofNonce,
+                harnessDir: $harnessDir,
+                childPid: $childPid,
+                repoRoot: $repoRoot
+            );
+
+            $this->assertSame($childPid, $snapshot->childPid);
+            $this->assertNotNull($snapshot->childStartIdentity);
+
+            // Mock PDO expects exact port check, schema presence, DROP, and schema absence
+            $mockPortStmt = $this->createMock(\PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+
+            $queryCount = 0;
+            $mockSchemaStmt = $this->createMock(\PDOStatement::class);
+            $mockSchemaStmt->method('fetch')->willReturnCallback(function () use (&$queryCount, $schemaName) {
+                $queryCount++;
+
+                return $queryCount === 1 ? ['SCHEMA_NAME' => $schemaName] : false;
+            });
+
+            $mockPdo = $this->createMock(\PDO::class);
+            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+            $mockPdo->expects($this->once())
+                ->method('exec')
+                ->with("DROP DATABASE IF EXISTS `{$schemaName}`")
+                ->willReturn(1);
+
+            // Pass actual Process handle to executeExactCleanup
+            $cleanResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: $process,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+
+            // Assert process is confirmed reaped and cleanup succeeded before finally
+            $this->assertFalse($process->isRunning(), 'Child process must be reaped and not running before finally');
+            $this->assertTrue($cleanResult['child_reaped'], 'child_reaped must be true');
+            $this->assertTrue($cleanResult['schema_absent'], 'schema_absent must be true');
+            $this->assertTrue($cleanResult['temp_cleaned'], 'temp_cleaned must be true');
+            $this->assertTrue($cleanResult['success'], 'overall cleanup success must be true');
+            $this->assertEmpty($cleanResult['errors'], 'cleanup errors must be empty');
+
+            // Assert temp directories and proof removed
+            $this->assertDirectoryDoesNotExist($harnessDir, 'Harness temp directory must be removed by cleanup');
+            $this->assertDirectoryDoesNotExist($proofDir, 'Proof parent directory must be removed by cleanup');
+        } finally {
+            if ($process->isRunning()) {
+                $process->stop(1.0);
+            }
+            if (file_exists($proofFile)) {
+                @unlink($proofFile);
+            }
+            if (is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
+            if (file_exists($throwawayScript)) {
+                @unlink($throwawayScript);
+            }
+            if (is_dir($harnessDir)) {
+                @rmdir($harnessDir);
+            }
+            foreach ($savedEnv as $k => $v) {
+                if ($v === false) {
+                    putenv($k);
+                } else {
+                    putenv("{$k}={$v}");
+                }
+            }
+        }
+    }
+
+    #[Test]
+    public function test_bounded_throwaway_owned_child_refuses_cleanup_when_process_handle_omitted(): void
+    {
+        // Guarded: requires explicit Root process-only execution grant.
+        // Under current SOURCE-ONLY review, no OS child processes may be spawned.
+        if (getenv('ROOT_PROCESS_LIFECYCLE_GRANT') !== '1') {
+            $this->markTestSkipped('Requires explicit ROOT_PROCESS_LIFECYCLE_GRANT=1 (no child process execution during source-only qualification).');
+        }
+
+        $repoRoot = dirname(__DIR__, 4);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $proofNonce = str_repeat('a', 32);
+
+        $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+        mkdir($proofDir, 0700, true);
+        $proofFile = $proofDir . '/proof.json';
+
+        $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+        $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+        mkdir($harnessDir, 0700, true);
+
+        // Throwaway script running bounded sleep (5s)
+        $throwawayScript = $harnessDir . '/mobile-v2-harness-cli.php';
+        file_put_contents($throwawayScript, "<?php usleep(5000000);\n");
+        chmod($throwawayScript, 0700);
+
+        // Spawn actual owned child process
+        $process = new Process([PHP_BINARY, $throwawayScript]);
+        $process->setTimeout(10.0);
+        $process->start();
+
+        $waitStart = hrtime(true) / 1e9;
+        while (! $process->isRunning() && ((hrtime(true) / 1e9) - $waitStart) < 1.0) {
+            usleep(20000);
+        }
+        $childPid = $process->getPid();
+        $this->assertNotNull($childPid, 'Child process PID must be available');
 
         $savedEnv = [
             'APP_ENV' => getenv('APP_ENV'),
@@ -6498,29 +6644,39 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
                 repoRoot: $repoRoot
             );
 
-            $this->assertSame($childPid, $snapshot->childPid);
-            $this->assertNotNull($snapshot->childStartIdentity);
-
-            // Execute cleanup with mock PDO
-            $mockPortStmt = $this->createMock(\PDOStatement::class);
-            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
-            $mockSchemaStmt = $this->createMock(\PDOStatement::class);
-            $mockSchemaStmt->method('fetch')->willReturn(false);
+            // Mock PDO expects ZERO DROP calls! Destructive cleanup must be skipped!
             $mockPdo = $this->createMock(\PDO::class);
-            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
-            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+            $mockPdo->expects($this->never())->method('exec');
+            $mockPdo->expects($this->never())->method('query');
+            $mockPdo->expects($this->never())->method('prepare');
 
+            // Pass childProcess: null while child is confirmed alive
             $cleanResult = SupervisedPairedFinancialDrill::executeExactCleanup(
                 childProcess: null,
                 snapshot: $snapshot,
                 repoRoot: $repoRoot,
                 adminPdo: $mockPdo
             );
-            $this->assertEmpty($cleanResult['errors']);
+
+            // Fail-closed assertions: child_reaped is false, overall success is false
+            $this->assertFalse($cleanResult['child_reaped'], 'child_reaped must be false when child alive without handle');
+            $this->assertFalse($cleanResult['success'], 'success must be false');
+            $this->assertNotEmpty($cleanResult['errors'], 'errors must be non-empty');
+
+            $errorStr = implode('; ', $cleanResult['errors']);
+            $this->assertStringContainsString('CLEANUP_OWNED_CHILD_ALIVE_WITHOUT_PROCESS_HANDLE', $errorStr);
+            $this->assertStringContainsString('CLEANUP_DESTRUCTIVE_ACTIONS_SKIPPED_CHILD_ALIVE', $errorStr);
+
+            // Child process must still be running (not killed arbitrarily without handle)
+            $this->assertTrue($process->isRunning(), 'Child process must remain running without handle');
+
+            // Temp directories must NOT have been removed while child was alive
+            $this->assertDirectoryExists($harnessDir, 'Harness temp directory must not be removed while child alive');
+            $this->assertDirectoryExists($proofDir, 'Proof directory must not be removed while child alive');
         } finally {
-            if (is_resource($proc)) {
-                @proc_terminate($proc);
-                @proc_close($proc);
+            // Stop own process safely in finally
+            if ($process->isRunning()) {
+                $process->stop(1.0);
             }
             if (file_exists($proofFile)) {
                 @unlink($proofFile);

@@ -1560,6 +1560,13 @@ class SupervisedPairedFinancialDrill
                 $errors[] = 'CLEANUP_CHILD_SKIP_NO_SNAPSHOT: child process running but no snapshot for PID verification; no signals sent.';
                 $childReaped = false;
             }
+        } elseif ($childProcess === null && $snapshot !== null && self::isProcessAlive($snapshot->childPid)) {
+            // Fail-closed invariant: if an owned child process is still alive but no Process handle
+            // was provided to supervise/reap it, refuse child_reaped = false.
+            // Destructive schema and directory cleanup MUST be skipped to prevent deleting resources
+            // out from underneath an active running process.
+            $childReaped = false;
+            $errors[] = "CLEANUP_OWNED_CHILD_ALIVE_WITHOUT_PROCESS_HANDLE: captured child PID {$snapshot->childPid} is still alive but no Process handle was provided. Destructive cleanup skipped. Manual remediation required.";
         }
 
         // 1b. Terminate and reap tracked child subprocesses if still alive (backend, proxy, caddy)
@@ -1645,12 +1652,25 @@ class SupervisedPairedFinancialDrill
             }
         }
 
-        // 2. Destructive Cleanup Gate: Mandatory Prevalidated Owned Snapshot
+        // 2. Destructive Cleanup Gate: Mandatory Prevalidated Owned Snapshot and Confirmed Reaped Children
         if ($snapshot === null) {
             $errors[] = 'CLEANUP_UNPROVEN_NO_VALID_SNAPSHOT: Destructive cleanup skipped; no verified owned snapshot exists. External Root operator inspection required.';
 
             return [
                 'child_reaped' => $childReaped,
+                'schema_absent' => false,
+                'listeners_closed' => false,
+                'temp_cleaned' => false,
+                'success' => false,
+                'errors' => $errors,
+            ];
+        }
+
+        if (! $childReaped) {
+            $errors[] = 'CLEANUP_DESTRUCTIVE_ACTIONS_SKIPPED_CHILD_ALIVE: Destructive DB and directory removal skipped because child process was not confirmed reaped.';
+
+            return [
+                'child_reaped' => false,
                 'schema_absent' => false,
                 'listeners_closed' => false,
                 'temp_cleaned' => false,

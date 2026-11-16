@@ -1279,10 +1279,13 @@ Following Root qualification on commit `f0ca70f66d958c829e718c7ee397dc7a6881e481
    - Snapshots with null `childStartIdentity` are never accepted.
    - An absent child cannot capture a snapshot for cleanup; explicit manual owned DB cleanup with verifiable evidence is required when process ownership cannot be proven.
 
-4. **Elimination of Reflection Test Fabrication**:
+4. **Elimination of Reflection Test Fabrication & Live Child Cleanup Gate**:
+   - Fixed runtime bug in `executeExactCleanup()`: when `childProcess === null` but `snapshot !== null` and the child process is confirmed alive in live `/proc` (`isProcessAlive($snapshot->childPid)`), cleanup strictly fails closed (`child_reaped = false`, non-zero error `CLEANUP_OWNED_CHILD_ALIVE_WITHOUT_PROCESS_HANDLE`). Destructive schema drop and directory removal are skipped (`CLEANUP_DESTRUCTIVE_ACTIONS_SKIPPED_CHILD_ALIVE`), ensuring exactly 0 DROP queries are issued while a known child is alive.
    - Removed reflection-based instantiation of `VerifiedOwnedSnapshot` from guard tests.
-   - Guard tests now evaluate refusal and no-signal guarantees through pure in-memory fact validation and live `/proc` rejection tests.
-   - Authored `test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo`, a dedicated lifecycle test using the real public factory `fromLiveOwnership()`, valid synthetic proof fixtures, and mock admin PDO, guarded by `ROOT_PROCESS_LIFECYCLE_GRANT=1` (deferred until explicit Root process-only execution grant).
+   - Guard tests evaluate refusal and no-signal guarantees through pure in-memory fact validation and live `/proc` rejection tests.
+   - Authored positive lifecycle test `test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo` using real Symfony `Process` (`[PHP_BINARY, $throwawayScript]`, timeout 10.0s, script TTL 2s), real public factory `fromLiveOwnership()`, and mock admin PDO. Asserts `isRunning() === false`, `child_reaped === true`, `success === true`, and temp/proof directories removed before `finally`.
+   - Authored negative lifecycle test `test_bounded_throwaway_owned_child_refuses_cleanup_when_process_handle_omitted` verifying that when a live owned child process is running but `childProcess: null` is passed, cleanup refuses with `child_reaped === false`, `success === false`, 0 DROP queries on mock PDO, and process remains alive until stopped in `finally`.
+   - Both tests guarded by `ROOT_PROCESS_LIFECYCLE_GRANT=1` (deferred until explicit Root process-only execution grant; zero child processes executed during source-only reviews).
 
 #### 18.8.3 Source Callgraph: Basic Legit CLI & Advanced 3-Child Lineage
 
