@@ -7339,21 +7339,46 @@ PHP;
         mkdir($tmpDir, 0700, true);
 
         try {
-            $reportSha = hash('sha256', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            file_put_contents($tmpDir . '/probe_rollback_permission_denial_report.json', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            file_put_contents($tmpDir . '/probe_rollback_permission_denial_reconciliation.json', $rawReconContent);
-            file_put_contents($tmpDir . '/probe_rollback_insufficient_stock_report.json', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            file_put_contents($tmpDir . '/probe_rollback_insufficient_stock_reconciliation.json', $rawReconContent);
-            file_put_contents($tmpDir . '/probe_rollback_controlled_after_posting_report.json', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-            file_put_contents($tmpDir . '/probe_rollback_controlled_after_posting_reconciliation.json', $rawReconContent);
+            $rep1 = $report; // 403, 11111111-1111-4111-8111-111111111111
+            $rep2 = DisposableFinancialPostRunInspector::buildProbeReportPayload(array_merge($reportParams, [
+                'probe_name' => 'rollback_insufficient_stock',
+                'client_event_id' => '22222222-2222-4222-8222-222222222222',
+                'expected_http_status' => 422,
+                'actual_http_status' => 422,
+            ]));
+            $rep3 = DisposableFinancialPostRunInspector::buildProbeReportPayload(array_merge($reportParams, [
+                'probe_name' => 'rollback_controlled_after_posting',
+                'client_event_id' => '33333333-3333-4333-8333-333333333333',
+                'expected_http_status' => 500,
+                'actual_http_status' => 500,
+            ]));
+
+            $repFile1 = $tmpDir . '/probe_rollback_permission_denial_report.json';
+            $recFile1 = $tmpDir . '/probe_rollback_permission_denial_reconciliation.json';
+            $repFile2 = $tmpDir . '/probe_rollback_insufficient_stock_report.json';
+            $recFile2 = $tmpDir . '/probe_rollback_insufficient_stock_reconciliation.json';
+            $repFile3 = $tmpDir . '/probe_rollback_controlled_after_posting_report.json';
+            $recFile3 = $tmpDir . '/probe_rollback_controlled_after_posting_reconciliation.json';
+
+            file_put_contents($repFile1, json_encode($rep1, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+            file_put_contents($recFile1, $rawReconContent);
+            file_put_contents($repFile2, json_encode($rep2, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+            file_put_contents($recFile2, $rawReconContent);
+            file_put_contents($repFile3, json_encode($rep3, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+            file_put_contents($recFile3, $rawReconContent);
+
+            foreach ([$repFile1, $recFile1, $repFile2, $recFile2, $repFile3, $recFile3] as $f) {
+                chmod($f, 0600);
+            }
 
             $manifest = [
                 'rollback_permission_denial' => [
                     'probe_name' => 'rollback_permission_denial',
+                    'client_event_id' => '11111111-1111-4111-8111-111111111111',
                     'report_file' => 'probe_rollback_permission_denial_report.json',
-                    'report_sha256' => $reportSha,
+                    'report_sha256' => hash_file('sha256', $repFile1),
                     'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
-                    'reconciliation_sha256' => $rawReconSha,
+                    'reconciliation_sha256' => hash_file('sha256', $recFile1),
                     'expected_http_status' => 403,
                     'actual_http_status' => 403,
                     'zero_delta_verified' => true,
@@ -7361,10 +7386,11 @@ PHP;
                 ],
                 'rollback_insufficient_stock' => [
                     'probe_name' => 'rollback_insufficient_stock',
+                    'client_event_id' => '22222222-2222-4222-8222-222222222222',
                     'report_file' => 'probe_rollback_insufficient_stock_report.json',
-                    'report_sha256' => $reportSha,
+                    'report_sha256' => hash_file('sha256', $repFile2),
                     'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
-                    'reconciliation_sha256' => $rawReconSha,
+                    'reconciliation_sha256' => hash_file('sha256', $recFile2),
                     'expected_http_status' => 422,
                     'actual_http_status' => 422,
                     'zero_delta_verified' => true,
@@ -7372,10 +7398,11 @@ PHP;
                 ],
                 'rollback_controlled_after_posting' => [
                     'probe_name' => 'rollback_controlled_after_posting',
+                    'client_event_id' => '33333333-3333-4333-8333-333333333333',
                     'report_file' => 'probe_rollback_controlled_after_posting_report.json',
-                    'report_sha256' => $reportSha,
+                    'report_sha256' => hash_file('sha256', $repFile3),
                     'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
-                    'reconciliation_sha256' => $rawReconSha,
+                    'reconciliation_sha256' => hash_file('sha256', $recFile3),
                     'expected_http_status' => 500,
                     'actual_http_status' => 500,
                     'zero_delta_verified' => true,
@@ -7802,26 +7829,29 @@ PHP;
         $this->assertFalse($res1['is_valid']);
         $this->assertStringContainsString('Mandatory expectedProbeReportsManifestSha pin is missing', implode('; ', $res1['errors']));
 
-        // 2. Missing manifest file when pin is provided is strictly refused
+        // 2. Missing manifest file when pin is provided is strictly refused (even if matching actualProbeReportsManifestSha is supplied)
         $pinsWithPinOnly = array_merge($pinsWithoutManifestSha, [
             'expectedProbeReportsManifestSha' => str_repeat('e', 64),
+            'actualProbeReportsManifestSha' => str_repeat('e', 64), // Provided matching actual hash MUST NOT bypass missing file
+            'probeReportsManifestPath' => '/nonexistent/path/to/probe_reports_manifest.json',
         ]);
         $res2 = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithPinOnly, $trustedDbReport);
         $this->assertFalse($res2['is_valid']);
-        $this->assertStringContainsString('Mandatory valid probe reports manifest file is required', implode('; ', $res2['errors']));
+        $this->assertStringContainsString('Probe reports manifest file is missing or a symlink', implode('; ', $res2['errors']));
     }
 
     #[Test]
-    public function test_advanced_validator_refuses_altered_manifest_or_missing_referenced_report(): void
+    public function test_advanced_validator_refuses_path_traversal_and_semantic_failures(): void
     {
-        $tmpDir = sys_get_temp_dir() . '/test_tamper_' . bin2hex(random_bytes(6));
+        $tmpDir = sys_get_temp_dir() . '/test_traversal_' . bin2hex(random_bytes(6));
         mkdir($tmpDir, 0700, true);
 
         try {
-            $manifest = [
+            // 1. Path traversal in report_file basename is rejected by assertSecureContainedFile
+            $traversalManifest = [
                 'rollback_permission_denial' => [
                     'probe_name' => 'rollback_permission_denial',
-                    'report_file' => 'probe_rollback_permission_denial_report.json',
+                    'report_file' => '../traversal_report.json',
                     'report_sha256' => str_repeat('1', 64),
                     'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
                     'reconciliation_sha256' => str_repeat('2', 64),
@@ -7854,13 +7884,11 @@ PHP;
                 ],
             ];
 
-            // Manifest file on disk has different contents (altered)
-            $alteredManifest = $manifest;
-            $alteredManifest['rollback_permission_denial']['actual_http_status'] = 200;
-            $diskBytes = json_encode($alteredManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $traversalBytes = json_encode($traversalManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
             $manifestFile = $tmpDir . '/probe_reports_manifest.json';
-            file_put_contents($manifestFile, $diskBytes);
-            $diskSha = hash('sha256', $diskBytes);
+            file_put_contents($manifestFile, $traversalBytes);
+            chmod($manifestFile, 0600);
+            $traversalSha = hash('sha256', $traversalBytes);
 
             $trustedDbReport = [
                 'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
@@ -7874,7 +7902,7 @@ PHP;
                 'is_canonical_delta_valid' => true,
                 'gl_batches_balanced' => true,
                 'all_healthy' => true,
-                'rollback_probes_manifest' => $manifest, // original embedded manifest
+                'rollback_probes_manifest' => $traversalManifest,
             ];
 
             $evidence = [
@@ -7895,25 +7923,106 @@ PHP;
                 'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
                 'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
                 'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
-                'expectedProbeReportsManifestSha' => $diskSha,
+                'expectedProbeReportsManifestSha' => $traversalSha,
                 'probeReportsManifestPath' => $manifestFile,
             ];
 
-            // 1. Catches altered manifest: parsed file manifest does not match embedded trusted report manifest
-            $res = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
-            $this->assertFalse($res['is_valid']);
-            $this->assertStringContainsString('Parsed probe reports manifest file does not match embedded trusted DB report manifest exactly', implode('; ', $res['errors']));
+            $travRes = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
+            $this->assertFalse($travRes['is_valid']);
+            $this->assertStringContainsString('containment check failed', implode('; ', $travRes['errors']));
 
-            // 2. Now write identical manifest to disk, but keep referenced report files missing
-            $correctBytes = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
-            file_put_contents($manifestFile, $correctBytes);
-            $correctSha = hash('sha256', $correctBytes);
-            $expectedPins['expectedProbeReportsManifestSha'] = $correctSha;
+            // 2. Semantic rejection: valid file hashes and pins, but report contains an unhealthy reconciler
+            $rawReconData = [
+                'all_healthy' => false, // UNHEALTHY
+                'total_issue_count' => 1,
+                'reconciler_results' => [
+                    'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'InventoryReconciliationService' => ['healthy' => false, 'issue_count' => 1],
+                    'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                ],
+            ];
+            $rawReconBytes = json_encode($rawReconData) . "\n";
+            $rawReconSha = hash('sha256', $rawReconBytes);
 
-            $res2 = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
-            $this->assertFalse($res2['is_valid']);
-            $this->assertStringContainsString('Referenced probe report file for', implode('; ', $res2['errors']));
-            $this->assertStringContainsString('missing or a symlink', implode('; ', $res2['errors']));
+            $badReport = [
+                'probe_name' => 'rollback_permission_denial',
+                'client_event_id' => '11111111-1111-4111-8111-111111111111',
+                'expected_http_status' => 403,
+                'actual_http_status' => 403,
+                'status_matched' => true,
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'company_id' => 1,
+                'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'handoff_sha256' => str_repeat('a', 64),
+                'economic_delta_zero' => true,
+                'zero_delta_verified' => true,
+                'reconciliations_healthy' => false,
+                'total_issue_count' => 1,
+                'reconciliation_artifact_sha256' => $rawReconSha,
+                'baseline_metrics' => ['company_id' => 1],
+                'post_metrics' => ['company_id' => 1],
+            ];
+            $badReportBytes = json_encode($badReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $badReportSha = hash('sha256', $badReportBytes);
+
+            $repFile1 = $tmpDir . '/probe_rollback_permission_denial_report.json';
+            $recFile1 = $tmpDir . '/probe_rollback_permission_denial_reconciliation.json';
+            file_put_contents($repFile1, $badReportBytes);
+            file_put_contents($recFile1, $rawReconBytes);
+            chmod($repFile1, 0600);
+            chmod($recFile1, 0600);
+
+            $semanticManifest = [
+                'rollback_permission_denial' => [
+                    'probe_name' => 'rollback_permission_denial',
+                    'client_event_id' => '11111111-1111-4111-8111-111111111111',
+                    'report_file' => 'probe_rollback_permission_denial_report.json',
+                    'report_sha256' => $badReportSha,
+                    'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
+                    'reconciliation_sha256' => $rawReconSha,
+                    'expected_http_status' => 403,
+                    'actual_http_status' => 403,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true, // Liar boolean in manifest
+                ],
+                'rollback_insufficient_stock' => [
+                    'probe_name' => 'rollback_insufficient_stock',
+                    'client_event_id' => '22222222-2222-4222-8222-222222222222',
+                    'report_file' => 'probe_rollback_insufficient_stock_report.json',
+                    'report_sha256' => str_repeat('3', 64),
+                    'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('4', 64),
+                    'expected_http_status' => 422,
+                    'actual_http_status' => 422,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_controlled_after_posting' => [
+                    'probe_name' => 'rollback_controlled_after_posting',
+                    'client_event_id' => '33333333-3333-4333-8333-333333333333',
+                    'report_file' => 'probe_rollback_controlled_after_posting_report.json',
+                    'report_sha256' => str_repeat('5', 64),
+                    'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('6', 64),
+                    'expected_http_status' => 500,
+                    'actual_http_status' => 500,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+            ];
+            $semanticBytes = json_encode($semanticManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            file_put_contents($manifestFile, $semanticBytes);
+            $semanticSha = hash('sha256', $semanticBytes);
+
+            $trustedDbReport['rollback_probes_manifest'] = $semanticManifest;
+            $expectedPins['expectedProbeReportsManifestSha'] = $semanticSha;
+
+            $semRes = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
+            $this->assertFalse($semRes['is_valid']);
+            $this->assertStringContainsString('semantic verification failed for \'rollback_permission_denial\'', implode('; ', $semRes['errors']));
         } finally {
             foreach (glob($tmpDir . '/*') as $f) {
                 @unlink($f);

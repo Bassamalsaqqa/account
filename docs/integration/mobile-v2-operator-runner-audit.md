@@ -1508,7 +1508,7 @@ Following subsequent Root clean commit `b94a54633d7ee4fd3d935a81ab03cf84e1b79228
    - In `supervised-financial-drill.php`:
      - Iterates probe reports, verifies manifest hashes, recomputes zero-delta, and cross-checks reconciler artifacts using canonical names.
 
-2. **Mandatory Manifest File & Expected SHA Pinning Across Pipelines**:
+2. **Mandatory Manifest File, Strict Containment & Semantic Verification Across Pipelines**:
    - `supervised-financial-drill.php`:
      - Computes `$probeManifestSha = hash_file('sha256', $probeManifestPath)` after verifying all 3 probe reports.
      - Passes `--probe-reports-manifest=<path>` AND `--expected-probe-manifest-sha=<sha256>` to BOTH `--compose-trusted-report` and `--validate-evidence`.
@@ -1518,15 +1518,19 @@ Following subsequent Root clean commit `b94a54633d7ee4fd3d935a81ab03cf84e1b79228
      - Validates actual manifest file SHA against the expected pin.
      - In evidence validation, requires `--probe-reports-manifest=` and `--expected-probe-manifest-sha=`, verifying actual file bytes against the pin and passing `probeReportsManifestPath` into the validator.
    - `DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson()`:
+     - Removed the `elseif (!empty($expectedPins['actualProbeReportsManifestSha']))` bypass entirely: caller-supplied hashes without a readable, valid manifest file are strictly rejected.
      - Mandates `expectedProbeReportsManifestSha` in advanced scope; refuses if missing or malformed.
-     - Reads raw manifest bytes from `probeReportsManifestPath`, checks SHA against expected pin, and asserts exact equality of parsed JSON against embedded trusted report manifest.
-     - Verifies referenced report and reconciliation files on disk: checks file existence, ensures they are not symlinks, and validates SHA against manifest entries. Forged or synthetic manifests fail closed.
+     - Enforces `SupervisedPairedFinancialDrill::assertSecureContainedFile()` on `probe_reports_manifest.json` and on every referenced probe report (`probe_{name}_report.json`) and reconciliation artifact (`probe_{name}_reconciliation.json`): rejects path traversals, symlinked components, foreign UID ownership, and insecure file/parent permissions.
+     - Reads raw manifest bytes, validates file SHA against the pin, and asserts exact equality of parsed JSON against the embedded trusted report manifest.
+     - Performs **semantic verification** on every probe report: parses the report JSON, binds expected context derived from verified ACP/pins (company_id, schema_name, backend_head, handoff_sha, expected HTTP status, and probe event ID), and calls `DisposableFinancialPostRunInspector::verifyProbeReportPayload()`.
+     - Verifies exact 0 issue counts and boolean healthy on all 6 reconcilers, recomputes zero-delta on pre/post metrics, and validates raw reconciliation artifact SHA and JSON. Forged, hash-consistent synthetic, or unhealthy reports fail closed.
      - Basic scope remains completely untouched and functional.
 
 3. **Expanded No-DB Regression Suite (`DisposableMobileV2BackendHarnessGuardTest.php`)**:
    - Authored unrun tests covering the entire runtime pipeline:
      - `test_proxy_matcher_normalizes_declared_acp_keys_to_canonical_rollback_names`: exercises actual `TestTransportProxy::getProbeNameIfMatching()` with declared ACP config, testing that all 3 internal keys normalize to canonical rollback probe names and statuses while unknown keys are rejected.
-     - `test_advanced_validator_refuses_missing_manifest_pin_or_missing_manifest_file`: proves advanced validator refuses when `expectedProbeReportsManifestSha` or the manifest file path is omitted.
-     - `test_advanced_validator_refuses_altered_manifest_or_missing_referenced_report`: proves advanced validator catches altered manifests on disk and refuses when referenced report files are missing or tampered.
+     - `test_advanced_validator_refuses_missing_manifest_pin_or_missing_manifest_file`: proves advanced validator refuses when `expectedProbeReportsManifestSha` or the manifest file path is omitted, and proves that supplying matching `actualProbeReportsManifestSha` does not bypass a missing/invalid manifest file.
+     - `test_advanced_validator_refuses_path_traversal_and_semantic_failures`: proves advanced validator catches path traversal attempts via `assertSecureContainedFile`, catches altered manifests on disk, and rejects reports with unhealthy reconcilers or semantic failures even when hashes match.
+
 
 

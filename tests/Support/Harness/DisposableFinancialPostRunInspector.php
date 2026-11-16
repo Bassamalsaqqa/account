@@ -3038,9 +3038,9 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = 'rollback_probes_evidence probes must contain at least 3 probe results.';
             } else {
                 $requiredProbeNames = [
-                    'permission_denial' => 403,
-                    'insufficient_stock' => 422,
-                    'controlled_fault_after_posting' => 500,
+                    'rollback_permission_denial' => 403,
+                    'rollback_insufficient_stock' => 422,
+                    'rollback_controlled_after_posting' => 500,
                 ];
                 $allowedProbeKeys = [
                     'probe_name',
@@ -3065,11 +3065,12 @@ final class DisposableFinancialPostRunInspector
                         $errors[] = "Rollback probe #{$idx} must be an object.";
                         continue;
                     }
-                    $pName = (string) ($p['probe_name'] ?? '');
-                    if ($pName === '') {
+                    $rawPName = (string) ($p['probe_name'] ?? '');
+                    if ($rawPName === '') {
                         $errors[] = "Rollback probe #{$idx} missing probe_name.";
                         continue;
                     }
+                    $pName = self::normalizeRollbackProbeName($rawPName) ?? $rawPName;
 
                     if (isset($observedProbes[$pName])) {
                         $errors[] = "Duplicate rollback probe '{$pName}'.";
@@ -3240,46 +3241,134 @@ final class DisposableFinancialPostRunInspector
                     $errors[] = "Mandatory expectedProbeReportsManifestSha pin is missing or invalid in advanced scope.";
                 } else {
                     $manifestPath = (string) ($expectedPins['probeReportsManifestPath'] ?? '');
-                    if ($manifestPath !== '' && is_file($manifestPath) && ! is_link($manifestPath)) {
-                        $fileBytes = (string) file_get_contents($manifestPath);
-                        $fileSha = hash('sha256', $fileBytes);
-                        if (! hash_equals($expManifestSha, $fileSha)) {
-                            $errors[] = "Probe reports manifest file SHA256 mismatch against pin: expected '{$expManifestSha}', got '{$fileSha}'.";
-                        }
-                        $parsedFileManifest = json_decode($fileBytes, true);
-                        if (! is_array($parsedFileManifest) || $parsedFileManifest !== $manifest) {
-                            $errors[] = "Parsed probe reports manifest file does not match embedded trusted DB report manifest exactly.";
+                    if ($manifestPath === '') {
+                        $errors[] = "Mandatory probeReportsManifestPath is missing in advanced scope.";
+                    } else {
+                        $manifestDir = dirname($manifestPath);
+                        try {
+                            SupervisedPairedFinancialDrill::assertSecureContainedFile(
+                                $manifestPath,
+                                $manifestDir,
+                                'probe_reports_manifest.json',
+                                'PROBE_REPORTS_MANIFEST'
+                            );
+                        } catch (\Throwable $e) {
+                            $errors[] = "Probe reports manifest file containment check failed: {$e->getMessage()}";
                         }
 
-                        // Verify referenced reports and raw reconciliations exist and match pinned SHA
-                        $manifestDir = dirname($manifestPath);
-                        foreach ($manifest as $pKey => $pEntry) {
-                            $repFile = $manifestDir . '/' . ($pEntry['report_file'] ?? '');
-                            $recFile = $manifestDir . '/' . ($pEntry['reconciliation_file'] ?? '');
-                            if (! is_file($repFile) || is_link($repFile)) {
-                                $errors[] = "Referenced probe report file for '{$pKey}' is missing or a symlink: '{$repFile}'.";
-                            } else {
-                                $actualRepSha = hash_file('sha256', $repFile);
-                                if (! hash_equals((string) ($pEntry['report_sha256'] ?? ''), $actualRepSha)) {
-                                    $errors[] = "Referenced probe report SHA mismatch for '{$pKey}': expected '".($pEntry['report_sha256'] ?? '')."', got '{$actualRepSha}'.";
+                        if (! is_file($manifestPath) || is_link($manifestPath)) {
+                            $errors[] = "Probe reports manifest file is missing or a symlink: '{$manifestPath}'.";
+                        } else {
+                            $fileBytes = (string) file_get_contents($manifestPath);
+                            $fileSha = hash('sha256', $fileBytes);
+                            if (! hash_equals($expManifestSha, $fileSha)) {
+                                $errors[] = "Probe reports manifest file SHA256 mismatch against pin: expected '{$expManifestSha}', got '{$fileSha}'.";
+                            }
+                            $parsedFileManifest = json_decode($fileBytes, true);
+                            if (! is_array($parsedFileManifest) || $parsedFileManifest !== $manifest) {
+                                $errors[] = "Parsed probe reports manifest file does not match embedded trusted DB report manifest exactly.";
+                            }
+
+                            // Extract probe event mapping from verified ACP if available
+                            $acpProbeMap = [];
+                            if (isset($expectedPins['advancedControlPacketData']) && is_array($expectedPins['advancedControlPacketData'])) {
+                                try {
+                                    $primaryEventId = (string) ($expectedPins['expectedClientEventId'] ?? ($trustedDbReport['event_id'] ?? ''));
+                                    $acpProbeMap = self::validateAdvancedControlPacket($expectedPins['advancedControlPacketData'], $primaryEventId);
+                                } catch (\Throwable $e) {
+                                    $errors[] = "Advanced control packet validation failed: {$e->getMessage()}";
                                 }
                             }
-                            if (! is_file($recFile) || is_link($recFile)) {
-                                $errors[] = "Referenced reconciliation file for '{$pKey}' is missing or a symlink: '{$recFile}'.";
-                            } else {
-                                $actualRecSha = hash_file('sha256', $recFile);
-                                if (! hash_equals((string) ($pEntry['reconciliation_sha256'] ?? ''), $actualRecSha)) {
-                                    $errors[] = "Referenced reconciliation SHA mismatch for '{$pKey}': expected '".($pEntry['reconciliation_sha256'] ?? '')."', got '{$actualRecSha}'.";
+
+                            // Verify referenced reports and raw reconciliations: containment, hash, and SEMANTIC payload verification
+                            foreach ($manifest as $pKey => $pEntry) {
+                                $repBasename = (string) ($pEntry['report_file'] ?? '');
+                                $recBasename = (string) ($pEntry['reconciliation_file'] ?? '');
+                                $repFile = $manifestDir . '/' . $repBasename;
+                                $recFile = $manifestDir . '/' . $recBasename;
+
+                                $expectedRepBasename = 'probe_' . $pKey . '_report.json';
+                                $expectedRecBasename = 'probe_' . $pKey . '_reconciliation.json';
+
+                                try {
+                                    SupervisedPairedFinancialDrill::assertSecureContainedFile(
+                                        $repFile,
+                                        $manifestDir,
+                                        $expectedRepBasename,
+                                        "PROBE_REPORT_{$pKey}"
+                                    );
+                                } catch (\Throwable $e) {
+                                    $errors[] = "Referenced probe report file containment check failed for '{$pKey}': {$e->getMessage()}";
+                                }
+
+                                try {
+                                    SupervisedPairedFinancialDrill::assertSecureContainedFile(
+                                        $recFile,
+                                        $manifestDir,
+                                        $expectedRecBasename,
+                                        "RAW_RECON_{$pKey}"
+                                    );
+                                } catch (\Throwable $e) {
+                                    $errors[] = "Referenced reconciliation file containment check failed for '{$pKey}': {$e->getMessage()}";
+                                }
+
+                                if (! is_file($repFile) || is_link($repFile)) {
+                                    $errors[] = "Referenced probe report file for '{$pKey}' is missing or a symlink: '{$repFile}'.";
+                                } else {
+                                    $actualRepSha = hash_file('sha256', $repFile);
+                                    if (! hash_equals((string) ($pEntry['report_sha256'] ?? ''), $actualRepSha)) {
+                                        $errors[] = "Referenced probe report SHA mismatch for '{$pKey}': expected '".($pEntry['report_sha256'] ?? '')."', got '{$actualRepSha}'.";
+                                    }
+                                }
+
+                                if (! is_file($recFile) || is_link($recFile)) {
+                                    $errors[] = "Referenced reconciliation file for '{$pKey}' is missing or a symlink: '{$recFile}'.";
+                                    $rawReconContent = '';
+                                } else {
+                                    $rawReconContent = (string) file_get_contents($recFile);
+                                    $actualRecSha = hash('sha256', $rawReconContent);
+                                    if (! hash_equals((string) ($pEntry['reconciliation_sha256'] ?? ''), $actualRecSha)) {
+                                        $errors[] = "Referenced reconciliation SHA mismatch for '{$pKey}': expected '".($pEntry['reconciliation_sha256'] ?? '')."', got '{$actualRecSha}'.";
+                                    }
+                                }
+
+                                // SEMANTIC VERIFICATION: parse report and invoke verifyProbeReportPayload
+                                if (is_file($repFile) && ! is_link($repFile) && $rawReconContent !== '') {
+                                    $parsedRep = json_decode((string) file_get_contents($repFile), true);
+                                    if (! is_array($parsedRep)) {
+                                        $errors[] = "Referenced probe report for '{$pKey}' contains invalid JSON.";
+                                    } else {
+                                        $expectedProbeEventId = '';
+                                        if (isset($acpProbeMap[self::REQUIRED_PROBE_EVENT_KEYS[0]])) {
+                                            // acpProbeMap has short keys; lookup reverse
+                                            $reverseMap = array_flip(self::ACP_TO_ROLLBACK_PROBE_MAP);
+                                            $shortKey = $reverseMap[$pKey] ?? $pKey;
+                                            $expectedProbeEventId = (string) ($acpProbeMap[$shortKey] ?? '');
+                                        }
+                                        if ($expectedProbeEventId === '') {
+                                            $expectedProbeEventId = (string) ($pEntry['client_event_id'] ?? ($parsedRep['client_event_id'] ?? ''));
+                                        }
+
+                                        $expectedContext = [
+                                            'probe_name' => $pKey,
+                                            'client_event_id' => $expectedProbeEventId,
+                                            'expected_http_status' => self::ROLLBACK_PROBE_EXPECTED_STATUS[$pKey] ?? 0,
+                                            'schema_name' => (string) ($trustedDbReport['schema_name'] ?? ($expectedPins['expectedSchemaName'] ?? '')),
+                                            'company_id' => (int) ($trustedDbReport['company_id'] ?? ($expectedPins['expectedCompanyId'] ?? 0)),
+                                            'backend_head' => (string) ($trustedDbReport['backend_execution_head_sha'] ?? ($trustedDbReport['source_head'] ?? ($expectedPins['backendExecutionHead'] ?? ''))),
+                                            'handoff_sha256' => (string) ($trustedDbReport['candidate_handoff_digest'] ?? ($trustedDbReport['handoff_digest'] ?? ($expectedPins['expectedHandoffSha'] ?? ''))),
+                                        ];
+
+                                        $semResult = self::verifyProbeReportPayload($parsedRep, $rawReconContent, $expectedContext);
+                                        if (! $semResult['is_valid']) {
+                                            foreach ($semResult['errors'] as $sErr) {
+                                                $errors[] = "Referenced probe report semantic verification failed for '{$pKey}': {$sErr}";
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
-                    } elseif (! empty($expectedPins['actualProbeReportsManifestSha'])) {
-                        $actualManifestSha = (string) $expectedPins['actualProbeReportsManifestSha'];
-                        if (! hash_equals($expManifestSha, $actualManifestSha)) {
-                            $errors[] = "rollback_probes_manifest SHA mismatch: expected '{$expManifestSha}', got '{$actualManifestSha}'.";
-                        }
-                    } else {
-                        $errors[] = "Mandatory valid probe reports manifest file is required to verify expectedProbeReportsManifestSha.";
                     }
                 }
             }
