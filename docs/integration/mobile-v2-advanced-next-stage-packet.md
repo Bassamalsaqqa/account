@@ -1,7 +1,7 @@
 # Mobile V2 Advanced Next-Stage Packet & Source Audit
 
 **Date:** 2026-11-16  
-**Commit Head:** `f696d905e72a94e93aa934877bcbd14e4d7a081f`  
+**Commit Head:** `cb2b3edf8c9fc943996e329213cf8060ffb4b03b`  
 **Branch:** `t3/recover-cash-writer`  
 **Pull Request:** [#102](https://github.com/Bassamalsaqqa/account/pull/102)  
 **Execution Authority:** **SOURCE-ONLY AUDIT & PREPARATION ONLY** (No financial execution, no Android runtime, no DB/network)
@@ -32,7 +32,7 @@ All historical offline qualification artifacts remain preserved in the environme
 ### 1.3 Qualification Boundary & Limitations
 - **Offline Qualification Only:** The passing runs validate offline unit/pure-contract behavior and default-deny CLI subprocess containment.
 - **Not 14 Advanced Financial Proof:** These two successful filters represent separate bounded unit checks at the same source tree; they do not constitute full end-to-end advanced financial acceptance proofs across live network boundaries.
-- **Physical Invariance:** Tracked backend bytehash, git HEAD (`f696d905e72a94e93aa934877bcbd14e4d7a081f`), and git status are identical pre- and post-qualification.
+- **Physical Invariance:** Tracked backend bytehash, git HEAD, and git status are identical pre- and post-qualification.
 - **Zero Heavy Jobs:** No Android emulator, Gradle compilation, MySQL daemons, or OS child processes were spawned by Root or writer.
 
 ---
@@ -43,11 +43,10 @@ All source code components, command scripts, and schema manifests are pinned and
 
 | Component / Artifact | Path / Class | Canonical SHA-256 Digest |
 | :--- | :--- | :--- |
-| **Commit Head** | `t3/recover-cash-writer` | `f696d905e72a94e93aa934877bcbd14e4d7a081f` |
-| **Source Fixture** | [`Tests\Support\Harness\DisposableMobileV2BackendHarness`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/DisposableMobileV2BackendHarness.php) | `d5a113cebe6e3222196fb5e7060a3f7a89e3fa48f5204c7da25956b78ce2bda8` |
-| **Guard Test** | [`Tests\Unit\Mobile\Harness\DisposableMobileV2BackendHarnessGuardTest`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php) | `e5b06e095a2057a2b63343cd6ca3a0af6e85983e21d6a80b87845d39ffef0788` |
-| **CLI Command Class** | [`Tests\Support\Harness\MobileV2HarnessCommand`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/MobileV2HarnessCommand.php) | `0bda2eff08fc674b5493dffe58b229541be8ff468a045cc2e3cca55ff6dc4cc6` |
-| **CLI Runner Script** | [`tests/Support/Harness/mobile-v2-harness-cli.php`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/mobile-v2-harness-cli.php) | `13a9d9b630e63213e91537a14c43a964c4bc209743604c90527685b452dfe372` |
+| **Source Fixture** | [`DisposableMobileV2BackendHarness`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/DisposableMobileV2BackendHarness.php) | `d5a113cebe6e3222196fb5e7060a3f7a89e3fa48f5204c7da25956b78ce2bda8` |
+| **Guard Test** | [`DisposableMobileV2BackendHarnessGuardTest`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php) | `e5b06e095a2057a2b63343cd6ca3a0af6e85983e21d6a80b87845d39ffef0788` |
+| **CLI Command Class** | [`MobileV2HarnessCommand`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/MobileV2HarnessCommand.php) | `0bda2eff08fc674b5493dffe58b229541be8ff468a045cc2e3cca55ff6dc4cc6` |
+| **CLI Runner Script** | [`mobile-v2-harness-cli.php`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/mobile-v2-harness-cli.php) | `13a9d9b630e63213e91537a14c43a964c4bc209743604c90527685b452dfe372` |
 | **Sale Commit Schema** | `sale-commit-response.json` | `401dbb3c2528a30edfb6beaa5065e89bf225c348a4d88eba9d47d7f93cff543a` |
 | **Sale Status Schema** | `sale-event-status-response.json` | `25e6c6173d646ee4b1dc8dbb0d26d20f0311535863e3d73836af7474c6714591` |
 | **Intake Request Schema** | `offline-sale-intake-request.json` | `0af62ee5058b0dc9da0c8a52c905112de1ff37a9bc040b3740543264c9a2c142` |
@@ -109,11 +108,28 @@ Executing live advanced qualifications requires lifting specific environmental a
 
 ---
 
-## 4. Missing Android Advanced Producer & QA Prerequisites
+## 4. Android Baseline Disentanglement & Advanced Producer Prerequisites
 
-The Android candidate evaluated in prior basic runs (`f697451719d2940bde89a8aab5b6770d93c7b823` / PR base `0ccce244`) was scoped strictly to basic single-shot online sale intake under `ZERO_NEW_QA_ACCEPTANCE_UNDER_REVIEW`. It does **not** provide the advanced probe execution lineage.
+### 4.1 Errata & Disentanglement: BASIC Case 7 vs PR #22 Baseline
+Prior draft packets conflated unverified Android candidate hashes with qualified basic cash acceptance. This conflation is explicitly corrected:
 
-### 4.1 Missing Android Advanced Producer Capabilities
+1. **Actual Root-Accepted BASIC Case 7 Lineage:**
+   - **Publication Pin (`pub_head`):** `d43d2c200b4ccce1d7075aed759f51529375d307`
+   - **Executable Pin (`exe_head`):** `82dc65a2d7431c59baa71e7c94c30ad6fd8a9ffd`
+   - **Peer Drill Context:** `peer389`
+   - **Real Runtime Commit:** `15fe4f388aeaa41e51aff780287d484d51101f4c`
+   - **Post-Hoc Validator Commit:** `4dc9d6952d113c04ce0c28d423d7d500130dcbe8`
+   - This represents the sole qualified financial baseline for basic online cash intake.
+2. **PR #22 True Scope (`0ccce244cd9424b5aacfb67fae3e1f20dd88bae2`):**
+   - PR #22 is a completely **separate, cash-free staff read baseline** authored exclusively for tentative selector exploration.
+   - It contains **no online cash domain model**, **no mobile cash client**, and **no financial qualification** was ever produced from it.
+   - Unverified candidate commit references are stripped from financial acceptance claims; no evidence inheritance or invented SHAs exist between the cash-free selector work and financial intake.
+3. **Selector API DTO Contract Authority:**
+   - The selector API DTO strictly mandates decimal `unit_price`, **not** `price_minor_units`.
+   - No API contract changes or field modifications are authorized by documentation or speculative draft changes.
+
+### 4.2 Missing Android Advanced Producer Capabilities
+The Android advanced client producer is completely absent and unbuilt. To support advanced qualifications, the client runner requires:
 1. **7-Scenario Orchestration Lineage:** The client runner currently lacks multi-scenario sequencing required by `v2_advanced_probe_evidence_v1`:
    - `readiness_probe` (HTTP 200)
    - `transport_lost_ack_retained_status_recovery` (HTTP 200 via `/status`)
@@ -126,7 +142,7 @@ The Android candidate evaluated in prior basic runs (`f697451719d2940bde89a8aab5
 3. **Transport Drop Handling:** Missing Android client network boundary retry logic that captures and validates TCP drops without emitting duplicate requests on non-idempotent endpoints.
 4. **Evidence Packaging:** Inability to assemble and serialize `v2_advanced_probe_evidence_v1` with embedded scenario records, lost ACK evidence, and rollback probe receipts.
 
-### 4.2 New Source QA & Binding Prerequisites
+### 4.3 New Source QA & Binding Prerequisites
 - **Peer Android Binding Record:** Requires Root-attested `binding.json` linking approved publication HEAD to executable HEAD.
 - **Executable Source Parity Enforcement:** Must verify that `git diff pub_head exe_head` contains **strictly** documentation files (`docs/`, `README.md`, `CHANGELOG.md`) under `APPROVED_DOCS_DELTA_PREFIXES`. Any modification to `.kt`, `.java`, or Gradle scripts must fail closed.
 - **Decoupled Operator Configuration:** Android execution must be orchestrated through [`supervised-paired-drill-operator.py`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Support/Harness/supervised-paired-drill-operator.py) using external Root manifests, prestart approvals, and fresh output directories.
@@ -200,25 +216,43 @@ flowchart TD
    - Unconditionally removes directories with `@rmdir`.
    - Unconditionally restores all 9 environment variables (`$savedEnv`).
 
-### 5.5 Exact Invocation Specification for Root Review
-To execute this test under controlled Root review, the exact execution vector is:
+### 5.5 Proposed Outer Invocation Specification & Test-Internal Scoping
+
+#### 5.5.1 Test-Internal Scoping vs Outer Environment Isolation
+A critical architectural boundary exists between the test's internal mocking and host permissions:
+- **Internal Mocking Only:** The authored test [`test_bounded_throwaway_advanced_three_child_lineage_and_lifecycle`](file:///home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision/tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php#L6935-L7253) constructs a mock PDO instance (`$this->createMock(\PDO::class)`), creates its own ephemeral throwaway proof file (`$proofFile`), and internally scopes `putenv` settings (`PHASE8_ALLOW_DISPOSABLE_DB=1`, `PHASE8_TEST_DB_PORT=3342`) purely to satisfy internal constructor and mock cleanup assertions.
+- **Strictly Distinct from Outer Host Permissions:** The test does **not** connect to any live database and does **not** grant or require host database permissions.
+- **No Outer DB Authority Exported:** The outer environment must strictly maintain poisoned DB ports (`port=1`), `ALLOW=0`, and `HARNESS=0`. No public copyable packet may export real DB authority or unpoisoned ports.
+- **No Execution Authority Granted Yet:** Root will inspect the actual test source code and process safety mechanisms before granting execution authority.
+
+#### 5.5.2 Root-Approved Outer Invocation Vector
+To execute this test under controlled Root review, the exact outer execution vector is:
 
 ```bash
-# 1. Environment configuration
+# 1. Outer host environment: strictly poisoned DB ports, zero live DB permission, zero harness authorization
 export ROOT_PROCESS_LIFECYCLE_GRANT=1
 export APP_ENV=testing
-export PHASE8_ALLOW_DISPOSABLE_DB=1
-export PHASE8_TEST_DB_HOST=127.0.0.1
-export PHASE8_TEST_DB_PORT=3342
-export PHASE8_TEST_DB_USERNAME=root
-export PHASE8_TEST_DB_PASSWORD=""
-export PHASE8_TEST_DB_EMPTY_PASSWORD=1
-export PHASE8_DISPOSABLE_DB_PROOF="/tmp/p8_proof_<hex>/proof.json"
-export PHASE8_DISPOSABLE_DB_NONCE="<32_char_hex_nonce>"
+export DB_PORT=1
+export PHASE8_TEST_DB_PORT=1
+export PHASE8_ALLOW_DISPOSABLE_DB=0
+export HARNESS_ALLOW_LIVE=0
 
-# 2. Command vector
-php vendor/bin/phpunit --filter test_bounded_throwaway_advanced_three_child_lineage_and_lifecycle tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php
+# 2. Strict PHPUnit command invocation vector
+php vendor/bin/phpunit \
+  --no-configuration \
+  --bootstrap vendor/autoload.php \
+  --stop-on-failure \
+  --stop-on-error \
+  --filter test_bounded_throwaway_advanced_three_child_lineage_and_lifecycle \
+  --log-junit /absolute/private/path/to/junit.xml \
+  tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php
 ```
+
+#### 5.5.3 Bounded Constraints & Evidence Preservation
+- **Execution Deadline:** Explicit **20.0s whole-invocation deadline bound**.
+- **Owned Process TTL:** 3.0s child scripts TTL, 1.5s PID wait loop, 10.0s Process timeout.
+- **Bytehash Verification:** Pre- and post-qualification full tracked backend bytehash comparison (must be strictly equal).
+- **Private Artifact Preservation:** Output logs, JUnit XML, argv, pre/post environment, and exit metadata preserved in private directory (`mode 0700 / 0600`): `raw.log`, `junit.xml`, `argv.json`, `pre.json`, `post.json`, `exit.json`.
 
 ---
 
