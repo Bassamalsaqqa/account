@@ -21,7 +21,6 @@ use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Search\SearchableSelectorService;
 use App\Support\Tenancy\CompanyContext;
-use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -700,7 +699,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
         $tamperedPayload = json_decode($json, true);
         $tamperedPayload['o'] = 999;
         $tamperedJson = json_encode($tamperedPayload);
-        $tamperedCursor = rtrim(strtr(base64_encode($tamperedJson . '.' . $sig), '+/', '-_'), '=');
+        $tamperedCursor = rtrim(strtr(base64_encode($tamperedJson.'.'.$sig), '+/', '-_'), '=');
 
         try {
             $this->service->search(

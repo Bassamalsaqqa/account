@@ -8,10 +8,12 @@ use App\Actions\Inventory\AdjustStockAction;
 use App\Application\Inventory\AvailableLotQuery;
 use App\Application\Inventory\InventoryFormAvailability;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
 use App\Livewire\Pages\Inventory\Concerns\HandlesInventoryDraftControls;
 use App\Models\Company;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -19,7 +21,6 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use App\Livewire\Concerns\HandlesSearchableSelectors;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -86,7 +87,7 @@ class StockAdjustmentForm extends Component
         if ($this->product_id) {
             $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
-                $unitValid = $this->unit_id && ($this->unit_id === $product->base_unit_id || \App\Models\ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('unit_id', $this->unit_id)->where('active', true)->exists());
+                $unitValid = $this->unit_id && ($this->unit_id === $product->base_unit_id || ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('unit_id', $this->unit_id)->where('active', true)->exists());
                 if (! $unitValid) {
                     $this->unit_id = $product->base_unit_id;
                 }

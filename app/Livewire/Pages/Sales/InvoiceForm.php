@@ -21,6 +21,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
@@ -50,7 +51,6 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
-use App\Livewire\Concerns\HandlesSearchableSelectors;
 
 #[Layout('layouts.app')]
 class InvoiceForm extends Component

@@ -17,6 +17,7 @@ use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
@@ -39,8 +40,6 @@ use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
-
-use App\Livewire\Concerns\HandlesSearchableSelectors;
 
 #[Layout('layouts.app')]
 class QuotationForm extends Component

@@ -20,6 +20,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
@@ -51,8 +52,6 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
-
-use App\Livewire\Concerns\HandlesSearchableSelectors;
 
 #[Layout('layouts.app')]
 class PurchaseForm extends Component

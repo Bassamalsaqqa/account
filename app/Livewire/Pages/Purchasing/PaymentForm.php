@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\PostVendorPaymentAction;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -23,7 +24,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use App\Livewire\Concerns\HandlesSearchableSelectors;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;

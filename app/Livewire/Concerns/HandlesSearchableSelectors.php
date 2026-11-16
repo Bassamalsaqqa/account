@@ -4,6 +4,14 @@ declare(strict_types=1);
 
 namespace App\Livewire\Concerns;
 
+use App\Livewire\Pages\Inventory\OpeningStockForm;
+use App\Livewire\Pages\Inventory\StockAdjustmentForm;
+use App\Livewire\Pages\Inventory\StockMovementIndex;
+use App\Livewire\Pages\Inventory\StockTransferForm;
+use App\Livewire\Pages\Purchasing\PurchaseForm;
+use App\Livewire\Pages\Sales\InvoiceForm;
+use App\Livewire\Pages\Sales\PaymentForm;
+use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\Search\SearchableSelectorService;
@@ -21,15 +29,15 @@ trait HandlesSearchableSelectors
     protected function allowedSearchableSelectorTypes(): array
     {
         return match (static::class) {
-            \App\Livewire\Pages\Sales\InvoiceForm::class,
-            \App\Livewire\Pages\Sales\QuotationForm::class => ['customer', 'product'],
-            \App\Livewire\Pages\Purchasing\PurchaseForm::class => ['vendor', 'product'],
-            \App\Livewire\Pages\Sales\PaymentForm::class => ['customer'],
+            InvoiceForm::class,
+            QuotationForm::class => ['customer', 'product'],
+            PurchaseForm::class => ['vendor', 'product'],
+            PaymentForm::class => ['customer'],
             \App\Livewire\Pages\Purchasing\PaymentForm::class => ['vendor'],
-            \App\Livewire\Pages\Inventory\OpeningStockForm::class,
-            \App\Livewire\Pages\Inventory\StockAdjustmentForm::class,
-            \App\Livewire\Pages\Inventory\StockTransferForm::class,
-            \App\Livewire\Pages\Inventory\StockMovementIndex::class => ['product'],
+            OpeningStockForm::class,
+            StockAdjustmentForm::class,
+            StockTransferForm::class,
+            StockMovementIndex::class => ['product'],
             default => ['customer', 'vendor', 'product', 'warehouse'],
         };
     }
@@ -41,15 +49,15 @@ trait HandlesSearchableSelectors
     protected function searchableSelectorContext(): string
     {
         return match (static::class) {
-            \App\Livewire\Pages\Sales\InvoiceForm::class => 'sales',
-            \App\Livewire\Pages\Sales\QuotationForm::class => 'quotation',
-            \App\Livewire\Pages\Purchasing\PurchaseForm::class => 'purchasing',
-            \App\Livewire\Pages\Sales\PaymentForm::class => 'receipt',
+            InvoiceForm::class => 'sales',
+            QuotationForm::class => 'quotation',
+            PurchaseForm::class => 'purchasing',
+            PaymentForm::class => 'receipt',
             \App\Livewire\Pages\Purchasing\PaymentForm::class => 'payment',
-            \App\Livewire\Pages\Inventory\OpeningStockForm::class,
-            \App\Livewire\Pages\Inventory\StockAdjustmentForm::class,
-            \App\Livewire\Pages\Inventory\StockTransferForm::class,
-            \App\Livewire\Pages\Inventory\StockMovementIndex::class => 'inventory',
+            OpeningStockForm::class,
+            StockAdjustmentForm::class,
+            StockTransferForm::class,
+            StockMovementIndex::class => 'inventory',
             default => 'sales',
         };
     }
@@ -59,7 +67,7 @@ trait HandlesSearchableSelectors
      * Callable directly from Alpine via $wire.searchSelector(type, query, selectedId, options).
      * Public client options are sanitized: query, limit, cursor, and generation only.
      *
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      * @return array{
      *     items: list<array<string, mixed>>,
      *     has_more: bool,

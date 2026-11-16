@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Sales;
 
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\Customer;
@@ -21,7 +22,6 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use App\Livewire\Concerns\HandlesSearchableSelectors;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;

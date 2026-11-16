@@ -7,7 +7,7 @@ namespace App\Services\Search;
 final class SearchableOptionDTO
 {
     /**
-     * @param array<string, mixed> $meta
+     * @param  array<string, mixed>  $meta
      */
     public function __construct(
         public readonly string $id,
