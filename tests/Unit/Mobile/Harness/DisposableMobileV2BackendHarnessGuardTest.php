@@ -7349,6 +7349,7 @@ PHP;
             ],
         ];
         $rawReconContent = json_encode($rawReconData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+        $rawReconSha = hash('sha256', $rawReconContent);
 
         $probeConfigs = [
             'rollback_permission_denial' => [
@@ -7390,6 +7391,7 @@ PHP;
                 'raw_reconciliation_data' => $rawReconData,
                 'reconciliation_exit_code' => 0,
                 'reconciliation_stderr' => '',
+                'reconciliation_artifact_sha256' => $rawReconSha,
                 'baseline_metrics' => self::createCanonicalRollbackSnapshotFixture(),
                 'post_metrics' => self::createCanonicalRollbackSnapshotFixture(),
             ]);
@@ -7409,7 +7411,7 @@ PHP;
                 'report_file' => $cfg['repFile'],
                 'report_sha256' => hash('sha256', $repBytes),
                 'reconciliation_file' => $cfg['recFile'],
-                'reconciliation_sha256' => hash('sha256', $rawReconContent),
+                'reconciliation_sha256' => $rawReconSha,
                 'expected_http_status' => $cfg['status'],
                 'actual_http_status' => $cfg['status'],
                 'zero_delta_verified' => true,
@@ -7418,15 +7420,18 @@ PHP;
 
             $probesEvidence[] = [
                 'probe_name' => $pName,
-                'client_event_id' => $cfg['id'],
                 'actual_http_status' => $cfg['status'],
-                'expected_http_status' => $cfg['status'],
+                'client_event_id' => $cfg['id'],
                 'economic_delta_zero' => true,
                 'reconciliations_healthy' => true,
-                'issue_count' => 0,
-                'schema_name' => $schemaName,
-                'run_id' => $runId,
-                'company_id' => $companyId,
+                'reconciliations' => [
+                    'accounting' => true,
+                    'inventory' => true,
+                    'sales' => true,
+                    'payables' => true,
+                    'money' => true,
+                    'phase7' => true,
+                ],
                 'baseline_metrics' => self::createCanonicalRollbackSnapshotFixture(),
                 'post_metrics' => self::createCanonicalRollbackSnapshotFixture(),
             ];
@@ -7534,10 +7539,7 @@ PHP;
                 'matching_payload_digest' => $payloadDigest,
             ],
             'rollback_probes_evidence' => [
-                'contract_version' => 'rollback_probes_evidence_v1',
                 'probes' => $probesEvidence,
-                'baseline_metrics' => self::createCanonicalRollbackSnapshotFixture(),
-                'post_metrics' => self::createCanonicalRollbackSnapshotFixture(),
             ],
         ];
 
@@ -8390,6 +8392,10 @@ PHP;
             $metadataWithoutAcp = $base['metadata'];
             unset($metadataWithoutAcp['advancedControlPacketData'], $metadataWithoutAcp['advancedControlPacketSha256'], $metadataWithoutAcp['advancedControlPacketPath']);
 
+            // 0. Positive qualification of base fixture before isolated negative mutations
+            $baseVal = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pins, $trustedReport);
+            $this->assertTrue($baseVal['is_valid'], 'Base fixture must be valid before applying isolated mutations: ' . implode('; ', $baseVal['errors'] ?? []));
+
             // 1. composeTrustedDbReport in advanced scope throws without ACP
             $threw = false;
             try {
@@ -8462,6 +8468,10 @@ PHP;
             $expectedPins = $base['expectedPins'];
             $trustedReport = $base['trustedDbReport'];
             $manifest = $base['manifest'];
+
+            // 0. Positive qualification of base fixture before isolated negative mutations
+            $baseVal = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedReport);
+            $this->assertTrue($baseVal['is_valid'], 'Base fixture must be valid before applying isolated mutations: ' . implode('; ', $baseVal['errors'] ?? []));
 
             // Craft self-consistent attacker report and manifest for probe 1 with mismatched UUID
             $wrongEventId1 = '44444444-4444-4444-8444-444444444444';
