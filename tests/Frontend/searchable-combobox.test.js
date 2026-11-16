@@ -220,3 +220,22 @@ test('company scope change invalidates generation and discards previous results'
     assert.deepEqual(comp.items, []);
     assert.equal(comp.open, false);
 });
+
+test('changed query immediately removes old rows and refuses stale selection', async () => {
+    let selections = 0;
+    const oldItem = { id: 123, label: 'Old query customer' };
+    const comp = createComponent({ type: 'customer', onSelect: 'choose' });
+    comp.$wire = { choose: async () => { selections++; } };
+    comp.items = [oldItem];
+    comp.activeIndex = 0;
+    comp.hasMore = true;
+    comp.query = 'new query';
+    comp.handleInput();
+    assert.deepEqual(comp.items, []);
+    assert.equal(comp.activeIndex, -1);
+    assert.equal(comp.hasMore, false);
+    await comp.selectItem(oldItem);
+    assert.equal(selections, 0);
+    assert.equal(comp.selectedId, null);
+    comp.setCompany(null); // Cancels the pending debounce without starting a request.
+});

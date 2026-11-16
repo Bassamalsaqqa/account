@@ -134,6 +134,10 @@ export function searchableCombobox(config) {
         handleInput() {
             if (this.isBlocked()) return;
             const currentGen = this.invalidateIntent();
+            this.items = [];
+            this.hasMore = false;
+            this.activeIndex = -1;
+            this.activeId = null;
             this.open = true;
             this.failed = false;
             const capturedQuery = this.query;
@@ -342,6 +346,7 @@ export function searchableCombobox(config) {
 
         async selectItem(item) {
             if (this.isBlocked() || !item) return;
+            if (!this.items.some(candidate => String(candidate.id) === String(item.id))) return;
 
             const currentGen = this.invalidateIntent();
             const prevId = this.selectedId;
