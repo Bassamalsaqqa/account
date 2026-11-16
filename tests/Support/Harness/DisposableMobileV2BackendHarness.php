@@ -187,6 +187,16 @@ final class DisposableMobileV2BackendHarness
         return $this->proxyProcess?->getPid();
     }
 
+    public function getBackendPid(): ?int
+    {
+        return $this->backendProcess?->getPid();
+    }
+
+    public function getHarnessPgId(): ?int
+    {
+        return function_exists('posix_getpgid') ? posix_getpgid(getmypid()) : null;
+    }
+
     public function setRootPrestartApprovalPath(?string $path): void
     {
         $this->rootPrestartApprovalPath = $path;
@@ -2274,6 +2284,19 @@ PHP;
                 $serveEnv,
             );
             $this->caddyProcess->start();
+
+            // Record child process PIDs and process group for supervisor lifecycle management
+            $processPids = [
+                'harness_pid' => getmypid(),
+                'harness_pgid' => function_exists('posix_getpgid') ? posix_getpgid(getmypid()) : getmypid(),
+                'backend_pid' => $this->backendProcess?->getPid(),
+                'proxy_pid' => $this->proxyProcess?->getPid(),
+                'caddy_pid' => $this->caddyProcess?->getPid(),
+                'created_at' => (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+            ];
+            $pidsFile = $bootstrapDir.'/process_pids.json';
+            file_put_contents($pidsFile, json_encode($processPids, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            chmod($pidsFile, 0600);
 
             // Verify TLS readiness via active bounded HTTPS probe
             $this->verifyTlsReadiness($nonce, $caCertPath);

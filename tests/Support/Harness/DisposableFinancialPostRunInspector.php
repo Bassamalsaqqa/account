@@ -3017,10 +3017,32 @@ final class DisposableFinancialPostRunInspector
      * Fails closed: NO catch SQL errors -> 0. SQL/schema failures propagate immediately.
      *
      * @param  PDO  $pdo  Read-only PDO connection to verified disposable database
+    /**
+     * Captures a comprehensive, deterministic baseline snapshot of the 9 canonical financial tables
+     * and document sequences for rollback probe zero-delta assertions.
+     *
+     * Invariants:
+     * - Asserts @@port=3342 and DATABASE()=disposable_schema (and optional exact expectedSchemaName) BEFORE any query
+     * - Configures read-only session and starts explicit consistent snapshot:
+     *   SET SESSION TRANSACTION READ ONLY; START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY
+     *   Always rolls back in finally block to close the snapshot transaction cleanly.
+     * - Streams deterministic ordered full rows for all 9 canonical financial tables:
+     *   sales_invoices, sales_invoice_lines, sales_invoice_lot_allocations, customer_payments,
+     *   customer_payment_allocations, mobile_event_receipts, stock_movements, posting_batches, posting_lines.
+     * - Each table query is scoped strictly to company_id and ordered by id ASC.
+     * - Rejects native IEEE float values (throws exception); requires exact decimal strings from PDO.
+     * - Computes per-table row hash fingerprints and aggregate row_fingerprint_sha256 using CanonicalJsonSerializer.
+     * - Captures stock_movements.quantity_delta_base and sales_invoice_lot_allocations.quantity_allocated_base
+     *   as exact decimal strings (no float/int truncation).
+     * - Captures full document_sequences(document_type, year, next_number) sorted map.
+     * - Fails closed: NO catch SQL errors -> 0. SQL/schema failures propagate immediately.
+     *
+     * @param  PDO  $pdo  Read-only PDO connection to verified disposable database
      * @param  int  $companyId  Company internal ID
+     * @param  string|null  $expectedSchemaName  Optional exact expected disposable schema name
      * @return array<string, mixed>
      */
-    public static function captureRollbackProbeSnapshot(PDO $pdo, int $companyId): array
+    public static function captureRollbackProbeSnapshot(PDO $pdo, int $companyId, ?string $expectedSchemaName = null): array
     {
         if ($companyId <= 0) {
             throw new InvalidArgumentException("captureRollbackProbeSnapshot requires positive companyId, got {$companyId}.");
@@ -3038,92 +3060,116 @@ final class DisposableFinancialPostRunInspector
             throw new RuntimeException("PDO schema mismatch: expected disposable schema matching /^accounting_p8_tmp_[a-f0-9]{12}$/D, got '{$dbName}'.");
         }
 
+        if ($expectedSchemaName !== null && ! hash_equals($expectedSchemaName, $dbName)) {
+            throw new RuntimeException("PDO schema mismatch: expected '{$expectedSchemaName}', got '{$dbName}'.");
+        }
+
         $port = (string) ($gateRow['port'] ?? '');
         if ($port !== '3342') {
             throw new RuntimeException("PDO port mismatch: expected port 3342, got '{$port}'.");
         }
 
         $pdo->exec('SET SESSION TRANSACTION READ ONLY');
+        $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
 
-        // 2. The 9 canonical financial tables
-        $tables = [
-            'sales_invoices',
-            'sales_invoice_lines',
-            'sales_invoice_lot_allocations',
-            'customer_payments',
-            'customer_payment_allocations',
-            'mobile_event_receipts',
-            'stock_movements',
-            'posting_batches',
-            'posting_lines',
-        ];
+        try {
+            // 2. The 9 canonical financial tables
+            $tables = [
+                'sales_invoices',
+                'sales_invoice_lines',
+                'sales_invoice_lot_allocations',
+                'customer_payments',
+                'customer_payment_allocations',
+                'mobile_event_receipts',
+                'stock_movements',
+                'posting_batches',
+                'posting_lines',
+            ];
 
-        $counts = [];
-        $tableFingerprints = [];
+            $counts = [];
+            $tableFingerprints = [];
 
-        foreach ($tables as $table) {
-            $stmt = $pdo->prepare("SELECT * FROM `{$table}` WHERE `company_id` = ? ORDER BY `id` ASC");
-            $stmt->execute([$companyId]);
+            foreach ($tables as $table) {
+                $stmt = $pdo->prepare("SELECT * FROM `{$table}` WHERE `company_id` = ? ORDER BY `id` ASC");
+                $stmt->execute([$companyId]);
 
-            $rowCount = 0;
-            $rowHashes = [];
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $rowCount++;
-                $normalizedRow = [];
-                foreach ($row as $col => $val) {
-                    $normalizedRow[$col] = is_float($val) ? (string) $val : $val;
+                $rowCount = 0;
+                $rowHashes = [];
+                while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $rowCount++;
+                    $normalizedRow = [];
+                    foreach ($row as $col => $val) {
+                        if (is_float($val)) {
+                            throw new RuntimeException("Lossy native float detected in column {$table}.{$col}: decimal strings strictly required from PDO.");
+                        }
+                        $normalizedRow[$col] = $val;
+                    }
+                    $rowHashes[] = hash('sha256', CanonicalJsonSerializer::serialize($normalizedRow));
                 }
-                $rowHashes[] = hash('sha256', CanonicalJsonSerializer::serialize($normalizedRow));
+
+                $counts[$table] = $rowCount;
+                $tableFingerprints[$table] = hash('sha256', implode(';', $rowHashes));
             }
 
-            $counts[$table] = $rowCount;
-            $tableFingerprints[$table] = hash('sha256', implode(';', $rowHashes));
+            // 3. Document sequences sorted map: (document_type, year) => next_number
+            $stmtSeq = $pdo->prepare('SELECT `document_type`, `year`, `next_number` FROM `document_sequences` WHERE `company_id` = ? ORDER BY `document_type` ASC, `year` ASC');
+            $stmtSeq->execute([$companyId]);
+            $sequences = [];
+            while ($row = $stmtSeq->fetch(PDO::FETCH_ASSOC)) {
+                $key = ((string) $row['document_type']) . ':' . ((int) $row['year']);
+                $sequences[$key] = (int) $row['next_number'];
+            }
+            ksort($sequences);
+
+            // 4. Exact decimal string balances: stock_movements.quantity_delta_base and sales_invoice_lot_allocations.quantity_allocated_base
+            $stmtStock = $pdo->prepare('SELECT COALESCE(SUM(`quantity_delta_base`), 0.0) FROM `stock_movements` WHERE `company_id` = ?');
+            $stmtStock->execute([$companyId]);
+            $stockRaw = $stmtStock->fetchColumn();
+            if (is_float($stockRaw)) {
+                throw new RuntimeException('Lossy native float detected in stock_movements balance: decimal string strictly required.');
+            }
+            $stockQtySum = (string) ($stockRaw ?? '0.000000');
+
+            $stmtLot = $pdo->prepare('SELECT COALESCE(SUM(`quantity_allocated_base`), 0.0) FROM `sales_invoice_lot_allocations` WHERE `company_id` = ?');
+            $stmtLot->execute([$companyId]);
+            $lotRaw = $stmtLot->fetchColumn();
+            if (is_float($lotRaw)) {
+                throw new RuntimeException('Lossy native float detected in sales_invoice_lot_allocations balance: decimal string strictly required.');
+            }
+            $lotQtySum = (string) ($lotRaw ?? '0.000000');
+
+            // 5. Canonical aggregate row fingerprint
+            $fingerprintPayload = [
+                'table_fingerprints' => $tableFingerprints,
+                'document_sequences' => $sequences,
+                'stock_movements_qty_delta_base' => $stockQtySum,
+                'lot_allocations_qty_allocated_base' => $lotQtySum,
+            ];
+            $aggregateFingerprint = hash('sha256', CanonicalJsonSerializer::serialize($fingerprintPayload));
+
+            return [
+                'sales_invoices' => $counts['sales_invoices'],
+                'sales_invoice_lines' => $counts['sales_invoice_lines'],
+                'sales_invoice_lot_allocations' => $counts['sales_invoice_lot_allocations'],
+                'customer_payments' => $counts['customer_payments'],
+                'customer_payment_allocations' => $counts['customer_payment_allocations'],
+                'mobile_event_receipts' => $counts['mobile_event_receipts'],
+                'stock_movements' => $counts['stock_movements'],
+                'posting_batches' => $counts['posting_batches'],
+                'posting_lines' => $counts['posting_lines'],
+                'document_sequences' => $sequences,
+                'table_fingerprints' => $tableFingerprints,
+                'stock_movements_qty_delta_base' => $stockQtySum,
+                'lot_allocations_qty_allocated_base' => $lotQtySum,
+                'row_fingerprint_sha256' => $aggregateFingerprint,
+            ];
+        } finally {
+            try {
+                $pdo->exec('ROLLBACK');
+            } catch (\Throwable) {
+                // Ignore rollback exceptions in finally
+            }
         }
-
-        // 3. Document sequences sorted map: (document_type, year) => next_number
-        $stmtSeq = $pdo->prepare('SELECT `document_type`, `year`, `next_number` FROM `document_sequences` WHERE `company_id` = ? ORDER BY `document_type` ASC, `year` ASC');
-        $stmtSeq->execute([$companyId]);
-        $sequences = [];
-        while ($row = $stmtSeq->fetch(PDO::FETCH_ASSOC)) {
-            $key = ((string) $row['document_type']) . ':' . ((int) $row['year']);
-            $sequences[$key] = (int) $row['next_number'];
-        }
-        ksort($sequences);
-
-        // 4. Exact decimal string balances: stock_movements.quantity_delta_base and sales_invoice_lot_allocations.quantity_allocated_base
-        $stmtStock = $pdo->prepare('SELECT COALESCE(SUM(`quantity_delta_base`), 0.0) FROM `stock_movements` WHERE `company_id` = ?');
-        $stmtStock->execute([$companyId]);
-        $stockQtySum = (string) $stmtStock->fetchColumn();
-
-        $stmtLot = $pdo->prepare('SELECT COALESCE(SUM(`quantity_allocated_base`), 0.0) FROM `sales_invoice_lot_allocations` WHERE `company_id` = ?');
-        $stmtLot->execute([$companyId]);
-        $lotQtySum = (string) $stmtLot->fetchColumn();
-
-        // 5. Canonical aggregate row fingerprint
-        $fingerprintPayload = [
-            'table_fingerprints' => $tableFingerprints,
-            'document_sequences' => $sequences,
-            'stock_movements_qty_delta_base' => $stockQtySum,
-            'lot_allocations_qty_allocated_base' => $lotQtySum,
-        ];
-        $aggregateFingerprint = hash('sha256', CanonicalJsonSerializer::serialize($fingerprintPayload));
-
-        return [
-            'sales_invoices' => $counts['sales_invoices'],
-            'sales_invoice_lines' => $counts['sales_invoice_lines'],
-            'sales_invoice_lot_allocations' => $counts['sales_invoice_lot_allocations'],
-            'customer_payments' => $counts['customer_payments'],
-            'customer_payment_allocations' => $counts['customer_payment_allocations'],
-            'mobile_event_receipts' => $counts['mobile_event_receipts'],
-            'stock_movements' => $counts['stock_movements'],
-            'posting_batches' => $counts['posting_batches'],
-            'posting_lines' => $counts['posting_lines'],
-            'document_sequences' => $sequences,
-            'table_fingerprints' => $tableFingerprints,
-            'stock_movements_qty_delta_base' => $stockQtySum,
-            'lot_allocations_qty_allocated_base' => $lotQtySum,
-            'row_fingerprint_sha256' => $aggregateFingerprint,
-        ];
     }
 }
 

@@ -352,6 +352,47 @@ class SupervisedPairedFinancialDrill
      * @param  string  $repoRoot    Checkout root directory
      *
      * @throws RuntimeException
+    /**
+     * Resolves process start identity from Linux /proc/[pid]/stat (field 22: starttime).
+     * Returns null if unreadable or on non-Linux systems.
+     */
+    public static function getProcessStartIdentity(int $pid): ?string
+    {
+        if ($pid <= 0) {
+            return null;
+        }
+
+        $statPath = "/proc/{$pid}/stat";
+        if (is_file($statPath) && is_readable($statPath)) {
+            $content = @file_get_contents($statPath);
+            if ($content !== false && $content !== '') {
+                $lastParen = strrpos($content, ')');
+                if ($lastParen !== false) {
+                    $rest = trim(substr($content, $lastParen + 1));
+                    $fields = explode(' ', $rest);
+                    // field 22 is index 19 after ') state ppid ...'
+                    if (isset($fields[19])) {
+                        return $fields[19];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Captures and validates an immutable verified owned snapshot of a live paired run.
+     * Performs strict DB proof, nonce, schema, directory, PID, and permission assertions.
+     *
+     * @param  string  $schemaName  Must match disposable pattern
+     * @param  string  $proofPath   Path to disposable DB ownership proof file
+     * @param  string  $proofNonce  Ownership proof nonce
+     * @param  string  $harnessDir  Owned temporary directory path
+     * @param  int     $childPid    Child CLI process PID (positive integer)
+     * @param  string  $repoRoot    Checkout root directory
+     *
+     * @throws RuntimeException
      */
     public static function captureVerifiedOwnedSnapshot(
         string $schemaName,
@@ -359,7 +400,15 @@ class SupervisedPairedFinancialDrill
         string $proofNonce,
         string $harnessDir,
         int $childPid,
-        string $repoRoot
+        string $repoRoot,
+        ?int $harnessPgId = null,
+        ?int $backendPid = null,
+        ?int $proxyPid = null,
+        ?int $caddyPid = null,
+        ?string $childStartIdentity = null,
+        ?string $backendStartIdentity = null,
+        ?string $proxyStartIdentity = null,
+        ?string $caddyStartIdentity = null
     ): VerifiedOwnedSnapshot {
         return VerifiedOwnedSnapshot::fromLiveOwnership(
             schemaName: $schemaName,
@@ -367,7 +416,15 @@ class SupervisedPairedFinancialDrill
             proofNonce: $proofNonce,
             harnessDir: $harnessDir,
             childPid: $childPid,
-            repoRoot: $repoRoot
+            repoRoot: $repoRoot,
+            harnessPgId: $harnessPgId,
+            backendPid: $backendPid,
+            proxyPid: $proxyPid,
+            caddyPid: $caddyPid,
+            childStartIdentity: $childStartIdentity,
+            backendStartIdentity: $backendStartIdentity,
+            proxyStartIdentity: $proxyStartIdentity,
+            caddyStartIdentity: $caddyStartIdentity
         );
     }
 
@@ -1041,32 +1098,90 @@ class SupervisedPairedFinancialDrill
                     $errors[] = "CLEANUP_PID_MISMATCH: live process PID {$livePid} does not match captured snapshot PID {$snapshot->childPid}. No signals sent.";
                     $childReaped = false;
                 } else {
-                    fwrite(STDERR, "[Cleanup] Sending SIGTERM to child process (PID {$livePid}, matches snapshot)...\n");
-                    $childProcess->signal(SIGTERM);
-
-                    $waitStart = hrtime(true) / 1e9;
-                    while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $waitStart) < 5.0) {
-                        usleep(100000);
-                    }
-
-                    if ($childProcess->isRunning()) {
-                        fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
-                        $childProcess->signal(SIGKILL);
-                        $killStart = hrtime(true) / 1e9;
-                        while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $killStart) < 2.0) {
-                            usleep(100000);
+                    $startIdMatches = true;
+                    if ($snapshot->childStartIdentity !== null) {
+                        $liveStartId = self::getProcessStartIdentity($livePid);
+                        if ($liveStartId !== null && $liveStartId !== $snapshot->childStartIdentity) {
+                            $errors[] = "CLEANUP_PID_START_IDENTITY_MISMATCH: live process PID {$livePid} start identity '{$liveStartId}' does not match captured snapshot '{$snapshot->childStartIdentity}'. No signals sent.";
+                            $childReaped = false;
+                            $startIdMatches = false;
                         }
                     }
 
-                    if ($childProcess->isRunning()) {
-                        $childReaped = false;
-                        $errors[] = 'CHILD_PROCESS_NOT_REAPED';
+                    if ($startIdMatches) {
+                        fwrite(STDERR, "[Cleanup] Sending SIGTERM to child process (PID {$livePid}, matches snapshot)...\n");
+                        $childProcess->signal(SIGTERM);
+
+                        $waitStart = hrtime(true) / 1e9;
+                        while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $waitStart) < 5.0) {
+                            usleep(100000);
+                        }
+
+                        if ($childProcess->isRunning()) {
+                            fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
+                            $childProcess->signal(SIGKILL);
+                            $killStart = hrtime(true) / 1e9;
+                            while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $killStart) < 2.0) {
+                                usleep(100000);
+                            }
+                        }
+
+                        if ($childProcess->isRunning()) {
+                            $childReaped = false;
+                            $errors[] = 'CHILD_PROCESS_NOT_REAPED';
+                        }
                     }
                 }
             } else {
                 // No snapshot: cannot verify PID, do not send signals to an unverified process.
                 $errors[] = 'CLEANUP_CHILD_SKIP_NO_SNAPSHOT: child process running but no snapshot for PID verification; no signals sent.';
                 $childReaped = false;
+            }
+        }
+
+        // 1b. Terminate and reap tracked child subprocesses if still alive (backend, proxy, caddy)
+        if ($snapshot !== null) {
+            $trackedChildren = [
+                'proxy' => ['pid' => $snapshot->proxyPid, 'startId' => $snapshot->proxyStartIdentity],
+                'backend' => ['pid' => $snapshot->backendPid, 'startId' => $snapshot->backendStartIdentity],
+                'caddy' => ['pid' => $snapshot->caddyPid, 'startId' => $snapshot->caddyStartIdentity],
+            ];
+
+            foreach ($trackedChildren as $name => $info) {
+                $pid = $info['pid'];
+                $expectedStartId = $info['startId'];
+                if ($pid !== null && $pid > 0 && function_exists('posix_kill') && @posix_kill($pid, 0)) {
+                    if ($expectedStartId !== null) {
+                        $liveStartId = self::getProcessStartIdentity($pid);
+                        if ($liveStartId !== null && $liveStartId !== $expectedStartId) {
+                            $errors[] = "CLEANUP_{$name}_PID_IDENTITY_MISMATCH: PID {$pid} start identity '{$liveStartId}' does not match captured snapshot '{$expectedStartId}'. No signals sent. Manual remediation required.";
+                            continue;
+                        }
+                    }
+
+                    fwrite(STDERR, "[Cleanup] Sending SIGTERM to lingering {$name} process (PID {$pid})...\n");
+                    @posix_kill($pid, SIGTERM);
+                    $wStart = hrtime(true) / 1e9;
+                    while (@posix_kill($pid, 0) && ((hrtime(true) / 1e9) - $wStart) < 2.0) {
+                        usleep(50000);
+                    }
+                    if (@posix_kill($pid, 0)) {
+                        fwrite(STDERR, "[Cleanup] Lingering {$name} process still alive; sending SIGKILL.\n");
+                        @posix_kill($pid, SIGKILL);
+                        $kStart = hrtime(true) / 1e9;
+                        while (@posix_kill($pid, 0) && ((hrtime(true) / 1e9) - $kStart) < 1.0) {
+                            usleep(50000);
+                        }
+                    }
+                    if (@posix_kill($pid, 0)) {
+                        $errors[] = "CHILD_{$name}_PROCESS_NOT_REAPED: PID {$pid} failed to terminate.";
+                    }
+                }
+            }
+
+            // Signal process group if valid and owned
+            if ($snapshot->harnessPgId !== null && $snapshot->harnessPgId > 1 && function_exists('posix_kill')) {
+                @posix_kill(-$snapshot->harnessPgId, SIGTERM);
             }
         }
 
@@ -1130,13 +1245,20 @@ class SupervisedPairedFinancialDrill
             }
         }
 
-        // 3. Verify listener absence on 18080, 18081, and 18443
-        foreach ([18080, 18081, 18443] as $port) {
+        // 3. Verify listener absence conditionally:
+        // 18080 (backend loopback) and 18443 (caddy TLS) are always verified.
+        // 18081 (internal backend port) is verified ONLY for advanced probe execution (when proxy was started).
+        $portsToCheck = [18080, 18443];
+        if ($snapshot !== null && $snapshot->proxyPid !== null) {
+            $portsToCheck[] = 18081;
+        }
+
+        foreach ($portsToCheck as $port) {
             $fp = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.5);
             if (is_resource($fp)) {
                 fclose($fp);
                 $listenersClosed = false;
-                $errors[] = "LISTENER_STILL_ACTIVE_PORT_{$port}";
+                $errors[] = "LISTENER_STILL_ACTIVE_PORT_{$port}: Port is occupied by unverified process. Manual remediation required; unverified processes are never killed.";
             }
         }
 
@@ -1676,6 +1798,14 @@ final class VerifiedOwnedSnapshot
         public readonly string $harnessDir,
         public readonly int $childPid,
         public readonly int $verifiedAt,
+        public readonly ?int $harnessPgId = null,
+        public readonly ?int $backendPid = null,
+        public readonly ?int $proxyPid = null,
+        public readonly ?int $caddyPid = null,
+        public readonly ?string $childStartIdentity = null,
+        public readonly ?string $backendStartIdentity = null,
+        public readonly ?string $proxyStartIdentity = null,
+        public readonly ?string $caddyStartIdentity = null,
     ) {}
 
     /**
@@ -1714,7 +1844,15 @@ final class VerifiedOwnedSnapshot
         string $proofNonce,
         string $harnessDir,
         int $childPid,
-        string $repoRoot
+        string $repoRoot,
+        ?int $harnessPgId = null,
+        ?int $backendPid = null,
+        ?int $proxyPid = null,
+        ?int $caddyPid = null,
+        ?string $childStartIdentity = null,
+        ?string $backendStartIdentity = null,
+        ?string $proxyStartIdentity = null,
+        ?string $caddyStartIdentity = null
     ): self {
         // 1. Schema name
         if (preg_match(SupervisedPairedFinancialDrill::SCHEMA_REGEX, $schemaName) !== 1
@@ -1871,6 +2009,14 @@ final class VerifiedOwnedSnapshot
             harnessDir: $realHarness,
             childPid: $childPid,
             verifiedAt: time(),
+            harnessPgId: $harnessPgId,
+            backendPid: $backendPid,
+            proxyPid: $proxyPid,
+            caddyPid: $caddyPid,
+            childStartIdentity: $childStartIdentity,
+            backendStartIdentity: $backendStartIdentity,
+            proxyStartIdentity: $proxyStartIdentity,
+            caddyStartIdentity: $caddyStartIdentity,
         );
     }
 }

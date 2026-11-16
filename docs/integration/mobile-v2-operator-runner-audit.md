@@ -1213,6 +1213,19 @@ When a subsequent bounded grant is authorized by Root, the following entrypoints
 4. `tests/Support/Harness/root-operator-tool.py`:
    - Extend manifest preparation to configure advanced probe profiles under explicit Root coordination.
 
+### 18.6 Offline Pure Unit Test Qualification & Concrete Gaps Disclosure
+
+#### 1. Provenance of Pure Scanner, Zero-Delta, and Proxy CLI Guards
+- Root executed offline qualification on commit `ecf90e0bb86a183d18e6c658f635c8d8fbf31328` (`/home/t3dev/.t3/userdata/attachments/root-advanced-pure-chunk-qe55qtre`), evaluating 9 pure methods in `DisposableMobileV2BackendHarnessGuardTest.php`.
+- Qualification results: **PASS (9 tests, 19 assertions)** with zero DB connections, zero listening sockets, zero framework bootstrap, and flag spoofing poison port checks verified.
+- The 3 raw PHPUnit mock notices recorded during the run were preserved verbatim as raw log data without editorialization.
+
+#### 2. Protocol Gap List: Peer Android Producer & New Contract Keys Not Yet Authored
+- **Android Test Producer Not Authored**: The peer Android repository and test suite have NOT been authored or modified for the advanced execution scenarios. Specifically, the Android client does not yet implement the client-side lost-ACK retry sequence (handling dropped HTTP responses via offline event status queries) nor the rollback probe callers (permission-denied actor test, insufficient stock test). The peer Android repository remains strictly untouched.
+- **New Contract Keys Not Authored in Android**: The advanced probe contract envelopes, client retry header expectations, and status query payload schema additions are not yet implemented in the Android application.
+- **Historical and Golden Evidence Byte-Identical**: All original Attempt 7 execution logs (`root-d43-case7-exec`), golden machine manifests (`c54a85b5...`), trusted DB reports (`eb51bc1d...`), and witness artifacts (`44128bee...`) remain 100% frozen, byte-identical, and unaltered. No historical `outer_validation: false` status or exit code has been rewritten.
+
+
 
 
 

@@ -396,6 +396,37 @@ class TestTransportProxy
 
             $isTarget = $this->isTargetRequest($method, $path, $body);
 
+            // Pre-Live Verification & Route Gating:
+            // Allow ONLY exact GET /_harness/readiness (+ optional hex nonce) prior to verified live Root approval.
+            // Strictly fail closed (403 Forbidden) for ALL economic and other non-readiness routes until fresh live approval is verified.
+            $isReadiness = self::isReadinessRequest($method, $path);
+            if (! $isReadiness) {
+                $liveApprovalPath = (string) ($this->targetConfig['root_live_approval_path'] ?? '');
+                if ($liveApprovalPath === '' || ! is_file($liveApprovalPath)) {
+                    $this->sendHttpError($client, 403, 'Forbidden: Live Root Approval Required Prior to Non-Readiness Traffic');
+
+                    return;
+                }
+
+                try {
+                    SupervisedPairedFinancialDrill::verifyLiveRootApproval(
+                        $liveApprovalPath,
+                        (string) ($this->targetConfig['handoff_path'] ?? ''),
+                        (string) ($this->targetConfig['handoff_sha256'] ?? ''),
+                        (string) ($this->targetConfig['backend_head'] ?? ''),
+                        (string) ($this->targetConfig['android_publication_head'] ?? ''),
+                        (string) ($this->targetConfig['android_executable_head'] ?? ''),
+                        (string) ($this->targetConfig['manifest_sha256'] ?? ''),
+                        (string) ($this->targetConfig['target_schema'] ?? ''),
+                        (string) ($this->targetConfig['scope'] ?? SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE)
+                    );
+                } catch (\Throwable $e) {
+                    $this->sendHttpError($client, 403, 'Forbidden: Live Root Approval Verification Failed: '.$e->getMessage());
+
+                    return;
+                }
+            }
+
             // 3. Forward request to upstream backend (127.0.0.1:18081)
             $upstreamUri = "tcp://{$this->upstreamHost}:{$this->upstreamPort}";
             $upstreamErrno = 0;
@@ -461,7 +492,7 @@ class TestTransportProxy
                             (string) ($this->targetConfig['android_executable_head'] ?? ''),
                             (string) ($this->targetConfig['manifest_sha256'] ?? ''),
                             (string) ($this->targetConfig['target_schema'] ?? ''),
-                            (string) ($this->targetConfig['scope'] ?? SupervisedPairedFinancialDrill::REQUIRED_SCOPE)
+                            (string) ($this->targetConfig['scope'] ?? SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE)
                         );
                     } catch (\Throwable $e) {
                         $this->sendHttpError($client, 500, 'Internal Error: Live Root Approval Verification Failed: '.$e->getMessage());
@@ -504,6 +535,35 @@ class TestTransportProxy
                 @fclose($upstream);
             }
         }
+    }
+
+    /**
+     * Determines if incoming request is strictly the readiness probe.
+     * Enforces GET method, exact /_harness/readiness path, and optional valid hex nonce.
+     */
+    public static function isReadinessRequest(string $method, string $path): bool
+    {
+        if ($method !== 'GET') {
+            return false;
+        }
+
+        $parts = parse_url($path);
+        $urlPath = $parts['path'] ?? $path;
+        if ($urlPath !== '/_harness/readiness') {
+            return false;
+        }
+
+        if (isset($parts['query']) && $parts['query'] !== '') {
+            parse_str($parts['query'], $query);
+            if (isset($query['nonce'])) {
+                $nonce = (string) $query['nonce'];
+                if ($nonce === '' || ! preg_match('/^[0-9a-f]{16,64}$/i', $nonce)) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -264,6 +264,11 @@ try {
     if ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE) {
         $childCmd[] = '--advanced-probes';
     }
+    if ($rootApprovalFile !== null && $rootApprovalFile !== '') {
+        $childCmd[] = '--root-approval-file=' . $rootApprovalFile;
+    }
+    $liveApprovalFileForChild = $rootLiveApprovalFile ?? ($outputDir . '/live_root_approval.json');
+    $childCmd[] = '--root-live-approval-file=' . $liveApprovalFileForChild;
 
     $childEnv = array_merge($_ENV, [
         'MOBILE_V2_HARNESS_ENABLE' => '1',
@@ -368,14 +373,45 @@ try {
     $proofPath = $creds['proof_path'];
     $proofNonce = $creds['proof_nonce'];
 
+    // Discover process PIDs from child process_pids.json if written by harness
+    $harnessPgId = null;
+    $backendPid = null;
+    $proxyPid = null;
+    $caddyPid = null;
+    $pidsPath = $bootstrapDir . '/process_pids.json';
+    if (is_file($pidsPath)) {
+        SupervisedPairedFinancialDrill::assertSecureFilePermissions($pidsPath, 'PROCESS_PIDS');
+        $pidsRaw = json_decode((string) file_get_contents($pidsPath), true);
+        if (is_array($pidsRaw)) {
+            $harnessPgId = isset($pidsRaw['harness_pgid']) ? (int) $pidsRaw['harness_pgid'] : null;
+            $backendPid = isset($pidsRaw['backend_pid']) ? (int) $pidsRaw['backend_pid'] : null;
+            $proxyPid = isset($pidsRaw['proxy_pid']) ? (int) $pidsRaw['proxy_pid'] : null;
+            $caddyPid = isset($pidsRaw['caddy_pid']) ? (int) $pidsRaw['caddy_pid'] : null;
+        }
+    }
+
+    $childPid = $childProcess->getPid();
+    $childStartId = SupervisedPairedFinancialDrill::getProcessStartIdentity($childPid);
+    $backendStartId = $backendPid !== null ? SupervisedPairedFinancialDrill::getProcessStartIdentity($backendPid) : null;
+    $proxyStartId = $proxyPid !== null ? SupervisedPairedFinancialDrill::getProcessStartIdentity($proxyPid) : null;
+    $caddyStartId = $caddyPid !== null ? SupervisedPairedFinancialDrill::getProcessStartIdentity($caddyPid) : null;
+
     // Capture verified owned snapshot: performs full proof/nonce/permissions/assertPrimarySchema verification
     $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
         $schemaName,
         $proofPath,
         $proofNonce,
         $harnessDir,
-        $childProcess->getPid(),
-        $repoRoot
+        $childPid,
+        $repoRoot,
+        $harnessPgId,
+        $backendPid,
+        $proxyPid,
+        $caddyPid,
+        $childStartId,
+        $backendStartId,
+        $proxyStartId,
+        $caddyStartId
     );
 
     // Construct explicit inspectorEnv array with testing flags and testing DB creds (subprocess env)

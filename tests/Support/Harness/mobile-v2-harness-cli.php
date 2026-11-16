@@ -28,6 +28,8 @@ $pairedHoldSeconds = null;
 
 $isAdvancedProbes = false;
 $expectedScope = null;
+$rootApprovalFile = null;
+$rootLiveApprovalFile = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--prepare') {
@@ -56,6 +58,10 @@ foreach ($argvList as $arg) {
         $pairingManifest = substr($arg, 19);
     } elseif (str_starts_with($arg, '--pairing-manifest-sha=')) {
         $pairingManifestSha = substr($arg, 23);
+    } elseif (str_starts_with($arg, '--root-approval-file=')) {
+        $rootApprovalFile = substr($arg, 21);
+    } elseif (str_starts_with($arg, '--root-live-approval-file=')) {
+        $rootLiveApprovalFile = substr($arg, 26);
     }
 }
 
@@ -221,5 +227,6 @@ $command->setLaravel($app);
 $console->addCommand($command);
 $console->setDefaultCommand('mobile:v2-harness', true);
 
-$status = $console->run();
+$input = new \Symfony\Component\Console\Input\ArgvInput($argvList);
+$status = $console->run($input);
 exit($status);

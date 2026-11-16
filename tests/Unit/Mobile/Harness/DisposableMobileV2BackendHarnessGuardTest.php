@@ -5944,6 +5944,108 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             @rmdir($tmpDir);
         }
     }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_rejects_expected_schema_mismatch(): void
+    {
+        $stmt = $this->createMock(\PDOStatement::class);
+        $stmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('query')->willReturn($stmt);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage("PDO schema mismatch: expected 'accounting_p8_tmp_fedcba987654', got 'accounting_p8_tmp_0123456789ab'");
+
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, 'accounting_p8_tmp_fedcba987654');
+    }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_rejects_lossy_float_in_row(): void
+    {
+        $gateStmt = $this->createMock(\PDOStatement::class);
+        $gateStmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+
+        $tableStmt = $this->createMock(\PDOStatement::class);
+        $tableStmt->method('fetch')->willReturnOnConsecutiveCalls(
+            ['id' => 1, 'amount' => 58.00],
+            false
+        );
+
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('query')->willReturn($gateStmt);
+        $pdo->method('prepare')->willReturn($tableStmt);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Lossy native float detected in column sales_invoices.amount: decimal strings strictly required from PDO.');
+
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1);
+    }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_positive_full_row_scan_and_zero_delta(): void
+    {
+        $gateStmt = $this->createMock(\PDOStatement::class);
+        $gateStmt->method('fetch')->willReturn(['db' => 'accounting_p8_tmp_0123456789ab', 'port' => '3342']);
+
+        $tableStmt = $this->createMock(\PDOStatement::class);
+        $tableStmt->method('fetch')->willReturnOnConsecutiveCalls(
+            ['id' => 1, 'document_number' => 'INV-001', 'total_amount' => '58.000000'],
+            false
+        );
+
+        $seqStmt = $this->createMock(\PDOStatement::class);
+        $seqStmt->method('fetch')->willReturnOnConsecutiveCalls(
+            ['document_type' => 'invoice', 'year' => 2026, 'next_number' => 2],
+            false
+        );
+
+        $sumStmt = $this->createMock(\PDOStatement::class);
+        $sumStmt->method('fetchColumn')->willReturn('10.000000');
+
+        $pdo = $this->createMock(\PDO::class);
+        $pdo->method('query')->willReturn($gateStmt);
+        $pdo->method('prepare')->willReturnCallback(function (string $sql) use ($tableStmt, $seqStmt, $sumStmt) {
+            if (str_contains($sql, 'document_sequences')) {
+                return $seqStmt;
+            }
+            if (str_contains($sql, 'SUM(`quantity')) {
+                return $sumStmt;
+            }
+
+            return $tableStmt;
+        });
+
+        $snapshot = \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 1, 'accounting_p8_tmp_0123456789ab');
+
+        $this->assertIsArray($snapshot);
+        $this->assertSame(1, $snapshot['sales_invoices']);
+        $this->assertSame('10.000000', $snapshot['stock_movements_qty_delta_base']);
+        $this->assertSame(['invoice:2026' => 2], $snapshot['document_sequences']);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $snapshot['row_fingerprint_sha256']);
+
+        $zeroDelta = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($snapshot, $snapshot);
+        $this->assertTrue($zeroDelta['is_zero_delta']);
+        $this->assertEmpty($zeroDelta['errors']);
+
+        $mutatedSnapshot = $snapshot;
+        $mutatedSnapshot['row_fingerprint_sha256'] = hash('sha256', 'mutated_row_values');
+        $deltaCheck = \Tests\Support\Harness\DisposableFinancialPostRunInspector::assertRollbackZeroDelta($snapshot, $mutatedSnapshot);
+        $this->assertFalse($deltaCheck['is_zero_delta']);
+        $this->assertStringContainsString('Aggregate canonical row fingerprint mutated', implode('; ', $deltaCheck['errors']));
+    }
+
+    #[Test]
+    public function test_cli_command_defines_and_binds_root_approval_options(): void
+    {
+        $cmd = new \Tests\Support\Harness\MobileV2HarnessCommand();
+        $definition = $cmd->getDefinition();
+
+        $this->assertTrue($definition->hasOption('root-approval-file'));
+        $this->assertTrue($definition->hasOption('root-live-approval-file'));
+        $this->assertTrue($definition->hasOption('advanced-probes'));
+        $this->assertTrue($definition->hasOption('expected-scope'));
+    }
 }
 
 
