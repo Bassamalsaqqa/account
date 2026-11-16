@@ -56,6 +56,20 @@ final class DisposableFinancialPostRunInspector
         'permission_denial',
     ];
 
+    /** Canonical mapping between ACP internal probe keys and rollback evidence/manifest scenario names. */
+    public const array ACP_TO_ROLLBACK_PROBE_MAP = [
+        'permission_denial' => 'rollback_permission_denial',
+        'insufficient_stock' => 'rollback_insufficient_stock',
+        'controlled_fault_after_posting' => 'rollback_controlled_after_posting',
+    ];
+
+    /** Canonical expected HTTP status codes per rollback probe name. */
+    public const array ROLLBACK_PROBE_EXPECTED_STATUS = [
+        'rollback_permission_denial' => 403,
+        'rollback_insufficient_stock' => 422,
+        'rollback_controlled_after_posting' => 500,
+    ];
+
     /** Canonical 6 reconciler service names. */
     public const array REQUIRED_RECONCILER_SERVICES = [
         'AccountingReconciliationService',
@@ -65,6 +79,34 @@ final class DisposableFinancialPostRunInspector
         'MoneyReconciliationService',
         'Phase7ReconciliationService',
     ];
+
+    /**
+     * Resolves canonical rollback probe name (e.g. 'rollback_permission_denial') from either
+     * internal ACP key ('permission_denial') or already canonical rollback probe name.
+     * Returns null if unrecognised.
+     */
+    public static function normalizeRollbackProbeName(string $name): ?string
+    {
+        if (isset(self::ROLLBACK_PROBE_EXPECTED_STATUS[$name])) {
+            return $name;
+        }
+        if (isset(self::ACP_TO_ROLLBACK_PROBE_MAP[$name])) {
+            return self::ACP_TO_ROLLBACK_PROBE_MAP[$name];
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolves expected HTTP status for either internal ACP key or rollback probe name.
+     * Returns null if unrecognised.
+     */
+    public static function expectedRollbackProbeHttpStatus(string $name): ?int
+    {
+        $canonical = self::normalizeRollbackProbeName($name);
+
+        return $canonical !== null ? self::ROLLBACK_PROBE_EXPECTED_STATUS[$canonical] : null;
+    }
 
     /**
      * Safely parses child_bootstrap_config.json credentials with strict POSIX permissions
@@ -3192,13 +3234,52 @@ final class DisposableFinancialPostRunInspector
                 }
                 $coreDeterministicPayload['rollback_probes_manifest'] = $manifest;
 
-                if (! empty($expectedPins['expectedProbeReportsManifestSha'])) {
-                    $actualManifestSha = (string) ($expectedPins['actualProbeReportsManifestSha'] ?? '');
-                    if ($actualManifestSha === '') {
-                        $actualManifestSha = hash('sha256', (string) json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-                    }
-                    if (! hash_equals((string) $expectedPins['expectedProbeReportsManifestSha'], $actualManifestSha)) {
-                        $errors[] = "rollback_probes_manifest SHA mismatch: expected '{$expectedPins['expectedProbeReportsManifestSha']}', got '{$actualManifestSha}'.";
+                // Independent exact artifact pin is MANDATORY in advanced mode; no re-serialization substitute
+                $expManifestSha = (string) ($expectedPins['expectedProbeReportsManifestSha'] ?? '');
+                if ($expManifestSha === '' || ! preg_match('/^[0-9a-f]{64}$/', $expManifestSha)) {
+                    $errors[] = "Mandatory expectedProbeReportsManifestSha pin is missing or invalid in advanced scope.";
+                } else {
+                    $manifestPath = (string) ($expectedPins['probeReportsManifestPath'] ?? '');
+                    if ($manifestPath !== '' && is_file($manifestPath) && ! is_link($manifestPath)) {
+                        $fileBytes = (string) file_get_contents($manifestPath);
+                        $fileSha = hash('sha256', $fileBytes);
+                        if (! hash_equals($expManifestSha, $fileSha)) {
+                            $errors[] = "Probe reports manifest file SHA256 mismatch against pin: expected '{$expManifestSha}', got '{$fileSha}'.";
+                        }
+                        $parsedFileManifest = json_decode($fileBytes, true);
+                        if (! is_array($parsedFileManifest) || $parsedFileManifest !== $manifest) {
+                            $errors[] = "Parsed probe reports manifest file does not match embedded trusted DB report manifest exactly.";
+                        }
+
+                        // Verify referenced reports and raw reconciliations exist and match pinned SHA
+                        $manifestDir = dirname($manifestPath);
+                        foreach ($manifest as $pKey => $pEntry) {
+                            $repFile = $manifestDir . '/' . ($pEntry['report_file'] ?? '');
+                            $recFile = $manifestDir . '/' . ($pEntry['reconciliation_file'] ?? '');
+                            if (! is_file($repFile) || is_link($repFile)) {
+                                $errors[] = "Referenced probe report file for '{$pKey}' is missing or a symlink: '{$repFile}'.";
+                            } else {
+                                $actualRepSha = hash_file('sha256', $repFile);
+                                if (! hash_equals((string) ($pEntry['report_sha256'] ?? ''), $actualRepSha)) {
+                                    $errors[] = "Referenced probe report SHA mismatch for '{$pKey}': expected '".($pEntry['report_sha256'] ?? '')."', got '{$actualRepSha}'.";
+                                }
+                            }
+                            if (! is_file($recFile) || is_link($recFile)) {
+                                $errors[] = "Referenced reconciliation file for '{$pKey}' is missing or a symlink: '{$recFile}'.";
+                            } else {
+                                $actualRecSha = hash_file('sha256', $recFile);
+                                if (! hash_equals((string) ($pEntry['reconciliation_sha256'] ?? ''), $actualRecSha)) {
+                                    $errors[] = "Referenced reconciliation SHA mismatch for '{$pKey}': expected '".($pEntry['reconciliation_sha256'] ?? '')."', got '{$actualRecSha}'.";
+                                }
+                            }
+                        }
+                    } elseif (! empty($expectedPins['actualProbeReportsManifestSha'])) {
+                        $actualManifestSha = (string) $expectedPins['actualProbeReportsManifestSha'];
+                        if (! hash_equals($expManifestSha, $actualManifestSha)) {
+                            $errors[] = "rollback_probes_manifest SHA mismatch: expected '{$expManifestSha}', got '{$actualManifestSha}'.";
+                        }
+                    } else {
+                        $errors[] = "Mandatory valid probe reports manifest file is required to verify expectedProbeReportsManifestSha.";
                     }
                 }
             }

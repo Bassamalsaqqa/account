@@ -1494,4 +1494,39 @@ Following Root reviews at commits `4815546d4d00ffe82d428fb490981f96b60cf5d9` and
    - `DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson()`:
      - In advanced scope, mandates `rollback_probes_manifest` in the trusted DB report, validates each manifest entry against expected status codes and SHA pins, and checks manifest SHA against expected pin if provided.
 
+#### 18.10.8 Runtime Probe Name Canonicalization, Mandatory Manifest SHA Pinning, and No-DB Regression Suites
+
+Following subsequent Root clean commit `b94a54633d7ee4fd3d935a81ab03cf84e1b79228` review, remaining runtime wiring gaps were closed under strict SOURCE-ONLY discipline:
+
+1. **Explicit Canonical Probe Mapping (`DisposableFinancialPostRunInspector.php`)**:
+   - Established constant `ACP_TO_ROLLBACK_PROBE_MAP` mapping ACP internal event keys (`permission_denial`, `insufficient_stock`, `controlled_fault_after_posting`) to canonical scenario and report names (`rollback_permission_denial`, `rollback_insufficient_stock`, `rollback_controlled_after_posting`).
+   - Established constant `ROLLBACK_PROBE_EXPECTED_STATUS` defining expected HTTP statuses: 403, 422, and 500 respectively.
+   - Provided shared helpers `normalizeRollbackProbeName(string $name): ?string` and `expectedRollbackProbeHttpStatus(string $name): ?int`.
+   - In `TestTransportProxy`:
+     - Matched request probe names are normalized to canonical rollback names immediately in the observer.
+     - Preserves failure stdout/stderr, report files, and `$observedProbeReports` using canonical names, matching `buildProbeReportPayload()` requirements.
+   - In `supervised-financial-drill.php`:
+     - Iterates probe reports, verifies manifest hashes, recomputes zero-delta, and cross-checks reconciler artifacts using canonical names.
+
+2. **Mandatory Manifest File & Expected SHA Pinning Across Pipelines**:
+   - `supervised-financial-drill.php`:
+     - Computes `$probeManifestSha = hash_file('sha256', $probeManifestPath)` after verifying all 3 probe reports.
+     - Passes `--probe-reports-manifest=<path>` AND `--expected-probe-manifest-sha=<sha256>` to BOTH `--compose-trusted-report` and `--validate-evidence`.
+     - Records `probe_reports_manifest_sha256` into `approval_hashes_manifest.json`.
+   - `financial-inspector-cli.php`:
+     - In advanced scope, strictly refuses compose without both `--probe-reports-manifest=` and `--expected-probe-manifest-sha=`.
+     - Validates actual manifest file SHA against the expected pin.
+     - In evidence validation, requires `--probe-reports-manifest=` and `--expected-probe-manifest-sha=`, verifying actual file bytes against the pin and passing `probeReportsManifestPath` into the validator.
+   - `DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson()`:
+     - Mandates `expectedProbeReportsManifestSha` in advanced scope; refuses if missing or malformed.
+     - Reads raw manifest bytes from `probeReportsManifestPath`, checks SHA against expected pin, and asserts exact equality of parsed JSON against embedded trusted report manifest.
+     - Verifies referenced report and reconciliation files on disk: checks file existence, ensures they are not symlinks, and validates SHA against manifest entries. Forged or synthetic manifests fail closed.
+     - Basic scope remains completely untouched and functional.
+
+3. **Expanded No-DB Regression Suite (`DisposableMobileV2BackendHarnessGuardTest.php`)**:
+   - Authored unrun tests covering the entire runtime pipeline:
+     - `test_proxy_matcher_normalizes_declared_acp_keys_to_canonical_rollback_names`: exercises actual `TestTransportProxy::getProbeNameIfMatching()` with declared ACP config, testing that all 3 internal keys normalize to canonical rollback probe names and statuses while unknown keys are rejected.
+     - `test_advanced_validator_refuses_missing_manifest_pin_or_missing_manifest_file`: proves advanced validator refuses when `expectedProbeReportsManifestSha` or the manifest file path is omitted.
+     - `test_advanced_validator_refuses_altered_manifest_or_missing_referenced_report`: proves advanced validator catches altered manifests on disk and refuses when referenced report files are missing or tampered.
+
 

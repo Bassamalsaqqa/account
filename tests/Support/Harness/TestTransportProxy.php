@@ -547,18 +547,20 @@ class TestTransportProxy
 
             // Handle negative probe observer after completed upstream response
             if ($probeName !== null && $preProbeSnapshot !== null && $probePdo !== null) {
+                $canonicalProbeName = DisposableFinancialPostRunInspector::normalizeRollbackProbeName($probeName);
+                if ($canonicalProbeName === null) {
+                    $this->sendHttpError($client, 500, "Internal Error: Unrecognized probe name '{$probeName}'");
+
+                    return;
+                }
+
                 $responseStatus = 0;
                 if (preg_match('#^HTTP/\d\.\d\s+(\d{3})#', $upstreamResponse, $m)) {
                     $responseStatus = (int) $m[1];
                 }
-                $expectedStatus = match ($probeName) {
-                    'permission_denial' => 403,
-                    'insufficient_stock' => 422,
-                    'controlled_fault_after_posting' => 500,
-                    default => 0,
-                };
-                if ($responseStatus !== $expectedStatus) {
-                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} unexpected HTTP status {$responseStatus}, expected {$expectedStatus}");
+                $expectedStatus = DisposableFinancialPostRunInspector::expectedRollbackProbeHttpStatus($canonicalProbeName);
+                if ($expectedStatus === null || $responseStatus !== $expectedStatus) {
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$canonicalProbeName} unexpected HTTP status {$responseStatus}, expected ".($expectedStatus ?? 'null'));
 
                     return;
                 }
@@ -571,7 +573,7 @@ class TestTransportProxy
 
                 $zeroDeltaRes = DisposableFinancialPostRunInspector::assertRollbackZeroDelta($preProbeSnapshot, $postProbeSnapshot);
                 if (! ($zeroDeltaRes['is_zero_delta'] ?? false)) {
-                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} economic delta is not zero");
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$canonicalProbeName} economic delta is not zero");
 
                     return;
                 }
@@ -579,8 +581,8 @@ class TestTransportProxy
                 $witnessDir = dirname((string) ($this->targetConfig['witness_path'] ?? ''));
 
                 // Reject duplicate probe observation early
-                if (isset($this->observedProbeReports[$probeName])) {
-                    $this->sendHttpError($client, 500, "Internal Error: Duplicate probe {$probeName} already observed");
+                if (isset($this->observedProbeReports[$canonicalProbeName])) {
+                    $this->sendHttpError($client, 500, "Internal Error: Duplicate probe {$canonicalProbeName} already observed");
 
                     return;
                 }
@@ -628,7 +630,7 @@ class TestTransportProxy
                 $now = hrtime(true) / 1e9;
                 $remainingBudget = $deadline - $now;
                 if ($remainingBudget <= 0.0) {
-                    $this->sendHttpError($client, 504, "Gateway Timeout: Remaining deadline exhausted before rollback probe {$probeName} reconciliation");
+                    $this->sendHttpError($client, 504, "Gateway Timeout: Remaining deadline exhausted before rollback probe {$canonicalProbeName} reconciliation");
 
                     return;
                 }
@@ -651,7 +653,7 @@ class TestTransportProxy
                 $reconExitCode = $reconProc->getExitCode();
 
                 // Preserve raw recon output and stderr before evaluating or returning on failure (keep exact raw bytes)
-                $rawReconFile = $witnessDir . '/probe_' . $probeName . '_reconciliation.json';
+                $rawReconFile = $witnessDir . '/probe_' . $canonicalProbeName . '_reconciliation.json';
                 $rawReconContent = $reconStdout !== '' ? $reconStdout : json_encode([
                     'all_healthy' => false,
                     'error' => "Reconciliation process exited with code {$reconExitCode}",
@@ -662,19 +664,19 @@ class TestTransportProxy
                 $rawReconSha = hash_file('sha256', $rawReconFile);
 
                 if ($reconStderr !== '') {
-                    $rawStderrFile = $witnessDir . '/probe_' . $probeName . '_reconciliation.stderr';
+                    $rawStderrFile = $witnessDir . '/probe_' . $canonicalProbeName . '_reconciliation.stderr';
                     $this->writeExclusiveSecureFile($rawStderrFile, $reconStderr);
                 }
 
                 if (! $reconProc->isSuccessful() || $reconExitCode !== 0) {
-                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} reconciliation execution failed with code {$reconExitCode}");
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$canonicalProbeName} reconciliation execution failed with code {$reconExitCode}");
 
                     return;
                 }
 
                 $reconData = json_decode($reconStdout, true);
                 if (! is_array($reconData) || ! ($reconData['all_healthy'] ?? false)) {
-                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$probeName} reconciliations reported unhealthy");
+                    $this->sendHttpError($client, 500, "Internal Error: Rollback probe {$canonicalProbeName} reconciliations reported unhealthy");
 
                     return;
                 }
@@ -685,7 +687,7 @@ class TestTransportProxy
                 // Build probe report with shared production helper (strictly typed issue_count 0 and boolean healthy true)
                 try {
                     $probeReport = DisposableFinancialPostRunInspector::buildProbeReportPayload([
-                        'probe_name' => $probeName,
+                        'probe_name' => $canonicalProbeName,
                         'client_event_id' => $probeEventId,
                         'expected_http_status' => $expectedStatus,
                         'actual_http_status' => $responseStatus,
@@ -704,18 +706,18 @@ class TestTransportProxy
                         'post_metrics' => $postProbeSnapshot,
                     ]);
                 } catch (\Throwable $e) {
-                    $this->sendHttpError($client, 500, "Internal Error: Failed building probe {$probeName} report: {$e->getMessage()}");
+                    $this->sendHttpError($client, 500, "Internal Error: Failed building probe {$canonicalProbeName} report: {$e->getMessage()}");
 
                     return;
                 }
 
-                $probeReportFile = $witnessDir . '/probe_' . $probeName . '_report.json';
+                $probeReportFile = $witnessDir . '/probe_' . $canonicalProbeName . '_report.json';
                 $this->writeExclusiveSecureFile($probeReportFile, json_encode($probeReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
                 $probeReportSha = hash_file('sha256', $probeReportFile);
 
                 // Register observed report
-                $this->observedProbeReports[$probeName] = [
-                    'probe_name' => $probeName,
+                $this->observedProbeReports[$canonicalProbeName] = [
+                    'probe_name' => $canonicalProbeName,
                     'client_event_id' => $probeEventId,
                     'expected_http_status' => $expectedStatus,
                     'actual_http_status' => $responseStatus,

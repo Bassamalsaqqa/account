@@ -259,12 +259,23 @@ if ($evidenceFile !== null) {
             'cli_command_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
             'cli_runner_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
         ];
-        if ($probeReportsManifestFile !== null && is_file($probeReportsManifestFile) && ! is_link($probeReportsManifestFile)) {
-            $expectedPins['actualProbeReportsManifestSha'] = (string) hash_file('sha256', $probeReportsManifestFile);
+        if ($probeReportsManifestFile === null || ! is_file($probeReportsManifestFile) || is_link($probeReportsManifestFile)) {
+            fwrite(STDERR, "Error: --probe-reports-manifest=<path> is mandatory and must be a valid non-symlink file in advanced scope.\n");
+            exit(1);
         }
-        if ($expectedProbeManifestSha !== null && $expectedProbeManifestSha !== '') {
-            $expectedPins['expectedProbeReportsManifestSha'] = $expectedProbeManifestSha;
+        if ($expectedProbeManifestSha === null || $expectedProbeManifestSha === '') {
+            fwrite(STDERR, "Error: --expected-probe-manifest-sha=<sha256> is mandatory in advanced scope.\n");
+            exit(1);
         }
+        $manifestRawBytes = (string) file_get_contents($probeReportsManifestFile);
+        $actualManifestSha = hash('sha256', $manifestRawBytes);
+        if (! hash_equals($expectedProbeManifestSha, $actualManifestSha)) {
+            fwrite(STDERR, "Error: Probe reports manifest file SHA256 mismatch: expected '{$expectedProbeManifestSha}', got '{$actualManifestSha}'.\n");
+            exit(1);
+        }
+        $expectedPins['actualProbeReportsManifestSha'] = $actualManifestSha;
+        $expectedPins['expectedProbeReportsManifestSha'] = $expectedProbeManifestSha;
+        $expectedPins['probeReportsManifestPath'] = $probeReportsManifestFile;
         $validation = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
     } else {
         $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
@@ -340,9 +351,15 @@ if ($isComposeTrustedReport) {
         ];
 
         $probeReportsManifest = null;
-        if ($metadata['scope'] === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION' && $probeReportsManifestFile === null) {
-            fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --probe-reports-manifest=<path>.\n");
-            exit(1);
+        if ($metadata['scope'] === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
+            if ($probeReportsManifestFile === null) {
+                fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --probe-reports-manifest=<path>.\n");
+                exit(1);
+            }
+            if ($expectedProbeManifestSha === null || $expectedProbeManifestSha === '') {
+                fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --expected-probe-manifest-sha=<sha256>.\n");
+                exit(1);
+            }
         }
         if ($probeReportsManifestFile !== null) {
             if (! is_file($probeReportsManifestFile) || is_link($probeReportsManifestFile)) {
@@ -354,7 +371,13 @@ if ($isComposeTrustedReport) {
                 fwrite(STDERR, sprintf("Error: Insecure probe reports manifest file perms %04o, expected 0600.\n", $pPerms));
                 exit(1);
             }
-            $probeReportsManifest = json_decode((string) file_get_contents($probeReportsManifestFile), true);
+            $manifestRawBytes = (string) file_get_contents($probeReportsManifestFile);
+            $actualManifestSha = hash('sha256', $manifestRawBytes);
+            if ($expectedProbeManifestSha !== null && ! hash_equals($expectedProbeManifestSha, $actualManifestSha)) {
+                fwrite(STDERR, "Error: Probe reports manifest SHA256 mismatch: expected '{$expectedProbeManifestSha}', got '{$actualManifestSha}'.\n");
+                exit(1);
+            }
+            $probeReportsManifest = json_decode($manifestRawBytes, true);
             if (! is_array($probeReportsManifest)) {
                 fwrite(STDERR, "Error: Invalid JSON in probe reports manifest file.\n");
                 exit(1);

@@ -7334,154 +7334,181 @@ PHP;
         $verification = DisposableFinancialPostRunInspector::verifyProbeReportPayload($report, $rawReconContent, $expectedContext);
         $this->assertTrue($verification['is_valid'], 'Report verification must pass for genuine report: '.implode('; ', $verification['errors']));
 
-        // 5. Build full 3-probe manifest
-        $reportSha = hash('sha256', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-        $manifest = [
-            'rollback_permission_denial' => [
-                'probe_name' => 'rollback_permission_denial',
-                'report_file' => 'probe_rollback_permission_denial_report.json',
-                'report_sha256' => $reportSha,
-                'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
-                'reconciliation_sha256' => $rawReconSha,
-                'expected_http_status' => 403,
-                'actual_http_status' => 403,
-                'zero_delta_verified' => true,
-                'reconciliations_healthy' => true,
-            ],
-            'rollback_insufficient_stock' => [
-                'probe_name' => 'rollback_insufficient_stock',
-                'report_file' => 'probe_rollback_insufficient_stock_report.json',
-                'report_sha256' => $reportSha,
-                'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
-                'reconciliation_sha256' => $rawReconSha,
-                'expected_http_status' => 422,
-                'actual_http_status' => 422,
-                'zero_delta_verified' => true,
-                'reconciliations_healthy' => true,
-            ],
-            'rollback_controlled_after_posting' => [
-                'probe_name' => 'rollback_controlled_after_posting',
-                'report_file' => 'probe_rollback_controlled_after_posting_report.json',
-                'report_sha256' => $reportSha,
-                'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
-                'reconciliation_sha256' => $rawReconSha,
-                'expected_http_status' => 500,
-                'actual_http_status' => 500,
-                'zero_delta_verified' => true,
-                'reconciliations_healthy' => true,
-            ],
-        ];
+        // 5. Build full 3-probe manifest and persist artifacts to temp directory
+        $tmpDir = sys_get_temp_dir() . '/test_flow_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
 
-        // 6. Test genuine composeTrustedDbReport with 3-probe manifest
-        $primaryEventId = '99999999-9999-4999-8999-999999999999';
-        $runId = '88888888-8888-4888-8888-888888888888';
-        $metadata = [
-            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
-            'runId' => $runId,
-            'eventId' => $primaryEventId,
-            'schemaName' => 'accounting_p8_tmp_0123456789ab',
-            'companyId' => 1,
-            'sourceHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
-            'handoffDigest' => str_repeat('a', 64),
-        ];
-        $deltaResult = [
-            'is_canonical_delta_valid' => true,
-            'gl_batches_balanced' => true,
-            'deltas' => ['sales_invoices' => 1],
-            'canonical_graph' => ['invoice_id' => 11],
-        ];
-        $trustedDbReport = DisposableFinancialPostRunInspector::composeTrustedDbReport(
-            $metadata,
-            $baselineMetrics,
-            $deltaResult,
-            $rawReconData,
-            $manifest
-        );
+        try {
+            $reportSha = hash('sha256', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            file_put_contents($tmpDir . '/probe_rollback_permission_denial_report.json', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            file_put_contents($tmpDir . '/probe_rollback_permission_denial_reconciliation.json', $rawReconContent);
+            file_put_contents($tmpDir . '/probe_rollback_insufficient_stock_report.json', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            file_put_contents($tmpDir . '/probe_rollback_insufficient_stock_reconciliation.json', $rawReconContent);
+            file_put_contents($tmpDir . '/probe_rollback_controlled_after_posting_report.json', json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            file_put_contents($tmpDir . '/probe_rollback_controlled_after_posting_reconciliation.json', $rawReconContent);
 
-        $this->assertSame('ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', $trustedDbReport['scope']);
-        $this->assertArrayHasKey('rollback_probes_manifest', $trustedDbReport);
-        $this->assertArrayHasKey('report_digest', $trustedDbReport);
+            $manifest = [
+                'rollback_permission_denial' => [
+                    'probe_name' => 'rollback_permission_denial',
+                    'report_file' => 'probe_rollback_permission_denial_report.json',
+                    'report_sha256' => $reportSha,
+                    'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
+                    'reconciliation_sha256' => $rawReconSha,
+                    'expected_http_status' => 403,
+                    'actual_http_status' => 403,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_insufficient_stock' => [
+                    'probe_name' => 'rollback_insufficient_stock',
+                    'report_file' => 'probe_rollback_insufficient_stock_report.json',
+                    'report_sha256' => $reportSha,
+                    'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
+                    'reconciliation_sha256' => $rawReconSha,
+                    'expected_http_status' => 422,
+                    'actual_http_status' => 422,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_controlled_after_posting' => [
+                    'probe_name' => 'rollback_controlled_after_posting',
+                    'report_file' => 'probe_rollback_controlled_after_posting_report.json',
+                    'report_sha256' => $reportSha,
+                    'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
+                    'reconciliation_sha256' => $rawReconSha,
+                    'expected_http_status' => 500,
+                    'actual_http_status' => 500,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+            ];
+            $manifestBytes = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $manifestFile = $tmpDir . '/probe_reports_manifest.json';
+            file_put_contents($manifestFile, $manifestBytes);
+            chmod($manifestFile, 0600);
+            $manifestSha = hash('sha256', $manifestBytes);
 
-        // 7. Test genuine validateAdvancedProbeEvidenceJson
-        $root = dirname(__DIR__, 4);
-        $expectedPins = [
-            'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
-            'expectedRunId' => $runId,
-            'expectedClientEventId' => $primaryEventId,
-            'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
-            'expectedHandoffSha' => str_repeat('a', 64),
-            'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
-            'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
-            'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
-            'expectedReportDigest' => $trustedDbReport['report_digest'],
-            'expectedSourcePins' => [
-                'source_fixture_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
-                'guard_test_sha256' => (string) hash_file('sha256', __FILE__),
-                'cli_command_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
-                'cli_runner_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
-            ],
-        ];
-        $evidence = [
-            'contract_version' => 'v2_advanced_probe_evidence_v1',
-            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
-            'run_id' => $runId,
-            'client_event_id' => $primaryEventId,
-            'schema_name' => 'accounting_p8_tmp_0123456789ab',
-            'handoff_sha256' => str_repeat('a', 64),
-            'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
-            'android_publication_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
-            'android_executable_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
-            'source_pins' => $expectedPins['expectedSourcePins'],
-            'scenarios' => [
-                ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
-                ['name' => 'transport_lost_ack_retained_status_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
-                ['name' => 'idempotent_replay_integrity', 'status' => 'PASS', 'httpStatusCode' => 200],
-                ['name' => 'tamper_rejection_integrity', 'status' => 'PASS', 'httpStatusCode' => 409],
-                ['name' => 'rollback_permission_denial', 'status' => 'PASS', 'httpStatusCode' => 403],
-                ['name' => 'rollback_insufficient_stock', 'status' => 'PASS', 'httpStatusCode' => 422],
-                ['name' => 'rollback_controlled_after_posting', 'status' => 'PASS', 'httpStatusCode' => 500],
-            ],
-            'lost_ack_recovery_evidence' => [
-                'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
-                'network_witness_state' => 'CAPTURED_REAL_TRANSPORT_DROP',
-                'server_commit_verified_before_suppression' => true,
-                'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
-                'recovery_http_status' => 200,
-                'receipt_status' => 'posted',
-                'matching_payload_digest' => '',
-            ],
-            'rollback_probes_evidence' => [
-                'probes' => [
-                    [
-                        'probe_name' => 'rollback_permission_denial',
-                        'actual_http_status' => 403,
-                        'client_event_id' => '11111111-1111-4111-8111-111111111111',
-                        'economic_delta_zero' => true,
-                        'reconciliations_healthy' => true,
-                        'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
-                    ],
-                    [
-                        'probe_name' => 'rollback_insufficient_stock',
-                        'actual_http_status' => 422,
-                        'client_event_id' => '22222222-2222-4222-8222-222222222222',
-                        'economic_delta_zero' => true,
-                        'reconciliations_healthy' => true,
-                        'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
-                    ],
-                    [
-                        'probe_name' => 'rollback_controlled_after_posting',
-                        'actual_http_status' => 500,
-                        'client_event_id' => '33333333-3333-4333-8333-333333333333',
-                        'economic_delta_zero' => true,
-                        'reconciliations_healthy' => true,
-                        'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+            // 6. Test genuine composeTrustedDbReport with 3-probe manifest
+            $primaryEventId = '99999999-9999-4999-8999-999999999999';
+            $runId = '88888888-8888-4888-8888-888888888888';
+            $metadata = [
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'runId' => $runId,
+                'eventId' => $primaryEventId,
+                'schemaName' => 'accounting_p8_tmp_0123456789ab',
+                'companyId' => 1,
+                'sourceHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'handoffDigest' => str_repeat('a', 64),
+            ];
+            $deltaResult = [
+                'is_canonical_delta_valid' => true,
+                'gl_batches_balanced' => true,
+                'deltas' => ['sales_invoices' => 1],
+                'canonical_graph' => ['invoice_id' => 11],
+            ];
+            $trustedDbReport = DisposableFinancialPostRunInspector::composeTrustedDbReport(
+                $metadata,
+                $baselineMetrics,
+                $deltaResult,
+                $rawReconData,
+                $manifest
+            );
+
+            $this->assertSame('ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', $trustedDbReport['scope']);
+            $this->assertArrayHasKey('rollback_probes_manifest', $trustedDbReport);
+            $this->assertArrayHasKey('report_digest', $trustedDbReport);
+
+            // 7. Test genuine validateAdvancedProbeEvidenceJson with mandatory manifest file and SHA pin
+            $root = dirname(__DIR__, 4);
+            $expectedPins = [
+                'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'expectedRunId' => $runId,
+                'expectedClientEventId' => $primaryEventId,
+                'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+                'expectedHandoffSha' => str_repeat('a', 64),
+                'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'expectedReportDigest' => $trustedDbReport['report_digest'],
+                'expectedProbeReportsManifestSha' => $manifestSha,
+                'actualProbeReportsManifestSha' => $manifestSha,
+                'probeReportsManifestPath' => $manifestFile,
+                'expectedSourcePins' => [
+                    'source_fixture_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
+                    'guard_test_sha256' => (string) hash_file('sha256', __FILE__),
+                    'cli_command_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
+                    'cli_runner_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
+                ],
+            ];
+            $evidence = [
+                'contract_version' => 'v2_advanced_probe_evidence_v1',
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => $runId,
+                'client_event_id' => $primaryEventId,
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'handoff_sha256' => str_repeat('a', 64),
+                'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'android_publication_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'android_executable_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'source_pins' => $expectedPins['expectedSourcePins'],
+                'scenarios' => [
+                    ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
+                    ['name' => 'transport_lost_ack_retained_status_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
+                    ['name' => 'idempotent_replay_integrity', 'status' => 'PASS', 'httpStatusCode' => 200],
+                    ['name' => 'tamper_rejection_integrity', 'status' => 'PASS', 'httpStatusCode' => 409],
+                    ['name' => 'rollback_permission_denial', 'status' => 'PASS', 'httpStatusCode' => 403],
+                    ['name' => 'rollback_insufficient_stock', 'status' => 'PASS', 'httpStatusCode' => 422],
+                    ['name' => 'rollback_controlled_after_posting', 'status' => 'PASS', 'httpStatusCode' => 500],
+                ],
+                'lost_ack_recovery_evidence' => [
+                    'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                    'network_witness_state' => 'CAPTURED_REAL_TRANSPORT_DROP',
+                    'server_commit_verified_before_suppression' => true,
+                    'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
+                    'recovery_http_status' => 200,
+                    'receipt_status' => 'posted',
+                    'matching_payload_digest' => '',
+                ],
+                'rollback_probes_evidence' => [
+                    'probes' => [
+                        [
+                            'probe_name' => 'rollback_permission_denial',
+                            'actual_http_status' => 403,
+                            'client_event_id' => '11111111-1111-4111-8111-111111111111',
+                            'economic_delta_zero' => true,
+                            'reconciliations_healthy' => true,
+                            'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                        ],
+                        [
+                            'probe_name' => 'rollback_insufficient_stock',
+                            'actual_http_status' => 422,
+                            'client_event_id' => '22222222-2222-4222-8222-222222222222',
+                            'economic_delta_zero' => true,
+                            'reconciliations_healthy' => true,
+                            'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                        ],
+                        [
+                            'probe_name' => 'rollback_controlled_after_posting',
+                            'actual_http_status' => 500,
+                            'client_event_id' => '33333333-3333-4333-8333-333333333333',
+                            'economic_delta_zero' => true,
+                            'reconciliations_healthy' => true,
+                            'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                        ],
                     ],
                 ],
-            ],
-        ];
+            ];
 
-        $evidenceValidation = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
-        $this->assertTrue($evidenceValidation['is_valid'], 'Evidence validation must pass with genuine trustedDbReport: '.implode('; ', $evidenceValidation['errors']));
+            $evidenceValidation = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
+            $this->assertTrue($evidenceValidation['is_valid'], 'Evidence validation must pass with genuine trustedDbReport: '.implode('; ', $evidenceValidation['errors']));
+        } finally {
+            foreach (glob($tmpDir . '/*') as $f) {
+                @unlink($f);
+            }
+            if (is_dir($tmpDir)) {
+                @rmdir($tmpDir);
+            }
+        }
     }
 
     #[Test]
@@ -7653,28 +7680,243 @@ PHP;
     }
 
     #[Test]
-    public function test_assert_secure_contained_file_rejects_symlink_or_insecure_permissions(): void
+    public function test_proxy_matcher_normalizes_declared_acp_keys_to_canonical_rollback_names(): void
     {
-        $tmpDir = sys_get_temp_dir() . '/test_containment_' . bin2hex(random_bytes(6));
+        $reflector = new \ReflectionClass(\Tests\Support\Harness\TestTransportProxy::class);
+        $proxy = $reflector->newInstanceWithoutConstructor();
+
+        $companyUlid = '01M7CZPF6TP283F3ZRXF5P8GT2';
+        $targetConfigProp = $reflector->getProperty('targetConfig');
+        $targetConfigProp->setValue($proxy, [
+            'target_company_public_id' => $companyUlid,
+            'probe_event_ids' => [
+                'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+            ],
+        ]);
+
+        $route = "/api/mobile/v2/companies/{$companyUlid}/sales/online-cash";
+
+        // 1. All 3 declared probe event IDs match through actual proxy matcher
+        $p1 = $proxy->getProbeNameIfMatching('POST', $route, json_encode(['client_event_id' => '11111111-1111-4111-8111-111111111111']));
+        $this->assertSame('permission_denial', $p1);
+        $canon1 = DisposableFinancialPostRunInspector::normalizeRollbackProbeName($p1);
+        $this->assertSame('rollback_permission_denial', $canon1);
+        $this->assertSame(403, DisposableFinancialPostRunInspector::expectedRollbackProbeHttpStatus($canon1));
+
+        $p2 = $proxy->getProbeNameIfMatching('POST', $route, json_encode(['client_event_id' => '22222222-2222-4222-8222-222222222222']));
+        $this->assertSame('insufficient_stock', $p2);
+        $canon2 = DisposableFinancialPostRunInspector::normalizeRollbackProbeName($p2);
+        $this->assertSame('rollback_insufficient_stock', $canon2);
+        $this->assertSame(422, DisposableFinancialPostRunInspector::expectedRollbackProbeHttpStatus($canon2));
+
+        $p3 = $proxy->getProbeNameIfMatching('POST', $route, json_encode(['client_event_id' => '33333333-3333-4333-8333-333333333333']));
+        $this->assertSame('controlled_fault_after_posting', $p3);
+        $canon3 = DisposableFinancialPostRunInspector::normalizeRollbackProbeName($p3);
+        $this->assertSame('rollback_controlled_after_posting', $canon3);
+        $this->assertSame(500, DisposableFinancialPostRunInspector::expectedRollbackProbeHttpStatus($canon3));
+
+        // 2. Unrecognized event ID returns null
+        $pUnk = $proxy->getProbeNameIfMatching('POST', $route, json_encode(['client_event_id' => '99999999-9999-4999-8999-999999999999']));
+        $this->assertNull($pUnk);
+
+        // 3. Unrecognized probe name refuses normalization
+        $this->assertNull(DisposableFinancialPostRunInspector::normalizeRollbackProbeName('arbitrary_malicious_probe'));
+        $this->assertNull(DisposableFinancialPostRunInspector::expectedRollbackProbeHttpStatus('arbitrary_malicious_probe'));
+    }
+
+    #[Test]
+    public function test_advanced_validator_refuses_missing_manifest_pin_or_missing_manifest_file(): void
+    {
+        $trustedDbReport = [
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'run_id' => '88888888-8888-4888-8888-888888888888',
+            'event_id' => '99999999-9999-4999-8999-999999999999',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'source_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'handoff_digest' => str_repeat('a', 64),
+            'baseline_hash' => str_repeat('b', 64),
+            'is_canonical_delta_valid' => true,
+            'gl_batches_balanced' => true,
+            'all_healthy' => true,
+            'rollback_probes_manifest' => [
+                'rollback_permission_denial' => [
+                    'probe_name' => 'rollback_permission_denial',
+                    'report_file' => 'probe_rollback_permission_denial_report.json',
+                    'report_sha256' => str_repeat('c', 64),
+                    'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('d', 64),
+                    'expected_http_status' => 403,
+                    'actual_http_status' => 403,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_insufficient_stock' => [
+                    'probe_name' => 'rollback_insufficient_stock',
+                    'report_file' => 'probe_rollback_insufficient_stock_report.json',
+                    'report_sha256' => str_repeat('c', 64),
+                    'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('d', 64),
+                    'expected_http_status' => 422,
+                    'actual_http_status' => 422,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_controlled_after_posting' => [
+                    'probe_name' => 'rollback_controlled_after_posting',
+                    'report_file' => 'probe_rollback_controlled_after_posting_report.json',
+                    'report_sha256' => str_repeat('c', 64),
+                    'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('d', 64),
+                    'expected_http_status' => 500,
+                    'actual_http_status' => 500,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+            ],
+        ];
+
+        $evidence = [
+            'contract_version' => 'v2_advanced_probe_evidence_v1',
+            'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'run_id' => '88888888-8888-4888-8888-888888888888',
+            'client_event_id' => '99999999-9999-4999-8999-999999999999',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'handoff_sha256' => str_repeat('a', 64),
+            'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'android_publication_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'android_executable_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            'scenarios' => [],
+        ];
+
+        // 1. Missing expectedProbeReportsManifestSha is strictly refused
+        $pinsWithoutManifestSha = [
+            'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+        ];
+        $res1 = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithoutManifestSha, $trustedDbReport);
+        $this->assertFalse($res1['is_valid']);
+        $this->assertStringContainsString('Mandatory expectedProbeReportsManifestSha pin is missing', implode('; ', $res1['errors']));
+
+        // 2. Missing manifest file when pin is provided is strictly refused
+        $pinsWithPinOnly = array_merge($pinsWithoutManifestSha, [
+            'expectedProbeReportsManifestSha' => str_repeat('e', 64),
+        ]);
+        $res2 = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithPinOnly, $trustedDbReport);
+        $this->assertFalse($res2['is_valid']);
+        $this->assertStringContainsString('Mandatory valid probe reports manifest file is required', implode('; ', $res2['errors']));
+    }
+
+    #[Test]
+    public function test_advanced_validator_refuses_altered_manifest_or_missing_referenced_report(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_tamper_' . bin2hex(random_bytes(6));
         mkdir($tmpDir, 0700, true);
 
         try {
-            $validFile = $tmpDir . '/test.json';
-            file_put_contents($validFile, '{"data":1}');
-            chmod($validFile, 0600);
+            $manifest = [
+                'rollback_permission_denial' => [
+                    'probe_name' => 'rollback_permission_denial',
+                    'report_file' => 'probe_rollback_permission_denial_report.json',
+                    'report_sha256' => str_repeat('1', 64),
+                    'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('2', 64),
+                    'expected_http_status' => 403,
+                    'actual_http_status' => 403,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_insufficient_stock' => [
+                    'probe_name' => 'rollback_insufficient_stock',
+                    'report_file' => 'probe_rollback_insufficient_stock_report.json',
+                    'report_sha256' => str_repeat('1', 64),
+                    'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('2', 64),
+                    'expected_http_status' => 422,
+                    'actual_http_status' => 422,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_controlled_after_posting' => [
+                    'probe_name' => 'rollback_controlled_after_posting',
+                    'report_file' => 'probe_rollback_controlled_after_posting_report.json',
+                    'report_sha256' => str_repeat('1', 64),
+                    'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('2', 64),
+                    'expected_http_status' => 500,
+                    'actual_http_status' => 500,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+            ];
 
-            // Valid check passes
-            SupervisedPairedFinancialDrill::assertSecureContainedFile($validFile, $tmpDir, 'test.json', 'TEST');
-            $this->assertFileExists($validFile);
+            // Manifest file on disk has different contents (altered)
+            $alteredManifest = $manifest;
+            $alteredManifest['rollback_permission_denial']['actual_http_status'] = 200;
+            $diskBytes = json_encode($alteredManifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $manifestFile = $tmpDir . '/probe_reports_manifest.json';
+            file_put_contents($manifestFile, $diskBytes);
+            $diskSha = hash('sha256', $diskBytes);
 
-            // Insecure permissions throw
-            chmod($validFile, 0644);
-            $this->expectException(\RuntimeException::class);
-            $this->expectExceptionMessage('INSECURE_PERMS');
-            SupervisedPairedFinancialDrill::assertSecureContainedFile($validFile, $tmpDir, 'test.json', 'TEST');
+            $trustedDbReport = [
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => '88888888-8888-4888-8888-888888888888',
+                'event_id' => '99999999-9999-4999-8999-999999999999',
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'company_id' => 1,
+                'source_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'handoff_digest' => str_repeat('a', 64),
+                'baseline_hash' => str_repeat('b', 64),
+                'is_canonical_delta_valid' => true,
+                'gl_batches_balanced' => true,
+                'all_healthy' => true,
+                'rollback_probes_manifest' => $manifest, // original embedded manifest
+            ];
+
+            $evidence = [
+                'contract_version' => 'v2_advanced_probe_evidence_v1',
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => '88888888-8888-4888-8888-888888888888',
+                'client_event_id' => '99999999-9999-4999-8999-999999999999',
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'handoff_sha256' => str_repeat('a', 64),
+                'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'android_publication_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'android_executable_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'scenarios' => [],
+            ];
+
+            $expectedPins = [
+                'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'expectedProbeReportsManifestSha' => $diskSha,
+                'probeReportsManifestPath' => $manifestFile,
+            ];
+
+            // 1. Catches altered manifest: parsed file manifest does not match embedded trusted report manifest
+            $res = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
+            $this->assertFalse($res['is_valid']);
+            $this->assertStringContainsString('Parsed probe reports manifest file does not match embedded trusted DB report manifest exactly', implode('; ', $res['errors']));
+
+            // 2. Now write identical manifest to disk, but keep referenced report files missing
+            $correctBytes = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            file_put_contents($manifestFile, $correctBytes);
+            $correctSha = hash('sha256', $correctBytes);
+            $expectedPins['expectedProbeReportsManifestSha'] = $correctSha;
+
+            $res2 = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
+            $this->assertFalse($res2['is_valid']);
+            $this->assertStringContainsString('Referenced probe report file for', implode('; ', $res2['errors']));
+            $this->assertStringContainsString('missing or a symlink', implode('; ', $res2['errors']));
         } finally {
-            if (file_exists($tmpDir . '/test.json')) {
-                @unlink($tmpDir . '/test.json');
+            foreach (glob($tmpDir . '/*') as $f) {
+                @unlink($f);
             }
             if (is_dir($tmpDir)) {
                 @rmdir($tmpDir);

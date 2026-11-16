@@ -847,41 +847,51 @@ try {
         ];
 
         foreach ($probeEventMap as $pName => $expectedProbeId) {
-            $reportFile = $bootstrapDir . '/probe_' . $pName . '_report.json';
-            if (! is_file($reportFile)) {
-                throw new \RuntimeException("MISSING_ROLLBACK_PROBE_REPORT: probe '{$pName}' report not found at {$reportFile}");
+            $canonicalProbeName = DisposableFinancialPostRunInspector::normalizeRollbackProbeName($pName);
+            if ($canonicalProbeName === null) {
+                throw new \RuntimeException("UNKNOWN_PROBE_NAME: '{$pName}'");
             }
-            SupervisedPairedFinancialDrill::assertSecureFilePermissions($reportFile, 'PROBE_REPORT_' . strtoupper($pName));
+
+            $reportFile = $bootstrapDir . '/probe_' . $canonicalProbeName . '_report.json';
+            if (! is_file($reportFile)) {
+                throw new \RuntimeException("MISSING_ROLLBACK_PROBE_REPORT: probe '{$canonicalProbeName}' report not found at {$reportFile}");
+            }
+            SupervisedPairedFinancialDrill::assertSecureFilePermissions($reportFile, 'PROBE_REPORT_' . strtoupper($canonicalProbeName));
             $reportRaw = (string) file_get_contents($reportFile);
             $reportSha = hash('sha256', $reportRaw);
 
             // Verify report hash against immutable manifest index
-            $manifestEntry = $probeManifest[$pName] ?? null;
+            $manifestEntry = $probeManifest[$canonicalProbeName] ?? null;
             if (! is_array($manifestEntry) || ! hash_equals((string) ($manifestEntry['report_sha256'] ?? ''), $reportSha)) {
-                throw new \RuntimeException("PROBE_REPORT_HASH_TAMPERED: probe '{$pName}' hash mismatch vs manifest index");
+                throw new \RuntimeException("PROBE_REPORT_HASH_TAMPERED: probe '{$canonicalProbeName}' hash mismatch vs manifest index");
             }
 
             $rep = json_decode($reportRaw, true);
             if (! is_array($rep)) {
-                throw new \RuntimeException("INVALID_PROBE_REPORT_JSON: probe '{$pName}'");
+                throw new \RuntimeException("INVALID_PROBE_REPORT_JSON: probe '{$canonicalProbeName}'");
             }
 
             // Verify raw per-probe reconciliation artifact exists and matches SHA
-            $rawReconPath = $bootstrapDir . '/probe_' . $pName . '_reconciliation.json';
+            $rawReconPath = $bootstrapDir . '/probe_' . $canonicalProbeName . '_reconciliation.json';
             if (! is_file($rawReconPath)) {
-                throw new \RuntimeException("MISSING_RAW_RECON_ARTIFACT: probe '{$pName}'");
+                throw new \RuntimeException("MISSING_RAW_RECON_ARTIFACT: probe '{$canonicalProbeName}'");
             }
-            SupervisedPairedFinancialDrill::assertSecureFilePermissions($rawReconPath, 'RAW_RECON_' . strtoupper($pName));
+            SupervisedPairedFinancialDrill::assertSecureFilePermissions($rawReconPath, 'RAW_RECON_' . strtoupper($canonicalProbeName));
             $rawReconContent = (string) file_get_contents($rawReconPath);
             $actualReconSha = hash('sha256', $rawReconContent);
             if (! hash_equals((string) ($manifestEntry['reconciliation_sha256'] ?? ''), $actualReconSha)) {
-                throw new \RuntimeException("RAW_RECON_SHA_MISMATCH: probe '{$pName}' vs manifest");
+                throw new \RuntimeException("RAW_RECON_SHA_MISMATCH: probe '{$canonicalProbeName}' vs manifest");
+            }
+
+            $expectedHttpStatus = DisposableFinancialPostRunInspector::expectedRollbackProbeHttpStatus($canonicalProbeName);
+            if ($expectedHttpStatus === null) {
+                throw new \RuntimeException("MISSING_EXPECTED_STATUS_FOR_PROBE: '{$canonicalProbeName}'");
             }
 
             $expectedContext = [
-                'probe_name' => $pName,
+                'probe_name' => $canonicalProbeName,
                 'client_event_id' => $expectedProbeId,
-                'expected_http_status' => $expectedStatusMap[$pName],
+                'expected_http_status' => $expectedHttpStatus,
                 'schema_name' => $schemaName,
                 'company_id' => $companyId,
                 'backend_head' => $backendHead,
@@ -890,11 +900,13 @@ try {
 
             $verifyResult = DisposableFinancialPostRunInspector::verifyProbeReportPayload($rep, $rawReconContent, $expectedContext);
             if (! $verifyResult['is_valid']) {
-                throw new \RuntimeException("PROBE_REPORT_VERIFICATION_FAILED: probe '{$pName}': " . implode('; ', $verifyResult['errors']));
+                throw new \RuntimeException("PROBE_REPORT_VERIFICATION_FAILED: probe '{$canonicalProbeName}': " . implode('; ', $verifyResult['errors']));
             }
 
-            echo "  [Rollback] Verified proxy probe report for '{$pName}': zero-delta recomputed OK, 6 reconcilers healthy (0 issues), artifact SHA pinned.\n";
+            echo "  [Rollback] Verified proxy probe report for '{$canonicalProbeName}': zero-delta recomputed OK, 6 reconcilers healthy (0 issues), artifact SHA pinned.\n";
         }
+        $probeManifestSha = hash_file('sha256', $probeManifestPath);
+        echo "  [Rollback] Verified all 3 rollback probe reports and immutable manifest (SHA: {$probeManifestSha}).\n";
     }
 
     if (! $childProcess->isRunning()) {
@@ -920,8 +932,12 @@ try {
         '--expected-scope=' . $expectedScope,
         '--output=' . $trustedDbReportFile,
     ];
-    if ($isAdvanced && isset($probeManifestPath) && is_file($probeManifestPath)) {
+    if ($isAdvanced) {
+        if (! isset($probeManifestPath) || ! is_file($probeManifestPath)) {
+            throw new \RuntimeException('MISSING_MANDATORY_PROBE_REPORTS_MANIFEST_FOR_ADVANCED_COMPOSE');
+        }
         $composeCmd[] = '--probe-reports-manifest=' . $probeManifestPath;
+        $composeCmd[] = '--expected-probe-manifest-sha=' . $probeManifestSha;
     }
     $composeProc = new Process($composeCmd, $repoRoot, $inspectorEnv, null, $reportTimeout);
     $composeProc->mustRun();
@@ -951,6 +967,11 @@ try {
     ];
     if ($expectedScope === SupervisedPairedFinancialDrill::REQUIRED_ADVANCED_SCOPE) {
         $validateCmd[] = '--advanced-probes';
+        if (! isset($probeManifestPath) || ! is_file($probeManifestPath)) {
+            throw new \RuntimeException('MISSING_MANDATORY_PROBE_REPORTS_MANIFEST_FOR_ADVANCED_VALIDATION');
+        }
+        $validateCmd[] = '--probe-reports-manifest=' . $probeManifestPath;
+        $validateCmd[] = '--expected-probe-manifest-sha=' . $probeManifestSha;
     }
     $validateProc = new Process($validateCmd, $repoRoot, $inspectorEnv, null, 10.0);
     $validateProc->mustRun();
@@ -971,6 +992,9 @@ try {
         'outer_evidence_sha256' => $expectedEvidenceSha,
         'created_at' => date('c'),
     ];
+    if (isset($probeManifestSha)) {
+        $hashesManifest['probe_reports_manifest_sha256'] = $probeManifestSha;
+    }
     $manifestOut = $outputDir . '/approval_hashes_manifest.json';
     $manifestEncoded = json_encode($hashesManifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
     $manifestBytes = @file_put_contents($manifestOut, $manifestEncoded);
