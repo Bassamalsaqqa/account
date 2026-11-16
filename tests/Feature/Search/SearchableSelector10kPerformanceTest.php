@@ -113,7 +113,6 @@ final class SearchableSelector10kPerformanceTest extends TestCase
                     'name_ar' => sprintf('عميل ضخم للاختبار %05d', $idx),
                     'name_en' => sprintf('Scale Test Customer %05d', $idx),
                     'status' => 'active',
-                    'active' => true,
                     'created_by' => $this->user->id,
                     'created_at' => $now,
                     'updated_at' => $now,
@@ -125,6 +124,8 @@ final class SearchableSelector10kPerformanceTest extends TestCase
 
     public function test_query_count_is_strictly_bounded_and_constant(): void
     {
+        $this->assertGreaterThanOrEqual(10000, Product::where('company_id', $this->company->id)->count(), 'Must have at least 10k products seeded.');
+
         DB::flushQueryLog();
         DB::enableQueryLog();
 
@@ -144,6 +145,8 @@ final class SearchableSelector10kPerformanceTest extends TestCase
 
     public function test_result_payload_size_is_strictly_bounded(): void
     {
+        $this->assertGreaterThanOrEqual(10000, Product::where('company_id', $this->company->id)->count(), 'Must have at least 10k products seeded.');
+
         // 10,000 products match the query 'ضخم'
         $response = $this->service->search($this->company, $this->user, 'product', 'ضخم', null, 25, ['context' => 'sales']);
 
@@ -155,6 +158,8 @@ final class SearchableSelector10kPerformanceTest extends TestCase
 
     public function test_customer_party_lookup_payload_is_bounded_and_deterministic(): void
     {
+        $this->assertGreaterThanOrEqual(2000, Customer::where('company_id', $this->company->id)->count(), 'Must have at least 2k customers seeded.');
+
         // 2,000 customers match the query 'عميل ضخم'
         $response = $this->service->search($this->company, $this->user, 'customer', 'عميل ضخم', null, 25, ['context' => 'sales']);
 

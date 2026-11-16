@@ -405,12 +405,24 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'name_ar' => 'منتج تجريبي للتفريغ',
             'name_en' => 'Clear Test Product',
             'sku' => 'CLR-01',
-            'default_sale_price_base' => '50.00',
+            'default_sale_price_base' => '50.000000',
             'base_unit_id' => $baseUnit->id,
             'product_type' => Product::TYPE_STOCK,
             'active' => true,
             'track_stock' => true,
             'created_by' => $this->user->id,
+        ]);
+
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $baseUnit->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'default_sale_price_base' => '50.000000',
+            'active' => true,
         ]);
 
         // InvoiceForm test
@@ -660,7 +672,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
             );
             $this->fail('Expected InvalidArgumentException for cross-query cursor reuse.');
         } catch (\InvalidArgumentException $e) {
-            $this->assertStringContainsString('Cursor query mismatch', $e->getMessage());
+            $this->assertSame('Cross-query pagination cursor reuse is rejected.', $e->getMessage());
         }
 
         // Cursor Security Validation 2: Cross-type cursor reuse rejected
@@ -676,16 +688,19 @@ final class SearchableComboboxAccuracyTest extends TestCase
             );
             $this->fail('Expected InvalidArgumentException for cross-type cursor reuse.');
         } catch (\InvalidArgumentException $e) {
-            $this->assertStringContainsString('Cursor type mismatch', $e->getMessage());
+            $this->assertSame('Cross-type pagination cursor reuse is rejected.', $e->getMessage());
         }
 
         // Cursor Security Validation 3: Tampered offset payload rejected
         $cursorToken = $page1['next_cursor'];
-        [$payloadBase64, $sig] = explode('.', $cursorToken, 2);
-        $tamperedPayload = json_decode(base64_decode($payloadBase64), true);
+        $decoded = base64_decode(strtr($cursorToken, '-_', '+/'), true);
+        $lastDot = strrpos($decoded, '.');
+        $json = substr($decoded, 0, $lastDot);
+        $sig = substr($decoded, $lastDot + 1);
+        $tamperedPayload = json_decode($json, true);
         $tamperedPayload['o'] = 999;
-        $tamperedBase64 = base64_encode(json_encode($tamperedPayload));
-        $tamperedCursor = $tamperedBase64 . '.' . $sig;
+        $tamperedJson = json_encode($tamperedPayload);
+        $tamperedCursor = rtrim(strtr(base64_encode($tamperedJson . '.' . $sig), '+/', '-_'), '=');
 
         try {
             $this->service->search(
@@ -699,7 +714,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
             );
             $this->fail('Expected InvalidArgumentException for tampered offset in cursor.');
         } catch (\InvalidArgumentException $e) {
-            $this->assertStringContainsString('Invalid cursor signature', $e->getMessage());
+            $this->assertSame('Tampered pagination cursor signature.', $e->getMessage());
         }
 
         // Cursor Security Validation 4: Malformed cursor format rejected
@@ -715,7 +730,10 @@ final class SearchableComboboxAccuracyTest extends TestCase
             );
             $this->fail('Expected InvalidArgumentException for malformed cursor.');
         } catch (\InvalidArgumentException $e) {
-            $this->assertStringContainsString('Malformed cursor token', $e->getMessage());
+            $this->assertTrue(in_array($e->getMessage(), [
+                'Missing cursor integrity signature.',
+                'Malformed pagination cursor encoding.',
+            ], true), 'Exception message must indicate missing signature or malformed encoding.');
         }
     }
 }
