@@ -46,10 +46,11 @@ class SupervisedPairedFinancialDrill
     public const PROOF_PARENT_DIR_REGEX = '/^p8_proof_[0-9a-f]{16}$/D';
 
     /**
-     * Optional test hook to override process identity verification without touching live /proc.
-     * Signature: ?callable(int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array{valid: bool, start_ticks: ?string, ppid: ?int, error: ?string}
+     * Optional negative-only test hook that can force a refusal for fault-path testing.
+     * Can NEVER grant valid true or turn an invalid process into a valid one.
+     * Signature: ?callable(int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): ?string
      */
-    public static ?\Closure $processIdentityVerifierHook = null;
+    public static ?\Closure $negativeRefusalHook = null;
 
     /**
      * Optional test hook to intercept signal sending without signaling live processes.
@@ -364,19 +365,16 @@ class SupervisedPairedFinancialDrill
      * @param  string  $repoRoot    Checkout root directory
      *
      * @throws RuntimeException
-    /**
-     * Strictly verifies process ownership and lineage against live Linux /proc (or test hook).
-     * Refuses root PID (<= 1), supervisor own PID, and supervisor parent PID.
-     * Enforces non-symlink proc dir owned by current UID, stat PPID, start ticks, and cmdline substring.
-     *
-     * @return array{valid: bool, start_ticks: ?string, ppid: ?int, error: ?string}
      */
-    public static function verifyProcessOwnership(
-        int $pid,
+    public static function validateProcessFacts(
+        array $facts,
         int $expectedPpid = -1,
         ?string $expectedStartTicks = null,
-        ?string $expectedPathSubstring = null
+        ?string $expectedPathSubstring = null,
+        bool $allowOrphanAdoptedByInit = false
     ): array {
+        $pid = (int) ($facts['pid'] ?? 0);
+
         // 1. Immediate rejection of forbidden PIDs
         if ($pid <= 1) {
             return [
@@ -403,33 +401,150 @@ class SupervisedPairedFinancialDrill
             ];
         }
 
-        // 2. Delegate to test hook if installed
-        if (self::$processIdentityVerifierHook !== null) {
-            return (self::$processIdentityVerifierHook)($pid, $expectedPpid, $expectedStartTicks, $expectedPathSubstring);
-        }
-
-        // 3. Live Linux /proc inspection
-        $procDir = "/proc/{$pid}";
-        if (! is_dir($procDir) || is_link($procDir)) {
+        // 2. Directory and link validation
+        if (isset($facts['is_dir']) && ! $facts['is_dir']) {
             return [
                 'valid' => false,
                 'start_ticks' => null,
                 'ppid' => null,
-                'error' => 'PROC_DIR_MISSING_OR_LINK',
+                'error' => 'PROC_DIR_MISSING',
+            ];
+        }
+        if (isset($facts['is_link']) && $facts['is_link']) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_DIR_LINK_REFUSED',
             ];
         }
 
-        if (function_exists('posix_getuid')) {
-            $ownerUid = @fileowner($procDir);
-            if ($ownerUid !== posix_getuid()) {
+        // 3. UID check: must match current UID
+        if (function_exists('posix_getuid') && isset($facts['uid'])) {
+            $expectedUid = posix_getuid();
+            if ($facts['uid'] !== $expectedUid) {
                 return [
                     'valid' => false,
                     'start_ticks' => null,
                     'ppid' => null,
-                    'error' => "PROC_UID_MISMATCH: owner {$ownerUid} vs expected " . posix_getuid(),
+                    'error' => "PROC_UID_MISMATCH: owner {$facts['uid']} vs expected {$expectedUid}",
                 ];
             }
         }
+
+        // 4. Start ticks check
+        $actualStartTicks = (string) ($facts['start_ticks'] ?? '');
+        if ($actualStartTicks === '' || $actualStartTicks === '0') {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => isset($facts['ppid']) ? (int) $facts['ppid'] : null,
+                'error' => 'PROC_START_TICKS_INVALID',
+            ];
+        }
+
+        if ($expectedStartTicks !== null && $actualStartTicks !== $expectedStartTicks) {
+            return [
+                'valid' => false,
+                'start_ticks' => $actualStartTicks,
+                'ppid' => isset($facts['ppid']) ? (int) $facts['ppid'] : null,
+                'error' => "PROC_START_TICKS_MISMATCH: actual {$actualStartTicks} vs expected {$expectedStartTicks}",
+            ];
+        }
+
+        // 5. PPID lineage check
+        $actualPpid = isset($facts['ppid']) ? (int) $facts['ppid'] : null;
+        if ($expectedPpid > 0) {
+            if ($actualPpid === null) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => $actualStartTicks,
+                    'ppid' => null,
+                    'error' => 'PROC_PPID_MISSING',
+                ];
+            }
+            if ($actualPpid !== $expectedPpid) {
+                // If the leader process already exited, child subprocesses are reparented to init (PID 1)
+                $isAdoptedOrphan = $allowOrphanAdoptedByInit && $actualPpid === 1;
+                if (! $isAdoptedOrphan) {
+                    return [
+                        'valid' => false,
+                        'start_ticks' => $actualStartTicks,
+                        'ppid' => $actualPpid,
+                        'error' => "PROC_PPID_LINEAGE_MISMATCH: actual {$actualPpid} vs expected {$expectedPpid}",
+                    ];
+                }
+            }
+        }
+
+        // 6. Cmdline substring check
+        if ($expectedPathSubstring !== null) {
+            $cmdContent = (string) ($facts['cmdline'] ?? '');
+            if ($cmdContent === '' || ! str_contains($cmdContent, $expectedPathSubstring)) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => $actualStartTicks,
+                    'ppid' => $actualPpid,
+                    'error' => 'PROC_CMDLINE_PATH_MISMATCH',
+                ];
+            }
+        }
+
+        return [
+            'valid' => true,
+            'start_ticks' => $actualStartTicks,
+            'ppid' => $actualPpid,
+            'error' => null,
+        ];
+    }
+
+    /**
+     * Strictly verifies process ownership and lineage against live Linux /proc.
+     * Always inspects live /proc for positive validation; never bypassed by positive hooks.
+     * Optional negative-only hook can force refusal for testing fault handling, but can NEVER turn invalid into valid.
+     *
+     * @return array{valid: bool, start_ticks: ?string, ppid: ?int, error: ?string}
+     */
+    public static function verifyProcessOwnership(
+        int $pid,
+        int $expectedPpid = -1,
+        ?string $expectedStartTicks = null,
+        ?string $expectedPathSubstring = null,
+        bool $allowOrphanAdoptedByInit = false
+    ): array {
+        // Negative-only test hook: can force refusal (e.g. to test error paths), but CANNOT grant valid true.
+        if (self::$negativeRefusalHook !== null) {
+            $forcedError = (self::$negativeRefusalHook)($pid, $expectedPpid, $expectedStartTicks, $expectedPathSubstring);
+            if ($forcedError !== null) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => null,
+                    'ppid' => null,
+                    'error' => "FORCED_TEST_REFUSAL: {$forcedError}",
+                ];
+            }
+        }
+
+        // Live Linux /proc inspection
+        $procDir = "/proc/{$pid}";
+        if (! is_dir($procDir)) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_DIR_MISSING',
+            ];
+        }
+        if (is_link($procDir)) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_DIR_LINK_REFUSED',
+            ];
+        }
+
+        $ownerUid = function_exists('posix_getuid') ? @fileowner($procDir) : null;
 
         $statPath = "{$procDir}/stat";
         if (! is_file($statPath) || ! is_readable($statPath)) {
@@ -472,33 +587,7 @@ class SupervisedPairedFinancialDrill
         $actualPpid = (int) $fields[1];
         $actualStartTicks = (string) $fields[19];
 
-        if ($actualStartTicks === '' || $actualStartTicks === '0') {
-            return [
-                'valid' => false,
-                'start_ticks' => null,
-                'ppid' => $actualPpid,
-                'error' => 'PROC_START_TICKS_INVALID',
-            ];
-        }
-
-        if ($expectedPpid > 0 && $actualPpid !== $expectedPpid) {
-            return [
-                'valid' => false,
-                'start_ticks' => $actualStartTicks,
-                'ppid' => $actualPpid,
-                'error' => "PROC_PPID_LINEAGE_MISMATCH: actual {$actualPpid} vs expected {$expectedPpid}",
-            ];
-        }
-
-        if ($expectedStartTicks !== null && $actualStartTicks !== $expectedStartTicks) {
-            return [
-                'valid' => false,
-                'start_ticks' => $actualStartTicks,
-                'ppid' => $actualPpid,
-                'error' => "PROC_START_TICKS_MISMATCH: actual {$actualStartTicks} vs expected {$expectedStartTicks}",
-            ];
-        }
-
+        $cmdline = null;
         if ($expectedPathSubstring !== null) {
             $cmdPath = "{$procDir}/cmdline";
             if (! is_file($cmdPath) || ! is_readable($cmdPath)) {
@@ -509,23 +598,26 @@ class SupervisedPairedFinancialDrill
                     'error' => 'PROC_CMDLINE_UNREADABLE',
                 ];
             }
-            $cmdContent = (string) @file_get_contents($cmdPath);
-            if ($cmdContent === '' || ! str_contains($cmdContent, $expectedPathSubstring)) {
-                return [
-                    'valid' => false,
-                    'start_ticks' => $actualStartTicks,
-                    'ppid' => $actualPpid,
-                    'error' => 'PROC_CMDLINE_PATH_MISMATCH',
-                ];
-            }
+            $cmdline = (string) @file_get_contents($cmdPath);
         }
 
-        return [
-            'valid' => true,
-            'start_ticks' => $actualStartTicks,
+        $facts = [
+            'pid' => $pid,
+            'uid' => $ownerUid,
             'ppid' => $actualPpid,
-            'error' => null,
+            'start_ticks' => $actualStartTicks,
+            'cmdline' => $cmdline,
+            'is_dir' => true,
+            'is_link' => false,
         ];
+
+        return self::validateProcessFacts(
+            $facts,
+            $expectedPpid,
+            $expectedStartTicks,
+            $expectedPathSubstring,
+            $allowOrphanAdoptedByInit
+        );
     }
 
     /**
@@ -545,11 +637,6 @@ class SupervisedPairedFinancialDrill
     {
         if ($pid <= 0) {
             return false;
-        }
-        if (self::$processIdentityVerifierHook !== null) {
-            $res = (self::$processIdentityVerifierHook)($pid, -1, null, null);
-
-            return (bool) ($res['valid'] ?? false);
         }
         if (function_exists('posix_kill')) {
             return @posix_kill($pid, 0);
@@ -582,7 +669,8 @@ class SupervisedPairedFinancialDrill
         int $signal,
         int $expectedPpid,
         ?string $expectedStartTicks = null,
-        ?string $expectedPathSubstring = null
+        ?string $expectedPathSubstring = null,
+        bool $allowOrphanAdoptedByInit = false
     ): bool {
         if ($pid <= 1 || $pid === getmypid()) {
             return false;
@@ -591,7 +679,13 @@ class SupervisedPairedFinancialDrill
             return false;
         }
 
-        $check = self::verifyProcessOwnership($pid, $expectedPpid, $expectedStartTicks, $expectedPathSubstring);
+        $check = self::verifyProcessOwnership(
+            $pid,
+            $expectedPpid,
+            $expectedStartTicks,
+            $expectedPathSubstring,
+            $allowOrphanAdoptedByInit
+        );
         if (! ($check['valid'] ?? false)) {
             return false;
         }
@@ -1305,12 +1399,12 @@ class SupervisedPairedFinancialDrill
                 } else {
                     $startIdMatches = true;
                     if ($snapshot->childStartIdentity !== null) {
-                        // Double verification before SIGTERM: check UID, PPID, start ticks, and harness path
+                        // Double verification before SIGTERM: check UID, PPID, start ticks, and harness CLI script path
                         $checkTerm = self::verifyProcessOwnership(
                             pid: $livePid,
                             expectedPpid: getmypid(),
                             expectedStartTicks: $snapshot->childStartIdentity,
-                            expectedPathSubstring: $snapshot->harnessDir
+                            expectedPathSubstring: 'mobile-v2-harness-cli.php'
                         );
                         if (! ($checkTerm['valid'] ?? false)) {
                             $errors[] = "CLEANUP_PID_START_IDENTITY_MISMATCH: live process PID {$livePid} identity check failed ('" . ($checkTerm['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
@@ -1335,7 +1429,7 @@ class SupervisedPairedFinancialDrill
                                     pid: $livePid,
                                     expectedPpid: getmypid(),
                                     expectedStartTicks: $snapshot->childStartIdentity,
-                                    expectedPathSubstring: $snapshot->harnessDir
+                                    expectedPathSubstring: 'mobile-v2-harness-cli.php'
                                 );
                                 if (! ($checkKill['valid'] ?? false)) {
                                     $errors[] = "CLEANUP_PID_START_IDENTITY_MISMATCH: live process PID {$livePid} identity changed before SIGKILL ('" . ($checkKill['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
@@ -1385,12 +1479,15 @@ class SupervisedPairedFinancialDrill
                     continue;
                 }
 
-                // Double verification before SIGTERM: UID, PPID=childPid, start ticks, and harness path
+                // Double verification before SIGTERM: UID, start ticks, harness path.
+                // allowOrphanAdoptedByInit: true because when child harness CLI terminates,
+                // lingering subprocesses may be adopted by init (PID 1).
                 $checkTerm = self::verifyProcessOwnership(
                     pid: $pid,
                     expectedPpid: $snapshot->childPid,
                     expectedStartTicks: $expectedStartId,
-                    expectedPathSubstring: $snapshot->harnessDir
+                    expectedPathSubstring: $snapshot->harnessDir,
+                    allowOrphanAdoptedByInit: true
                 );
                 if (! ($checkTerm['valid'] ?? false)) {
                     $errors[] = "CLEANUP_{$name}_PID_IDENTITY_MISMATCH: PID {$pid} identity check failed ('" . ($checkTerm['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
@@ -1410,7 +1507,8 @@ class SupervisedPairedFinancialDrill
                         pid: $pid,
                         expectedPpid: $snapshot->childPid,
                         expectedStartTicks: $expectedStartId,
-                        expectedPathSubstring: $snapshot->harnessDir
+                        expectedPathSubstring: $snapshot->harnessDir,
+                        allowOrphanAdoptedByInit: true
                     );
                     if (! ($checkKill['valid'] ?? false)) {
                         $errors[] = "CLEANUP_{$name}_PID_IDENTITY_MISMATCH: PID {$pid} identity changed before SIGKILL ('" . ($checkKill['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
@@ -2252,14 +2350,14 @@ final class VerifiedOwnedSnapshot
         $caddyStartIdentity = null;
 
         if ($pidsJsonPath === null) {
-            // Basic snapshot mode: derive child start identity if live /proc exists or test hook provides it
-            if (SupervisedPairedFinancialDrill::$processIdentityVerifierHook !== null) {
-                $check = (SupervisedPairedFinancialDrill::$processIdentityVerifierHook)($childPid, getmypid(), null, $realHarness);
-                if ($check['valid'] ?? false) {
-                    $childStartIdentity = $check['start_ticks'];
-                }
-            } elseif (is_dir("/proc/{$childPid}")) {
-                $check = SupervisedPairedFinancialDrill::verifyProcessOwnership($childPid, getmypid(), null, $realHarness);
+            // Basic snapshot mode: derive child start identity if live /proc exists
+            if (is_dir("/proc/{$childPid}")) {
+                $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                    pid: $childPid,
+                    expectedPpid: getmypid(),
+                    expectedStartTicks: null,
+                    expectedPathSubstring: 'mobile-v2-harness-cli.php'
+                );
                 if ($check['valid'] ?? false) {
                     $childStartIdentity = $check['start_ticks'];
                 }
@@ -2303,12 +2401,12 @@ final class VerifiedOwnedSnapshot
                 }
             }
 
-            // Verify child process identity and lineage (parent must be supervisor)
+            // Verify child process identity and lineage (parent must be supervisor, cmdline must contain script path)
             $childCheck = SupervisedPairedFinancialDrill::verifyProcessOwnership(
                 pid: $childPid,
                 expectedPpid: getmypid(),
                 expectedStartTicks: null,
-                expectedPathSubstring: $realHarness
+                expectedPathSubstring: 'mobile-v2-harness-cli.php'
             );
             if (! ($childCheck['valid'] ?? false)) {
                 throw new RuntimeException('SNAPSHOT_CHILD_PROCESS_NOT_PROVEN: ' . ($childCheck['error'] ?? 'unverified'));

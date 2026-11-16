@@ -1239,14 +1239,19 @@ Following Root Review on commit `abf9151483460ab25ef4a0fb8fc3b546682d91ef`, all 
    - Double verification is performed immediately before `SIGTERM` and re-verified immediately before `SIGKILL`.
 
 3. **Strict Factory Verification & Lineage Proof**:
-   - `VerifiedOwnedSnapshot::fromLiveOwnership` derives and validates process identity from `/proc` (or test hooks) using `process_pids.json` (mode `0600`, UID-owned, inside harness directory).
+   - `VerifiedOwnedSnapshot::fromLiveOwnership` derives and validates process identity from live `/proc` using `process_pids.json` (mode `0600`, UID-owned, inside harness directory).
    - Basic snapshot mode preserves prior single-child behavior without extra PIDs.
    - Advanced execution requires a complete, validated child set (`backend_pid`, `proxy_pid`, `caddy_pid`) where each process has PPID matching `childPid`, UID matching `posix_getuid()`, non-empty start ticks, and cmdline matching the harness directory.
    - Root PID (1), supervisor own PID (`getmypid()`), and supervisor parent PID (`posix_getppid()`) are strictly refused at the factory boundary.
+   - Production child process argv validation checks for `'mobile-v2-harness-cli.php'` (matching the actual supervisor invocation `php tests/Support/Harness/mobile-v2-harness-cli.php ...`), while backend/proxy/caddy subprocesses validate containment within `$harnessDir`.
 
-4. **Injectable Pure Identity Validator & Mock Signal Recorder**:
-   - Added `SupervisedPairedFinancialDrill::$processIdentityVerifierHook` and `SupervisedPairedFinancialDrill::$signalDispatcherHook`.
-   - Authored pure unit tests in `DisposableMobileV2BackendHarnessGuardTest.php` exercising own PID, root PID 1, parent PID, foreign ancestry, missing start ticks, changed ticks, and cleanup identity mismatch, verifying that **zero signals** are dispatched without touching host processes.
+4. **Pure `validateProcessFacts` Helper & Removal of Positive Override Hook**:
+   - Extracted `SupervisedPairedFinancialDrill::validateProcessFacts(array $facts, ...)` as a pure in-memory helper for unit tests to thoroughly validate simulated process facts (own PID, PID 1, parent PID, foreign UID, foreign ancestry, missing/corrupted ticks, tick changes, path mismatches, and orphan reparenting) without touching `/proc` or granting runtime execution proof.
+   - Removed positive override hook from `verifyProcessOwnership()` and `VerifiedOwnedSnapshot::fromLiveOwnership()`. Production ownership verification strictly inspects live Linux `/proc` files (`/proc/{$pid}/status`, `/proc/{$pid}/stat`, `/proc/{$pid}/cmdline`) with no symlink traversal.
+   - Added optional `SupervisedPairedFinancialDrill::$negativeRefusalHook`, which can only force a refusal (`?string` error), never grant positive validity.
+   - Added support for kernel process reparenting (`allowOrphanAdoptedByInit: true`): when the child harness CLI terminates under `SIGTERM`, surviving lingering subprocesses adopted by init (`PID 1`) remain safely verified and cleaned up using their immutable `start_ticks` (stat field 22) + UID + harness directory containment.
+   - Authored comprehensive pure unit tests in `DisposableMobileV2BackendHarnessGuardTest.php` exercising all fact validation cases and negative refusal hooks, ensuring zero OS signals are dispatched to unverified PIDs.
+
 
 
 

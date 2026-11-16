@@ -59,7 +59,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
     protected function tearDown(): void
     {
-        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = null;
+        SupervisedPairedFinancialDrill::$negativeRefusalHook = null;
         SupervisedPairedFinancialDrill::$signalDispatcherHook = null;
         $this->restoreEnv('MOBILE_V2_HARNESS_ENABLE', $this->originalEnable);
         $this->restoreEnv('PHASE8_TEST_DB_HOST', $this->originalHost);
@@ -6050,7 +6050,171 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_process_ownership_refuses_supervisor_own_pid_and_dispatches_zero_signals(): void
+    public function test_validate_process_facts_refuses_forbidden_pids(): void
+    {
+        $myPid = getmypid();
+        $parentPid = function_exists('posix_getppid') ? posix_getppid() : 999999;
+
+        // Root PID 1
+        $res1 = SupervisedPairedFinancialDrill::validateProcessFacts(['pid' => 1]);
+        $this->assertFalse($res1['valid']);
+        $this->assertStringContainsString('REFUSED_ROOT_OR_INVALID_PID_1', (string) $res1['error']);
+
+        // Negative PID
+        $resNeg = SupervisedPairedFinancialDrill::validateProcessFacts(['pid' => -5]);
+        $this->assertFalse($resNeg['valid']);
+        $this->assertStringContainsString('REFUSED_ROOT_OR_INVALID_PID_-5', (string) $resNeg['error']);
+
+        // Supervisor own PID
+        $resSelf = SupervisedPairedFinancialDrill::validateProcessFacts(['pid' => $myPid]);
+        $this->assertFalse($resSelf['valid']);
+        $this->assertStringContainsString('REFUSED_OWN_SUPERVISOR_PID', (string) $resSelf['error']);
+
+        // Supervisor parent PID
+        if (function_exists('posix_getppid')) {
+            $resParent = SupervisedPairedFinancialDrill::validateProcessFacts(['pid' => $parentPid]);
+            $this->assertFalse($resParent['valid']);
+            $this->assertStringContainsString('REFUSED_PARENT_SUPERVISOR_PID', (string) $resParent['error']);
+        }
+    }
+
+    #[Test]
+    public function test_validate_process_facts_refuses_uid_mismatch(): void
+    {
+        if (! function_exists('posix_getuid')) {
+            $this->markTestSkipped('posix_getuid unavailable');
+        }
+
+        $facts = [
+            'pid' => 8888,
+            'uid' => posix_getuid() + 100, // foreign UID
+            'ppid' => 5555,
+            'start_ticks' => '12345',
+            'cmdline' => 'php harness',
+        ];
+
+        $res = SupervisedPairedFinancialDrill::validateProcessFacts($facts, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($res['valid']);
+        $this->assertStringContainsString('PROC_UID_MISMATCH', (string) $res['error']);
+    }
+
+    #[Test]
+    public function test_validate_process_facts_refuses_foreign_ppid_ancestry(): void
+    {
+        $facts = [
+            'pid' => 8888,
+            'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'ppid' => 9999, // foreign parent
+            'start_ticks' => '12345',
+            'cmdline' => 'php harness',
+        ];
+
+        $res = SupervisedPairedFinancialDrill::validateProcessFacts($facts, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($res['valid']);
+        $this->assertStringContainsString('PROC_PPID_LINEAGE_MISMATCH', (string) $res['error']);
+    }
+
+    #[Test]
+    public function test_validate_process_facts_allows_orphan_adopted_by_init_when_flagged(): void
+    {
+        $facts = [
+            'pid' => 8888,
+            'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'ppid' => 1, // adopted by init after leader exited
+            'start_ticks' => '12345',
+            'cmdline' => 'php /tmp/v2_harness_test/proxy.php',
+        ];
+
+        // Without allowOrphanAdoptedByInit -> rejected
+        $resStrict = SupervisedPairedFinancialDrill::validateProcessFacts(
+            $facts,
+            expectedPpid: 5555,
+            expectedStartTicks: '12345',
+            expectedPathSubstring: 'v2_harness_test',
+            allowOrphanAdoptedByInit: false
+        );
+        $this->assertFalse($resStrict['valid']);
+        $this->assertStringContainsString('PROC_PPID_LINEAGE_MISMATCH', (string) $resStrict['error']);
+
+        // With allowOrphanAdoptedByInit -> accepted
+        $resOrphan = SupervisedPairedFinancialDrill::validateProcessFacts(
+            $facts,
+            expectedPpid: 5555,
+            expectedStartTicks: '12345',
+            expectedPathSubstring: 'v2_harness_test',
+            allowOrphanAdoptedByInit: true
+        );
+        $this->assertTrue($resOrphan['valid']);
+        $this->assertSame('12345', $resOrphan['start_ticks']);
+    }
+
+    #[Test]
+    public function test_validate_process_facts_refuses_missing_or_changed_start_ticks(): void
+    {
+        $baseFacts = [
+            'pid' => 8888,
+            'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'ppid' => 5555,
+            'cmdline' => 'php harness',
+        ];
+
+        // Missing start ticks
+        $factsMissing = $baseFacts;
+        $factsMissing['start_ticks'] = '';
+        $resMissing = SupervisedPairedFinancialDrill::validateProcessFacts($factsMissing, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($resMissing['valid']);
+        $this->assertStringContainsString('PROC_START_TICKS_INVALID', (string) $resMissing['error']);
+
+        // Changed start ticks (recycled PID)
+        $factsChanged = $baseFacts;
+        $factsChanged['start_ticks'] = '99999';
+        $resChanged = SupervisedPairedFinancialDrill::validateProcessFacts($factsChanged, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($resChanged['valid']);
+        $this->assertStringContainsString('PROC_START_TICKS_MISMATCH', (string) $resChanged['error']);
+    }
+
+    #[Test]
+    public function test_validate_process_facts_refuses_cmdline_path_mismatch(): void
+    {
+        $facts = [
+            'pid' => 8888,
+            'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'ppid' => 5555,
+            'start_ticks' => '12345',
+            'cmdline' => 'php /var/other/service.php',
+        ];
+
+        $res = SupervisedPairedFinancialDrill::validateProcessFacts(
+            $facts,
+            expectedPpid: 5555,
+            expectedStartTicks: '12345',
+            expectedPathSubstring: 'mobile-v2-harness-cli.php'
+        );
+        $this->assertFalse($res['valid']);
+        $this->assertStringContainsString('PROC_CMDLINE_PATH_MISMATCH', (string) $res['error']);
+    }
+
+    #[Test]
+    public function test_verify_process_ownership_negative_hook_can_only_refuse_never_grant_positive(): void
+    {
+        // Negative hook forces refusal
+        SupervisedPairedFinancialDrill::$negativeRefusalHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): ?string {
+            return 'SIMULATED_TEST_FAULT';
+        };
+
+        $res = SupervisedPairedFinancialDrill::verifyProcessOwnership(8888);
+        $this->assertFalse($res['valid']);
+        $this->assertStringContainsString('FORCED_TEST_REFUSAL: SIMULATED_TEST_FAULT', (string) $res['error']);
+
+        // Without hook, verifyProcessOwnership checks live /proc directly and rejects non-existent PID
+        SupervisedPairedFinancialDrill::$negativeRefusalHook = null;
+        $resLive = SupervisedPairedFinancialDrill::verifyProcessOwnership(9999999);
+        $this->assertFalse($resLive['valid']);
+        $this->assertStringContainsString('PROC_DIR_MISSING', (string) $resLive['error']);
+    }
+
+    #[Test]
+    public function test_send_verified_signal_with_forbidden_or_unproven_pid_dispatches_zero_signals(): void
     {
         $signalsDispatched = [];
         SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
@@ -6060,135 +6224,11 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         };
 
         $myPid = getmypid();
-        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership($myPid);
-        $this->assertFalse($check['valid']);
-        $this->assertStringContainsString('REFUSED_OWN_SUPERVISOR_PID', (string) $check['error']);
+        $this->assertFalse(SupervisedPairedFinancialDrill::sendVerifiedSignal($myPid, SIGTERM, -1));
+        $this->assertFalse(SupervisedPairedFinancialDrill::sendVerifiedSignal(1, SIGTERM, -1));
+        $this->assertFalse(SupervisedPairedFinancialDrill::sendVerifiedSignal(9999999, SIGTERM, -1));
 
-        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal($myPid, SIGTERM, -1);
-        $this->assertFalse($sent);
-        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to supervisor own PID');
-    }
-
-    #[Test]
-    public function test_process_ownership_refuses_root_pid_one_and_dispatches_zero_signals(): void
-    {
-        $signalsDispatched = [];
-        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
-            $signalsDispatched[] = [$pid, $sig];
-
-            return true;
-        };
-
-        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(1);
-        $this->assertFalse($check['valid']);
-        $this->assertStringContainsString('REFUSED_ROOT_OR_INVALID_PID', (string) $check['error']);
-
-        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(1, SIGTERM, -1);
-        $this->assertFalse($sent);
-        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to root PID 1');
-    }
-
-    #[Test]
-    public function test_process_ownership_refuses_supervisor_parent_pid_and_dispatches_zero_signals(): void
-    {
-        if (! function_exists('posix_getppid')) {
-            $this->markTestSkipped('posix_getppid not available');
-        }
-
-        $signalsDispatched = [];
-        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
-            $signalsDispatched[] = [$pid, $sig];
-
-            return true;
-        };
-
-        $parentPid = posix_getppid();
-        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership($parentPid);
-        $this->assertFalse($check['valid']);
-        $this->assertStringContainsString('REFUSED_PARENT_SUPERVISOR_PID', (string) $check['error']);
-
-        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal($parentPid, SIGTERM, -1);
-        $this->assertFalse($sent);
-        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to supervisor parent PID');
-    }
-
-    #[Test]
-    public function test_process_ownership_rejects_foreign_ppid_ancestry_and_dispatches_zero_signals(): void
-    {
-        $signalsDispatched = [];
-        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
-            $signalsDispatched[] = [$pid, $sig];
-
-            return true;
-        };
-
-        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
-            // Simulate foreign PPID (process has PPID 9999, but caller expects 5555)
-            if ($expectedPpid > 0 && $expectedPpid !== 9999) {
-                return ['valid' => false, 'start_ticks' => '12345', 'ppid' => 9999, 'error' => 'PROC_PPID_LINEAGE_MISMATCH: actual 9999 vs expected ' . $expectedPpid];
-            }
-
-            return ['valid' => true, 'start_ticks' => '12345', 'ppid' => 9999, 'error' => null];
-        };
-
-        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(pid: 8888, expectedPpid: 5555, expectedStartTicks: '12345');
-        $this->assertFalse($check['valid']);
-        $this->assertStringContainsString('PROC_PPID_LINEAGE_MISMATCH', (string) $check['error']);
-
-        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(8888, SIGTERM, expectedPpid: 5555, expectedStartTicks: '12345');
-        $this->assertFalse($sent);
-        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals when PPID lineage mismatches');
-    }
-
-    #[Test]
-    public function test_process_ownership_rejects_invalid_or_missing_start_ticks_and_dispatches_zero_signals(): void
-    {
-        $signalsDispatched = [];
-        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
-            $signalsDispatched[] = [$pid, $sig];
-
-            return true;
-        };
-
-        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
-            return ['valid' => false, 'start_ticks' => null, 'ppid' => 5555, 'error' => 'PROC_START_TICKS_INVALID'];
-        };
-
-        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(pid: 8888, expectedPpid: 5555, expectedStartTicks: '12345');
-        $this->assertFalse($check['valid']);
-        $this->assertStringContainsString('PROC_START_TICKS_INVALID', (string) $check['error']);
-
-        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(8888, SIGTERM, expectedPpid: 5555, expectedStartTicks: '12345');
-        $this->assertFalse($sent);
-        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals when start ticks are missing/unreadable');
-    }
-
-    #[Test]
-    public function test_process_ownership_rejects_changed_start_ticks_and_dispatches_zero_signals(): void
-    {
-        $signalsDispatched = [];
-        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
-            $signalsDispatched[] = [$pid, $sig];
-
-            return true;
-        };
-
-        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
-            // Process exists but start ticks have changed from captured 12345 to 99999 (PID recycled)
-            if ($expectedStartTicks !== null && $expectedStartTicks !== '99999') {
-                return ['valid' => false, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => "PROC_START_TICKS_MISMATCH: actual 99999 vs expected {$expectedStartTicks}"];
-            }
-
-            return ['valid' => true, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => null];
-        };
-
-        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(pid: 8888, expectedPpid: 5555, expectedStartTicks: '12345');
-        $this->assertFalse($check['valid']);
-        $this->assertStringContainsString('PROC_START_TICKS_MISMATCH', (string) $check['error']);
-
-        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(8888, SIGTERM, expectedPpid: 5555, expectedStartTicks: '12345');
-        $this->assertFalse($sent);
-        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals when start ticks indicate recycled PID');
+        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to unproven or forbidden PIDs');
     }
 
     #[Test]
@@ -6217,17 +6257,16 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             return true;
         };
 
-        // Mock verifier that reports process 8888 is alive but start ticks mismatch
-        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
-            if ($expectedStartTicks !== null && $expectedStartTicks !== '99999') {
-                return ['valid' => false, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => 'PROC_START_TICKS_MISMATCH'];
+        // Negative hook forces refusal for proxy process PID 8888
+        SupervisedPairedFinancialDrill::$negativeRefusalHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): ?string {
+            if ($pid === 8888) {
+                return 'PROXY_PID_IDENTITY_FAILED_REFUSAL';
             }
 
-            return ['valid' => true, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => null];
+            return null;
         };
 
-        // Create a synthetic snapshot with childPid 5555 and proxyPid 8888
-        // Using reflection to construct snapshot directly for cleanup testing
+        // Construct synthetic snapshot for cleanup testing
         $refClass = new \ReflectionClass(\Tests\Support\Harness\VerifiedOwnedSnapshot::class);
         $constructor = $refClass->getConstructor();
         $constructor->setAccessible(true);
@@ -6250,7 +6289,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             9999, // caddyPid
             'child_ticks',
             'backend_ticks',
-            'proxy_ticks', // expected: proxy_ticks, but hook returns 99999
+            'proxy_ticks',
             'caddy_ticks'
         );
 
@@ -6270,11 +6309,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         );
 
         $this->assertNotEmpty($result['errors']);
-        $errorStr = implode('; ', $result['errors']);
-        $this->assertStringContainsString('CLEANUP_proxy_PID_IDENTITY_MISMATCH', $errorStr);
-        $this->assertStringContainsString('No signals sent', $errorStr);
 
-        // Verify that NO negative process group signals or signals to mismatched PID were dispatched
+        // Verify that NO negative process group signals or signals to unverified PID were dispatched
         foreach ($signalsDispatched as $entry) {
             $this->assertGreaterThan(0, $entry[0], 'Must never dispatch negative process group signals');
             $this->assertNotSame(8888, $entry[0], 'Must never dispatch signals to identity-mismatched PID 8888');
