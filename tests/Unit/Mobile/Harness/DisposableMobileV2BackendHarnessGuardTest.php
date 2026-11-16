@@ -9,9 +9,11 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Tests\Support\Harness\DisposableFinancialPostRunInspector;
 use Tests\Support\Harness\DisposableMobileV2BackendHarness;
 use Tests\Support\Harness\MobileV2HarnessCommand;
 use Tests\Support\Harness\SupervisedPairedFinancialDrill;
+use Tests\Support\Harness\TestTransportProxy;
 use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 
@@ -51,6 +53,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     {
         parent::setUp();
         class_exists(SupervisedPairedFinancialDrill::class);
+        class_exists(DisposableFinancialPostRunInspector::class);
+        class_exists(TestTransportProxy::class);
         $this->originalEnable = getenv('MOBILE_V2_HARNESS_ENABLE') ?: null;
         $this->originalHost = getenv('PHASE8_TEST_DB_HOST') ?: null;
         $this->originalPort = getenv('PHASE8_TEST_DB_PORT') ?: null;
@@ -62,6 +66,7 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     {
         SupervisedPairedFinancialDrill::$negativeRefusalHook = null;
         SupervisedPairedFinancialDrill::$signalDispatcherHook = null;
+        DisposableFinancialPostRunInspector::$negativeReadGuard = null;
         $this->restoreEnv('MOBILE_V2_HARNESS_ENABLE', $this->originalEnable);
         $this->restoreEnv('PHASE8_TEST_DB_HOST', $this->originalHost);
         $this->restoreEnv('PHASE8_TEST_DB_PORT', $this->originalPort);
