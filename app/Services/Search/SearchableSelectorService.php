@@ -27,6 +27,7 @@ final class SearchableSelectorService
 
     /**
      * Map of selector types to capability allowlists per workflow context.
+     * All permissions are verified against CompanyRoleService::PERMISSIONS.
      *
      * @var array<string, array<string, list<string>>>
      */
@@ -40,16 +41,17 @@ final class SearchableSelectorService
             'reports' => ['reports.sales.view', 'reports.financial.view'],
         ],
         'vendor' => [
-            'purchasing' => ['purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.view'],
-            'payment' => ['money.vendor_payment.view', 'money.vendor_payment.create', 'purchasing.payment.create'],
+            'purchasing' => ['purchasing.purchase.view', 'purchasing.purchase.create', 'purchasing.purchase.edit_draft'],
+            'payment' => ['money.vendor_payment.create'],
             'statement' => ['vendors.statement.view'],
             'management' => ['vendors.view', 'vendors.manage'],
             'reports' => ['reports.purchases.view', 'reports.financial.view'],
         ],
         'product' => [
-            'sales' => ['sales.invoice.create', 'sales.invoice.edit_draft', 'sales.quote.create', 'sales.quote.edit', 'sales.return.create', 'sales.invoice.view'],
+            'sales' => ['sales.invoice.create', 'sales.invoice.edit_draft', 'sales.invoice.view', 'sales.return.create'],
+            'quotation' => ['sales.quote.create', 'sales.quote.edit', 'sales.quote.view'],
             'purchasing' => ['purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.return.manage', 'purchasing.purchase.view'],
-            'inventory' => ['inventory.stock.view', 'inventory.product.manage', 'inventory.stock.transfer', 'inventory.movement.view', 'inventory.stock.adjust'],
+            'inventory' => ['inventory.stock.view', 'inventory.product.manage', 'inventory.stock.transfer', 'inventory.stock.adjust'],
             'reports' => ['reports.inventory.view', 'reports.sales.view', 'reports.purchases.view'],
         ],
         'warehouse' => [
@@ -62,10 +64,76 @@ final class SearchableSelectorService
     ) {}
 
     /**
+     * Encode an opaque, tenant-, type-, workflow-, and query-bound pagination cursor.
+     */
+    public function encodeCursor(int $companyId, string $type, string $context, string $term, int $offset): string
+    {
+        $payload = [
+            'c' => $companyId,
+            't' => $type,
+            'ctx' => $context,
+            'qh' => hash('xxh128', $term),
+            'o' => $offset,
+        ];
+
+        return rtrim(strtr(base64_encode(json_encode($payload, JSON_THROW_ON_ERROR)), '+/', '-_'), '=');
+    }
+
+    /**
+     * Decode and strictly validate a pagination cursor.
+     * Throws InvalidArgumentException on tamper, cross-tenant, cross-type, cross-workflow, or cross-query reuse.
+     *
+     * @return array{offset: int}
+     */
+    public function validateCursor(?string $cursor, int $companyId, string $type, string $context, string $term): array
+    {
+        if ($cursor === null || trim($cursor) === '') {
+            return ['offset' => 0];
+        }
+
+        try {
+            $json = base64_decode(strtr($cursor, '-_', '+/'), true);
+            if ($json === false) {
+                throw new \InvalidArgumentException('Malformed pagination cursor.');
+            }
+            $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\Throwable $e) {
+            throw new \InvalidArgumentException('Malformed pagination cursor.', 0, $e);
+        }
+
+        if (! is_array($data)
+            || ! isset($data['c'], $data['t'], $data['ctx'], $data['qh'], $data['o'])
+            || ! is_int($data['o'])
+            || $data['o'] < 0) {
+            throw new \InvalidArgumentException('Invalid pagination cursor structure.');
+        }
+
+        if ((int) $data['c'] !== $companyId) {
+            throw new \InvalidArgumentException('Cross-tenant pagination cursor reuse is rejected.');
+        }
+
+        if ($data['t'] !== $type) {
+            throw new \InvalidArgumentException('Cross-type pagination cursor reuse is rejected.');
+        }
+
+        if ($data['ctx'] !== $context) {
+            throw new \InvalidArgumentException('Cross-workflow pagination cursor reuse is rejected.');
+        }
+
+        $expectedHash = hash('xxh128', $term);
+        if (! hash_equals($expectedHash, (string) $data['qh'])) {
+            throw new \InvalidArgumentException('Cross-query pagination cursor reuse is rejected.');
+        }
+
+        return ['offset' => $data['o']];
+    }
+
+    /**
      * Perform a bounded, tenant-isolated, capability-checked search for selectors.
      *
      * @param array{
      *     context?: string,
+     *     cursor?: ?string,
      *     exclude_ids?: list<int>,
      *     locale?: string
      * } $options
@@ -78,6 +146,7 @@ final class SearchableSelectorService
      *         selected: bool
      *     }>,
      *     has_more: bool,
+     *     next_cursor: ?string,
      *     limit: int,
      *     total: int
      * }
@@ -109,6 +178,7 @@ final class SearchableSelectorService
     /**
      * Authorize that the actor has appropriate scoped capability without leaking permissions.
      * Derives permissions strictly on the server; client options are never authority.
+     * Unknown permissions fail closed without crashing valid users.
      *
      * @param array<string, mixed> $options
      */
@@ -132,8 +202,12 @@ final class SearchableSelectorService
 
         if ($context !== null && isset($allowlists[$context])) {
             foreach ($allowlists[$context] as $perm) {
-                if ($actor->hasPermissionTo($perm)) {
-                    return;
+                try {
+                    if ($actor->hasPermissionTo($perm)) {
+                        return;
+                    }
+                } catch (\Spatie\Permission\Exceptions\PermissionDoesNotExist) {
+                    continue;
                 }
             }
 
@@ -143,8 +217,12 @@ final class SearchableSelectorService
         // Check if actor has ANY recognized permission for this type across allowed contexts
         foreach ($allowlists as $perms) {
             foreach ($perms as $perm) {
-                if ($actor->hasPermissionTo($perm)) {
-                    return;
+                try {
+                    if ($actor->hasPermissionTo($perm)) {
+                        return;
+                    }
+                } catch (\Spatie\Permission\Exceptions\PermissionDoesNotExist) {
+                    continue;
                 }
             }
         }
@@ -175,6 +253,10 @@ final class SearchableSelectorService
         string $locale,
         array $options
     ): array {
+        $context = (string) ($options['context'] ?? 'sales');
+        $cursorInfo = $this->validateCursor($options['cursor'] ?? null, (int) $company->id, 'customer', $context, $term);
+        $offset = $cursorInfo['offset'];
+
         $query = Customer::where('company_id', $company->id)
             ->where('status', 'active');
 
@@ -206,15 +288,18 @@ final class SearchableSelectorService
         $query->orderByRaw("COALESCE(NULLIF({$nameCol}, ''), {$fallbackCol}) ASC")
             ->orderBy('id', 'ASC');
 
-        // Fetch limit + 1 to detect has_more without a separate COUNT query
-        $records = (clone $query)->limit($limit + 1)->get();
+        // Fetch limit + 1 from offset to detect has_more without a separate COUNT query
+        $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
         $hasMore = $records->count() > $limit;
         if ($hasMore) {
             $records = $records->slice(0, $limit);
+            $nextCursor = $this->encodeCursor((int) $company->id, 'customer', $context, $term, $offset + $limit);
+        } else {
+            $nextCursor = null;
         }
 
-        // Retain selected record hydration bounded independently
-        if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
+        // Retain selected record hydration bounded independently on page 1 only
+        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
             $selectedRecord = Customer::where('company_id', $company->id)
                 ->where('id', $selectedId)
                 ->where('status', 'active')
@@ -260,6 +345,7 @@ final class SearchableSelectorService
         return [
             'items' => $items,
             'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
             'limit' => $limit,
             'total' => count($items),
         ];
@@ -281,8 +367,11 @@ final class SearchableSelectorService
         string $locale,
         array $options
     ): array {
-        $context = $options['context'] ?? 'purchasing';
+        $context = (string) ($options['context'] ?? 'purchasing');
         $isPayment = ($context === 'payment');
+
+        $cursorInfo = $this->validateCursor($options['cursor'] ?? null, (int) $company->id, 'vendor', $context, $term);
+        $offset = $cursorInfo['offset'];
 
         $query = Vendor::where('company_id', $company->id);
 
@@ -322,13 +411,16 @@ final class SearchableSelectorService
         $query->orderByRaw("COALESCE(NULLIF({$nameCol}, ''), {$fallbackCol}) ASC")
             ->orderBy('id', 'ASC');
 
-        $records = (clone $query)->limit($limit + 1)->get();
+        $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
         $hasMore = $records->count() > $limit;
         if ($hasMore) {
             $records = $records->slice(0, $limit);
+            $nextCursor = $this->encodeCursor((int) $company->id, 'vendor', $context, $term, $offset + $limit);
+        } else {
+            $nextCursor = null;
         }
 
-        if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
+        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
             $selQuery = Vendor::where('company_id', $company->id)->where('id', $selectedId);
             if ($isPayment) {
                 $selQuery->withTrashed()->where(function (Builder $q): void {
@@ -379,6 +471,7 @@ final class SearchableSelectorService
         return [
             'items' => $items,
             'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
             'limit' => $limit,
             'total' => count($items),
         ];
@@ -400,8 +493,11 @@ final class SearchableSelectorService
         string $locale,
         array $options
     ): array {
-        $context = $options['context'] ?? 'sales';
+        $context = (string) ($options['context'] ?? 'sales');
         $isStockOnly = in_array($context, ['inventory', 'purchasing'], true);
+
+        $cursorInfo = $this->validateCursor($options['cursor'] ?? null, (int) $company->id, 'product', $context, $term);
+        $offset = $cursorInfo['offset'];
 
         $canViewCost = match ($context) {
             'purchasing' => $actor->hasPermissionTo('purchasing.cost.view'),
@@ -409,13 +505,13 @@ final class SearchableSelectorService
             default => false, // NEVER expose cost in sales or public contexts
         };
 
-        // 1. Check exact barcode match for product + unit mapping
+        // 1. Check exact barcode match for product + unit mapping (page 1 only)
         $exactBarcode = null;
         $exactBarcodeProduct = null;
         $matchedUnitId = null;
         $matchedProductUnitId = null;
 
-        if ($term !== '') {
+        if ($offset === 0 && $term !== '') {
             $exactBarcode = ProductBarcode::where('company_id', $company->id)
                 ->where('barcode', $term)
                 ->first();
@@ -477,19 +573,22 @@ final class SearchableSelectorService
         $query->orderByRaw("COALESCE(NULLIF({$nameCol}, ''), {$fallbackCol}) ASC")
             ->orderBy('id', 'ASC');
 
-        $records = (clone $query)->limit($limit + 1)->get();
+        $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
         $hasMore = $records->count() > $limit;
         if ($hasMore) {
             $records = $records->slice(0, $limit);
+            $nextCursor = $this->encodeCursor((int) $company->id, 'product', $context, $term, $offset + $limit);
+        } else {
+            $nextCursor = null;
         }
 
-        // If exact barcode matched a product not in the collection, prepend it
-        if ($exactBarcodeProduct !== null && ! $records->contains('id', $exactBarcodeProduct->id)) {
+        // If exact barcode matched a product not in the collection, prepend it (page 1 only)
+        if ($offset === 0 && $exactBarcodeProduct !== null && ! $records->contains('id', $exactBarcodeProduct->id)) {
             $records->prepend($exactBarcodeProduct);
         }
 
-        // Selected record hydration
-        if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
+        // Selected record hydration (page 1 only)
+        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
             $selQuery = Product::where('company_id', $company->id)
                 ->where('id', $selectedId)
                 ->where('active', true);
@@ -551,6 +650,7 @@ final class SearchableSelectorService
         return [
             'items' => $items,
             'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
             'limit' => $limit,
             'total' => count($items),
         ];
@@ -571,6 +671,10 @@ final class SearchableSelectorService
         string $locale,
         array $options
     ): array {
+        $context = (string) ($options['context'] ?? 'general');
+        $cursorInfo = $this->validateCursor($options['cursor'] ?? null, (int) $company->id, 'warehouse', $context, $term);
+        $offset = $cursorInfo['offset'];
+
         $query = Warehouse::where('company_id', $company->id)
             ->where('active', true);
 
@@ -587,13 +691,16 @@ final class SearchableSelectorService
             ->orderBy('name_ar', 'ASC')
             ->orderBy('id', 'ASC');
 
-        $records = (clone $query)->limit($limit + 1)->get();
+        $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
         $hasMore = $records->count() > $limit;
         if ($hasMore) {
             $records = $records->slice(0, $limit);
+            $nextCursor = $this->encodeCursor((int) $company->id, 'warehouse', $context, $term, $offset + $limit);
+        } else {
+            $nextCursor = null;
         }
 
-        if ($selectedId !== null && ! $records->contains('id', $selectedId)) {
+        if ($offset === 0 && $selectedId !== null && ! $records->contains('id', $selectedId)) {
             $selected = Warehouse::where('company_id', $company->id)->where('id', $selectedId)->where('active', true)->first();
             if ($selected !== null) {
                 $records->prepend($selected);
@@ -622,6 +729,7 @@ final class SearchableSelectorService
         return [
             'items' => $items,
             'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
             'limit' => $limit,
             'total' => count($items),
         ];

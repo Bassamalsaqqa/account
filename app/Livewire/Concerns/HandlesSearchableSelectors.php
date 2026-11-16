@@ -41,8 +41,8 @@ trait HandlesSearchableSelectors
     protected function searchableSelectorContext(): string
     {
         return match (static::class) {
-            \App\Livewire\Pages\Sales\InvoiceForm::class,
-            \App\Livewire\Pages\Sales\QuotationForm::class => 'sales',
+            \App\Livewire\Pages\Sales\InvoiceForm::class => 'sales',
+            \App\Livewire\Pages\Sales\QuotationForm::class => 'quotation',
             \App\Livewire\Pages\Purchasing\PurchaseForm::class => 'purchasing',
             \App\Livewire\Pages\Sales\PaymentForm::class => 'receipt',
             \App\Livewire\Pages\Purchasing\PaymentForm::class => 'payment',
@@ -57,12 +57,13 @@ trait HandlesSearchableSelectors
     /**
      * Search options for direct in-field comboboxes.
      * Callable directly from Alpine via $wire.searchSelector(type, query, selectedId, options).
-     * Public client options are sanitized: query, limit, and generation only.
+     * Public client options are sanitized: query, limit, cursor, and generation only.
      *
      * @param array<string, mixed> $options
      * @return array{
      *     items: list<array<string, mixed>>,
      *     has_more: bool,
+     *     next_cursor: ?string,
      *     limit: int,
      *     total: int,
      *     generation: int,
@@ -93,10 +94,12 @@ trait HandlesSearchableSelectors
 
         $clientGeneration = (int) ($options['generation'] ?? 0);
         $limit = isset($options['limit']) ? (int) $options['limit'] : SearchableSelectorService::DEFAULT_LIMIT;
+        $cursor = isset($options['cursor']) && is_string($options['cursor']) ? $options['cursor'] : null;
 
         // Build server-controlled options ONLY. Ignore all client-supplied authority/context overrides.
         $serverOptions = [
             'context' => $this->searchableSelectorContext(),
+            'cursor' => $cursor,
         ];
 
         $service = app(SearchableSelectorService::class);

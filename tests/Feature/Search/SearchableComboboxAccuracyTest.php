@@ -492,4 +492,152 @@ final class SearchableComboboxAccuracyTest extends TestCase
         $component->set('productFilter', null);
         $this->assertNull($component->get('productFilter'));
     }
+
+    public function test_vendor_payment_search_authorizes_without_permission_does_not_exist_error(): void
+    {
+        Vendor::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'مورد سداد',
+            'name_en' => 'Payment Vendor',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        // User as company creator / owner has permissions; must not throw Spatie\Permission\Exceptions\PermissionDoesNotExist
+        $response = $this->service->search(
+            $this->company,
+            $this->user,
+            'vendor',
+            'سداد',
+            null,
+            25,
+            ['context' => 'payment']
+        );
+
+        $this->assertNotEmpty($response['items']);
+        $this->assertSame('مورد سداد (ILS)', $response['items'][0]['label']);
+    }
+
+    public function test_quotation_least_privilege_search(): void
+    {
+        $baseUnit = $this->getOrCreateUnit('piece');
+
+        Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'عميل عرض سعر',
+            'name_en' => 'Quotation Customer',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        Product::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'صنف عرض سعر',
+            'name_en' => 'Quotation Product',
+            'sku' => 'Q-001',
+            'base_unit_id' => $baseUnit->id,
+            'active' => true,
+            'track_stock' => true,
+            'product_type' => Product::TYPE_STOCK,
+            'created_by' => $this->user->id,
+        ]);
+
+        // Quotation context search must succeed for quotation workflow
+        $custResponse = $this->service->search(
+            $this->company,
+            $this->user,
+            'customer',
+            'عرض سعر',
+            null,
+            25,
+            ['context' => 'quotation']
+        );
+        $this->assertNotEmpty($custResponse['items']);
+
+        $prodResponse = $this->service->search(
+            $this->company,
+            $this->user,
+            'product',
+            'عرض سعر',
+            null,
+            25,
+            ['context' => 'quotation']
+        );
+        $this->assertNotEmpty($prodResponse['items']);
+    }
+
+    public function test_bounded_pagination_and_cross_query_cursor_rejection(): void
+    {
+        $baseUnit = $this->getOrCreateUnit('piece');
+
+        // Seed 35 products with matching term
+        $records = [];
+        for ($i = 1; $i <= 35; $i++) {
+            $records[] = [
+                'public_id' => (string) Str::ulid(),
+                'company_id' => $this->company->id,
+                'name_ar' => sprintf('صنف ترقيم صفحات %02d', $i),
+                'name_en' => sprintf('Pagination Item %02d', $i),
+                'sku' => sprintf('PAGE-%03d', $i),
+                'base_unit_id' => $baseUnit->id,
+                'active' => true,
+                'track_stock' => true,
+                'product_type' => Product::TYPE_STOCK,
+                'created_by' => $this->user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+        Product::insert($records);
+
+        // Page 1: limit 25
+        $page1 = $this->service->search(
+            $this->company,
+            $this->user,
+            'product',
+            'ترقيم',
+            null,
+            25,
+            ['context' => 'sales']
+        );
+
+        $this->assertCount(25, $page1['items']);
+        $this->assertTrue($page1['has_more']);
+        $this->assertNotNull($page1['next_cursor']);
+
+        // Page 2: with next_cursor
+        $page2 = $this->service->search(
+            $this->company,
+            $this->user,
+            'product',
+            'ترقيم',
+            null,
+            25,
+            ['context' => 'sales', 'cursor' => $page1['next_cursor']]
+        );
+
+        $this->assertCount(10, $page2['items']);
+        $this->assertFalse($page2['has_more']);
+        $this->assertNull($page2['next_cursor']);
+
+        // Ensure full stream deduplication and no omission across pages
+        $page1Ids = array_column($page1['items'], 'id');
+        $page2Ids = array_column($page2['items'], 'id');
+        $intersect = array_intersect($page1Ids, $page2Ids);
+        $this->assertEmpty($intersect, 'Results across pages must not contain overlapping duplicate items.');
+        $allIds = array_merge($page1Ids, $page2Ids);
+        $this->assertCount(35, array_unique($allIds), 'Paging must return all 35 records without omission.');
+
+        // Tampered / cross-query cursor reuse must be rejected with InvalidArgumentException
+        $this->expectException(\InvalidArgumentException::class);
+        $this->service->search(
+            $this->company,
+            $this->user,
+            'product',
+            'استعلام_مختلف',
+            null,
+            25,
+            ['context' => 'sales', 'cursor' => $page1['next_cursor']]
+        );
+    }
 }

@@ -26,6 +26,8 @@ export function searchableCombobox(config) {
         activeId: null,
         searching: false,
         hasMore: false,
+        nextCursor: null,
+        loadingMore: false,
         failed: false,
         offline: false,
         currentCompanyId: null,
@@ -95,6 +97,7 @@ export function searchableCombobox(config) {
             if (this.isBlocked()) return;
             this.open = true;
             this.failed = false;
+            this.nextCursor = null;
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 this.performSearch();
@@ -119,6 +122,7 @@ export function searchableCombobox(config) {
             const currentGen = ++generation;
             this.searching = true;
             this.failed = false;
+            this.nextCursor = null;
 
             try {
                 const response = await this.$wire.searchSelector(
@@ -144,6 +148,7 @@ export function searchableCombobox(config) {
 
                 this.items = Array.isArray(response.items) ? response.items : [];
                 this.hasMore = Boolean(response.has_more);
+                this.nextCursor = response.next_cursor || null;
                 this.activeIndex = -1;
                 this.activeId = null;
                 this.open = true;
@@ -154,6 +159,61 @@ export function searchableCombobox(config) {
             } finally {
                 if (currentGen === generation) {
                     this.searching = false;
+                }
+            }
+        },
+
+        async loadMore() {
+            if (this.isBlocked() || this.loadingMore || !this.hasMore || !this.nextCursor) {
+                return;
+            }
+            if (!this.$wire || typeof this.$wire.searchSelector !== 'function') {
+                return;
+            }
+
+            const currentGen = generation;
+            this.loadingMore = true;
+            this.failed = false;
+
+            try {
+                const response = await this.$wire.searchSelector(
+                    this.type,
+                    this.query,
+                    this.selectedId ? parseInt(this.selectedId, 10) : null,
+                    {
+                        generation: currentGen,
+                        limit: 25,
+                        cursor: this.nextCursor,
+                    }
+                );
+
+                // Discard stale responses from older generations or company switches
+                if (response.generation !== generation) {
+                    return;
+                }
+                if (this.currentCompanyId !== null && response.company_id && response.company_id !== this.currentCompanyId) {
+                    return;
+                }
+
+                const newItems = Array.isArray(response.items) ? response.items : [];
+                const seen = new Set(this.items.map(i => String(i.id)));
+                for (const item of newItems) {
+                    const idStr = String(item.id);
+                    if (!seen.has(idStr)) {
+                        seen.add(idStr);
+                        this.items.push(item);
+                    }
+                }
+
+                this.hasMore = Boolean(response.has_more);
+                this.nextCursor = response.next_cursor || null;
+            } catch (err) {
+                if (currentGen === generation) {
+                    this.failed = true;
+                }
+            } finally {
+                if (currentGen === generation) {
+                    this.loadingMore = false;
                 }
             }
         },
@@ -299,6 +359,7 @@ export function searchableCombobox(config) {
                 this.selectedId = null;
                 this.selectedLabel = '';
                 this.query = '';
+                this.nextCursor = null;
                 this.open = false;
                 this.activeIndex = -1;
                 this.activeId = null;

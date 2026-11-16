@@ -155,7 +155,15 @@
 
         <template x-if="hasMore">
             <div class="p-2 text-center text-xs text-text-muted bg-surface-soft/60 border-t border-border/50">
-                <span>{{ __('reports.limit_notice', ['limit' => 25]) ?? 'Showing first 25 results. Refine your query for more.' }}</span>
+                <button
+                    type="button"
+                    @click.stop="loadMore()"
+                    :disabled="loadingMore"
+                    class="w-full min-h-[44px] py-2 px-3 text-xs font-medium text-primary hover:text-primary-hover hover:bg-surface-soft rounded-control transition-colors flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                    <span x-show="loadingMore" class="inline-block w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+                    <span x-text="loadingMore ? '{{ __('search.loading') }}' : '{{ __('search.load_more') }}'"></span>
+                </button>
             </div>
         </template>
     </div>
