@@ -16,6 +16,7 @@ use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
+use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 
 final class SearchableSelectorService
 {
@@ -64,6 +65,7 @@ final class SearchableSelectorService
     ) {}
 
     public const CURSOR_VERSION = 1;
+
     public const MAX_OFFSET = 100000;
 
     /**
@@ -88,7 +90,7 @@ final class SearchableSelectorService
         $key = (string) config('app.key');
         $mac = hash_hmac('sha256', $json, $key);
 
-        return rtrim(strtr(base64_encode($json . '.' . $mac), '+/', '-_'), '=');
+        return rtrim(strtr(base64_encode($json.'.'.$mac), '+/', '-_'), '=');
     }
 
     /**
@@ -223,7 +225,7 @@ final class SearchableSelectorService
      * Derives permissions strictly on the server; client options are never authority.
      * Unknown permissions fail closed without crashing valid users.
      *
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      */
     public function authorize(Company $company, User $actor, string $type, array $options = []): void
     {
@@ -249,7 +251,7 @@ final class SearchableSelectorService
                     if ($actor->hasPermissionTo($perm)) {
                         return;
                     }
-                } catch (\Spatie\Permission\Exceptions\PermissionDoesNotExist) {
+                } catch (PermissionDoesNotExist) {
                     continue;
                 }
             }
@@ -264,7 +266,7 @@ final class SearchableSelectorService
                     if ($actor->hasPermissionTo($perm)) {
                         return;
                     }
-                } catch (\Spatie\Permission\Exceptions\PermissionDoesNotExist) {
+                } catch (PermissionDoesNotExist) {
                     continue;
                 }
             }
@@ -284,7 +286,7 @@ final class SearchableSelectorService
     /**
      * Search customers with priority: exact code/phone -> prefix -> contains.
      *
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      * @return array{items: list<array<string, mixed>>, selected_item: ?array<string, mixed>, has_more: bool, next_cursor: ?string, limit: int, total: int}
      */
     private function searchCustomers(
@@ -308,10 +310,10 @@ final class SearchableSelectorService
         }
 
         if ($term !== '') {
-            $like = '%' . self::escapeLike($term) . '%';
-            $prefix = self::escapeLike($term) . '%';
+            $like = '%'.self::escapeLike($term).'%';
+            $prefix = self::escapeLike($term).'%';
 
-            $query->where(function (Builder $q) use ($like, $term) {
+            $query->where(function (Builder $q) use ($like) {
                 $q->where('name_ar', 'LIKE', $like)
                     ->orWhere('name_en', 'LIKE', $like)
                     ->orWhere('code', 'LIKE', $like)
@@ -329,7 +331,7 @@ final class SearchableSelectorService
         $nameCol = $locale === 'ar' ? 'name_ar' : 'name_en';
         $fallbackCol = $locale === 'ar' ? 'name_en' : 'name_ar';
         $query->orderByRaw("COALESCE(NULLIF({$nameCol}, ''), {$fallbackCol}) ASC")
-            ->orderBy('id', 'ASC');
+            ->orderBy('id', 'asc');
 
         // Fetch limit + 1 from offset to detect has_more without a separate COUNT query
         $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
@@ -420,7 +422,7 @@ final class SearchableSelectorService
      * Search vendors with priority: exact code/phone -> prefix -> contains.
      * In payment context, includes soft-deleted vendors with posted purchases.
      *
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
      */
     private function searchVendors(
@@ -454,8 +456,8 @@ final class SearchableSelectorService
         }
 
         if ($term !== '') {
-            $like = '%' . self::escapeLike($term) . '%';
-            $prefix = self::escapeLike($term) . '%';
+            $like = '%'.self::escapeLike($term).'%';
+            $prefix = self::escapeLike($term).'%';
 
             $query->where(function (Builder $q) use ($like) {
                 $q->where('name_ar', 'LIKE', $like)
@@ -474,7 +476,7 @@ final class SearchableSelectorService
         $nameCol = $locale === 'ar' ? 'name_ar' : 'name_en';
         $fallbackCol = $locale === 'ar' ? 'name_en' : 'name_ar';
         $query->orderByRaw("COALESCE(NULLIF({$nameCol}, ''), {$fallbackCol}) ASC")
-            ->orderBy('id', 'ASC');
+            ->orderBy('id', 'asc');
 
         $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
         $hasMore = $records->count() > $limit;
@@ -568,7 +570,7 @@ final class SearchableSelectorService
      * Search products with exact barcode unit resolution and cost redaction.
      * Server derives stock-only predicate for inventory and purchasing contexts.
      *
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      * @return array{items: list<array<string, mixed>>, has_more: bool, limit: int, total: int}
      */
     private function searchProducts(
@@ -642,8 +644,8 @@ final class SearchableSelectorService
         }
 
         if ($term !== '') {
-            $like = '%' . self::escapeLike($term) . '%';
-            $prefix = self::escapeLike($term) . '%';
+            $like = '%'.self::escapeLike($term).'%';
+            $prefix = self::escapeLike($term).'%';
 
             $query->where(function (Builder $q) use ($like, $company, $term) {
                 $q->where('name_ar', 'LIKE', $like)
@@ -662,7 +664,7 @@ final class SearchableSelectorService
         $nameCol = $locale === 'ar' ? 'name_ar' : 'name_en';
         $fallbackCol = $locale === 'ar' ? 'name_en' : 'name_ar';
         $query->orderByRaw("COALESCE(NULLIF({$nameCol}, ''), {$fallbackCol}) ASC")
-            ->orderBy('id', 'ASC');
+            ->orderBy('id', 'asc');
 
         $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
         $hasMore = $records->count() > $limit;
@@ -774,7 +776,7 @@ final class SearchableSelectorService
     /**
      * Search warehouses for active company.
      *
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      * @return array{items: list<array<string, mixed>>, selected_item: ?array<string, mixed>, has_more: bool, next_cursor: ?string, limit: int, total: int}
      */
     private function searchWarehouses(
@@ -794,7 +796,7 @@ final class SearchableSelectorService
             ->where('active', true);
 
         if ($term !== '') {
-            $like = '%' . self::escapeLike($term) . '%';
+            $like = '%'.self::escapeLike($term).'%';
             $query->where(function (Builder $q) use ($like) {
                 $q->where('name_ar', 'LIKE', $like)
                     ->orWhere('name_en', 'LIKE', $like)
@@ -802,9 +804,9 @@ final class SearchableSelectorService
             });
         }
 
-        $query->orderBy('is_default', 'DESC')
-            ->orderBy('name_ar', 'ASC')
-            ->orderBy('id', 'ASC');
+        $query->orderBy('is_default', 'desc')
+            ->orderBy('name_ar', 'asc')
+            ->orderBy('id', 'asc');
 
         $records = (clone $query)->offset($offset)->limit($limit + 1)->get();
         $hasMore = $records->count() > $limit;

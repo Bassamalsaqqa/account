@@ -23,7 +23,9 @@ final class SearchableSelector10kPerformanceTest extends TestCase
     use RefreshDatabase;
 
     protected User $user;
+
     protected Company $company;
+
     protected SearchableSelectorService $service;
 
     protected function setUp(): void
@@ -265,7 +267,7 @@ final class SearchableSelector10kPerformanceTest extends TestCase
                 $label = 'fastpath_barcode';
             }
 
-            if ($label !== null && !isset($plans[$label])) {
+            if ($label !== null && ! isset($plans[$label])) {
                 $explainRows = [];
                 if (in_array($driver, ['mysql', 'mariadb'], true)) {
                     $explainRows = DB::select("EXPLAIN {$sql}", $entry['bindings']);
@@ -297,7 +299,7 @@ final class SearchableSelector10kPerformanceTest extends TestCase
             'query_execution_plans' => $plans,
         ];
 
-        fwrite(STDERR, "\n" . json_encode($metrics, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
+        fwrite(STDERR, "\n".json_encode($metrics, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)."\n");
 
         // Assert plan presence and dataset bounds
         $this->assertArrayHasKey('contains_products', $plans, 'Query log must contain the main products contains query.');
