@@ -6889,12 +6889,12 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'lifecycleGrant' => SupervisedPairedFinancialDrill::REQUIRED_LIFECYCLE_GRANT,
             'scenarios' => [
                 ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
-                ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201],
-                ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200],
-                ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200],
-                ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409],
-                ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
-                ['name' => 'stock_permission_rollback_probes', 'status' => 'PASS', 'httpStatusCode' => 422],
+                ['name' => 'transport_lost_ack_retained_status_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'idempotent_replay_integrity', 'status' => 'PASS', 'httpStatusCode' => 200],
+                ['name' => 'tamper_rejection_integrity', 'status' => 'PASS', 'httpStatusCode' => 409],
+                ['name' => 'rollback_permission_denial', 'status' => 'PASS', 'httpStatusCode' => 403],
+                ['name' => 'rollback_insufficient_stock', 'status' => 'PASS', 'httpStatusCode' => 422],
+                ['name' => 'rollback_controlled_after_posting', 'status' => 'PASS', 'httpStatusCode' => 500],
             ],
             'lost_ack_recovery_evidence' => [
                 'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
@@ -6951,17 +6951,19 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         mkdir($harnessDir, 0700, true);
 
         // Scripts for 3-child lineage:
-        // Child 1 (CLI) spawns Backend, Proxy, Caddy, writes process_pids.json (0600), and sleeps 5s
+        // Child 1 (CLI) spawns Backend, Proxy, Caddy with bounded 3s TTL,
+        // registers parent shutdown and SIGTERM handlers to reap its own children,
+        // and writes process_pids.json (0600).
         $backendScript = $harnessDir . '/backend.php';
-        file_put_contents($backendScript, "<?php usleep(5000000);\n");
+        file_put_contents($backendScript, "<?php usleep(3000000);\n");
         chmod($backendScript, 0700);
 
         $proxyScript = $harnessDir . '/proxy.php';
-        file_put_contents($proxyScript, "<?php usleep(5000000);\n");
+        file_put_contents($proxyScript, "<?php usleep(3000000);\n");
         chmod($proxyScript, 0700);
 
         $caddyScript = $harnessDir . '/caddy.php';
-        file_put_contents($caddyScript, "<?php usleep(5000000);\n");
+        file_put_contents($caddyScript, "<?php usleep(3000000);\n");
         chmod($caddyScript, 0700);
 
         $pidsJsonPath = $harnessDir . '/process_pids.json';
@@ -6985,34 +6987,48 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 file_put_contents('{$pidsJsonPath}', json_encode(\$pidsData, JSON_THROW_ON_ERROR));
 chmod('{$pidsJsonPath}', 0600);
 
-usleep(5000000);
+\$reapChildren = function () use (&\$backend, &\$proxy, &\$caddy) {
+    foreach ([\$backend, \$proxy, \$caddy] as \$p) {
+        if (is_resource(\$p)) {
+            \$st = @proc_get_status(\$p);
+            if (\$st && \$st['running']) {
+                @proc_terminate(\$p, 15);
+            }
+            @proc_close(\$p);
+        }
+    }
+};
+register_shutdown_function(\$reapChildren);
+if (function_exists('pcntl_signal')) {
+    pcntl_signal(SIGTERM, function () use (\$reapChildren) {
+        \$reapChildren();
+        exit(0);
+    });
+}
 
-proc_terminate(\$backend);
-proc_terminate(\$proxy);
-proc_terminate(\$caddy);
+\$waitStart = hrtime(true) / 1e9;
+while ((hrtime(true) / 1e9 - \$waitStart) < 3.0) {
+    if (function_exists('pcntl_signal_dispatch')) {
+        pcntl_signal_dispatch();
+    }
+    usleep(50000);
+}
+
+\$reapChildren();
 PHP;
         file_put_contents($cliScript, $cliCode);
         chmod($cliScript, 0700);
 
-        // Spawn Child 1 (CLI harness)
         $process = new Process([PHP_BINARY, $cliScript]);
         $process->setTimeout(10.0);
-        $process->start();
 
-        // Wait up to 1.5s for process_pids.json to be written
-        $wStart = hrtime(true) / 1e9;
-        while (! file_exists($pidsJsonPath) && ((hrtime(true) / 1e9) - $wStart) < 1.5) {
-            usleep(25000);
-        }
-        $childPid = $process->getPid();
-        $this->assertNotNull($childPid, 'Child 1 PID must be available');
-        $this->assertFileExists($pidsJsonPath, 'process_pids.json must be created');
-
-        $pidsRaw = json_decode((string) file_get_contents($pidsJsonPath), true);
-        $this->assertIsArray($pidsRaw);
-        $bPid = (int) $pidsRaw['backend_pid'];
-        $pPid = (int) $pidsRaw['proxy_pid'];
-        $cPid = (int) $pidsRaw['caddy_pid'];
+        $childPid = null;
+        $bPid = null;
+        $pPid = null;
+        $cPid = null;
+        $bStartTicks = null;
+        $pStartTicks = null;
+        $cStartTicks = null;
 
         $savedEnv = [
             'APP_ENV' => getenv('APP_ENV'),
@@ -7045,6 +7061,49 @@ PHP;
             ];
             file_put_contents($proofFile, json_encode($proofData, JSON_THROW_ON_ERROR));
             chmod($proofFile, 0600);
+
+            // Spawn Child 1 (CLI harness) inside try-registration
+            $process->start();
+
+            // Wait up to 1.5s for process_pids.json to be written
+            $wStart = hrtime(true) / 1e9;
+            while (! file_exists($pidsJsonPath) && ((hrtime(true) / 1e9) - $wStart) < 1.5) {
+                usleep(25000);
+            }
+            $childPid = $process->getPid();
+            $this->assertNotNull($childPid, 'Child 1 PID must be available');
+            $this->assertFileExists($pidsJsonPath, 'process_pids.json must be created');
+
+            $pidsRaw = json_decode((string) file_get_contents($pidsJsonPath), true);
+            $this->assertIsArray($pidsRaw);
+            $bPid = (int) $pidsRaw['backend_pid'];
+            $pPid = (int) $pidsRaw['proxy_pid'];
+            $cPid = (int) $pidsRaw['caddy_pid'];
+
+            // Immediately capture and verify process ownership facts before factory or drill execution
+            $bFacts = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $bPid,
+                expectedPpid: $childPid,
+                expectedPathSubstring: $harnessDir,
+                allowOrphanAdoptedByInit: true
+            );
+            $bStartTicks = $bFacts['valid'] ? $bFacts['start_ticks'] : null;
+
+            $pFacts = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $pPid,
+                expectedPpid: $childPid,
+                expectedPathSubstring: $harnessDir,
+                allowOrphanAdoptedByInit: true
+            );
+            $pStartTicks = $pFacts['valid'] ? $pFacts['start_ticks'] : null;
+
+            $cFacts = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $cPid,
+                expectedPpid: $childPid,
+                expectedPathSubstring: $harnessDir,
+                allowOrphanAdoptedByInit: true
+            );
+            $cStartTicks = $cFacts['valid'] ? $cFacts['start_ticks'] : null;
 
             // Construct advanced snapshot via REAL public factory with process_pids.json
             $snapshot = \Tests\Support\Harness\VerifiedOwnedSnapshot::fromLiveOwnership(
@@ -7118,15 +7177,42 @@ PHP;
             if ($process->isRunning()) {
                 $process->stop(1.0);
             }
-            if (isset($bPid) && SupervisedPairedFinancialDrill::isProcessAlive($bPid)) {
-                @posix_kill($bPid, SIGKILL);
-            }
-            if (isset($pPid) && SupervisedPairedFinancialDrill::isProcessAlive($pPid)) {
-                @posix_kill($pPid, SIGKILL);
-            }
-            if (isset($cPid) && SupervisedPairedFinancialDrill::isProcessAlive($cPid)) {
-                @posix_kill($cPid, SIGKILL);
-            }
+
+            // Fallback signal helper: strictly verifies UID, start ticks, and cmdline lineage before EVERY signal!
+            // Never dispatches unverified signals; never kills unknown or reused PIDs.
+            $safeVerifiedFallbackSignal = function (?int $pid, ?string $startTicks, int $expectedPpid, string $expectedPath) {
+                if ($pid === null || $pid <= 0 || ! SupervisedPairedFinancialDrill::isProcessAlive($pid)) {
+                    return;
+                }
+                $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                    pid: $pid,
+                    expectedPpid: $expectedPpid,
+                    expectedStartTicks: $startTicks,
+                    expectedPathSubstring: $expectedPath,
+                    allowOrphanAdoptedByInit: true
+                );
+                if ($check['valid']) {
+                    @posix_kill($pid, SIGTERM);
+                    usleep(50000);
+                    if (SupervisedPairedFinancialDrill::isProcessAlive($pid)) {
+                        $recheck = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                            pid: $pid,
+                            expectedPpid: $expectedPpid,
+                            expectedStartTicks: $startTicks,
+                            expectedPathSubstring: $expectedPath,
+                            allowOrphanAdoptedByInit: true
+                        );
+                        if ($recheck['valid']) {
+                            @posix_kill($pid, SIGKILL);
+                        }
+                    }
+                }
+            };
+
+            $safeVerifiedFallbackSignal($bPid, $bStartTicks, $childPid ?? -1, $harnessDir);
+            $safeVerifiedFallbackSignal($pPid, $pStartTicks, $childPid ?? -1, $harnessDir);
+            $safeVerifiedFallbackSignal($cPid, $cStartTicks, $childPid ?? -1, $harnessDir);
+
             if (file_exists($proofFile)) {
                 @unlink($proofFile);
             }

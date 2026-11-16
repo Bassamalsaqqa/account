@@ -1363,7 +1363,7 @@ Audited and aligned mock query expectations in `test_bounded_throwaway_owned_chi
 #### 18.10.1 Run Provenance & Invariance State (`root-owned-process-lifecycle-d48kr_kl`)
 Root evaluated the process-only lifecycle implementation on commit `2e8f48e68e9b49fe6242033f25b45ebc86c7826c` (recorded in `/home/t3dev/.t3/userdata/attachments/root-owned-process-lifecycle-d48kr_kl`):
 - **Invocation**: `php vendor/bin/phpunit --no-configuration --bootstrap vendor/autoload.php --stop-on-failure --stop-on-error --filter test_bounded_throwaway_owned_child_ --log-junit ... tests/Unit/Mobile/Harness/DisposableMobileV2BackendHarnessGuardTest.php`
-- **Execution Outcome**: 2 tests executed, 2 PASS, 28 assertions, 1 PHPUnit notice (`No code coverage driver available`), exit code 0, elapsed 0.759s.
+- **Execution Outcome**: 2 tests executed, 2 PASS, 28 assertions, 1 PHPUnit notice (cause unclassified unless contemporaneous artifact demonstrates), exit code 0, elapsed 0.759s.
 - **Process & Resource Invariance**:
   - `test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo`: Successfully verified real owned Symfony child process lifecycle, verified `SIGTERM` dispatch via verified owned snapshot, and confirmed child termination and process reap.
   - `test_bounded_throwaway_owned_child_refuses_cleanup_when_process_handle_omitted`: Successfully asserted fail-closed behavior when an owned child is confirmed alive without an active `Process` handle; verified `child_reaped = false`, destructive actions skipped, and mock PDO executed zero `DROP` commands.
@@ -1377,35 +1377,41 @@ Hardened `DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot`:
 2. **Mandatory Schema & Ownership Verification**: Requires `$expectedSchemaName` as a mandatory string parameter. Validates schema name format via regex (`/^[a-zA-Z0-9_]{1,64}$/`) and enforces ownership proof via `DisposableMariaDbSchema::assertPrimarySchema($expectedSchemaName)`.
 3. **Fail-Closed Rollback Propagation**: The `finally` block executes `ROLLBACK` if the transaction was started. Any rollback `Throwable` is propagated immediately without swallowing, ensuring database disconnects or rollback failures fail-closed.
 
-#### 18.10.3 Separate Advanced Entrypoint & 7 PASS Scenario Validation
-Established distinct advanced driver entrypoints in `supervised-financial-drill.php` and `SupervisedPairedFinancialDrill.php`:
+#### 18.10.3 Separate Advanced Entrypoint & 7 Distinct PASS Scenario Protocol
+Established distinct advanced driver entrypoints in `supervised-financial-drill.php`, `SupervisedPairedFinancialDrill.php`, and `DisposableFinancialPostRunInspector.php`:
 1. **Scope Parameterization**:
-   - Basic Scope (`online_cash_pilot_basic`): Filter `SmallTraderOnlineCashPilotSmokeTest`, evidence artifact `docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`, `$minTests = 2`, expecting 5 PASS scenarios and 2 NOT_RUN scenarios.
+   - Basic Scope (`online_cash_pilot_basic`): Filter `SmallTraderOnlineCashPilotSmokeTest`, evidence artifact `docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-evidence.json`, `$minTests = 2`, expecting 5 PASS scenarios and 2 NOT_RUN scenarios (`transport_lost_ack_recovery`, `stock_permission_rollback_probes`).
    - Advanced Scope (`online_cash_pilot_advanced`): Filter `com.example.data.mobile.readclient.pilot.SmallTraderOnlineCashPilotAdvancedTest.executePairedOnlineCashPilotAdvancedProbes`, evidence artifact `docs/integration/v2-online-cash-evidence/paired-online-cash-pilot-advanced-evidence.json`, `$minTests = 1`.
-2. **Evidence Freshness Contract**:
-   - `SupervisedPairedFinancialDrill::verifyEvidenceFreshness()` validates all 7 scenarios in advanced mode:
-     - `readiness_probe` (`HTTP 200`)
-     - `fresh_commit` (`HTTP 201`)
-     - `idempotent_replay` (`HTTP 200`)
-     - `status_query` (`HTTP 200`)
-     - `payload_tamper_conflict` (`HTTP 409`)
-     - `lost_ack_recovery` (`HTTP 200` with required `lost_ack_recovery_evidence` block asserting `suppression_mode: "TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP"` and `network_witness_state: "CAPTURED_REAL_TRANSPORT_DROP"`)
-     - `rollback_integrity` (`HTTP 403`, `HTTP 422`, or `HTTP 500`)
-   - Rejects stale evidence timestamps (> 300s) and mismatched manifest SHA-256 digests.
+2. **Exactly One Canonical Committed Event & 7 Distinct Scenarios**:
+   - Exactly ONE canonical committed event (`sample_event_id`) is committed in the database during the advanced drill. Upstream HTTP 201 receipt proof is recorded in the transport proxy witness artifact (`proxy_witness.json`), NOT received directly by the client (response dropped on the wire).
+   - `SupervisedPairedFinancialDrill::verifyEvidenceFreshness()` and `DisposableFinancialPostRunInspector::validateOuterEvidenceJson()` validate all 7 distinct scenarios in advanced mode:
+     1. `readiness_probe` (`HTTP 200`): TLS loopback readiness probe.
+     2. `transport_lost_ack_retained_status_recovery` (`HTTP 200`): Single-response upstream drop captured in witness; client retains local event and recovers terminal state via `GET /status`. Includes `lost_ack_recovery_evidence` block asserting `suppression_mode: "TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP"` and `network_witness_state: "CAPTURED_REAL_TRANSPORT_DROP"`.
+     3. `idempotent_replay_integrity` (`HTTP 200`): Replay of the recovered canonical lost ACK payload after explicit recovery (not a blind fresh POST).
+     4. `tamper_rejection_integrity` (`HTTP 409`): Replay with modified amount/payload rejected by idempotency conflict check.
+     5. `rollback_permission_denial` (`HTTP 403`): Negative probe sent with secondary unauthorized fixture token (actor without sales permissions; zero ambient mutation) rejected by authorization check.
+     6. `rollback_insufficient_stock` (`HTTP 422`): Negative probe with excess line quantity rejected by inventory check (`InvalidInventoryMovementException` -> HTTP 422).
+     7. `rollback_controlled_after_posting` (`HTTP 500`): Negative probe triggering simulated exception after invoice posting rolled back via database transaction.
+   - Final database inspection proves exact canonical delta = 1 valid sale, zero rows created for the 3 negative probe events, and all 6 core reconcilers healthy (0 issues).
 
-#### 18.10.4 Backend Per-Probe Fault Stage Control
-Implemented probe-specific fault injection isolation in `DisposableMobileV2BackendHarness`:
-1. **Stage Allowlist Property & Configuration**: Added `$stageAllowlist` mapping event UUIDs to simulated fault stages (e.g., `[$rollbackProbeEventId => 'after_posting']`).
-2. **Per-Request Router Verification**: `generateBackendRouterScript()` intercepts incoming requests, extracts the event UUID from the payload or headers, and verifies whether the UUID matches the configured allowlist.
-3. **Automatic Fault Stage Reset**: If matched, sets `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_posting'`; for all other events (fresh commit, replay, status query, lost ACK), resets `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null`, preventing cross-scenario test contamination.
-4. **Child Process Configuration**: Propagates `stage_allowlist` into the child backend JSON configuration payload.
+#### 18.10.4 Backend Per-Probe Fault Stage Control & Dedicated Advanced Control Packet
+Implemented probe-specific fault injection isolation and actual runtime wiring:
+1. **Dedicated Private Control Packet Artifact**: `DisposableMobileV2BackendHarness::provision()` generates distinct UUIDs for the 3 negative probes and writes `advanced_control_packet.json` (mode 0600) into `harnessTempDir`, referenced in `runtime_credentials.json` (0600).
+2. **Actual Runtime Allowlist Callers**:
+   - `MobileV2HarnessCommand::handleRun()` configures `$harness->configureStageAllowlist([$probeFaultEventId => 'after_posting'])` when `--advanced-probes` is active.
+   - `generateBackendRouterScript()` intercepts incoming requests, compares `client_event_id` against `$stageAllowlist`, sets `ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_posting'` only for the matching probe, and resets `$simulatedFaultStage = null` for all other requests.
+3. **Actual Rollback Scanner Callers**:
+   - `supervised-financial-drill.php` calls `DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, $companyId, $schemaName)` on the proof PDO, persists `rollback_probes_db_report.json` (0600), and asserts zero rows committed in `sales_invoices` and `customer_payments` for all 3 probe event UUIDs.
+   - `financial-inspector-cli.php` exposes `--rollback-probe-snapshot` and `--verify-rollback-zero-delta` CLI actions.
 
 #### 18.10.5 Authored 3-Child Lineage Lifecycle Test
 Authored future process-only test `test_bounded_throwaway_advanced_three_child_lineage_and_lifecycle` in `DisposableMobileV2BackendHarnessGuardTest.php`:
 - Guarded by `ROOT_PROCESS_LIFECYCLE_GRANT === '1'`.
-- Spawns 3 throwaway Symfony child processes representing backend, proxy, and Caddy with bounded 10s timeouts.
-- Captures child PIDs and creates `process_pids.json` (mode 0600) with proven process ownership.
-- Executes `executeExactCleanup()` to verify signal dispatch, process reaping, and directory cleanup across all three child processes without lingering orphans.
+- Spawns 3 throwaway Symfony child processes representing backend, proxy, and Caddy with bounded 3s TTL.
+- Parent CLI script registers explicit shutdown and SIGTERM handlers to cleanly reap its own subprocesses.
+- All spawn and assertion steps are encapsulated inside an early `try { ... } finally { ... }` registration to prevent early error leaks.
+- `finally` block verifies live `/proc` process facts (UID, start ticks, expected PPID, harness directory) via `SupervisedPairedFinancialDrill::verifyProcessOwnership` before dispatching any signal, strictly preventing unverified signals or killing reused PIDs.
+
 
 
 

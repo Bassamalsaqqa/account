@@ -738,6 +738,48 @@ try {
     $reconcileProc->mustRun();
     chmod($reconcileFile, 0600);
 
+    // In advanced scope, execute rollback probe scanner and zero-delta verification across negative probes
+    if ($isAdvanced) {
+        if (! $childProcess->isRunning()) {
+            throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_ROLLBACK_PROBE_INSPECTION');
+        }
+        echo "  [Rollback] Performing post-run probe snapshot and zero-delta verification...\n";
+        $rollbackSnapshot = DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot(
+            $pdo,
+            $companyId,
+            $schemaName
+        );
+        $rollbackReportPath = $outputDir . '/rollback_probes_db_report.json';
+        file_put_contents($rollbackReportPath, json_encode($rollbackSnapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
+        chmod($rollbackReportPath, 0600);
+        echo "  [Rollback] Probe snapshot captured (aggregate fingerprint: {$rollbackSnapshot['aggregate_fingerprint_sha256']})\n";
+
+        // Assert negative probe events never committed rows in database
+        $probeEventIds = [
+            (string) ($handoff['fixture']['probe_permission_denial_event_id'] ?? ''),
+            (string) ($handoff['fixture']['probe_insufficient_stock_event_id'] ?? ''),
+            (string) ($handoff['fixture']['probe_after_posting_fault_event_id'] ?? ''),
+        ];
+        $activeProbeIds = array_values(array_filter($probeEventIds, fn ($id) => $id !== ''));
+        if (! empty($activeProbeIds)) {
+            $inClause = implode(',', array_fill(0, count($activeProbeIds), '?'));
+            $invCheck = $pdo->prepare("SELECT COUNT(*) FROM sales_invoices WHERE client_event_id IN ({$inClause})");
+            $invCheck->execute($activeProbeIds);
+            $invCount = (int) $invCheck->fetchColumn();
+            if ($invCount > 0) {
+                throw new \RuntimeException("ROLLBACK_PROBE_INVOICE_COMMITTED: expected 0, found {$invCount}");
+            }
+
+            $payCheck = $pdo->prepare("SELECT COUNT(*) FROM customer_payments WHERE client_event_id IN ({$inClause})");
+            $payCheck->execute($activeProbeIds);
+            $payCount = (int) $payCheck->fetchColumn();
+            if ($payCount > 0) {
+                throw new \RuntimeException("ROLLBACK_PROBE_PAYMENT_COMMITTED: expected 0, found {$payCount}");
+            }
+        }
+        echo "  [Rollback] Verified 0 rows committed for negative probe event IDs.\n";
+    }
+
     if (! $childProcess->isRunning()) {
         throw new \RuntimeException('CHILD_HARNESS_TERMINATED_BEFORE_REPORT_COMPOSE');
     }

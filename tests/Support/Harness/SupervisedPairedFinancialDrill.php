@@ -1000,11 +1000,12 @@ class SupervisedPairedFinancialDrill
         if ($expectedScope === self::REQUIRED_ADVANCED_SCOPE) {
             $expectedScenarios = [
                 'readiness_probe' => 200,
-                'financial_cash_fresh_commit_201' => 201,
-                'financial_cash_idempotent_replay_200' => 200,
-                'financial_cash_event_status_posted' => 200,
-                'financial_cash_tamper_409' => 409,
-                'transport_lost_ack_recovery' => 200,
+                'transport_lost_ack_retained_status_recovery' => 200,
+                'idempotent_replay_integrity' => 200,
+                'tamper_rejection_integrity' => 409,
+                'rollback_permission_denial' => 403,
+                'rollback_insufficient_stock' => 422,
+                'rollback_controlled_after_posting' => 500,
             ];
 
             foreach ($expectedScenarios as $name => $expectedCode) {
@@ -1014,18 +1015,6 @@ class SupervisedPairedFinancialDrill
                 if (($scenarioMap[$name]['status'] ?? '') !== 'PASS' || ($scenarioMap[$name]['httpStatusCode'] ?? null) !== $expectedCode) {
                     throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: {$name}");
                 }
-            }
-
-            if (! isset($scenarioMap['stock_permission_rollback_probes'])) {
-                throw new RuntimeException('EVIDENCE_SCENARIO_MISSING: stock_permission_rollback_probes');
-            }
-            $rollbackScenario = $scenarioMap['stock_permission_rollback_probes'];
-            if (($rollbackScenario['status'] ?? '') !== 'PASS') {
-                throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: stock_permission_rollback_probes (expected status 'PASS')");
-            }
-            $rollbackCode = $rollbackScenario['httpStatusCode'] ?? null;
-            if (! in_array($rollbackCode, [403, 422, 500], true)) {
-                throw new RuntimeException("EVIDENCE_SCENARIO_ACTIVE_FAILED: stock_permission_rollback_probes (expected HTTP 403, 422, or 500, got {$rollbackCode})");
             }
 
             // Validate lost_ack_recovery_evidence block

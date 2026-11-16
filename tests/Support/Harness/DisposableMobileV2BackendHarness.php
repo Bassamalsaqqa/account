@@ -1813,6 +1813,27 @@ PHP;
                 'expires_at' => now()->addDays(7),
             ]);
 
+            // Seed unauthorized actor and second fixture token for permission denial probes
+            $unauthorizedStaff = User::factory()->create([
+                'email' => 'unauth_'.Str::random(8).'@example.com',
+                'password' => Hash::make('HarnessUnauthPass123!'),
+            ]);
+            CompanyUser::create([
+                'company_id' => $company->id,
+                'user_id' => $unauthorizedStaff->id,
+                'status' => 'active',
+                'is_owner' => false,
+            ]);
+            $rawUnauthorizedToken = 'st_m_unauth_'.bin2hex(random_bytes(32));
+            MobileAccessToken::create([
+                'token_hash' => hash('sha256', $rawUnauthorizedToken),
+                'device_id' => $deviceId,
+                'user_id' => $unauthorizedStaff->id,
+                'company_id' => $company->id,
+                'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $unauthorizedStaff->password), 0, 16),
+                'expires_at' => now()->addDays(7),
+            ]);
+
             $customer = Customer::create([
                 'company_id' => $company->id,
                 'name_ar' => 'عميل نقدي للتكامل',
@@ -1915,12 +1936,17 @@ PHP;
             $this->companyId = (int) $company->id;
             $this->companyPublicId = (string) $company->public_id;
 
+            $probePermissionEventId = (string) Str::uuid();
+            $probeStockEventId = (string) Str::uuid();
+            $probeFaultEventId = (string) Str::uuid();
+
             $this->fixtureManifest = [
                 'schema_name' => $this->schema->schemaName(),
                 'company_public_id' => (string) $company->public_id,
                 'company_base_currency' => $currencyCode,
                 'currency_minor_units' => $minorUnits,
                 'staff_actor_public_id' => (string) $staff->public_id,
+                'unauthorized_staff_actor_public_id' => (string) $unauthorizedStaff->public_id,
                 'device_id' => (string) $device->device_id,
                 'customer_public_id' => (string) $customer->public_id,
                 'warehouse_public_id' => (string) $warehouse->public_id,
@@ -1929,22 +1955,10 @@ PHP;
                 'tax_rate_public_id' => (string) $taxRate->public_id,
                 'cash_account_public_id' => (string) $cashAccount->public_id,
                 'sample_event_id' => $sampleEventId,
+                'probe_permission_denial_event_id' => $probePermissionEventId,
+                'probe_insufficient_stock_event_id' => $probeStockEventId,
+                'probe_after_posting_fault_event_id' => $probeFaultEventId,
             ];
-
-            // Write private runtime credentials artifact to harnessTempDir (chmod 0600)
-            // Credentials are NEVER returned in public arrays or printed to stdout.
-            $this->credentialsFilePath = $this->harnessTempDir.'/runtime_credentials.json';
-            file_put_contents(
-                $this->credentialsFilePath,
-                json_encode([
-                    'raw_token' => $rawToken,
-                    'token_hash' => hash('sha256', $rawToken),
-                    'device_id' => $device->device_id,
-                    'staff_email' => $staff->email,
-                    'schema' => $this->schema->schemaName(),
-                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
-            );
-            chmod($this->credentialsFilePath, 0600);
 
             $serverContext = [
                 'company_id' => (string) $company->public_id,
@@ -1962,6 +1976,78 @@ PHP;
                 'raw_wire_payload_sha256' => $rawWireSha256,
                 'parsed_request' => $sampleRequest,
             ];
+
+            // Generate dedicated private advanced control packet artifact (0600)
+            $advancedControlPacket = [
+                'scope' => self::SCOPE_ADVANCED_EXECUTION,
+                'canonical_committed_event' => [
+                    'event_id' => $sampleEventId,
+                    'stage' => null,
+                    'expected_http_status' => 200,
+                    'description' => 'Lost ACK event: upstream committed (201 in proxy witness), dropped at transport, recovered via GET status 200, replayed at 200, tampered at 409',
+                    'raw_wire_payload_sha256' => $rawWireSha256,
+                    'canonical_profile_digest' => $canonicalDigest,
+                ],
+                'probe_permission_denial' => [
+                    'event_id' => $probePermissionEventId,
+                    'stage' => null,
+                    'expected_http_status' => 403,
+                    'auth_token_ref' => 'unauthorized_raw_token',
+                    'expected_db_delta' => 0,
+                    'description' => 'Negative probe: valid payload with unauthorized secondary token denied by authorization check',
+                ],
+                'probe_insufficient_stock' => [
+                    'event_id' => $probeStockEventId,
+                    'stage' => null,
+                    'expected_http_status' => 422,
+                    'excess_quantity' => '999999.000000',
+                    'expected_db_delta' => 0,
+                    'description' => 'Negative probe: quantity exceeding stock balance rejected by stock check',
+                ],
+                'probe_after_posting_fault' => [
+                    'event_id' => $probeFaultEventId,
+                    'stage' => 'after_posting',
+                    'expected_http_status' => 500,
+                    'expected_db_delta' => 0,
+                    'description' => 'Negative probe: simulated fault after invoice posting triggers transaction rollback',
+                ],
+                'stage_allowlist' => [
+                    $probeFaultEventId => 'after_posting',
+                ],
+                'expected_scenarios' => [
+                    'readiness_probe' => 200,
+                    'transport_lost_ack_retained_status_recovery' => 200,
+                    'idempotent_replay_integrity' => 200,
+                    'tamper_rejection_integrity' => 409,
+                    'rollback_permission_denial' => 403,
+                    'rollback_insufficient_stock' => 422,
+                    'rollback_controlled_after_posting' => 500,
+                ],
+            ];
+            $controlPacketPath = $this->harnessTempDir.'/advanced_control_packet.json';
+            file_put_contents($controlPacketPath, json_encode($advancedControlPacket, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            chmod($controlPacketPath, 0600);
+            $this->stageAllowlist = [$probeFaultEventId => 'after_posting'];
+            $this->fixtureManifest['advanced_control_packet_path'] = $controlPacketPath;
+
+            // Write private runtime credentials artifact to harnessTempDir (chmod 0600)
+            // Credentials are NEVER returned in public arrays or printed to stdout.
+            $this->credentialsFilePath = $this->harnessTempDir.'/runtime_credentials.json';
+            file_put_contents(
+                $this->credentialsFilePath,
+                json_encode([
+                    'raw_token' => $rawToken,
+                    'token_hash' => hash('sha256', $rawToken),
+                    'unauthorized_raw_token' => $rawUnauthorizedToken,
+                    'unauthorized_token_hash' => hash('sha256', $rawUnauthorizedToken),
+                    'device_id' => $device->device_id,
+                    'staff_email' => $staff->email,
+                    'unauthorized_staff_email' => $unauthorizedStaff->email,
+                    'schema' => $this->schema->schemaName(),
+                    'advanced_control_packet_path' => $controlPacketPath,
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+            );
+            chmod($this->credentialsFilePath, 0600);
             $root = dirname(__DIR__, 3);
             $runtimePins = [
                 'qualified_core_head_sha' => self::QUALIFIED_EXECUTION_HEAD,

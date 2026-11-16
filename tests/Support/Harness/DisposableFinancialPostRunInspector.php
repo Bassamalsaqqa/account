@@ -1640,56 +1640,105 @@ final class DisposableFinancialPostRunInspector
                 $scenariosMap[$sName] = $item;
             }
 
-            // Required 5 active PASS scenarios with exact strict integer HTTP status codes
-            $requiredActiveScenarios = [
-                'readiness_probe' => 200,
-                'financial_cash_fresh_commit_201' => 201,
-                'financial_cash_idempotent_replay_200' => 200,
-                'financial_cash_event_status_posted' => 200,
-                'financial_cash_tamper_409' => 409,
-            ];
+            $currentScope = (string) ($expectedPins['expectedScope'] ?? 'ROOT_AUTHORIZED_PAIRED_EXECUTION');
+            $isAdvancedScope = ($currentScope === 'online_cash_pilot_advanced' || $currentScope === 'ROOT_AUTHORIZED_ADVANCED_EXECUTION');
 
-            foreach ($requiredActiveScenarios as $name => $expectedHttpCode) {
-                if (! isset($scenariosMap[$name])) {
-                    $errors[] = "Required active scenario '{$name}' missing from evidence.";
+            if ($isAdvancedScope) {
+                // 7 distinct advanced PASS scenarios with exact strict integer HTTP status codes
+                $requiredAdvancedScenarios = [
+                    'readiness_probe' => 200,
+                    'transport_lost_ack_retained_status_recovery' => 200,
+                    'idempotent_replay_integrity' => 200,
+                    'tamper_rejection_integrity' => 409,
+                    'rollback_permission_denial' => 403,
+                    'rollback_insufficient_stock' => 422,
+                    'rollback_controlled_after_posting' => 500,
+                ];
 
-                    continue;
+                foreach ($requiredAdvancedScenarios as $name => $expectedHttpCode) {
+                    if (! isset($scenariosMap[$name])) {
+                        $errors[] = "Required advanced scenario '{$name}' missing from evidence.";
+
+                        continue;
+                    }
+
+                    $sc = $scenariosMap[$name];
+                    $status = (string) ($sc['status'] ?? '');
+                    if ($status !== 'PASS') {
+                        $errors[] = "Required advanced scenario '{$name}' status must be exactly 'PASS', got '{$status}'.";
+                    }
+
+                    if (! isset($sc['httpStatusCode']) || ! is_int($sc['httpStatusCode'])) {
+                        $errors[] = "Scenario '{$name}' httpStatusCode must be a strict integer.";
+                    } elseif ($sc['httpStatusCode'] !== $expectedHttpCode) {
+                        $errors[] = "Scenario '{$name}' HTTP status code mismatch: expected {$expectedHttpCode}, got {$sc['httpStatusCode']}.";
+                    }
                 }
 
-                $sc = $scenariosMap[$name];
-                $status = (string) ($sc['status'] ?? '');
-                if ($status !== 'PASS') {
-                    $errors[] = "Required active scenario '{$name}' status must be exactly 'PASS', got '{$status}'.";
+                // In advanced scope, validate lost_ack_recovery_evidence block
+                $lostAck = $data['lost_ack_recovery_evidence'] ?? null;
+                if (! is_array($lostAck)) {
+                    $errors[] = 'Evidence payload missing required lost_ack_recovery_evidence block for advanced scope.';
+                } else {
+                    if (($lostAck['suppression_mode'] ?? '') !== 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP') {
+                        $errors[] = "lost_ack_recovery_evidence suppression_mode mismatch: expected 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP', got '" . ($lostAck['suppression_mode'] ?? '') . "'.";
+                    }
+                    if (($lostAck['network_witness_state'] ?? '') !== 'CAPTURED_REAL_TRANSPORT_DROP') {
+                        $errors[] = "lost_ack_recovery_evidence network_witness_state mismatch: expected 'CAPTURED_REAL_TRANSPORT_DROP', got '" . ($lostAck['network_witness_state'] ?? '') . "'.";
+                    }
+                }
+            } else {
+                // Required 5 active PASS scenarios with exact strict integer HTTP status codes
+                $requiredActiveScenarios = [
+                    'readiness_probe' => 200,
+                    'financial_cash_fresh_commit_201' => 201,
+                    'financial_cash_idempotent_replay_200' => 200,
+                    'financial_cash_event_status_posted' => 200,
+                    'financial_cash_tamper_409' => 409,
+                ];
+
+                foreach ($requiredActiveScenarios as $name => $expectedHttpCode) {
+                    if (! isset($scenariosMap[$name])) {
+                        $errors[] = "Required active scenario '{$name}' missing from evidence.";
+
+                        continue;
+                    }
+
+                    $sc = $scenariosMap[$name];
+                    $status = (string) ($sc['status'] ?? '');
+                    if ($status !== 'PASS') {
+                        $errors[] = "Required active scenario '{$name}' status must be exactly 'PASS', got '{$status}'.";
+                    }
+
+                    if (! isset($sc['httpStatusCode']) || ! is_int($sc['httpStatusCode'])) {
+                        $errors[] = "Scenario '{$name}' httpStatusCode must be a strict integer.";
+                    } elseif ($sc['httpStatusCode'] !== $expectedHttpCode) {
+                        $errors[] = "Scenario '{$name}' HTTP status code mismatch: expected {$expectedHttpCode}, got {$sc['httpStatusCode']}.";
+                    }
                 }
 
-                if (! isset($sc['httpStatusCode']) || ! is_int($sc['httpStatusCode'])) {
-                    $errors[] = "Scenario '{$name}' httpStatusCode must be a strict integer.";
-                } elseif ($sc['httpStatusCode'] !== $expectedHttpCode) {
-                    $errors[] = "Scenario '{$name}' HTTP status code mismatch: expected {$expectedHttpCode}, got {$sc['httpStatusCode']}.";
-                }
-            }
+                // Required 2 probe scenarios: MUST be explicitly present and marked 'NOT_RUN' with statusCode exact JSON null
+                $requiredProbeScenarios = [
+                    'transport_lost_ack_recovery',
+                    'stock_permission_rollback_probes',
+                ];
 
-            // Required 2 probe scenarios: MUST be explicitly present and marked 'NOT_RUN' with statusCode exact JSON null
-            $requiredProbeScenarios = [
-                'transport_lost_ack_recovery',
-                'stock_permission_rollback_probes',
-            ];
+                foreach ($requiredProbeScenarios as $probeName) {
+                    if (! isset($scenariosMap[$probeName])) {
+                        $errors[] = "Advanced probe scenario '{$probeName}' must be explicitly present and marked NOT_RUN.";
 
-            foreach ($requiredProbeScenarios as $probeName) {
-                if (! isset($scenariosMap[$probeName])) {
-                    $errors[] = "Advanced probe scenario '{$probeName}' must be explicitly present and marked NOT_RUN.";
+                        continue;
+                    }
 
-                    continue;
-                }
-
-                $sc = $scenariosMap[$probeName];
-                $status = (string) ($sc['status'] ?? '');
-                if ($status !== 'NOT_RUN') {
-                    $errors[] = "Advanced probe scenario '{$probeName}' cannot claim '{$status}' in basic financial run; must be exactly 'NOT_RUN'.";
-                }
-                if (! array_key_exists('httpStatusCode', $sc) || $sc['httpStatusCode'] !== null) {
-                    $val = array_key_exists('httpStatusCode', $sc) ? json_encode($sc['httpStatusCode']) : 'MISSING';
-                    $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be exact JSON null, got {$val}.";
+                    $sc = $scenariosMap[$probeName];
+                    $status = (string) ($sc['status'] ?? '');
+                    if ($status !== 'NOT_RUN') {
+                        $errors[] = "Advanced probe scenario '{$probeName}' cannot claim '{$status}' in basic financial run; must be exactly 'NOT_RUN'.";
+                    }
+                    if (! array_key_exists('httpStatusCode', $sc) || $sc['httpStatusCode'] !== null) {
+                        $val = array_key_exists('httpStatusCode', $sc) ? json_encode($sc['httpStatusCode']) : 'MISSING';
+                        $errors[] = "Advanced probe scenario '{$probeName}' httpStatusCode must be exact JSON null, got {$val}.";
+                    }
                 }
             }
         }
@@ -2416,11 +2465,12 @@ final class DisposableFinancialPostRunInspector
 
             $expectedScenarios = [
                 'readiness_probe' => 200,
-                'financial_cash_fresh_commit_201' => 201,
-                'financial_cash_idempotent_replay_200' => 200,
-                'financial_cash_event_status_posted' => 200,
-                'financial_cash_tamper_409' => 409,
-                'transport_lost_ack_recovery' => 200,
+                'transport_lost_ack_retained_status_recovery' => 200,
+                'idempotent_replay_integrity' => 200,
+                'tamper_rejection_integrity' => 409,
+                'rollback_permission_denial' => 403,
+                'rollback_insufficient_stock' => 422,
+                'rollback_controlled_after_posting' => 500,
             ];
 
             foreach ($expectedScenarios as $name => $expCode) {
@@ -2436,20 +2486,6 @@ final class DisposableFinancialPostRunInspector
                     $errors[] = "Scenario '{$name}' httpStatusCode mismatch: expected {$expCode}, got ".($sc['httpStatusCode'] ?? 'null').'.';
                 }
             }
-
-            // Probe 7: stock_permission_rollback_probes
-            if (! isset($scenariosMap['stock_permission_rollback_probes'])) {
-                $errors[] = "Scenario 'stock_permission_rollback_probes' is missing from evidence.";
-            } else {
-                $sc = $scenariosMap['stock_permission_rollback_probes'];
-                if (($sc['status'] ?? '') !== 'PASS') {
-                    $errors[] = "Scenario 'stock_permission_rollback_probes' must have status 'PASS', got '".($sc['status'] ?? 'null')."'.";
-                }
-                $scCode = $sc['httpStatusCode'] ?? null;
-                if (! in_array($scCode, [403, 422, 500], true)) {
-                    $errors[] = "Scenario 'stock_permission_rollback_probes' httpStatusCode must be 403, 422, or 500, got ".($scCode ?? 'null').'.';
-                }
-            }
         }
 
         // 4. Lost ACK recovery evidence
@@ -2461,14 +2497,14 @@ final class DisposableFinancialPostRunInspector
                 $errors[] = "lost_ack_recovery_evidence suppression_mode must be 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP'.";
             }
 
-            $lostAckScenario = $scenariosMap['transport_lost_ack_recovery'] ?? null;
+            $lostAckScenario = $scenariosMap['transport_lost_ack_retained_status_recovery'] ?? ($scenariosMap['transport_lost_ack_recovery'] ?? null);
             $lostAckPass = is_array($lostAckScenario) && ($lostAckScenario['status'] ?? '') === 'PASS';
             $actualWitnessState = (string) ($lostAck['network_witness_state'] ?? '');
 
             if ($lostAckPass) {
                 // In acceptance validation, if scenario is PASS, validator must REFUSE 'UNRUN_AWAITING_REAL_NETWORK_WITNESS'
                 if ($actualWitnessState === 'UNRUN_AWAITING_REAL_NETWORK_WITNESS') {
-                    $errors[] = "When scenario 'transport_lost_ack_recovery' is PASS, network_witness_state cannot be 'UNRUN_AWAITING_REAL_NETWORK_WITNESS' and must be 'CAPTURED_REAL_TRANSPORT_DROP'.";
+                    $errors[] = "When scenario 'transport_lost_ack_retained_status_recovery' is PASS, network_witness_state cannot be 'UNRUN_AWAITING_REAL_NETWORK_WITNESS' and must be 'CAPTURED_REAL_TRANSPORT_DROP'.";
                 } elseif ($actualWitnessState !== 'CAPTURED_REAL_TRANSPORT_DROP') {
                     $errors[] = "lost_ack_recovery_evidence network_witness_state must be 'CAPTURED_REAL_TRANSPORT_DROP', got '{$actualWitnessState}'.";
                 }

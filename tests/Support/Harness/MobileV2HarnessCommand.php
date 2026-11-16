@@ -469,7 +469,18 @@ class MobileV2HarnessCommand extends Command
                     'root_live_approval_path' => $rootLiveApprovalFile,
                 ]);
 
-                // Reset simulated fault stage to null for initial run; set per probe during probe execution
+                // Configure strict Root-owned stage allowlist for the simulated fault event
+                $probeFaultEventId = (string) ($manifest['probe_after_posting_fault_event_id'] ?? '');
+                if ($probeFaultEventId !== '') {
+                    $harness->configureStageAllowlist([
+                        $probeFaultEventId => 'after_posting',
+                    ]);
+                    $this->line('  Advanced stage allowlist configured for simulated fault event: '.$probeFaultEventId);
+                } else {
+                    $harness->configureStageAllowlist([]);
+                }
+
+                // Reset simulated fault stage to null for initial run; set per probe via router allowlist
                 $harness->configureSimulatedFaultStage(null);
                 $this->line('  Advanced lost-ACK suppression configured for target event: '.$targetEventId);
             }

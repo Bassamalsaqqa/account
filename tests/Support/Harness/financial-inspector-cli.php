@@ -38,6 +38,9 @@ $expectedPayloadDigest = null;
 $expectedReportDigest = null;
 $expectedScope = null;
 $isAdvancedProbes = false;
+$isRollbackProbeSnapshot = false;
+$isVerifyRollbackZeroDelta = false;
+$postProbeFile = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--baseline' || $arg === '--capture-baseline') {
@@ -52,6 +55,12 @@ foreach ($argvList as $arg) {
         $isComposeTrustedReport = true;
     } elseif ($arg === '--advanced-probes') {
         $isAdvancedProbes = true;
+    } elseif ($arg === '--rollback-probe-snapshot') {
+        $isRollbackProbeSnapshot = true;
+    } elseif ($arg === '--verify-rollback-zero-delta') {
+        $isVerifyRollbackZeroDelta = true;
+    } elseif (str_starts_with($arg, '--post-probe-file=')) {
+        $postProbeFile = substr($arg, 18);
     } elseif (str_starts_with($arg, '--validate-evidence=')) {
         $evidenceFile = substr($arg, 20);
     } elseif (str_starts_with($arg, '--trusted-db-report=')) {
@@ -114,8 +123,8 @@ if ($credentialsFile !== null) {
 }
 
 // Default NO-EXECUTE: If no valid action flag is provided, exit non-zero without touching DB.
-if (! $isBaseline && ! $isComputeBaselineHash && ! $isInspectDelta && ! $isReconcile && ! $isComposeTrustedReport && $evidenceFile === null) {
-    fwrite(STDERR, "Error: Inspector defaults to NO-EXECUTE. Specify --baseline, --compute-baseline-hash, --inspect-delta, --reconcile, --compose-trusted-report, or --validate-evidence=<file>.\n");
+if (! $isBaseline && ! $isComputeBaselineHash && ! $isInspectDelta && ! $isReconcile && ! $isComposeTrustedReport && ! $isRollbackProbeSnapshot && ! $isVerifyRollbackZeroDelta && $evidenceFile === null) {
+    fwrite(STDERR, "Error: Inspector defaults to NO-EXECUTE. Specify --baseline, --compute-baseline-hash, --inspect-delta, --reconcile, --compose-trusted-report, --rollback-probe-snapshot, --verify-rollback-zero-delta, or --validate-evidence=<file>.\n");
     exit(1);
 }
 
@@ -435,3 +444,53 @@ if ($isReconcile) {
         exit(1);
     }
 }
+
+// Action 6: Capture Rollback Probe Snapshot
+if ($isRollbackProbeSnapshot) {
+    try {
+        $pdo = DisposableFinancialPostRunInspector::assertExecutionGates($schemaName);
+        $snapshot = DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, $companyId, $schemaName);
+        $outJson = json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($outputFile !== null) {
+            file_put_contents($outputFile, $outJson."\n");
+        } else {
+            fwrite(STDOUT, $outJson."\n");
+        }
+        exit(0);
+    } catch (\Throwable $e) {
+        fwrite(STDERR, "Rollback probe snapshot failed: {$e->getMessage()}\n");
+        exit(1);
+    }
+}
+
+// Action 7: Verify Rollback Zero Delta
+if ($isVerifyRollbackZeroDelta) {
+    if ($baselineFile === null || ! is_file($baselineFile)) {
+        fwrite(STDERR, "Error: --verify-rollback-zero-delta requires valid --baseline-file=<path>.\n");
+        exit(1);
+    }
+    if ($postProbeFile === null || ! is_file($postProbeFile)) {
+        fwrite(STDERR, "Error: --verify-rollback-zero-delta requires valid --post-probe-file=<path>.\n");
+        exit(1);
+    }
+    $baseData = json_decode((string) file_get_contents($baselineFile), true);
+    $postData = json_decode((string) file_get_contents($postProbeFile), true);
+    if (! is_array($baseData) || ! is_array($postData)) {
+        fwrite(STDERR, "Error: Invalid JSON in baseline or post-probe file.\n");
+        exit(1);
+    }
+    try {
+        $res = DisposableFinancialPostRunInspector::assertRollbackZeroDelta($baseData, $postData);
+        $outJson = json_encode($res, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($outputFile !== null) {
+            file_put_contents($outputFile, $outJson."\n");
+        } else {
+            fwrite(STDOUT, $outJson."\n");
+        }
+        exit($res['is_zero_delta'] ? 0 : 1);
+    } catch (\Throwable $e) {
+        fwrite(STDERR, "Rollback zero delta assertion failed: {$e->getMessage()}\n");
+        exit(1);
+    }
+}
+
