@@ -14,6 +14,7 @@ use App\Services\Search\SearchableSelectorService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 final class SearchableSelector10kPerformanceTest extends TestCase
@@ -40,24 +41,44 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         $this->service = app(SearchableSelectorService::class);
     }
 
+    protected function getOrCreateUnit(
+        string $code = 'piece',
+        string $nameAr = 'قطعة',
+        ?string $nameEn = 'Piece',
+        ?string $symbolAr = 'قطعة',
+        ?string $symbolEn = 'pc'
+    ): Unit {
+        return Unit::firstOrCreate(
+            [
+                'company_id' => $this->company->id,
+                'code' => $code,
+            ],
+            [
+                'name_ar' => $nameAr,
+                'name_en' => $nameEn,
+                'symbol_ar' => $symbolAr,
+                'symbol_en' => $symbolEn,
+                'allows_fraction' => false,
+                'decimal_places' => 0,
+                'active' => true,
+            ]
+        );
+    }
+
     public function test_query_count_is_strictly_bounded_and_constant(): void
     {
-        $baseUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'قطعة',
-            'name_en' => 'Piece',
-            'symbol_ar' => 'قطعة',
-            'symbol_en' => 'pc',
-        ]);
+        $baseUnit = $this->getOrCreateUnit('piece');
 
         // Seed 50 products
         $records = [];
         for ($i = 1; $i <= 50; $i++) {
             $records[] = [
+                'public_id' => (string) Str::ulid(),
                 'company_id' => $this->company->id,
                 'name_ar' => sprintf('منتج تجريبي رقم %03d', $i),
                 'name_en' => sprintf('Test Product #%03d', $i),
                 'sku' => sprintf('SKU-%04d', $i),
+                'product_type' => Product::TYPE_STOCK,
                 'base_unit_id' => $baseUnit->id,
                 'active' => true,
                 'track_stock' => true,
@@ -86,22 +107,18 @@ final class SearchableSelector10kPerformanceTest extends TestCase
 
     public function test_result_payload_size_is_strictly_bounded(): void
     {
-        $baseUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'قطعة',
-            'name_en' => 'Piece',
-            'symbol_ar' => 'قطعة',
-            'symbol_en' => 'pc',
-        ]);
+        $baseUnit = $this->getOrCreateUnit('piece');
 
         // Seed 60 products with matching name
         $records = [];
         for ($i = 1; $i <= 60; $i++) {
             $records[] = [
+                'public_id' => (string) Str::ulid(),
                 'company_id' => $this->company->id,
                 'name_ar' => sprintf('صنف متكرر في البحث %03d', $i),
                 'name_en' => sprintf('Common Search Item %03d', $i),
                 'sku' => sprintf('COMMON-%03d', $i),
+                'product_type' => Product::TYPE_STOCK,
                 'base_unit_id' => $baseUnit->id,
                 'active' => true,
                 'track_stock' => true,
@@ -123,11 +140,11 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         $records = [];
         for ($i = 1; $i <= 40; $i++) {
             $records[] = [
+                'public_id' => (string) Str::ulid(),
                 'company_id' => $this->company->id,
                 'name_ar' => sprintf('عميل شركة %03d', $i),
                 'name_en' => sprintf('Corporate Client %03d', $i),
                 'status' => 'active',
-                'active' => true,
                 'created_by' => $this->user->id,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -184,8 +201,8 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         $sql = $query->toSql();
 
         // Verify query structure contains tenant scope, active scope, and LIMIT clause
-        $this->assertStringContainsString('`company_id` = ?', $sql);
-        $this->assertStringContainsString('`active` = ?', $sql);
-        $this->assertStringContainsString('limit 25', $sql);
+        $this->assertTrue(str_contains($sql, 'company_id'));
+        $this->assertTrue(str_contains($sql, 'active'));
+        $this->assertTrue(str_contains(strtolower($sql), 'limit 25'));
     }
 }

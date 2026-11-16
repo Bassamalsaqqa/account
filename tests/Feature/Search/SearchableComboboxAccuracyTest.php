@@ -18,10 +18,13 @@ use App\Models\Purchase;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\Warehouse;
 use App\Services\Search\SearchableSelectorService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -47,6 +50,30 @@ final class SearchableComboboxAccuracyTest extends TestCase
         app(CompanyContext::class)->setCompany($this->company, $this->user);
         $this->actingAs($this->user);
         $this->service = app(SearchableSelectorService::class);
+    }
+
+    protected function getOrCreateUnit(
+        string $code,
+        string $nameAr = 'قطعة',
+        ?string $nameEn = 'Piece',
+        ?string $symbolAr = 'قطعة',
+        ?string $symbolEn = 'pc'
+    ): Unit {
+        return Unit::firstOrCreate(
+            [
+                'company_id' => $this->company->id,
+                'code' => $code,
+            ],
+            [
+                'name_ar' => $nameAr,
+                'name_en' => $nameEn,
+                'symbol_ar' => $symbolAr,
+                'symbol_en' => $symbolEn,
+                'allows_fraction' => false,
+                'decimal_places' => 0,
+                'active' => true,
+            ]
+        );
     }
 
     public function test_search_with_one_character_arabic_and_english(): void
@@ -82,13 +109,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
 
     public function test_exact_code_and_sku_prioritization(): void
     {
-        $baseUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'قطعة',
-            'name_en' => 'Piece',
-            'symbol_ar' => 'قطعة',
-            'symbol_en' => 'pc',
-        ]);
+        $baseUnit = $this->getOrCreateUnit('piece');
 
         Product::create([
             'company_id' => $this->company->id,
@@ -96,6 +117,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'name_en' => 'Normal item with 100 in name',
             'sku' => 'OTHER-100',
             'base_unit_id' => $baseUnit->id,
+            'product_type' => Product::TYPE_STOCK,
             'active' => true,
             'track_stock' => true,
             'created_by' => $this->user->id,
@@ -107,6 +129,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'name_en' => 'Exact SKU item',
             'sku' => '100',
             'base_unit_id' => $baseUnit->id,
+            'product_type' => Product::TYPE_STOCK,
             'active' => true,
             'track_stock' => true,
             'created_by' => $this->user->id,
@@ -120,21 +143,8 @@ final class SearchableComboboxAccuracyTest extends TestCase
 
     public function test_barcode_unit_mapping_resolution_and_null_unit_default(): void
     {
-        $baseUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'حبة',
-            'name_en' => 'Piece',
-            'symbol_ar' => 'حبة',
-            'symbol_en' => 'pc',
-        ]);
-
-        $cartonUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'كرتونة',
-            'name_en' => 'Carton',
-            'symbol_ar' => 'كرتونة',
-            'symbol_en' => 'ctn',
-        ]);
+        $baseUnit = $this->getOrCreateUnit('piece', 'حبة', 'Piece', 'حبة', 'pc');
+        $cartonUnit = $this->getOrCreateUnit('carton', 'كرتونة', 'Carton', 'كرتونة', 'ctn');
 
         $product = Product::create([
             'company_id' => $this->company->id,
@@ -142,6 +152,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'name_en' => 'Natural Orange Juice',
             'sku' => 'JUICE-01',
             'base_unit_id' => $baseUnit->id,
+            'product_type' => Product::TYPE_STOCK,
             'active' => true,
             'track_stock' => true,
             'created_by' => $this->user->id,
@@ -151,7 +162,9 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'company_id' => $this->company->id,
             'product_id' => $product->id,
             'unit_id' => $cartonUnit->id,
-            'conversion_factor' => '12.0000',
+            'conversion_to_base' => '12.000000',
+            'is_base' => false,
+            'active' => true,
         ]);
 
         ProductBarcode::create([
@@ -247,13 +260,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
 
     public function test_cost_price_redaction_for_unauthorized_users(): void
     {
-        $baseUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'قطعة',
-            'name_en' => 'Piece',
-            'symbol_ar' => 'قطعة',
-            'symbol_en' => 'pc',
-        ]);
+        $baseUnit = $this->getOrCreateUnit('piece');
 
         Product::create([
             'company_id' => $this->company->id,
@@ -263,6 +270,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'default_purchase_cost_base' => '150.00',
             'default_sale_price_base' => '250.00',
             'base_unit_id' => $baseUnit->id,
+            'product_type' => Product::TYPE_STOCK,
             'active' => true,
             'track_stock' => true,
             'created_by' => $this->user->id,
@@ -315,14 +323,31 @@ final class SearchableComboboxAccuracyTest extends TestCase
         ]);
         $deletedVendorWithPurchase->delete();
 
-        Purchase::create([
+        $warehouse = Warehouse::where('company_id', $this->company->id)->firstOrFail();
+
+        DB::table('purchases')->insert([
+            'public_id' => (string) Str::ulid(),
             'company_id' => $this->company->id,
-            'vendor_id' => $deletedVendorWithPurchase->id,
             'purchase_number' => 'PUR-001',
+            'vendor_id' => $deletedVendorWithPurchase->id,
+            'warehouse_id' => $warehouse->id,
             'status' => Purchase::STATUS_POSTED,
+            'purchase_date' => '2026-10-03',
             'currency_code' => 'ILS',
-            'total_amount' => '500.00',
+            'base_currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'document_locale' => 'ar',
+            'subtotal_currency' => '500.000000',
+            'subtotal_base' => '500.000000',
+            'discount_total_currency' => '0.000000',
+            'discount_total_base' => '0.000000',
+            'tax_total_currency' => '0.000000',
+            'tax_total_base' => '0.000000',
+            'grand_total_currency' => '500.000000',
+            'grand_total_base' => '500.000000',
             'created_by' => $this->user->id,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $deletedVendorNoPurchase = Vendor::create([
@@ -363,13 +388,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
 
     public function test_livewire_invoice_and_quotation_clear_product_preserves_draft_state(): void
     {
-        $baseUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'قطعة',
-            'name_en' => 'Piece',
-            'symbol_ar' => 'قطعة',
-            'symbol_en' => 'pc',
-        ]);
+        $baseUnit = $this->getOrCreateUnit('piece');
 
         $product = Product::create([
             'company_id' => $this->company->id,
@@ -378,6 +397,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'sku' => 'CLR-01',
             'default_sale_price_base' => '50.00',
             'base_unit_id' => $baseUnit->id,
+            'product_type' => Product::TYPE_STOCK,
             'active' => true,
             'track_stock' => true,
             'created_by' => $this->user->id,
@@ -410,21 +430,8 @@ final class SearchableComboboxAccuracyTest extends TestCase
 
     public function test_inventory_select_product_with_barcode_unit_and_null_unit(): void
     {
-        $baseUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'حبة',
-            'name_en' => 'Piece',
-            'symbol_ar' => 'حبة',
-            'symbol_en' => 'pc',
-        ]);
-
-        $cartonUnit = Unit::create([
-            'company_id' => $this->company->id,
-            'name_ar' => 'كرتونة',
-            'name_en' => 'Carton',
-            'symbol_ar' => 'كرتونة',
-            'symbol_en' => 'ctn',
-        ]);
+        $baseUnit = $this->getOrCreateUnit('piece', 'حبة', 'Piece', 'حبة', 'pc');
+        $cartonUnit = $this->getOrCreateUnit('carton', 'كرتونة', 'Carton', 'كرتونة', 'ctn');
 
         $product = Product::create([
             'company_id' => $this->company->id,
@@ -442,7 +449,9 @@ final class SearchableComboboxAccuracyTest extends TestCase
             'company_id' => $this->company->id,
             'product_id' => $product->id,
             'unit_id' => $cartonUnit->id,
-            'conversion_factor' => '10.0000',
+            'conversion_to_base' => '10.000000',
+            'is_base' => false,
+            'active' => true,
         ]);
 
         $component = Livewire::test(OpeningStockForm::class);
