@@ -763,33 +763,17 @@ try {
         }
         $acpPath = (string) ($runtimeCreds['advanced_control_packet_path'] ?? '');
         $acpSha = (string) ($runtimeCreds['advanced_control_packet_sha256'] ?? '');
-        if ($acpPath === '' || ! is_file($acpPath)) {
+        if ($acpPath === '' || $acpSha === '') {
             throw new \RuntimeException('MISSING_ADVANCED_CONTROL_PACKET_FILE');
         }
-        SupervisedPairedFinancialDrill::assertSecureFilePermissions($acpPath, 'ADVANCED_CONTROL_PACKET');
-        if (! hash_equals($acpSha, (string) hash_file('sha256', $acpPath))) {
-            throw new \RuntimeException('ADVANCED_CONTROL_PACKET_SHA_MISMATCH');
-        }
-        $acpData = json_decode((string) file_get_contents($acpPath), true);
-        if (! is_array($acpData)) {
-            throw new \RuntimeException('INVALID_ADVANCED_CONTROL_PACKET_JSON');
-        }
-
-        $probeEventMap = [
-            'permission_denial' => (string) ($acpData['probe_event_ids']['permission_denial'] ?? ($acpData['probe_event_ids']['rollback_permission_denial'] ?? ($acpData['probes']['probe_permission_denial']['event_id'] ?? ''))),
-            'insufficient_stock' => (string) ($acpData['probe_event_ids']['insufficient_stock'] ?? ($acpData['probe_event_ids']['rollback_insufficient_stock'] ?? ($acpData['probes']['probe_insufficient_stock']['event_id'] ?? ''))),
-            'controlled_fault_after_posting' => (string) ($acpData['probe_event_ids']['controlled_fault_after_posting'] ?? ($acpData['probe_event_ids']['rollback_controlled_after_posting'] ?? ($acpData['probes']['probe_controlled_fault_after_posting']['event_id'] ?? ''))),
-        ];
-
-        $uuidPattern = '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/';
-        foreach ($probeEventMap as $pName => $pId) {
-            if (! preg_match($uuidPattern, $pId)) {
-                throw new \RuntimeException("ACP probe event ID for '{$pName}' is invalid or missing: '{$pId}'.");
-            }
-        }
-        if (count(array_unique(array_values($probeEventMap))) !== 3) {
-            throw new \RuntimeException('ACP probe event IDs must be mutually distinct.');
-        }
+        $acpData = DisposableFinancialPostRunInspector::loadSecureContainedJsonFile(
+            $acpPath,
+            dirname($acpPath),
+            'advanced_control_packet.json',
+            'ADVANCED_CONTROL_PACKET',
+            $acpSha
+        );
+        $probeEventMap = DisposableFinancialPostRunInspector::validateAdvancedControlPacket($acpData, $expectedEventId);
 
         $activeProbeIds = array_values($probeEventMap);
         $inClause = implode(',', array_fill(0, count($activeProbeIds), '?'));
@@ -938,6 +922,11 @@ try {
         }
         $composeCmd[] = '--probe-reports-manifest=' . $probeManifestPath;
         $composeCmd[] = '--expected-probe-manifest-sha=' . $probeManifestSha;
+        if (! isset($acpPath) || ! is_file($acpPath) || $acpSha === '') {
+            throw new \RuntimeException('MISSING_MANDATORY_ADVANCED_CONTROL_PACKET_FOR_ADVANCED_COMPOSE');
+        }
+        $composeCmd[] = '--acp-file=' . $acpPath;
+        $composeCmd[] = '--expected-acp-sha=' . $acpSha;
     }
     $composeProc = new Process($composeCmd, $repoRoot, $inspectorEnv, null, $reportTimeout);
     $composeProc->mustRun();
@@ -972,6 +961,11 @@ try {
         }
         $validateCmd[] = '--probe-reports-manifest=' . $probeManifestPath;
         $validateCmd[] = '--expected-probe-manifest-sha=' . $probeManifestSha;
+        if (! isset($acpPath) || ! is_file($acpPath) || $acpSha === '') {
+            throw new \RuntimeException('MISSING_MANDATORY_ADVANCED_CONTROL_PACKET_FOR_ADVANCED_VALIDATION');
+        }
+        $validateCmd[] = '--acp-file=' . $acpPath;
+        $validateCmd[] = '--expected-acp-sha=' . $acpSha;
     }
     $validateProc = new Process($validateCmd, $repoRoot, $inspectorEnv, null, 10.0);
     $validateProc->mustRun();
@@ -994,6 +988,9 @@ try {
     ];
     if (isset($probeManifestSha)) {
         $hashesManifest['probe_reports_manifest_sha256'] = $probeManifestSha;
+    }
+    if (isset($acpSha) && $acpSha !== '') {
+        $hashesManifest['advanced_control_packet_sha256'] = $acpSha;
     }
     $manifestOut = $outputDir . '/approval_hashes_manifest.json';
     $manifestEncoded = json_encode($hashesManifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";

@@ -229,6 +229,101 @@ final class DisposableFinancialPostRunInspector
     }
 
     /**
+     * Optional negative read probe hook for testing containment.
+     * When set, invoked BEFORE any actual byte access from disk.
+     * Must never be used as a positive override.
+     *
+     * @var (\Closure(string, string): void)|null
+     */
+    public static ?\Closure $negativeReadGuard = null;
+
+    /**
+     * Shared secure file loader enforcing:
+     * - non-symlink regular file
+     * - expected basename match
+     * - exact owned 0700 parent directory match (real directory, UID match, mode 0700)
+     * - file UID match and mode 0600
+     * - no path component symlinks or traversal segments
+     * - negative read guard inspection before any byte read
+     * - SHA256 integrity verification if expected hash is provided
+     *
+     * Fails closed without reading or hashing external/insecure files.
+     *
+     * @param  string  $filePath  Absolute file path
+     * @param  string  $expectedParentDir  Pinned, owned parent directory
+     * @param  string  $expectedBasename  Canonical file basename
+     * @param  string  $context  Context string for error messages
+     * @param  string|null  $expectedSha256  Expected 64-hex SHA-256 hash
+     * @return string Raw file contents
+     *
+     * @throws RuntimeException
+     */
+    public static function loadSecureContainedFile(
+        string $filePath,
+        string $expectedParentDir,
+        string $expectedBasename,
+        string $context,
+        ?string $expectedSha256 = null
+    ): string {
+        SupervisedPairedFinancialDrill::assertSecureContainedFile(
+            $filePath,
+            $expectedParentDir,
+            $expectedBasename,
+            $context
+        );
+
+        if (self::$negativeReadGuard !== null) {
+            (self::$negativeReadGuard)($filePath, $context);
+        }
+
+        $raw = @file_get_contents($filePath);
+        if ($raw === false) {
+            throw new RuntimeException("{$context}_READ_FAILED: unable to read '{$filePath}'");
+        }
+
+        if ($expectedSha256 !== null && $expectedSha256 !== '') {
+            $actualSha = hash('sha256', $raw);
+            if (! hash_equals($expectedSha256, $actualSha)) {
+                throw new RuntimeException("{$context}_SHA256_MISMATCH: expected '{$expectedSha256}', got '{$actualSha}'");
+            }
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Shared secure JSON loader on top of loadSecureContainedFile.
+     *
+     * @param  string  $filePath  Absolute file path
+     * @param  string  $expectedParentDir  Pinned, owned parent directory
+     * @param  string  $expectedBasename  Canonical file basename
+     * @param  string  $context  Context string for error messages
+     * @param  string|null  $expectedSha256  Expected 64-hex SHA-256 hash
+     * @return array<string, mixed> Decoded JSON data
+     *
+     * @throws RuntimeException
+     */
+    public static function loadSecureContainedJsonFile(
+        string $filePath,
+        string $expectedParentDir,
+        string $expectedBasename,
+        string $context,
+        ?string $expectedSha256 = null
+    ): array {
+        $raw = self::loadSecureContainedFile($filePath, $expectedParentDir, $expectedBasename, $context, $expectedSha256);
+        try {
+            $data = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new RuntimeException("{$context}_INVALID_JSON: ".$e->getMessage());
+        }
+        if (! is_array($data)) {
+            throw new RuntimeException("{$context}_INVALID_JSON_STRUCTURE: expected JSON object or array");
+        }
+
+        return $data;
+    }
+
+    /**
      * Asserts execution environment invariants, verifies ownership proof,
      * and binds a dedicated read-only PDO connection directly to MariaDB port 3342.
      * Default NO-EXECUTE: fails closed if harness or disposable DB flags are missing.
@@ -1537,11 +1632,30 @@ final class DisposableFinancialPostRunInspector
             'reconciler_results' => $reconcileResult['reconciler_results'] ?? [],
         ];
 
-        // Advanced scope mandates verified exact 3-probe rollback manifest
+        // Advanced scope mandates verified exact 3-probe rollback manifest and ACP
         if ((string) $metadata['scope'] === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
             if ($rollbackProbesManifest === null || ! is_array($rollbackProbesManifest)) {
                 throw new InvalidArgumentException('Missing mandatory rollback_probes_manifest for advanced scope report composition.');
             }
+
+            $acpData = $metadata['advancedControlPacketData'] ?? null;
+            if (! is_array($acpData)) {
+                throw new InvalidArgumentException('Missing mandatory advancedControlPacketData in metadata for advanced scope report composition.');
+            }
+            $expAcpSha = (string) ($metadata['advancedControlPacketSha256'] ?? '');
+            if ($expAcpSha === '' || ! preg_match('/^[0-9a-f]{64}$/', $expAcpSha)) {
+                throw new InvalidArgumentException('Missing mandatory 64-hex advancedControlPacketSha256 in metadata for advanced scope report composition.');
+            }
+
+            $acpProbeMap = self::validateAdvancedControlPacket($acpData, (string) $metadata['eventId']);
+
+            if (isset($acpData['schema_name']) && (string) $acpData['schema_name'] !== (string) $metadata['schemaName']) {
+                throw new InvalidArgumentException("ACP schema_name mismatch: expected '{$metadata['schemaName']}', got '{$acpData['schema_name']}'.");
+            }
+            if (isset($acpData['company_id']) && (int) $acpData['company_id'] !== (int) $metadata['companyId']) {
+                throw new InvalidArgumentException("ACP company_id mismatch: expected {$metadata['companyId']}, got {$acpData['company_id']}.");
+            }
+
             $expectedProbeStatuses = [
                 'rollback_permission_denial' => 403,
                 'rollback_insufficient_stock' => 422,
@@ -1562,6 +1676,14 @@ final class DisposableFinancialPostRunInspector
                 if (($entry['probe_name'] ?? '') !== $pName) {
                     throw new InvalidArgumentException("Manifest entry for '{$pName}' has mismatched probe_name.");
                 }
+
+                $reverseMap = array_flip(self::ACP_TO_ROLLBACK_PROBE_MAP);
+                $shortKey = $reverseMap[$pName] ?? $pName;
+                $expectedProbeEventId = (string) ($acpProbeMap[$shortKey] ?? '');
+                if (isset($entry['client_event_id']) && (string) $entry['client_event_id'] !== $expectedProbeEventId) {
+                    throw new InvalidArgumentException("Manifest entry for '{$pName}' client_event_id mismatch vs verified ACP: expected '{$expectedProbeEventId}', got '".((string) $entry['client_event_id'])."'.");
+                }
+
                 if (empty($entry['report_file']) || ! is_string($entry['report_file'])) {
                     throw new InvalidArgumentException("Manifest entry for '{$pName}' missing valid report_file.");
                 }
@@ -1585,6 +1707,8 @@ final class DisposableFinancialPostRunInspector
                 }
             }
             $coreDeterministicPayload['rollback_probes_manifest'] = $rollbackProbesManifest;
+            $coreDeterministicPayload['advanced_control_packet_digest'] = $expAcpSha;
+            $coreDeterministicPayload['probe_event_ids'] = $acpProbeMap;
         } elseif ($rollbackProbesManifest !== null) {
             $coreDeterministicPayload['rollback_probes_manifest'] = $rollbackProbesManifest;
         }
@@ -1612,6 +1736,12 @@ final class DisposableFinancialPostRunInspector
         ];
         if (isset($coreDeterministicPayload['rollback_probes_manifest'])) {
             $reportResult['rollback_probes_manifest'] = $coreDeterministicPayload['rollback_probes_manifest'];
+        }
+        if (isset($coreDeterministicPayload['advanced_control_packet_digest'])) {
+            $reportResult['advanced_control_packet_digest'] = $coreDeterministicPayload['advanced_control_packet_digest'];
+        }
+        if (isset($coreDeterministicPayload['probe_event_ids'])) {
+            $reportResult['probe_event_ids'] = $coreDeterministicPayload['probe_event_ids'];
         }
 
         return $reportResult;
@@ -3245,42 +3375,71 @@ final class DisposableFinancialPostRunInspector
                         $errors[] = "Mandatory probeReportsManifestPath is missing in advanced scope.";
                     } else {
                         $manifestDir = dirname($manifestPath);
-                        try {
-                            SupervisedPairedFinancialDrill::assertSecureContainedFile(
-                                $manifestPath,
-                                $manifestDir,
-                                'probe_reports_manifest.json',
-                                'PROBE_REPORTS_MANIFEST'
-                            );
-                        } catch (\Throwable $e) {
-                            $errors[] = "Probe reports manifest file containment check failed: {$e->getMessage()}";
+                        $expectedArtifactRoot = (string) ($expectedPins['expectedArtifactRoot'] ?? ($expectedPins['artifactRoot'] ?? $manifestDir));
+                        $parsedFileManifest = null;
+                        if (realpath($manifestDir) === false || realpath($expectedArtifactRoot) === false || realpath($manifestDir) !== realpath($expectedArtifactRoot)) {
+                            $errors[] = "Probe reports manifest directory '{$manifestDir}' does not match expected artifact root '{$expectedArtifactRoot}'.";
+                        } else {
+                            try {
+                                $manifestRawBytes = self::loadSecureContainedFile(
+                                    $manifestPath,
+                                    $manifestDir,
+                                    'probe_reports_manifest.json',
+                                    'PROBE_REPORTS_MANIFEST',
+                                    $expManifestSha
+                                );
+                                $parsedFileManifest = json_decode($manifestRawBytes, true);
+                                if (! is_array($parsedFileManifest) || $parsedFileManifest !== $manifest) {
+                                    $errors[] = "Parsed probe reports manifest file does not match embedded trusted DB report manifest exactly.";
+                                }
+                            } catch (\Throwable $e) {
+                                $errors[] = "Probe reports manifest file containment check failed: {$e->getMessage()}";
+                            }
                         }
 
-                        if (! is_file($manifestPath) || is_link($manifestPath)) {
-                            $errors[] = "Probe reports manifest file is missing or a symlink: '{$manifestPath}'.";
+                        // Mandatory verified ACP in advanced scope (independently pinned owned ACP)
+                        $acpPath = (string) ($expectedPins['advancedControlPacketPath'] ?? '');
+                        $expAcpSha = (string) ($expectedPins['expectedAdvancedControlPacketSha'] ?? '');
+                        $acpProbeMap = null;
+
+                        if ($acpPath === '') {
+                            $errors[] = "Mandatory advancedControlPacketPath is missing in advanced scope.";
+                        } elseif ($expAcpSha === '' || ! preg_match('/^[0-9a-f]{64}$/', $expAcpSha)) {
+                            $errors[] = "Mandatory expectedAdvancedControlPacketSha pin is missing or invalid in advanced scope.";
                         } else {
-                            $fileBytes = (string) file_get_contents($manifestPath);
-                            $fileSha = hash('sha256', $fileBytes);
-                            if (! hash_equals($expManifestSha, $fileSha)) {
-                                $errors[] = "Probe reports manifest file SHA256 mismatch against pin: expected '{$expManifestSha}', got '{$fileSha}'.";
-                            }
-                            $parsedFileManifest = json_decode($fileBytes, true);
-                            if (! is_array($parsedFileManifest) || $parsedFileManifest !== $manifest) {
-                                $errors[] = "Parsed probe reports manifest file does not match embedded trusted DB report manifest exactly.";
-                            }
+                            $acpDir = dirname($acpPath);
+                            $expectedAcpParentDir = (string) ($expectedPins['expectedAcpParentDir'] ?? $acpDir);
+                            try {
+                                $acpData = self::loadSecureContainedJsonFile(
+                                    $acpPath,
+                                    $expectedAcpParentDir,
+                                    'advanced_control_packet.json',
+                                    'ADVANCED_CONTROL_PACKET',
+                                    $expAcpSha
+                                );
+                                $primaryEventId = (string) ($expectedPins['expectedClientEventId'] ?? ($trustedDbReport['event_id'] ?? ''));
+                                $acpProbeMap = self::validateAdvancedControlPacket($acpData, $primaryEventId);
 
-                            // Extract probe event mapping from verified ACP if available
-                            $acpProbeMap = [];
-                            if (isset($expectedPins['advancedControlPacketData']) && is_array($expectedPins['advancedControlPacketData'])) {
-                                try {
-                                    $primaryEventId = (string) ($expectedPins['expectedClientEventId'] ?? ($trustedDbReport['event_id'] ?? ''));
-                                    $acpProbeMap = self::validateAdvancedControlPacket($expectedPins['advancedControlPacketData'], $primaryEventId);
-                                } catch (\Throwable $e) {
-                                    $errors[] = "Advanced control packet validation failed: {$e->getMessage()}";
+                                if (isset($acpData['schema_name']) && (string) $acpData['schema_name'] !== (string) ($expectedPins['expectedSchemaName'] ?? '')) {
+                                    $errors[] = "Advanced control packet schema_name mismatch: expected '".($expectedPins['expectedSchemaName'] ?? '')."', got '".((string) $acpData['schema_name'])."'.";
                                 }
-                            }
+                                if (isset($acpData['company_id']) && (int) $acpData['company_id'] !== (int) ($expectedPins['expectedCompanyId'] ?? ($expectedPins['companyId'] ?? 0))) {
+                                    $errors[] = "Advanced control packet company_id mismatch: expected ".($expectedPins['expectedCompanyId'] ?? 0).", got ".((int) $acpData['company_id']).".";
+                                }
 
-                            // Verify referenced reports and raw reconciliations: containment, hash, and SEMANTIC payload verification
+                                if (isset($trustedDbReport['advanced_control_packet_digest']) && ! hash_equals($expAcpSha, (string) $trustedDbReport['advanced_control_packet_digest'])) {
+                                    $errors[] = "Trusted DB report advanced_control_packet_digest mismatch: expected '{$expAcpSha}', got '".((string) $trustedDbReport['advanced_control_packet_digest'])."'.";
+                                }
+                                if (isset($trustedDbReport['probe_event_ids']) && is_array($trustedDbReport['probe_event_ids']) && $trustedDbReport['probe_event_ids'] !== $acpProbeMap) {
+                                    $errors[] = "Trusted DB report probe_event_ids does not match verified ACP probe mapping.";
+                                }
+                            } catch (\Throwable $e) {
+                                $errors[] = "Advanced control packet validation failed: {$e->getMessage()}";
+                            }
+                        }
+
+                        // If manifest containment or loading failed, STOP - do not access report files!
+                        if ($parsedFileManifest !== null) {
                             foreach ($manifest as $pKey => $pEntry) {
                                 $repBasename = (string) ($pEntry['report_file'] ?? '');
                                 $recBasename = (string) ($pEntry['reconciliation_file'] ?? '');
@@ -3290,87 +3449,90 @@ final class DisposableFinancialPostRunInspector
                                 $expectedRepBasename = 'probe_' . $pKey . '_report.json';
                                 $expectedRecBasename = 'probe_' . $pKey . '_reconciliation.json';
 
+                                $repBytes = null;
                                 try {
-                                    SupervisedPairedFinancialDrill::assertSecureContainedFile(
+                                    $repBytes = self::loadSecureContainedFile(
                                         $repFile,
                                         $manifestDir,
                                         $expectedRepBasename,
-                                        "PROBE_REPORT_{$pKey}"
+                                        "PROBE_REPORT_{$pKey}",
+                                        (string) ($pEntry['report_sha256'] ?? '')
                                     );
                                 } catch (\Throwable $e) {
                                     $errors[] = "Referenced probe report file containment check failed for '{$pKey}': {$e->getMessage()}";
                                 }
 
+                                $recBytes = null;
                                 try {
-                                    SupervisedPairedFinancialDrill::assertSecureContainedFile(
+                                    $recBytes = self::loadSecureContainedFile(
                                         $recFile,
                                         $manifestDir,
                                         $expectedRecBasename,
-                                        "RAW_RECON_{$pKey}"
+                                        "RAW_RECON_{$pKey}",
+                                        (string) ($pEntry['reconciliation_sha256'] ?? '')
                                     );
                                 } catch (\Throwable $e) {
                                     $errors[] = "Referenced reconciliation file containment check failed for '{$pKey}': {$e->getMessage()}";
                                 }
 
-                                if (! is_file($repFile) || is_link($repFile)) {
-                                    $errors[] = "Referenced probe report file for '{$pKey}' is missing or a symlink: '{$repFile}'.";
-                                } else {
-                                    $actualRepSha = hash_file('sha256', $repFile);
-                                    if (! hash_equals((string) ($pEntry['report_sha256'] ?? ''), $actualRepSha)) {
-                                        $errors[] = "Referenced probe report SHA mismatch for '{$pKey}': expected '".($pEntry['report_sha256'] ?? '')."', got '{$actualRepSha}'.";
-                                    }
+                                if ($repBytes === null || $recBytes === null) {
+                                    continue;
                                 }
 
-                                if (! is_file($recFile) || is_link($recFile)) {
-                                    $errors[] = "Referenced reconciliation file for '{$pKey}' is missing or a symlink: '{$recFile}'.";
-                                    $rawReconContent = '';
-                                } else {
-                                    $rawReconContent = (string) file_get_contents($recFile);
-                                    $actualRecSha = hash('sha256', $rawReconContent);
-                                    if (! hash_equals((string) ($pEntry['reconciliation_sha256'] ?? ''), $actualRecSha)) {
-                                        $errors[] = "Referenced reconciliation SHA mismatch for '{$pKey}': expected '".($pEntry['reconciliation_sha256'] ?? '')."', got '{$actualRecSha}'.";
-                                    }
+                                $parsedRep = json_decode($repBytes, true);
+                                if (! is_array($parsedRep)) {
+                                    $errors[] = "Referenced probe report for '{$pKey}' contains invalid JSON.";
+                                    continue;
                                 }
 
-                                // SEMANTIC VERIFICATION: parse report and invoke verifyProbeReportPayload
-                                if (is_file($repFile) && ! is_link($repFile) && $rawReconContent !== '') {
-                                    $parsedRep = json_decode((string) file_get_contents($repFile), true);
-                                    if (! is_array($parsedRep)) {
-                                        $errors[] = "Referenced probe report for '{$pKey}' contains invalid JSON.";
-                                    } else {
-                                        $expectedProbeEventId = '';
-                                        if (isset($acpProbeMap[self::REQUIRED_PROBE_EVENT_KEYS[0]])) {
-                                            // acpProbeMap has short keys; lookup reverse
-                                            $reverseMap = array_flip(self::ACP_TO_ROLLBACK_PROBE_MAP);
-                                            $shortKey = $reverseMap[$pKey] ?? $pKey;
-                                            $expectedProbeEventId = (string) ($acpProbeMap[$shortKey] ?? '');
-                                        }
-                                        if ($expectedProbeEventId === '') {
-                                            $expectedProbeEventId = (string) ($pEntry['client_event_id'] ?? ($parsedRep['client_event_id'] ?? ''));
-                                        }
+                                if ($acpProbeMap === null) {
+                                    $errors[] = "Cannot verify probe '{$pKey}' event identity: verified ACP mapping is unavailable.";
+                                    continue;
+                                }
 
-                                        $expectedContext = [
-                                            'probe_name' => $pKey,
-                                            'client_event_id' => $expectedProbeEventId,
-                                            'expected_http_status' => self::ROLLBACK_PROBE_EXPECTED_STATUS[$pKey] ?? 0,
-                                            'schema_name' => (string) ($trustedDbReport['schema_name'] ?? ($expectedPins['expectedSchemaName'] ?? '')),
-                                            'company_id' => (int) ($trustedDbReport['company_id'] ?? ($expectedPins['expectedCompanyId'] ?? 0)),
-                                            'backend_head' => (string) ($trustedDbReport['backend_execution_head_sha'] ?? ($trustedDbReport['source_head'] ?? ($expectedPins['backendExecutionHead'] ?? ''))),
-                                            'handoff_sha256' => (string) ($trustedDbReport['candidate_handoff_digest'] ?? ($trustedDbReport['handoff_digest'] ?? ($expectedPins['expectedHandoffSha'] ?? ''))),
-                                        ];
+                                $reverseMap = array_flip(self::ACP_TO_ROLLBACK_PROBE_MAP);
+                                $shortKey = $reverseMap[$pKey] ?? $pKey;
+                                $expectedProbeEventId = (string) ($acpProbeMap[$shortKey] ?? '');
+                                if ($expectedProbeEventId === '') {
+                                    $errors[] = "No verified ACP probe event ID mapped for probe '{$pKey}'.";
+                                    continue;
+                                }
 
-                                        $semResult = self::verifyProbeReportPayload($parsedRep, $rawReconContent, $expectedContext);
-                                        if (! $semResult['is_valid']) {
-                                            foreach ($semResult['errors'] as $sErr) {
-                                                $errors[] = "Referenced probe report semantic verification failed for '{$pKey}': {$sErr}";
-                                            }
-                                        }
+                                if (isset($pEntry['client_event_id']) && (string) $pEntry['client_event_id'] !== $expectedProbeEventId) {
+                                    $errors[] = "Manifest entry client_event_id for '{$pKey}' mismatch vs verified ACP: expected '{$expectedProbeEventId}', got '".((string) $pEntry['client_event_id'])."'.";
+                                }
+
+                                if (isset($parsedRep['client_event_id']) && (string) $parsedRep['client_event_id'] !== $expectedProbeEventId) {
+                                    $errors[] = "Referenced probe report client_event_id for '{$pKey}' mismatch vs verified ACP: expected '{$expectedProbeEventId}', got '".((string) $parsedRep['client_event_id'])."'.";
+                                }
+
+                                $expectedContext = [
+                                    'probe_name' => $pKey,
+                                    'client_event_id' => $expectedProbeEventId,
+                                    'expected_http_status' => self::ROLLBACK_PROBE_EXPECTED_STATUS[$pKey] ?? 0,
+                                    'schema_name' => (string) ($expectedPins['expectedSchemaName'] ?? ($trustedDbReport['schema_name'] ?? '')),
+                                    'company_id' => (int) ($expectedPins['expectedCompanyId'] ?? ($expectedPins['companyId'] ?? ($trustedDbReport['company_id'] ?? 0))),
+                                    'backend_head' => (string) ($expectedPins['backendExecutionHead'] ?? ($trustedDbReport['backend_execution_head_sha'] ?? ($trustedDbReport['source_head'] ?? ''))),
+                                    'handoff_sha256' => (string) ($expectedPins['expectedHandoffSha'] ?? ($trustedDbReport['candidate_handoff_digest'] ?? ($trustedDbReport['handoff_digest'] ?? ''))),
+                                ];
+
+                                $semResult = self::verifyProbeReportPayload($parsedRep, $recBytes, $expectedContext);
+                                if (! $semResult['is_valid']) {
+                                    foreach ($semResult['errors'] as $sErr) {
+                                        $errors[] = "Referenced probe report semantic verification failed for '{$pKey}': {$sErr}";
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            if (isset($trustedDbReport['advanced_control_packet_digest'])) {
+                $coreDeterministicPayload['advanced_control_packet_digest'] = (string) $trustedDbReport['advanced_control_packet_digest'];
+            }
+            if (isset($trustedDbReport['probe_event_ids']) && is_array($trustedDbReport['probe_event_ids'])) {
+                $coreDeterministicPayload['probe_event_ids'] = $trustedDbReport['probe_event_ids'];
             }
 
             $computedReportDigest = self::computeReportDigest($coreDeterministicPayload);

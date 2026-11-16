@@ -1420,6 +1420,9 @@ class SupervisedPairedFinancialDrill
         $parts = explode('/', trim($normalized, '/'));
         $accum = (str_starts_with($normalized, '/')) ? '/' : '';
         foreach ($parts as $part) {
+            if ($part === '..' || $part === '.') {
+                throw new RuntimeException("{$context}_TRAVERSAL_REJECTED: path contains traversal segment '{$part}'");
+            }
             $accum = rtrim($accum, '/') . '/' . $part;
             if (is_link($accum)) {
                 throw new RuntimeException("{$context}_PATH_COMPONENT_SYMLINK_REJECTED: '{$accum}'");

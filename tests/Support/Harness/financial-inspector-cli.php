@@ -43,6 +43,8 @@ $isVerifyRollbackZeroDelta = false;
 $postProbeFile = null;
 $probeReportsManifestFile = null;
 $expectedProbeManifestSha = null;
+$acpFile = null;
+$expectedAcpSha = null;
 
 foreach ($argvList as $arg) {
     if ($arg === '--baseline' || $arg === '--capture-baseline') {
@@ -109,6 +111,10 @@ foreach ($argvList as $arg) {
         $expectedReportDigest = substr($arg, 25);
     } elseif (str_starts_with($arg, '--expected-scope=')) {
         $expectedScope = substr($arg, 17);
+    } elseif (str_starts_with($arg, '--acp-file=')) {
+        $acpFile = substr($arg, 11);
+    } elseif (str_starts_with($arg, '--expected-acp-sha=')) {
+        $expectedAcpSha = substr($arg, 19);
     }
 }
 
@@ -259,7 +265,7 @@ if ($evidenceFile !== null) {
             'cli_command_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/MobileV2HarnessCommand.php'),
             'cli_runner_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/mobile-v2-harness-cli.php'),
         ];
-        if ($probeReportsManifestFile === null || ! is_file($probeReportsManifestFile) || is_link($probeReportsManifestFile)) {
+        if ($probeReportsManifestFile === null || $probeReportsManifestFile === '') {
             fwrite(STDERR, "Error: --probe-reports-manifest=<path> is mandatory and must be a valid non-symlink file in advanced scope.\n");
             exit(1);
         }
@@ -267,15 +273,47 @@ if ($evidenceFile !== null) {
             fwrite(STDERR, "Error: --expected-probe-manifest-sha=<sha256> is mandatory in advanced scope.\n");
             exit(1);
         }
-        $manifestRawBytes = (string) file_get_contents($probeReportsManifestFile);
-        $actualManifestSha = hash('sha256', $manifestRawBytes);
-        if (! hash_equals($expectedProbeManifestSha, $actualManifestSha)) {
-            fwrite(STDERR, "Error: Probe reports manifest file SHA256 mismatch: expected '{$expectedProbeManifestSha}', got '{$actualManifestSha}'.\n");
+        try {
+            $manifestRawBytes = DisposableFinancialPostRunInspector::loadSecureContainedFile(
+                $probeReportsManifestFile,
+                dirname($probeReportsManifestFile),
+                'probe_reports_manifest.json',
+                'PROBE_REPORTS_MANIFEST',
+                $expectedProbeManifestSha
+            );
+        } catch (\Throwable $e) {
+            fwrite(STDERR, "Error: Probe reports manifest verification failed: {$e->getMessage()}\n");
             exit(1);
         }
+        $actualManifestSha = hash('sha256', $manifestRawBytes);
         $expectedPins['actualProbeReportsManifestSha'] = $actualManifestSha;
         $expectedPins['expectedProbeReportsManifestSha'] = $expectedProbeManifestSha;
         $expectedPins['probeReportsManifestPath'] = $probeReportsManifestFile;
+
+        if ($acpFile === null || $acpFile === '') {
+            fwrite(STDERR, "Error: --acp-file=<path> is mandatory and must be a valid non-symlink file in advanced scope.\n");
+            exit(1);
+        }
+        if ($expectedAcpSha === null || $expectedAcpSha === '') {
+            fwrite(STDERR, "Error: --expected-acp-sha=<sha256> is mandatory in advanced scope.\n");
+            exit(1);
+        }
+        try {
+            $acpData = DisposableFinancialPostRunInspector::loadSecureContainedJsonFile(
+                $acpFile,
+                dirname($acpFile),
+                'advanced_control_packet.json',
+                'ADVANCED_CONTROL_PACKET',
+                $expectedAcpSha
+            );
+        } catch (\Throwable $e) {
+            fwrite(STDERR, "Error: Advanced control packet verification failed: {$e->getMessage()}\n");
+            exit(1);
+        }
+        $expectedPins['advancedControlPacketData'] = $acpData;
+        $expectedPins['expectedAdvancedControlPacketSha'] = $expectedAcpSha;
+        $expectedPins['advancedControlPacketPath'] = $acpFile;
+
         $validation = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
     } else {
         $validation = DisposableFinancialPostRunInspector::validateOuterEvidenceJson($rawEvidence, $expectedPins, $trustedDbReport);
@@ -352,7 +390,7 @@ if ($isComposeTrustedReport) {
 
         $probeReportsManifest = null;
         if ($metadata['scope'] === 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION') {
-            if ($probeReportsManifestFile === null) {
+            if ($probeReportsManifestFile === null || $probeReportsManifestFile === '') {
                 fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --probe-reports-manifest=<path>.\n");
                 exit(1);
             }
@@ -360,26 +398,53 @@ if ($isComposeTrustedReport) {
                 fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --expected-probe-manifest-sha=<sha256>.\n");
                 exit(1);
             }
-        }
-        if ($probeReportsManifestFile !== null) {
-            if (! is_file($probeReportsManifestFile) || is_link($probeReportsManifestFile)) {
-                fwrite(STDERR, "Error: Insecure or missing probe reports manifest file.\n");
+            if ($acpFile === null || $acpFile === '') {
+                fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --acp-file=<path>.\n");
                 exit(1);
             }
-            $pPerms = fileperms($probeReportsManifestFile) & 0777;
-            if ($pPerms !== 0600) {
-                fwrite(STDERR, sprintf("Error: Insecure probe reports manifest file perms %04o, expected 0600.\n", $pPerms));
+            if ($expectedAcpSha === null || $expectedAcpSha === '') {
+                fwrite(STDERR, "Error: --compose-trusted-report in advanced scope requires --expected-acp-sha=<sha256>.\n");
                 exit(1);
             }
-            $manifestRawBytes = (string) file_get_contents($probeReportsManifestFile);
-            $actualManifestSha = hash('sha256', $manifestRawBytes);
-            if ($expectedProbeManifestSha !== null && ! hash_equals($expectedProbeManifestSha, $actualManifestSha)) {
-                fwrite(STDERR, "Error: Probe reports manifest SHA256 mismatch: expected '{$expectedProbeManifestSha}', got '{$actualManifestSha}'.\n");
+            try {
+                $acpData = DisposableFinancialPostRunInspector::loadSecureContainedJsonFile(
+                    $acpFile,
+                    dirname($acpFile),
+                    'advanced_control_packet.json',
+                    'ADVANCED_CONTROL_PACKET',
+                    $expectedAcpSha
+                );
+            } catch (\Throwable $e) {
+                fwrite(STDERR, "Error: Advanced control packet verification failed: {$e->getMessage()}\n");
                 exit(1);
             }
-            $probeReportsManifest = json_decode($manifestRawBytes, true);
-            if (! is_array($probeReportsManifest)) {
-                fwrite(STDERR, "Error: Invalid JSON in probe reports manifest file.\n");
+            $metadata['advancedControlPacketData'] = $acpData;
+            $metadata['advancedControlPacketSha256'] = $expectedAcpSha;
+            $metadata['advancedControlPacketPath'] = $acpFile;
+
+            try {
+                $probeReportsManifest = DisposableFinancialPostRunInspector::loadSecureContainedJsonFile(
+                    $probeReportsManifestFile,
+                    dirname($probeReportsManifestFile),
+                    'probe_reports_manifest.json',
+                    'PROBE_REPORTS_MANIFEST',
+                    $expectedProbeManifestSha
+                );
+            } catch (\Throwable $e) {
+                fwrite(STDERR, "Error: Probe reports manifest verification failed: {$e->getMessage()}\n");
+                exit(1);
+            }
+        } elseif ($probeReportsManifestFile !== null && $probeReportsManifestFile !== '') {
+            try {
+                $probeReportsManifest = DisposableFinancialPostRunInspector::loadSecureContainedJsonFile(
+                    $probeReportsManifestFile,
+                    dirname($probeReportsManifestFile),
+                    'probe_reports_manifest.json',
+                    'PROBE_REPORTS_MANIFEST',
+                    $expectedProbeManifestSha
+                );
+            } catch (\Throwable $e) {
+                fwrite(STDERR, "Error: Probe reports manifest verification failed: {$e->getMessage()}\n");
                 exit(1);
             }
         }

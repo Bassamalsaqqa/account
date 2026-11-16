@@ -7415,9 +7415,23 @@ PHP;
             chmod($manifestFile, 0600);
             $manifestSha = hash('sha256', $manifestBytes);
 
-            // 6. Test genuine composeTrustedDbReport with 3-probe manifest
+            // 6. Test genuine composeTrustedDbReport with 3-probe manifest and mandatory ACP
             $primaryEventId = '99999999-9999-4999-8999-999999999999';
             $runId = '88888888-8888-4888-8888-888888888888';
+
+            $acpData = [
+                'probe_event_ids' => [
+                    'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                    'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                    'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+                ],
+            ];
+            $acpFile = $tmpDir . '/advanced_control_packet.json';
+            $acpBytes = json_encode($acpData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            file_put_contents($acpFile, $acpBytes);
+            chmod($acpFile, 0600);
+            $acpSha = hash('sha256', $acpBytes);
+
             $metadata = [
                 'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
                 'runId' => $runId,
@@ -7426,6 +7440,9 @@ PHP;
                 'companyId' => 1,
                 'sourceHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
                 'handoffDigest' => str_repeat('a', 64),
+                'advancedControlPacketData' => $acpData,
+                'advancedControlPacketSha256' => $acpSha,
+                'advancedControlPacketPath' => $acpFile,
             ];
             $deltaResult = [
                 'is_canonical_delta_valid' => true,
@@ -7444,6 +7461,7 @@ PHP;
             $this->assertSame('ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION', $trustedDbReport['scope']);
             $this->assertArrayHasKey('rollback_probes_manifest', $trustedDbReport);
             $this->assertArrayHasKey('report_digest', $trustedDbReport);
+            $this->assertSame($acpSha, $trustedDbReport['advanced_control_packet_digest']);
 
             // 7. Test genuine validateAdvancedProbeEvidenceJson with mandatory manifest file and SHA pin
             $root = dirname(__DIR__, 4);
@@ -7460,6 +7478,8 @@ PHP;
                 'expectedProbeReportsManifestSha' => $manifestSha,
                 'actualProbeReportsManifestSha' => $manifestSha,
                 'probeReportsManifestPath' => $manifestFile,
+                'advancedControlPacketPath' => $acpFile,
+                'expectedAdvancedControlPacketSha' => $acpSha,
                 'expectedSourcePins' => [
                     'source_fixture_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
                     'guard_test_sha256' => (string) hash_file('sha256', __FILE__),
@@ -7890,6 +7910,19 @@ PHP;
             chmod($manifestFile, 0600);
             $traversalSha = hash('sha256', $traversalBytes);
 
+            $acpData = [
+                'probe_event_ids' => [
+                    'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                    'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                    'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+                ],
+            ];
+            $acpFile = $tmpDir . '/advanced_control_packet.json';
+            $acpBytes = json_encode($acpData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            file_put_contents($acpFile, $acpBytes);
+            chmod($acpFile, 0600);
+            $acpSha = hash('sha256', $acpBytes);
+
             $trustedDbReport = [
                 'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
                 'run_id' => '88888888-8888-4888-8888-888888888888',
@@ -7903,6 +7936,8 @@ PHP;
                 'gl_batches_balanced' => true,
                 'all_healthy' => true,
                 'rollback_probes_manifest' => $traversalManifest,
+                'advanced_control_packet_digest' => $acpSha,
+                'probe_event_ids' => $acpData['probe_event_ids'],
             ];
 
             $evidence = [
@@ -7925,6 +7960,8 @@ PHP;
                 'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
                 'expectedProbeReportsManifestSha' => $traversalSha,
                 'probeReportsManifestPath' => $manifestFile,
+                'advancedControlPacketPath' => $acpFile,
+                'expectedAdvancedControlPacketSha' => $acpSha,
             ];
 
             $travRes = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedDbReport);
@@ -8031,5 +8068,451 @@ PHP;
                 @rmdir($tmpDir);
             }
         }
+    }
+
+    #[Test]
+    public function test_advanced_scope_requires_mandatory_acp_in_compose_and_validation(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_acp_req_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $primaryEventId = '99999999-9999-4999-8999-999999999999';
+            $runId = '88888888-8888-4888-8888-888888888888';
+
+            $manifest = [
+                'rollback_permission_denial' => [
+                    'probe_name' => 'rollback_permission_denial',
+                    'client_event_id' => '11111111-1111-4111-8111-111111111111',
+                    'report_file' => 'probe_rollback_permission_denial_report.json',
+                    'report_sha256' => str_repeat('a', 64),
+                    'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('b', 64),
+                    'expected_http_status' => 403,
+                    'actual_http_status' => 403,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_insufficient_stock' => [
+                    'probe_name' => 'rollback_insufficient_stock',
+                    'client_event_id' => '22222222-2222-4222-8222-222222222222',
+                    'report_file' => 'probe_rollback_insufficient_stock_report.json',
+                    'report_sha256' => str_repeat('a', 64),
+                    'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('b', 64),
+                    'expected_http_status' => 422,
+                    'actual_http_status' => 422,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_controlled_after_posting' => [
+                    'probe_name' => 'rollback_controlled_after_posting',
+                    'client_event_id' => '33333333-3333-4333-8333-333333333333',
+                    'report_file' => 'probe_rollback_controlled_after_posting_report.json',
+                    'report_sha256' => str_repeat('a', 64),
+                    'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('b', 64),
+                    'expected_http_status' => 500,
+                    'actual_http_status' => 500,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+            ];
+
+            $metadataWithoutAcp = [
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'runId' => $runId,
+                'eventId' => $primaryEventId,
+                'schemaName' => 'accounting_p8_tmp_0123456789ab',
+                'companyId' => 1,
+                'sourceHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'handoffDigest' => str_repeat('a', 64),
+            ];
+
+            // 1. composeTrustedDbReport in advanced scope throws without ACP
+            $threw = false;
+            try {
+                DisposableFinancialPostRunInspector::composeTrustedDbReport(
+                    $metadataWithoutAcp,
+                    ['company_id' => 1],
+                    ['is_canonical_delta_valid' => true],
+                    ['all_healthy' => true],
+                    $manifest
+                );
+            } catch (\InvalidArgumentException $e) {
+                $threw = true;
+                $this->assertStringContainsString('Missing mandatory advancedControlPacketData', $e->getMessage());
+            }
+            $this->assertTrue($threw, 'composeTrustedDbReport did not throw for missing ACP');
+
+            // 2. validateAdvancedProbeEvidenceJson refuses when ACP pins omitted
+            $manifestFile = $tmpDir . '/probe_reports_manifest.json';
+            $manifestBytes = json_encode($manifest) . "\n";
+            file_put_contents($manifestFile, $manifestBytes);
+            chmod($manifestFile, 0600);
+            $manifestSha = hash('sha256', $manifestBytes);
+
+            $evidence = [
+                'contract_version' => 'v2_advanced_probe_evidence_v1',
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => $runId,
+                'client_event_id' => $primaryEventId,
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'handoff_sha256' => str_repeat('a', 64),
+                'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'android_publication_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'android_executable_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'scenarios' => [],
+            ];
+            $trustedReport = [
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => $runId,
+                'event_id' => $primaryEventId,
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'company_id' => 1,
+                'source_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'handoff_digest' => str_repeat('a', 64),
+                'baseline_hash' => str_repeat('b', 64),
+                'is_canonical_delta_valid' => true,
+                'gl_batches_balanced' => true,
+                'all_healthy' => true,
+                'rollback_probes_manifest' => $manifest,
+            ];
+            $pinsWithoutAcp = [
+                'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'expectedProbeReportsManifestSha' => $manifestSha,
+                'probeReportsManifestPath' => $manifestFile,
+            ];
+
+            $resNoAcp = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithoutAcp, $trustedReport);
+            $this->assertFalse($resNoAcp['is_valid']);
+            $this->assertStringContainsString('Mandatory advancedControlPacketPath is missing in advanced scope', implode('; ', $resNoAcp['errors']));
+
+            // 3. Insecure ACP file (symlink) is rejected
+            $realAcpFile = $tmpDir . '/real_acp.json';
+            file_put_contents($realAcpFile, json_encode(['probe_event_ids' => [
+                'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+            ]]) . "\n");
+            chmod($realAcpFile, 0600);
+            $acpSymlink = $tmpDir . '/advanced_control_packet.json';
+            symlink($realAcpFile, $acpSymlink);
+
+            $pinsWithSymlinkAcp = array_merge($pinsWithoutAcp, [
+                'advancedControlPacketPath' => $acpSymlink,
+                'expectedAdvancedControlPacketSha' => hash_file('sha256', $realAcpFile),
+            ]);
+            $resSymlink = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithSymlinkAcp, $trustedReport);
+            $this->assertFalse($resSymlink['is_valid']);
+            $this->assertStringContainsString('SYMLINK_REJECTED', implode('; ', $resSymlink['errors']));
+            unlink($acpSymlink);
+
+            // 4. ACP SHA mismatch is rejected
+            $pinsWithBadSha = array_merge($pinsWithoutAcp, [
+                'advancedControlPacketPath' => $realAcpFile,
+                'expectedAdvancedControlPacketSha' => str_repeat('0', 64),
+            ]);
+            $resBadSha = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithBadSha, $trustedReport);
+            $this->assertFalse($resBadSha['is_valid']);
+            $this->assertStringContainsString('SHA256_MISMATCH', implode('; ', $resBadSha['errors']));
+        } finally {
+            foreach (glob($tmpDir . '/*') as $f) {
+                @unlink($f);
+            }
+            if (is_dir($tmpDir)) {
+                @rmdir($tmpDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_advanced_validator_refuses_self_consistent_wrong_event_reports_and_index(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_wrong_event_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+
+        try {
+            $primaryEventId = '99999999-9999-4999-8999-999999999999';
+            $runId = '88888888-8888-4888-8888-888888888888';
+
+            // Genuine ACP with approved UUIDs
+            $acpData = [
+                'probe_event_ids' => [
+                    'permission_denial' => '11111111-1111-4111-8111-111111111111',
+                    'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                    'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+                ],
+            ];
+            $acpFile = $tmpDir . '/advanced_control_packet.json';
+            $acpBytes = json_encode($acpData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            file_put_contents($acpFile, $acpBytes);
+            chmod($acpFile, 0600);
+            $acpSha = hash('sha256', $acpBytes);
+
+            // Craft self-consistent attacker reports and manifest with mismatched UUIDs (e.g. 4444..., 5555..., 6666...)
+            $wrongEventId1 = '44444444-4444-4444-8444-444444444444';
+            $rawRecon = json_encode([
+                'all_healthy' => true,
+                'total_issue_count' => 0,
+                'reconciler_results' => [
+                    'AccountingReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'InventoryReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'SalesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'PayablesReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'MoneyReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                    'Phase7ReconciliationService' => ['healthy' => true, 'issue_count' => 0],
+                ],
+            ]) . "\n";
+            $recSha = hash('sha256', $rawRecon);
+
+            $repData1 = [
+                'probe_name' => 'rollback_permission_denial',
+                'client_event_id' => $wrongEventId1, // WRONG event ID matching manifest
+                'expected_http_status' => 403,
+                'actual_http_status' => 403,
+                'status_matched' => true,
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'company_id' => 1,
+                'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'handoff_sha256' => str_repeat('a', 64),
+                'economic_delta_zero' => true,
+                'zero_delta_verified' => true,
+                'reconciliations_healthy' => true,
+                'total_issue_count' => 0,
+                'reconciliation_artifact_sha256' => $recSha,
+                'baseline_metrics' => ['company_id' => 1],
+                'post_metrics' => ['company_id' => 1],
+            ];
+            $repBytes1 = json_encode($repData1, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $repSha1 = hash('sha256', $repBytes1);
+
+            $repFile1 = $tmpDir . '/probe_rollback_permission_denial_report.json';
+            $recFile1 = $tmpDir . '/probe_rollback_permission_denial_reconciliation.json';
+            file_put_contents($repFile1, $repBytes1);
+            file_put_contents($recFile1, $rawRecon);
+            chmod($repFile1, 0600);
+            chmod($recFile1, 0600);
+
+            $manifest = [
+                'rollback_permission_denial' => [
+                    'probe_name' => 'rollback_permission_denial',
+                    'client_event_id' => $wrongEventId1, // Self-consistent wrong ID
+                    'report_file' => 'probe_rollback_permission_denial_report.json',
+                    'report_sha256' => $repSha1,
+                    'reconciliation_file' => 'probe_rollback_permission_denial_reconciliation.json',
+                    'reconciliation_sha256' => $recSha,
+                    'expected_http_status' => 403,
+                    'actual_http_status' => 403,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_insufficient_stock' => [
+                    'probe_name' => 'rollback_insufficient_stock',
+                    'client_event_id' => '22222222-2222-4222-8222-222222222222',
+                    'report_file' => 'probe_rollback_insufficient_stock_report.json',
+                    'report_sha256' => str_repeat('1', 64),
+                    'reconciliation_file' => 'probe_rollback_insufficient_stock_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('2', 64),
+                    'expected_http_status' => 422,
+                    'actual_http_status' => 422,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+                'rollback_controlled_after_posting' => [
+                    'probe_name' => 'rollback_controlled_after_posting',
+                    'client_event_id' => '33333333-3333-4333-8333-333333333333',
+                    'report_file' => 'probe_rollback_controlled_after_posting_report.json',
+                    'report_sha256' => str_repeat('3', 64),
+                    'reconciliation_file' => 'probe_rollback_controlled_after_posting_reconciliation.json',
+                    'reconciliation_sha256' => str_repeat('4', 64),
+                    'expected_http_status' => 500,
+                    'actual_http_status' => 500,
+                    'zero_delta_verified' => true,
+                    'reconciliations_healthy' => true,
+                ],
+            ];
+            $manifestBytes = json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+            $manifestFile = $tmpDir . '/probe_reports_manifest.json';
+            file_put_contents($manifestFile, $manifestBytes);
+            chmod($manifestFile, 0600);
+            $manifestSha = hash('sha256', $manifestBytes);
+
+            $trustedReport = [
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => $runId,
+                'event_id' => $primaryEventId,
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'company_id' => 1,
+                'source_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'handoff_digest' => str_repeat('a', 64),
+                'baseline_hash' => str_repeat('b', 64),
+                'is_canonical_delta_valid' => true,
+                'gl_batches_balanced' => true,
+                'all_healthy' => true,
+                'rollback_probes_manifest' => $manifest,
+                'advanced_control_packet_digest' => $acpSha,
+                'probe_event_ids' => $acpData['probe_event_ids'],
+            ];
+
+            $evidence = [
+                'contract_version' => 'v2_advanced_probe_evidence_v1',
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => $runId,
+                'client_event_id' => $primaryEventId,
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'handoff_sha256' => str_repeat('a', 64),
+                'backend_head' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'android_publication_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'android_executable_head' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'scenarios' => [],
+            ];
+            $expectedPins = [
+                'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
+                'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'expectedProbeReportsManifestSha' => $manifestSha,
+                'probeReportsManifestPath' => $manifestFile,
+                'advancedControlPacketPath' => $acpFile,
+                'expectedAdvancedControlPacketSha' => $acpSha,
+            ];
+
+            $res = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $expectedPins, $trustedReport);
+            $this->assertFalse($res['is_valid']);
+            $errString = implode('; ', $res['errors']);
+            $this->assertStringContainsString('Manifest entry client_event_id for \'rollback_permission_denial\' mismatch vs verified ACP', $errString);
+            $this->assertStringContainsString('Referenced probe report client_event_id for \'rollback_permission_denial\' mismatch vs verified ACP', $errString);
+        } finally {
+            foreach (glob($tmpDir . '/*') as $f) {
+                @unlink($f);
+            }
+            if (is_dir($tmpDir)) {
+                @rmdir($tmpDir);
+            }
+        }
+    }
+
+    #[Test]
+    public function test_validate_advanced_control_packet_refuses_primary_event_id_collision(): void
+    {
+        $primaryEventId = '99999999-9999-4999-8999-999999999999';
+
+        $collidingAcp = [
+            'probe_event_ids' => [
+                'permission_denial' => '99999999-9999-4999-8999-999999999999', // Collides with primary target
+                'insufficient_stock' => '22222222-2222-4222-8222-222222222222',
+                'controlled_fault_after_posting' => '33333333-3333-4333-8333-333333333333',
+            ],
+        ];
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage("collides with primary target event ID '{$primaryEventId}'");
+        DisposableFinancialPostRunInspector::validateAdvancedControlPacket($collidingAcp, $primaryEventId);
+    }
+
+    #[Test]
+    public function test_containment_refusal_stops_without_external_reads_on_sentinel(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/test_containment_' . bin2hex(random_bytes(6));
+        $sentinelDir = sys_get_temp_dir() . '/test_sentinel_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+        mkdir($sentinelDir, 0700, true);
+
+        $sentinelFile = $sentinelDir . '/probe_rollback_permission_denial_report.json';
+        file_put_contents($sentinelFile, '{"sensitive_secret":"sentinel_canary"}');
+        chmod($sentinelFile, 0600);
+
+        $sentinelReadAttempted = false;
+        DisposableFinancialPostRunInspector::$negativeReadGuard = function (string $path, string $context) use (&$sentinelReadAttempted, $sentinelFile): void {
+            if (realpath($path) === realpath($sentinelFile)) {
+                $sentinelReadAttempted = true;
+            }
+        };
+
+        try {
+            // Attempt to load sentinel file through containment check pointing to $tmpDir
+            $threw = false;
+            try {
+                DisposableFinancialPostRunInspector::loadSecureContainedFile(
+                    $sentinelFile,
+                    $tmpDir,
+                    'probe_rollback_permission_denial_report.json',
+                    'SENTINEL_PROBE'
+                );
+            } catch (\RuntimeException $e) {
+                $threw = true;
+                $this->assertStringContainsString('CONTAINMENT_VIOLATION', $e->getMessage());
+            }
+            $this->assertTrue($threw, 'Containment check did not throw for out-of-root file');
+            $this->assertFalse($sentinelReadAttempted, 'Negative read guard was triggered; out-of-root file was read despite containment failure!');
+        } finally {
+            DisposableFinancialPostRunInspector::$negativeReadGuard = null;
+            @unlink($sentinelFile);
+            @rmdir($sentinelDir);
+            foreach (glob($tmpDir . '/*') as $f) {
+                @unlink($f);
+            }
+            @rmdir($tmpDir);
+        }
+    }
+
+    #[Test]
+    public function test_supervisor_and_cli_command_builders_wire_mandatory_acp_flags(): void
+    {
+        $cliPath = dirname(__DIR__, 3) . '/Support/Harness/financial-inspector-cli.php';
+        $this->assertFileExists($cliPath);
+
+        // 1. CLI --compose-trusted-report in advanced scope without --acp-file exits 1
+        $proc1 = new \Symfony\Component\Process\Process([
+            PHP_BINARY,
+            $cliPath,
+            '--compose-trusted-report',
+            '--baseline-file=' . __FILE__,
+            '--delta-file=' . __FILE__,
+            '--reconcile-file=' . __FILE__,
+            '--schema=accounting_p8_tmp_0123456789ab',
+            '--company-id=1',
+            '--run-id=88888888-8888-4888-8888-888888888888',
+            '--expected-backend-head=4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            '--expected-handoff-digest=' . str_repeat('a', 64),
+            '--expected-event-id=99999999-9999-4999-8999-999999999999',
+            '--expected-scope=ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            '--probe-reports-manifest=' . __FILE__,
+            '--expected-probe-manifest-sha=' . hash_file('sha256', __FILE__),
+        ]);
+        $proc1->run();
+        $this->assertSame(1, $proc1->getExitCode());
+        $this->assertStringContainsString('requires --acp-file', $proc1->getErrorOutput());
+
+        // 2. CLI --validate-evidence with --advanced-probes without --acp-file exits 1
+        $proc2 = new \Symfony\Component\Process\Process([
+            PHP_BINARY,
+            $cliPath,
+            '--validate-evidence=' . __FILE__,
+            '--trusted-db-report=' . __FILE__,
+            '--expected-evidence-sha=' . hash_file('sha256', __FILE__),
+            '--expected-db-report-sha=' . hash_file('sha256', __FILE__),
+            '--expected-backend-head=4815546d4d00ffe82d428fb490981f96b60cf5d9',
+            '--expected-android-pub=' . DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+            '--expected-android-exe=' . DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+            '--expected-handoff-digest=' . str_repeat('a', 64),
+            '--expected-baseline-hash=' . str_repeat('b', 64),
+            '--expected-payload-digest=' . str_repeat('c', 64),
+            '--expected-scope=ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+            '--schema=accounting_p8_tmp_0123456789ab',
+            '--company-id=1',
+            '--run-id=88888888-8888-4888-8888-888888888888',
+            '--expected-event-id=99999999-9999-4999-8999-999999999999',
+            '--advanced-probes',
+            '--probe-reports-manifest=' . __FILE__,
+            '--expected-probe-manifest-sha=' . hash_file('sha256', __FILE__),
+        ]);
+        $proc2->run();
+        $this->assertSame(1, $proc2->getExitCode());
+        $this->assertStringContainsString('--acp-file=<path> is mandatory', $proc2->getErrorOutput());
     }
 }
