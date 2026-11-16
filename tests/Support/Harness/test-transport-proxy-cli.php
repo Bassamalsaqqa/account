@@ -136,12 +136,41 @@ try {
     exit(1);
 }
 
-// 5. Construct proxy configuration with fixed loopback ports only
+// 5. Verified DisposableMariaDbSchema DB ownership proof assertion
+$targetSchema = (string) ($config['target_schema'] ?? '');
+$proofPath = (string) ($config['proof_path'] ?? '');
+$proofNonce = (string) ($config['proof_nonce'] ?? '');
+
+if ($proofPath === '' || $proofNonce === '') {
+    fwrite(STDERR, "Error: Config missing mandatory proof_path or proof_nonce for schema ownership assertion.\n");
+    exit(1);
+}
+
+try {
+    verifyPathSecurity($proofPath, 'DB ownership proof file', 0600);
+    if (! preg_match('/^[0-9a-f]{32,64}$/', $proofNonce)) {
+        throw new RuntimeException('DB ownership proof nonce must be 32-64 hex characters.');
+    }
+
+    putenv('APP_ENV=testing');
+    putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+    putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofPath}");
+    putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+    putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+    putenv('PHASE8_TEST_DB_PORT=3342');
+
+    \Tests\Support\DisposableMariaDbSchema::assertPrimarySchema($targetSchema);
+} catch (\Throwable $e) {
+    fwrite(STDERR, "Error: DB schema ownership proof assertion failed: {$e->getMessage()}\n");
+    exit(1);
+}
+
+// 6. Construct proxy configuration with fixed loopback ports only
 $proxyConfig = [
     'listen_port' => DisposableMobileV2BackendHarness::BACKEND_LOOPBACK_PORT,
     'upstream_port' => DisposableMobileV2BackendHarness::BACKEND_INTERNAL_PORT,
     'target_event_id' => (string) ($config['target_event_id'] ?? ''),
-    'target_schema' => (string) ($config['target_schema'] ?? ''),
+    'target_schema' => $targetSchema,
     'target_company_id' => (int) ($config['target_company_id'] ?? 0),
     'target_company_public_id' => (string) ($config['target_company_public_id'] ?? ''),
     'expected_digest' => (string) ($config['expected_digest'] ?? ''),
@@ -151,7 +180,8 @@ $proxyConfig = [
     'db_port' => TestTransportProxy::DEFAULT_DB_PORT,
     'db_user' => $dbUser,
     'db_password' => $dbPass,
-    'owner_pid' => isset($config['owner_pid']) ? (int) $config['owner_pid'] : null,
+    'owner_pid' => (int) ($config['owner_pid'] ?? 0),
+    'ttl_expires_at' => $ttlExpiresAt,
 ];
 
 try {

@@ -5365,7 +5365,11 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
             'target_schema' => 'accounting_p8_tmp_0123456789ab',
             'target_company_id' => 1,
             'target_company_public_id' => $targetCompanyUlid,
+            'expected_digest' => str_repeat('a', 64),
+            'target_nonce_hash' => str_repeat('b', 64),
             'witness_path' => '/tmp/lost_ack_suppression_witness.json',
+            'owner_pid' => getmypid(),
+            'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
         ]);
 
         $validBody = json_encode(['client_event_id' => $targetEventId, 'amount' => '58.000000']);
@@ -5398,6 +5402,130 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
         // 7. Malformed JSON body FAILS
         $this->assertFalse($proxy->isTargetRequest('POST', $validPath, 'not-json'));
+    }
+
+    #[Test]
+    public function test_test_transport_proxy_constructor_refuses_arbitrary_ports_and_hosts(): void
+    {
+        $baseConfig = [
+            'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'target_schema' => 'accounting_p8_tmp_0123456789ab',
+            'target_company_id' => 1,
+            'target_company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'expected_digest' => str_repeat('a', 64),
+            'target_nonce_hash' => str_repeat('b', 64),
+            'witness_path' => '/tmp/lost_ack_suppression_witness.json',
+            'owner_pid' => getmypid(),
+            'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+        ];
+
+        // Arbitrary listen port rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, ['listen_port' => 8080]));
+            $this->fail('Expected InvalidArgumentException for non-fixed listen_port');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('listen_port must be fixed to 18080', $e->getMessage());
+        }
+
+        // Arbitrary upstream port rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, ['upstream_port' => 8081]));
+            $this->fail('Expected InvalidArgumentException for non-fixed upstream_port');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('upstream_port must be fixed to 18081', $e->getMessage());
+        }
+
+        // Arbitrary db host rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, ['db_host' => '10.0.0.1']));
+            $this->fail('Expected InvalidArgumentException for non-fixed db_host');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString("db_host must be fixed to '127.0.0.1'", $e->getMessage());
+        }
+
+        // Arbitrary db port rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, ['db_port' => 3306]));
+            $this->fail('Expected InvalidArgumentException for non-fixed db_port');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('db_port must be fixed to 3342', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function test_test_transport_proxy_constructor_refuses_missing_or_dead_owner_pid(): void
+    {
+        $baseConfig = [
+            'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'target_schema' => 'accounting_p8_tmp_0123456789ab',
+            'target_company_id' => 1,
+            'target_company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'expected_digest' => str_repeat('a', 64),
+            'target_nonce_hash' => str_repeat('b', 64),
+            'witness_path' => '/tmp/lost_ack_suppression_witness.json',
+            'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+        ];
+
+        // Missing owner_pid rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy($baseConfig);
+            $this->fail('Expected InvalidArgumentException for missing owner_pid');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('owner_pid is mandatory and must be a positive integer', $e->getMessage());
+        }
+
+        // Negative owner_pid rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, ['owner_pid' => -1]));
+            $this->fail('Expected InvalidArgumentException for negative owner_pid');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('owner_pid is mandatory and must be a positive integer', $e->getMessage());
+        }
+    }
+
+    #[Test]
+    public function test_test_transport_proxy_constructor_refuses_missing_or_invalid_digest_and_nonce_hash(): void
+    {
+        $baseConfig = [
+            'target_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'target_schema' => 'accounting_p8_tmp_0123456789ab',
+            'target_company_id' => 1,
+            'target_company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'witness_path' => '/tmp/lost_ack_suppression_witness.json',
+            'owner_pid' => getmypid(),
+            'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
+        ];
+
+        // Missing expected_digest rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, [
+                'target_nonce_hash' => str_repeat('b', 64),
+            ]));
+            $this->fail('Expected InvalidArgumentException for missing expected_digest');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('expected_digest is mandatory', $e->getMessage());
+        }
+
+        // Short expected_digest rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, [
+                'expected_digest' => 'not64hex',
+                'target_nonce_hash' => str_repeat('b', 64),
+            ]));
+            $this->fail('Expected InvalidArgumentException for short expected_digest');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('expected_digest is mandatory and must be a 64-hex lowercase SHA-256 string', $e->getMessage());
+        }
+
+        // Missing target_nonce_hash rejected
+        try {
+            new \Tests\Support\Harness\TestTransportProxy(array_merge($baseConfig, [
+                'expected_digest' => str_repeat('a', 64),
+            ]));
+            $this->fail('Expected InvalidArgumentException for missing target_nonce_hash');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('target_nonce_hash is mandatory', $e->getMessage());
+        }
     }
 
     #[Test]
@@ -5438,6 +5566,141 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
         $this->assertSame($expectedHash, $digest);
         $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $digest);
+    }
+
+    #[Test]
+    public function test_witness_artifact_contract_alignment_and_strict_validation(): void
+    {
+        $tmpDir = sys_get_temp_dir() . '/guard_witness_test_' . bin2hex(random_bytes(6));
+        mkdir($tmpDir, 0700, true);
+        $witnessPath = $tmpDir . '/lost_ack_suppression_witness.json';
+
+        $witnessData = [
+            'contract_version' => 'lost_ack_witness_v1',
+            'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+            'network_witness_state' => 'CAPTURED_REAL_TRANSPORT_DROP',
+            'timestamp_iso8601' => gmdate('Y-m-d\TH:i:s\Z'),
+            'event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+            'schema_name' => 'accounting_p8_tmp_0123456789ab',
+            'company_id' => 1,
+            'company_public_id' => '01M7CZPF6TP283F3ZRXF5P8GT2',
+            'target_nonce_hash' => str_repeat('b', 64),
+            'response_status_code_before_suppression' => 201,
+            'db_commit_verified' => true,
+            'proxy_socket_closed_without_response' => true,
+            'client_socket_dropped' => true,
+            'bytes_forwarded' => 0,
+            'sales_invoice_id' => 10,
+            'customer_payment_id' => 20,
+            'payload_digest' => str_repeat('c', 64),
+        ];
+
+        file_put_contents($witnessPath, json_encode($witnessData, JSON_PRETTY_PRINT));
+        chmod($witnessPath, 0600);
+
+        try {
+            $evidenceJson = [
+                'contract_version' => 'v2_advanced_probe_evidence_v1',
+                'scope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
+                'run_id' => '019ea456-0000-7000-8000-000000000001',
+                'client_event_id' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'schema_name' => 'accounting_p8_tmp_0123456789ab',
+                'handoff_sha256' => str_repeat('a', 64),
+                'backend_head' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+                'android_publication_head' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'android_executable_head' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'source_pins' => [
+                    'source_fixture_sha256' => str_repeat('d', 64),
+                    'guard_test_sha256' => str_repeat('e', 64),
+                    'cli_command_sha256' => str_repeat('f', 64),
+                    'cli_runner_sha256' => str_repeat('0', 64),
+                ],
+                'scenarios' => [
+                    ['name' => 'readiness_probe', 'status' => 'PASS', 'httpStatusCode' => 200],
+                    ['name' => 'financial_cash_fresh_commit_201', 'status' => 'PASS', 'httpStatusCode' => 201],
+                    ['name' => 'financial_cash_idempotent_replay_200', 'status' => 'PASS', 'httpStatusCode' => 200],
+                    ['name' => 'financial_cash_event_status_posted', 'status' => 'PASS', 'httpStatusCode' => 200],
+                    ['name' => 'financial_cash_tamper_409', 'status' => 'PASS', 'httpStatusCode' => 409],
+                    ['name' => 'transport_lost_ack_recovery', 'status' => 'PASS', 'httpStatusCode' => 200],
+                    ['name' => 'stock_permission_rollback_probes', 'status' => 'PASS', 'httpStatusCode' => 403],
+                ],
+                'lost_ack_recovery_evidence' => [
+                    'suppression_mode' => 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP',
+                    'network_witness_state' => 'CAPTURED_REAL_TRANSPORT_DROP',
+                    'suppression_witness_file' => $witnessPath,
+                    'server_commit_verified_before_suppression' => true,
+                    'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
+                    'recovery_http_status' => 200,
+                    'receipt_status' => 'posted',
+                    'matching_payload_digest' => str_repeat('c', 64),
+                ],
+                'rollback_probes_evidence' => [
+                    'probes' => [
+                        [
+                            'probe_name' => 'permission_denial',
+                            'client_event_id' => '00000000-0000-0000-0000-000000000001',
+                            'actual_http_status' => 403,
+                            'expected_http_status' => 403,
+                            'economic_delta_zero' => true,
+                            'reconciliations_healthy' => true,
+                            'issue_count' => 0,
+                        ],
+                        [
+                            'probe_name' => 'insufficient_stock',
+                            'client_event_id' => '00000000-0000-0000-0000-000000000002',
+                            'actual_http_status' => 422,
+                            'expected_http_status' => 422,
+                            'economic_delta_zero' => true,
+                            'reconciliations_healthy' => true,
+                            'issue_count' => 0,
+                        ],
+                        [
+                            'probe_name' => 'controlled_fault_after_posting',
+                            'client_event_id' => '00000000-0000-0000-0000-000000000003',
+                            'actual_http_status' => 500,
+                            'expected_http_status' => 500,
+                            'economic_delta_zero' => true,
+                            'reconciliations_healthy' => true,
+                            'issue_count' => 0,
+                        ],
+                    ],
+                ],
+            ];
+
+            $expectedPins = [
+                'expectedRunId' => '019ea456-0000-7000-8000-000000000001',
+                'expectedClientEventId' => 'c0686be5-888f-4890-90bf-1f05f416a19a',
+                'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+                'expectedHandoffSha' => str_repeat('a', 64),
+                'backendExecutionHead' => '15fe4f388aeaa41e51aff780287d484d51101f4c',
+                'clientPublicationHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
+                'clientExecutableHead' => \Tests\Support\Harness\DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
+                'expectedPayloadDigest' => str_repeat('c', 64),
+                'expectedSourcePins' => [
+                    'source_fixture_sha256' => str_repeat('d', 64),
+                    'guard_test_sha256' => str_repeat('e', 64),
+                    'cli_command_sha256' => str_repeat('f', 64),
+                    'cli_runner_sha256' => str_repeat('0', 64),
+                ],
+            ];
+
+            $res = \Tests\Support\Harness\DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidenceJson, $expectedPins);
+            $this->assertTrue($res['is_valid'], 'Expected valid evidence with aligned witness file. Errors: ' . implode('; ', $res['errors']));
+        } finally {
+            @unlink($witnessPath);
+            @rmdir($tmpDir);
+        }
+    }
+
+    #[Test]
+    public function test_capture_rollback_probe_snapshot_rejects_non_positive_company_id(): void
+    {
+        $pdo = (new \ReflectionClass(\PDO::class))->newInstanceWithoutConstructor();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('captureRollbackProbeSnapshot requires positive companyId');
+
+        \Tests\Support\Harness\DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot($pdo, 0);
     }
 }
 

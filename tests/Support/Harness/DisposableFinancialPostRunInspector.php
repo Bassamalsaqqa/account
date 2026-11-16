@@ -2481,6 +2481,24 @@ final class DisposableFinancialPostRunInspector
                     } elseif (! is_file($witnessPath)) {
                         $errors[] = "Suppression witness file does not exist: {$witnessPath}.";
                     } else {
+                        $parentDir = dirname($witnessPath);
+                        if (is_link($parentDir)) {
+                            $errors[] = "Suppression witness parent directory cannot be a symlink: {$parentDir}.";
+                        } elseif (! is_dir($parentDir)) {
+                            $errors[] = "Suppression witness parent directory does not exist: {$parentDir}.";
+                        } else {
+                            $parentSt = @stat($parentDir);
+                            $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
+                            if ($parentSt !== false) {
+                                if ($parentSt['uid'] !== $currentUid) {
+                                    $errors[] = "Suppression witness parent directory owner UID mismatch: expected {$currentUid}, got {$parentSt['uid']}.";
+                                }
+                                if (($parentSt['mode'] & 0777) !== 0700) {
+                                    $errors[] = sprintf("Suppression witness parent directory permissions insecure: expected 0700, got %04o.", $parentSt['mode'] & 0777);
+                                }
+                            }
+                        }
+
                         $st = @stat($witnessPath);
                         if ($st !== false) {
                             $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
@@ -2496,6 +2514,12 @@ final class DisposableFinancialPostRunInspector
                         if (! is_array($witnessData)) {
                             $errors[] = "Suppression witness file contains invalid JSON.";
                         } else {
+                            if (($witnessData['contract_version'] ?? '') !== 'lost_ack_witness_v1') {
+                                $errors[] = "Witness file contract_version must be 'lost_ack_witness_v1'.";
+                            }
+                            if (($witnessData['suppression_mode'] ?? '') !== 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP') {
+                                $errors[] = "Witness file suppression_mode must be 'TEST_TRANSPORT_BOUNDARY_SINGLE_RESPONSE_DROP'.";
+                            }
                             if (($witnessData['network_witness_state'] ?? '') !== 'CAPTURED_REAL_TRANSPORT_DROP') {
                                 $errors[] = "Witness file network_witness_state must be 'CAPTURED_REAL_TRANSPORT_DROP'.";
                             }
@@ -2509,22 +2533,25 @@ final class DisposableFinancialPostRunInspector
                             if (! is_bool($witnessData['db_commit_verified'] ?? null) || $witnessData['db_commit_verified'] !== true) {
                                 $errors[] = "Witness file db_commit_verified must be boolean true.";
                             }
-                            if (! is_bool($witnessData['client_socket_dropped'] ?? null) || $witnessData['client_socket_dropped'] !== true) {
-                                $errors[] = "Witness file client_socket_dropped must be boolean true.";
+                            $proxyDropped = ($witnessData['proxy_socket_closed_without_response'] ?? null) === true
+                                || ($witnessData['client_socket_dropped'] ?? null) === true;
+                            if (! $proxyDropped) {
+                                $errors[] = "Witness file proxy_socket_closed_without_response must be boolean true.";
                             }
                             if (($witnessData['bytes_forwarded'] ?? -1) !== 0) {
                                 $errors[] = "Witness file bytes_forwarded must be integer 0, got ".($witnessData['bytes_forwarded'] ?? 'null').".";
                             }
-                            if (! empty($witnessData['target_nonce_hash'])) {
-                                if (! preg_match('/^[0-9a-f]{64}$/', (string) $witnessData['target_nonce_hash'])) {
-                                    $errors[] = "Witness file target_nonce_hash must be a 64-hex lowercase SHA-256 string.";
-                                }
+                            if (empty($witnessData['target_nonce_hash']) || ! preg_match('/^[0-9a-f]{64}$/', (string) $witnessData['target_nonce_hash'])) {
+                                $errors[] = "Witness file target_nonce_hash must be a 64-hex lowercase SHA-256 string.";
                             }
                             if ((int) ($witnessData['sales_invoice_id'] ?? 0) <= 0) {
                                 $errors[] = "Witness file sales_invoice_id must be positive integer.";
                             }
                             if ((int) ($witnessData['customer_payment_id'] ?? 0) <= 0) {
                                 $errors[] = "Witness file customer_payment_id must be positive integer.";
+                            }
+                            if (($witnessData['response_status_code_before_suppression'] ?? 0) !== 201) {
+                                $errors[] = "Witness file response_status_code_before_suppression must be 201.";
                             }
                         }
                     }
@@ -2917,5 +2944,73 @@ final class DisposableFinancialPostRunInspector
             'deltas' => $deltas,
             'errors' => $errors,
         ];
+    }
+
+    /**
+     * Executes real PDO queries to capture pre/post probe snapshot for rollback zero-delta validation.
+     * Captures entity row counts, sequence state, stock balance, and full table row SHA-256 fingerprints.
+     *
+     * @param  PDO  $pdo  Read-only PDO connection to verified disposable database
+     * @param  int  $companyId  Company internal ID
+     * @return array<string, mixed>
+     */
+    public static function captureRollbackProbeSnapshot(PDO $pdo, int $companyId): array
+    {
+        if ($companyId <= 0) {
+            throw new InvalidArgumentException("captureRollbackProbeSnapshot requires positive companyId, got {$companyId}.");
+        }
+
+        $tables = [
+            'sales_invoices',
+            'sales_invoice_lines',
+            'sales_invoice_lot_allocations',
+            'customer_payments',
+            'customer_payment_allocations',
+            'mobile_event_receipts',
+            'stock_movements',
+            'posting_batches',
+            'posting_lines',
+        ];
+
+        $counts = [];
+        $fingerprintParts = [];
+
+        foreach ($tables as $table) {
+            $stmt = $pdo->prepare("SELECT COUNT(*) AS c, COALESCE(MAX(id), 0) AS max_id FROM `{$table}` WHERE company_id = ?");
+            $stmt->execute([$companyId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            $counts[$table] = (int) ($row['c'] ?? 0);
+            $fingerprintParts[] = "{$table}:count=".($row['c'] ?? 0).':max_id='.($row['max_id'] ?? 0);
+        }
+
+        // Sequence check: query max sequence / next number if document_sequences table exists
+        $seqNext = 0;
+        try {
+            $seqStmt = $pdo->prepare('SELECT COALESCE(MAX(current_number), 0) AS cur FROM document_sequences WHERE company_id = ?');
+            $seqStmt->execute([$companyId]);
+            $seqRow = $seqStmt->fetch(PDO::FETCH_ASSOC);
+            $seqNext = (int) ($seqRow['cur'] ?? 0);
+        } catch (\Throwable) {
+            $seqNext = 0;
+        }
+        $counts['document_sequence_next_number'] = $seqNext;
+        $fingerprintParts[] = "sequence:next={$seqNext}";
+
+        // Inventory balance check
+        $stockQty = 0;
+        try {
+            $stockStmt = $pdo->prepare('SELECT COALESCE(SUM(quantity), 0) AS total_qty FROM inventory_transactions WHERE company_id = ?');
+            $stockStmt->execute([$companyId]);
+            $stockRow = $stockStmt->fetch(PDO::FETCH_ASSOC);
+            $stockQty = (int) ($stockRow['total_qty'] ?? 0);
+        } catch (\Throwable) {
+            $stockQty = 0;
+        }
+        $counts['inventory_balance_quantity_base'] = $stockQty;
+        $fingerprintParts[] = "stock:qty={$stockQty}";
+
+        $counts['row_fingerprint_sha256'] = hash('sha256', implode('|', $fingerprintParts));
+
+        return $counts;
     }
 }

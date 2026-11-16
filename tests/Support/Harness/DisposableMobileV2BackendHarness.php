@@ -173,6 +173,16 @@ final class DisposableMobileV2BackendHarness
         return $this->caddyProcess?->getPid();
     }
 
+    public function getProxyProcess(): ?Process
+    {
+        return $this->proxyProcess;
+    }
+
+    public function getProxyPid(): ?int
+    {
+        return $this->proxyProcess?->getPid();
+    }
+
     public function getCredentialsFilePath(): ?string
     {
         return $this->credentialsFilePath;
@@ -315,6 +325,20 @@ final class DisposableMobileV2BackendHarness
         $expectedUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
         if ((int) ($config['target_uid'] ?? -1) !== $expectedUid) {
             throw new \InvalidArgumentException("Lost ACK target_uid mismatch: expected current process UID {$expectedUid}.");
+        }
+        if (empty($config['target_company_id']) || (int) $config['target_company_id'] <= 0) {
+            throw new \InvalidArgumentException('Lost ACK target_company_id must be a positive integer.');
+        }
+        if (empty($config['target_company_public_id']) || ! preg_match('/^01[0-9A-HJ-KM-NP-TV-Z]{24}$/', (string) $config['target_company_public_id'])) {
+            throw new \InvalidArgumentException("Lost ACK target_company_public_id must be a valid ULID, got '".($config['target_company_public_id'] ?? 'null')."'.");
+        }
+        if (empty($config['expected_digest']) || ! preg_match('/^[0-9a-f]{64}$/', (string) $config['expected_digest'])) {
+            throw new \InvalidArgumentException('Lost ACK expected_digest must be a 64-hex lowercase SHA-256 string.');
+        }
+        if (empty($config['target_nonce_hash'])) {
+            $config['target_nonce_hash'] = hash('sha256', (string) $config['target_nonce']);
+        } elseif (! preg_match('/^[0-9a-f]{64}$/', (string) $config['target_nonce_hash'])) {
+            throw new \InvalidArgumentException('Lost ACK target_nonce_hash must be a 64-hex lowercase SHA-256 string.');
         }
 
         $this->lostAckSuppression = $config;
@@ -2150,6 +2174,16 @@ PHP;
 
             // If suppression active, launch test transport proxy mediating on BACKEND_LOOPBACK_PORT
             if ($isSuppressionActive) {
+                if ($this->companyId === null || $this->companyId <= 0) {
+                    throw new RuntimeException('Transport proxy start refused: harness companyId is uninitialized.');
+                }
+                if ($this->companyPublicId === null || $this->companyPublicId === '') {
+                    throw new RuntimeException('Transport proxy start refused: harness companyPublicId is uninitialized.');
+                }
+                if ($this->proofPath === null || $this->proofNonce === null) {
+                    throw new RuntimeException('Transport proxy start refused: harness DB ownership proof is uninitialized.');
+                }
+
                 $dbCredentialsPath = $bootstrapDir.'/proxy_db_credentials.json';
                 file_put_contents($dbCredentialsPath, json_encode([
                     'db_user' => $dbSettings['USERNAME'],
@@ -2158,6 +2192,8 @@ PHP;
                 chmod($dbCredentialsPath, 0600);
 
                 $targetNonce = (string) ($this->lostAckSuppression['target_nonce'] ?? '');
+                $targetNonceHash = (string) ($this->lostAckSuppression['target_nonce_hash'] ?? hash('sha256', $targetNonce));
+                $expectedDigest = (string) ($this->lostAckSuppression['expected_digest'] ?? '');
                 $proxyConfigFile = $bootstrapDir.'/test_transport_proxy_config.json';
                 file_put_contents($proxyConfigFile, json_encode([
                     'scope' => self::SCOPE_ADVANCED_EXECUTION,
@@ -2165,11 +2201,13 @@ PHP;
                     'ttl_expires_at' => (new \DateTimeImmutable('+10 minutes', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM),
                     'target_event_id' => $this->lostAckSuppression['target_event_id'] ?? '',
                     'target_schema' => $schemaName,
-                    'target_company_id' => $this->companyId ?? 1,
-                    'target_company_public_id' => $this->companyPublicId ?? '01M7CZPF6TP283F3ZRXF5P8GT2',
-                    'target_nonce_hash' => hash('sha256', $targetNonce),
-                    'expected_digest' => (string) ($this->lostAckSuppression['expected_digest'] ?? ''),
+                    'target_company_id' => $this->companyId,
+                    'target_company_public_id' => $this->companyPublicId,
+                    'target_nonce_hash' => $targetNonceHash,
+                    'expected_digest' => $expectedDigest,
                     'credentials_file' => $dbCredentialsPath,
+                    'proof_path' => $this->proofPath,
+                    'proof_nonce' => $this->proofNonce,
                     'witness_path' => $bootstrapDir.'/lost_ack_suppression_witness.json',
                     'listen_port' => self::BACKEND_LOOPBACK_PORT,
                     'upstream_port' => self::BACKEND_INTERNAL_PORT,

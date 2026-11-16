@@ -417,8 +417,27 @@ class MobileV2HarnessCommand extends Command
                 $manifest = $provision['manifest'];
                 $targetEventId = (string) ($manifest['sample_event_id'] ?? '');
                 $targetSchema = (string) ($manifest['schema_name'] ?? '');
-                $companyId = $harness->getCompanyId() ?? 1;
-                $targetNonce = bin2hex(random_bytes(16));
+
+                $companyId = $harness->getCompanyId();
+                if ($companyId === null || $companyId <= 0) {
+                    throw new \RuntimeException('Advanced probe execution refused: harness companyId is uninitialized.');
+                }
+
+                $companyPublicId = $harness->getCompanyPublicId();
+                if ($companyPublicId === null || $companyPublicId === '') {
+                    throw new \RuntimeException('Advanced probe execution refused: harness companyPublicId is uninitialized.');
+                }
+
+                $targetNonce = $harness->getProofNonce() ?? $harness->getHarnessNonce();
+                if ($targetNonce === null || $targetNonce === '') {
+                    throw new \RuntimeException('Advanced probe execution refused: harness proof nonce is uninitialized.');
+                }
+
+                $canonicalDigest = (string) ($provision['canonical_digest'] ?? '');
+                if ($canonicalDigest === '' || ! preg_match('/^[0-9a-f]{64}$/', $canonicalDigest)) {
+                    throw new \RuntimeException('Advanced probe execution refused: provision canonical_digest must be 64-hex lowercase SHA-256.');
+                }
+
                 $currentUid = function_exists('posix_getuid') ? posix_getuid() : getmyuid();
 
                 $harness->configureLostAckSuppression([
@@ -428,9 +447,11 @@ class MobileV2HarnessCommand extends Command
                     'target_event_id' => $targetEventId,
                     'target_schema' => $targetSchema,
                     'target_nonce' => $targetNonce,
+                    'target_nonce_hash' => hash('sha256', $targetNonce),
                     'target_uid' => $currentUid,
-                    'expected_digest' => (string) ($provision['canonical_digest'] ?? ''),
+                    'expected_digest' => $canonicalDigest,
                     'target_company_id' => $companyId,
+                    'target_company_public_id' => $companyPublicId,
                 ]);
 
                 // Reset simulated fault stage to null for initial run; set per probe during probe execution

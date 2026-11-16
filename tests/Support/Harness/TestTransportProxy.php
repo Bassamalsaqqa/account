@@ -34,6 +34,7 @@ class TestTransportProxy
     public const DEFAULT_LISTEN_PORT = 18080;
     public const DEFAULT_UPSTREAM_PORT = 18081;
     public const DEFAULT_DB_PORT = 3342;
+    public const DEFAULT_DB_HOST = '127.0.0.1';
     public const MAX_HEADER_BYTES = 16384;      // 16 KB
     public const MAX_BODY_BYTES = 1048576;      // 1 MB
     public const MAX_REQUEST_DURATION_SECONDS = 10.0;
@@ -45,7 +46,8 @@ class TestTransportProxy
     private string $upstreamHost;
     private int $upstreamPort;
     private array $targetConfig;
-    private ?int $ownerPid;
+    private int $ownerPid;
+    private string $ttlExpiresAt;
     private bool $suppressionExecuted = false;
     private bool $running = false;
     /** @var resource|null */
@@ -59,14 +61,15 @@ class TestTransportProxy
      *     target_schema: string,
      *     target_company_id: int,
      *     target_company_public_id: string,
-     *     expected_digest?: string,
-     *     target_nonce_hash?: string,
+     *     expected_digest: string,
+     *     target_nonce_hash: string,
      *     witness_path: string,
      *     db_host?: string,
      *     db_port?: int,
      *     db_user?: string,
      *     db_password?: string,
-     *     owner_pid?: int|null
+     *     owner_pid: int,
+     *     ttl_expires_at: string
      * } $config
      */
     public function __construct(array $config)
@@ -74,27 +77,77 @@ class TestTransportProxy
         $this->validateConfig($config);
 
         $this->listenHost = '127.0.0.1';
-        $this->listenPort = $config['listen_port'] ?? self::DEFAULT_LISTEN_PORT;
+        $this->listenPort = self::DEFAULT_LISTEN_PORT;
         $this->upstreamHost = '127.0.0.1';
-        $this->upstreamPort = $config['upstream_port'] ?? self::DEFAULT_UPSTREAM_PORT;
-        $this->ownerPid = isset($config['owner_pid']) ? (int) $config['owner_pid'] : null;
+        $this->upstreamPort = self::DEFAULT_UPSTREAM_PORT;
+        $this->ownerPid = (int) $config['owner_pid'];
+        $this->ttlExpiresAt = (string) $config['ttl_expires_at'];
         $this->targetConfig = $config;
     }
 
     private function validateConfig(array $config): void
     {
+        // 1. Strict fixed ports & hosts enforcement: reject arbitrary ports and bypasses
+        if (isset($config['listen_port']) && (int) $config['listen_port'] !== self::DEFAULT_LISTEN_PORT) {
+            throw new InvalidArgumentException('TestTransportProxy: listen_port must be fixed to '.self::DEFAULT_LISTEN_PORT.', arbitrary ports refused.');
+        }
+        if (isset($config['upstream_port']) && (int) $config['upstream_port'] !== self::DEFAULT_UPSTREAM_PORT) {
+            throw new InvalidArgumentException('TestTransportProxy: upstream_port must be fixed to '.self::DEFAULT_UPSTREAM_PORT.', arbitrary ports refused.');
+        }
+        if (isset($config['db_host']) && (string) $config['db_host'] !== self::DEFAULT_DB_HOST) {
+            throw new InvalidArgumentException("TestTransportProxy: db_host must be fixed to '".self::DEFAULT_DB_HOST."', arbitrary hosts refused.");
+        }
+        if (isset($config['db_port']) && (int) $config['db_port'] !== self::DEFAULT_DB_PORT) {
+            throw new InvalidArgumentException('TestTransportProxy: db_port must be fixed to '.self::DEFAULT_DB_PORT.', arbitrary ports refused.');
+        }
+
+        // 2. Mandatory owner_pid: must be a positive integer and currently alive
+        if (! isset($config['owner_pid']) || ! is_int($config['owner_pid']) || (int) $config['owner_pid'] <= 0) {
+            throw new InvalidArgumentException('TestTransportProxy: owner_pid is mandatory and must be a positive integer.');
+        }
+        $ownerPid = (int) $config['owner_pid'];
+        if (function_exists('posix_kill') && ! @posix_kill($ownerPid, 0)) {
+            throw new RuntimeException("TestTransportProxy: owner process {$ownerPid} is not alive.");
+        }
+
+        // 3. Mandatory target_event_id: UUID format
         if (empty($config['target_event_id']) || ! preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', (string) $config['target_event_id'])) {
             throw new InvalidArgumentException("TestTransportProxy: target_event_id must be a valid UUID, got '".($config['target_event_id'] ?? '')."'.");
         }
+
+        // 4. Mandatory target_schema: disposable pattern
         if (empty($config['target_schema']) || ! preg_match('/^accounting_p8_tmp_[0-9a-f]{12}$/', (string) $config['target_schema'])) {
             throw new InvalidArgumentException("TestTransportProxy: target_schema must match disposable naming pattern, got '".($config['target_schema'] ?? '')."'.");
         }
+
+        // 5. Mandatory target_company_id & target_company_public_id
         if (empty($config['target_company_id']) || (int) $config['target_company_id'] <= 0) {
             throw new InvalidArgumentException('TestTransportProxy: target_company_id must be a positive integer.');
         }
         if (empty($config['target_company_public_id']) || ! preg_match('/^01[0-9A-HJ-KM-NP-TV-Z]{24}$/', (string) $config['target_company_public_id'])) {
             throw new InvalidArgumentException("TestTransportProxy: target_company_public_id must be a valid ULID, got '".($config['target_company_public_id'] ?? '')."'.");
         }
+
+        // 6. Mandatory expected_digest: strict 64-hex lowercase SHA-256
+        if (empty($config['expected_digest']) || ! preg_match('/^[0-9a-f]{64}$/', (string) $config['expected_digest'])) {
+            throw new InvalidArgumentException('TestTransportProxy: expected_digest is mandatory and must be a 64-hex lowercase SHA-256 string.');
+        }
+
+        // 7. Mandatory target_nonce_hash: strict 64-hex lowercase SHA-256
+        if (empty($config['target_nonce_hash']) || ! preg_match('/^[0-9a-f]{64}$/', (string) $config['target_nonce_hash'])) {
+            throw new InvalidArgumentException('TestTransportProxy: target_nonce_hash is mandatory and must be a 64-hex lowercase SHA-256 string.');
+        }
+
+        // 8. Mandatory ttl_expires_at: unexpired ISO 8601
+        if (empty($config['ttl_expires_at']) || ! is_string($config['ttl_expires_at'])) {
+            throw new InvalidArgumentException('TestTransportProxy: ttl_expires_at is mandatory.');
+        }
+        $exp = strtotime($config['ttl_expires_at']);
+        if ($exp === false || $exp <= time()) {
+            throw new InvalidArgumentException("TestTransportProxy: ttl_expires_at is expired or invalid ('{$config['ttl_expires_at']}').");
+        }
+
+        // 9. Mandatory witness_path
         if (empty($config['witness_path'])) {
             throw new InvalidArgumentException('TestTransportProxy: witness_path is mandatory.');
         }
@@ -149,16 +202,23 @@ class TestTransportProxy
         $this->running = true;
         $iteration = 0;
 
+        $serverStart = hrtime(true) / 1e9;
+        $serverDeadlineSeconds = max(1.0, (float) (strtotime($this->ttlExpiresAt) - time()));
+
         try {
             while ($this->running) {
                 if (function_exists('pcntl_signal_dispatch')) {
                     pcntl_signal_dispatch();
                 }
 
-                if ($this->ownerPid !== null && function_exists('posix_kill')) {
-                    if (! @posix_kill($this->ownerPid, 0)) {
-                        break;
-                    }
+                // Liveness check for owning parent PID
+                if (function_exists('posix_kill') && ! @posix_kill($this->ownerPid, 0)) {
+                    break;
+                }
+
+                // Overall monotonic deadline check
+                if (((hrtime(true) / 1e9) - $serverStart) >= $serverDeadlineSeconds) {
+                    break;
                 }
 
                 if ($maxIterations > 0 && $iteration >= $maxIterations) {
@@ -203,160 +263,221 @@ class TestTransportProxy
      */
     private function handleClientConnection($client): void
     {
-        stream_set_blocking($client, true);
-        $deadline = microtime(true) + self::MAX_REQUEST_DURATION_SECONDS;
+        $upstream = null;
+        try {
+            stream_set_blocking($client, true);
+            $deadline = (hrtime(true) / 1e9) + self::MAX_REQUEST_DURATION_SECONDS;
 
-        // 1. Read request headers with bounds and deadline
-        $rawHeaders = '';
-        while (microtime(true) < $deadline) {
-            $line = @fgets($client, 4096);
-            if ($line === false) {
-                break;
+            // 1. Read request headers with bounds and deadline
+            $rawHeaders = '';
+            while ((hrtime(true) / 1e9) < $deadline) {
+                $line = @fgets($client, 4096);
+                if ($line === false) {
+                    break;
+                }
+                $rawHeaders .= $line;
+                if (strlen($rawHeaders) > self::MAX_HEADER_BYTES) {
+                    $this->sendHttpError($client, 431, 'Request Header Fields Too Large');
+
+                    return;
+                }
+                if ($line === "\r\n" || $line === "\n") {
+                    break;
+                }
             }
-            $rawHeaders .= $line;
-            if (strlen($rawHeaders) > self::MAX_HEADER_BYTES) {
-                $this->sendHttpError($client, 431, 'Request Header Fields Too Large');
+
+            if ($rawHeaders === '') {
                 return;
             }
-            if ($line === "\r\n" || $line === "\n") {
-                break;
+
+            // Parse method, path, and headers
+            $headerLines = explode("\r\n", trim($rawHeaders));
+            $requestLine = array_shift($headerLines) ?? '';
+            $reqParts = explode(' ', $requestLine);
+            if (count($reqParts) < 2) {
+                $this->sendHttpError($client, 400, 'Bad Request');
+
+                return;
             }
-        }
 
-        if ($rawHeaders === '') {
-            @fclose($client);
-            return;
-        }
+            $method = strtoupper($reqParts[0]);
+            $path = $reqParts[1];
 
-        // Parse method, path, and headers
-        $headerLines = explode("\r\n", trim($rawHeaders));
-        $requestLine = array_shift($headerLines) ?? '';
-        $reqParts = explode(' ', $requestLine);
-        if (count($reqParts) < 2) {
-            $this->sendHttpError($client, 400, 'Bad Request');
-            return;
-        }
+            $contentLengthValues = [];
+            $transferEncodingPresent = false;
+            $isChunked = false;
 
-        $method = strtoupper($reqParts[0]);
-        $path = $reqParts[1];
-
-        $headers = [];
-        $contentLength = 0;
-        $isChunked = false;
-
-        foreach ($headerLines as $hLine) {
-            $colonPos = strpos($hLine, ':');
-            if ($colonPos !== false) {
-                $name = strtolower(trim(substr($hLine, 0, $colonPos)));
-                $val = trim(substr($hLine, $colonPos + 1));
-                $headers[$name] = $val;
-                if ($name === 'content-length') {
-                    $contentLength = (int) $val;
-                }
-                if ($name === 'transfer-encoding' && str_contains(strtolower($val), 'chunked')) {
-                    $isChunked = true;
+            foreach ($headerLines as $hLine) {
+                $colonPos = strpos($hLine, ':');
+                if ($colonPos !== false) {
+                    $name = strtolower(trim(substr($hLine, 0, $colonPos)));
+                    $val = trim(substr($hLine, $colonPos + 1));
+                    if ($name === 'content-length') {
+                        $contentLengthValues[] = $val;
+                    }
+                    if ($name === 'transfer-encoding') {
+                        $transferEncodingPresent = true;
+                        if (str_contains(strtolower($val), 'chunked')) {
+                            $isChunked = true;
+                        }
+                    }
                 }
             }
-        }
 
-        // Reject chunked or ambiguous framing
-        if ($isChunked) {
-            $this->sendHttpError($client, 400, 'Chunked Transfer-Encoding Not Supported');
-            return;
-        }
+            // RFC 7230 request smuggling prevention: reject duplicate or conflicting Content-Length
+            if (count($contentLengthValues) > 1) {
+                $firstCl = $contentLengthValues[0];
+                foreach ($contentLengthValues as $clVal) {
+                    if ($clVal !== $firstCl) {
+                        $this->sendHttpError($client, 400, 'Conflicting Content-Length Headers');
 
-        if ($contentLength > self::MAX_BODY_BYTES) {
-            $this->sendHttpError($client, 413, 'Payload Too Large');
-            return;
-        }
+                        return;
+                    }
+                }
+            }
 
-        // 2. Read request body if Content-Length > 0
-        $body = '';
-        if ($contentLength > 0) {
-            $bytesRemaining = $contentLength;
-            while ($bytesRemaining > 0 && microtime(true) < $deadline) {
-                $chunkSize = min($bytesRemaining, 8192);
-                $chunk = @fread($client, $chunkSize);
+            // Ambiguous framing: both Content-Length and Transfer-Encoding
+            if ($transferEncodingPresent && ! empty($contentLengthValues)) {
+                $this->sendHttpError($client, 400, 'Ambiguous Framing: Content-Length and Transfer-Encoding Both Present');
+
+                return;
+            }
+
+            // Reject chunked transfer encoding
+            if ($isChunked || $transferEncodingPresent) {
+                $this->sendHttpError($client, 400, 'Chunked Transfer-Encoding Not Supported');
+
+                return;
+            }
+
+            $contentLength = 0;
+            if (! empty($contentLengthValues)) {
+                $clRaw = trim($contentLengthValues[0]);
+                if (! preg_match('/^\d+$/', $clRaw)) {
+                    $this->sendHttpError($client, 400, 'Invalid Content-Length Header');
+
+                    return;
+                }
+                $contentLength = (int) $clRaw;
+            }
+
+            if ($contentLength < 0) {
+                $this->sendHttpError($client, 400, 'Negative Content-Length');
+
+                return;
+            }
+
+            if ($contentLength > self::MAX_BODY_BYTES) {
+                $this->sendHttpError($client, 413, 'Payload Too Large');
+
+                return;
+            }
+
+            // 2. Read request body if Content-Length > 0
+            $body = '';
+            if ($contentLength > 0) {
+                $bytesRemaining = $contentLength;
+                while ($bytesRemaining > 0 && (hrtime(true) / 1e9) < $deadline) {
+                    $chunkSize = min($bytesRemaining, 8192);
+                    $chunk = @fread($client, $chunkSize);
+                    if ($chunk === false || $chunk === '') {
+                        break;
+                    }
+                    $body .= $chunk;
+                    $bytesRemaining -= strlen($chunk);
+                }
+
+                if (strlen($body) !== $contentLength) {
+                    $this->sendHttpError($client, 400, 'Incomplete Body');
+
+                    return;
+                }
+            }
+
+            $isTarget = $this->isTargetRequest($method, $path, $body);
+
+            // 3. Forward request to upstream backend (127.0.0.1:18081)
+            $upstreamUri = "tcp://{$this->upstreamHost}:{$this->upstreamPort}";
+            $upstreamErrno = 0;
+            $upstreamErrstr = '';
+            $upstream = @stream_socket_client($upstreamUri, $upstreamErrno, $upstreamErrstr, 3.0);
+
+            if ($upstream === false) {
+                $this->sendHttpError($client, 502, "Bad Gateway: Upstream Connect Failed ({$upstreamErrno})");
+
+                return;
+            }
+
+            stream_set_blocking($upstream, true);
+            stream_set_timeout($upstream, (int) self::READ_TIMEOUT_SECONDS);
+
+            // Reconstruct exact request and write to upstream
+            $fullWireRequest = trim($rawHeaders) . "\r\n\r\n" . $body;
+            if (! $this->writeAll($upstream, $fullWireRequest, $deadline)) {
+                $this->sendHttpError($client, 502, 'Bad Gateway: Upstream Write Failed');
+
+                return;
+            }
+
+            // 4. Drain bounded response from upstream
+            $upstreamResponse = '';
+            $maxResponseBytes = self::MAX_HEADER_BYTES + self::MAX_BODY_BYTES;
+            while (! feof($upstream) && (hrtime(true) / 1e9) < $deadline) {
+                $chunk = @fread($upstream, 8192);
                 if ($chunk === false || $chunk === '') {
                     break;
                 }
-                $body .= $chunk;
-                $bytesRemaining -= strlen($chunk);
-            }
+                $upstreamResponse .= $chunk;
+                if (strlen($upstreamResponse) > $maxResponseBytes) {
+                    $this->sendHttpError($client, 502, 'Bad Gateway: Upstream Response Exceeded Byte Limit');
 
-            if (strlen($body) !== $contentLength) {
-                $this->sendHttpError($client, 400, 'Incomplete Body');
-                return;
-            }
-        }
-
-        $isTarget = $this->isTargetRequest($method, $path, $body);
-
-        // 3. Forward request to upstream backend (127.0.0.1:18081)
-        $upstreamUri = "tcp://{$this->upstreamHost}:{$this->upstreamPort}";
-        $upstreamErrno = 0;
-        $upstreamErrstr = '';
-        $upstream = @stream_socket_client($upstreamUri, $upstreamErrno, $upstreamErrstr, 3.0);
-
-        if ($upstream === false) {
-            $this->sendHttpError($client, 502, "Bad Gateway: Upstream Connect Failed ({$upstreamErrno})");
-            return;
-        }
-
-        stream_set_blocking($upstream, true);
-        stream_set_timeout($upstream, (int) self::READ_TIMEOUT_SECONDS);
-
-        // Reconstruct exact request and write to upstream
-        $fullWireRequest = trim($rawHeaders) . "\r\n\r\n" . $body;
-        if (! $this->writeAll($upstream, $fullWireRequest, $deadline)) {
-            @fclose($upstream);
-            $this->sendHttpError($client, 502, 'Bad Gateway: Upstream Write Failed');
-            return;
-        }
-
-        // 4. Drain full response from upstream
-        $upstreamResponse = '';
-        while (! feof($upstream) && microtime(true) < $deadline) {
-            $chunk = @fread($upstream, 8192);
-            if ($chunk === false || $chunk === '') {
-                break;
-            }
-            $upstreamResponse .= $chunk;
-        }
-        @fclose($upstream);
-
-        // 5. Handle Target Request with Single-Response Drop
-        if ($isTarget && ! $this->suppressionExecuted) {
-            $responseStatus = 0;
-            if (preg_match('#^HTTP/\d\.\d\s+(\d{3})#', $upstreamResponse, $m)) {
-                $responseStatus = (int) $m[1];
-            }
-
-            if ($responseStatus === 201) {
-                // Verify commit directly in disposable schema via read-only PDO
-                $commitInfo = $this->verifyCommitInDatabase();
-
-                if ($commitInfo === null) {
-                    // Critical: fail closed if commit cannot be verified!
-                    $this->sendHttpError($client, 500, 'Internal Error: Pre-Suppression Commit Verification Failed');
                     return;
                 }
+            }
 
-                // Write atomic witness artifact
-                $this->createWitnessArtifact($commitInfo);
+            // 5. Handle Target Request with Single-Response Drop
+            if ($isTarget && ! $this->suppressionExecuted) {
+                $responseStatus = 0;
+                if (preg_match('#^HTTP/\d\.\d\s+(\d{3})#', $upstreamResponse, $m)) {
+                    $responseStatus = (int) $m[1];
+                }
 
-                // Mark suppression executed
-                $this->suppressionExecuted = true;
+                if ($responseStatus === 201) {
+                    // Verify commit directly in disposable schema via read-only PDO
+                    $commitInfo = $this->verifyCommitInDatabase();
 
-                // Abruptly close client TCP socket without sending any bytes back
+                    if ($commitInfo === null) {
+                        // Critical: fail closed if commit cannot be verified!
+                        $this->sendHttpError($client, 500, 'Internal Error: Pre-Suppression Commit Verification Failed');
+
+                        return;
+                    }
+
+                    // Write atomic witness artifact
+                    $this->createWitnessArtifact($commitInfo);
+
+                    // Mark suppression executed
+                    $this->suppressionExecuted = true;
+
+                    // Abruptly close client TCP socket without sending any bytes back
+                    if (is_resource($client)) {
+                        @fclose($client);
+                    }
+
+                    return;
+                }
+            }
+
+            // 6. Normal passthrough: return upstream response to client
+            $this->writeAll($client, $upstreamResponse, $deadline);
+        } finally {
+            if (is_resource($client)) {
                 @fclose($client);
-                return;
+            }
+            if (is_resource($upstream)) {
+                @fclose($upstream);
             }
         }
-
-        // 6. Normal passthrough: return upstream response to client
-        $this->writeAll($client, $upstreamResponse, $deadline);
-        @fclose($client);
     }
 
     /**
@@ -412,7 +533,7 @@ class TestTransportProxy
         $companyId = (int) ($this->targetConfig['target_company_id'] ?? 0);
         $eventId = (string) ($this->targetConfig['target_event_id'] ?? '');
         $expectedDigest = (string) ($this->targetConfig['expected_digest'] ?? '');
-        $host = (string) ($this->targetConfig['db_host'] ?? '127.0.0.1');
+        $host = (string) ($this->targetConfig['db_host'] ?? self::DEFAULT_DB_HOST);
         $port = (int) ($this->targetConfig['db_port'] ?? self::DEFAULT_DB_PORT);
         $user = (string) ($this->targetConfig['db_user'] ?? 'root');
         $pass = (string) ($this->targetConfig['db_password'] ?? '');
@@ -476,8 +597,8 @@ class TestTransportProxy
                 return null;
             }
 
-            // If expected digest is configured, assert exact match
-            if ($expectedDigest !== '' && ! hash_equals($expectedDigest, $digest)) {
+            // Assert exact payload digest match
+            if (! hash_equals($expectedDigest, $digest)) {
                 return null;
             }
 
@@ -542,8 +663,10 @@ class TestTransportProxy
             'target_nonce_hash' => $targetNonceHash,
             'response_status_code_before_suppression' => 201,
             'db_commit_verified' => true,
+            'proxy_socket_closed_without_response' => true,
             'client_socket_dropped' => true,
             'bytes_forwarded' => 0,
+            'client_transport_drop_observed' => false,
             'sales_invoice_id' => (int) $commitInfo['sales_invoice_id'],
             'customer_payment_id' => (int) $commitInfo['customer_payment_id'],
             'payload_digest' => (string) $commitInfo['payload_digest'],
@@ -577,7 +700,7 @@ class TestTransportProxy
         $totalBytes = strlen($data);
         $bytesWritten = 0;
 
-        while ($bytesWritten < $totalBytes && microtime(true) < $deadline) {
+        while ($bytesWritten < $totalBytes && (hrtime(true) / 1e9) < $deadline) {
             $chunk = @fwrite($stream, substr($data, $bytesWritten));
             if ($chunk === false || $chunk === 0) {
                 return false;

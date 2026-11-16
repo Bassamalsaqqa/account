@@ -1002,7 +1002,7 @@ class SupervisedPairedFinancialDrill
      * - If snapshot is missing on partial setup, skips destructive actions and reports UNPROVEN.
      * - Validates DB server port strictly 3342 before issuing SQL.
      * - Drops verified schema and queries exact absence afterwards.
-     * - Verifies listener absence on 18080 and 18443.
+     * - Verifies listener absence on 18080, 18081, and 18443.
      * - Recursively removes owned harness temporary directory and asserts absence.
      * Returns structured result array; fails if any check is unsatisfied.
      *
@@ -1044,16 +1044,16 @@ class SupervisedPairedFinancialDrill
                     fwrite(STDERR, "[Cleanup] Sending SIGTERM to child process (PID {$livePid}, matches snapshot)...\n");
                     $childProcess->signal(SIGTERM);
 
-                    $waitStart = microtime(true);
-                    while ($childProcess->isRunning() && (microtime(true) - $waitStart) < 5.0) {
+                    $waitStart = hrtime(true) / 1e9;
+                    while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $waitStart) < 5.0) {
                         usleep(100000);
                     }
 
                     if ($childProcess->isRunning()) {
                         fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
                         $childProcess->signal(SIGKILL);
-                        $killStart = microtime(true);
-                        while ($childProcess->isRunning() && (microtime(true) - $killStart) < 2.0) {
+                        $killStart = hrtime(true) / 1e9;
+                        while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $killStart) < 2.0) {
                             usleep(100000);
                         }
                     }
@@ -1130,8 +1130,8 @@ class SupervisedPairedFinancialDrill
             }
         }
 
-        // 3. Verify listener absence on 18080 and 18443
-        foreach ([18080, 18443] as $port) {
+        // 3. Verify listener absence on 18080, 18081, and 18443
+        foreach ([18080, 18081, 18443] as $port) {
             $fp = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.5);
             if (is_resource($fp)) {
                 fclose($fp);

@@ -35,6 +35,7 @@ $expectedBaselineHash = null;
 $expectedDbReportSha = null;
 $expectedEvidenceSha = null;
 $expectedPayloadDigest = null;
+$expectedReportDigest = null;
 $expectedScope = null;
 $isAdvancedProbes = false;
 
@@ -89,6 +90,8 @@ foreach ($argvList as $arg) {
         $expectedEvidenceSha = substr($arg, 24);
     } elseif (str_starts_with($arg, '--expected-payload-digest=')) {
         $expectedPayloadDigest = substr($arg, 26);
+    } elseif (str_starts_with($arg, '--expected-report-digest=')) {
+        $expectedReportDigest = substr($arg, 25);
     } elseif (str_starts_with($arg, '--expected-scope=')) {
         $expectedScope = substr($arg, 17);
     }
@@ -231,8 +234,9 @@ if ($evidenceFile !== null) {
         $expectedPins['expectedHandoffSha'] = $expectedHandoffDigest;
         $expectedPins['expectedDbReportSha'] = $expectedDbReportSha;
         $expectedPins['actualDbReportFileSha'] = $actualDbReportSha;
-        $expectedPins['expectedTrustedReportDigest'] = $trustedDbReport['report_digest'] ?? $trustedDbReport['digest'] ?? '';
-        $expectedPins['expectedReportDigest'] = $trustedDbReport['report_digest'] ?? $trustedDbReport['digest'] ?? '';
+        $reportDigestPin = $expectedReportDigest ?? (isset($trustedDbReport['report_digest']) ? (string) $trustedDbReport['report_digest'] : (string) ($trustedDbReport['digest'] ?? ''));
+        $expectedPins['expectedTrustedReportDigest'] = $reportDigestPin;
+        $expectedPins['expectedReportDigest'] = $reportDigestPin;
         $root = dirname(__DIR__, 3);
         $expectedPins['expectedSourcePins'] = [
             'source_fixture_sha256' => (string) hash_file('sha256', $root.'/tests/Support/Harness/DisposableMobileV2BackendHarness.php'),
