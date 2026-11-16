@@ -1719,10 +1719,13 @@ final class DisposableFinancialPostRunInspector
             'scope' => (string) $metadata['scope'],
             'run_id' => (string) $metadata['runId'],
             'event_id' => (string) $metadata['eventId'],
+            'client_event_id' => (string) $metadata['eventId'],
             'schema_name' => (string) $metadata['schemaName'],
             'company_id' => (int) $metadata['companyId'],
             'source_head' => (string) $metadata['sourceHead'],
+            'backend_execution_head_sha' => (string) $metadata['sourceHead'],
             'handoff_digest' => (string) $metadata['handoffDigest'],
+            'candidate_handoff_digest' => (string) $metadata['handoffDigest'],
             'baseline_hash' => $baselineHash,
             'baseline_metrics' => $canonicalBaseline,
             'deltas' => $deltaResult['deltas'] ?? [],
@@ -3553,8 +3556,8 @@ final class DisposableFinancialPostRunInspector
             }
 
             // Cross-bind backend_execution_head_sha, schema_name, company_id, run_id, client_event_id, candidate_handoff_digest
-            if (isset($expectedPins['backendExecutionHead']) && ! hash_equals((string) $expectedPins['backendExecutionHead'], (string) ($trustedDbReport['backend_execution_head_sha'] ?? ''))) {
-                $errors[] = "Trusted DB report backend_execution_head_sha mismatch: expected '{$expectedPins['backendExecutionHead']}', got '".($trustedDbReport['backend_execution_head_sha'] ?? '')."'.";
+            if (isset($expectedPins['backendExecutionHead']) && ! hash_equals((string) $expectedPins['backendExecutionHead'], (string) ($trustedDbReport['backend_execution_head_sha'] ?? ($trustedDbReport['source_head'] ?? '')))) {
+                $errors[] = "Trusted DB report backend_execution_head_sha mismatch: expected '{$expectedPins['backendExecutionHead']}', got '".($trustedDbReport['backend_execution_head_sha'] ?? ($trustedDbReport['source_head'] ?? ''))."'.";
             }
             if (isset($expectedPins['expectedSchemaName']) && ! hash_equals((string) $expectedPins['expectedSchemaName'], (string) ($trustedDbReport['schema_name'] ?? ''))) {
                 $errors[] = "Trusted DB report schema_name mismatch: expected '{$expectedPins['expectedSchemaName']}', got '".($trustedDbReport['schema_name'] ?? '')."'.";
@@ -3566,11 +3569,11 @@ final class DisposableFinancialPostRunInspector
             if (isset($expectedPins['expectedRunId']) && ! hash_equals((string) $expectedPins['expectedRunId'], (string) ($trustedDbReport['run_id'] ?? ''))) {
                 $errors[] = "Trusted DB report run_id mismatch: expected '{$expectedPins['expectedRunId']}', got '".($trustedDbReport['run_id'] ?? '')."'.";
             }
-            if (isset($expectedPins['expectedClientEventId']) && ! hash_equals((string) $expectedPins['expectedClientEventId'], (string) ($trustedDbReport['client_event_id'] ?? ''))) {
-                $errors[] = "Trusted DB report client_event_id mismatch: expected '{$expectedPins['expectedClientEventId']}', got '".($trustedDbReport['client_event_id'] ?? '')."'.";
+            if (isset($expectedPins['expectedClientEventId']) && ! hash_equals((string) $expectedPins['expectedClientEventId'], (string) ($trustedDbReport['client_event_id'] ?? ($trustedDbReport['event_id'] ?? '')))) {
+                $errors[] = "Trusted DB report client_event_id mismatch: expected '{$expectedPins['expectedClientEventId']}', got '".($trustedDbReport['client_event_id'] ?? ($trustedDbReport['event_id'] ?? ''))."'.";
             }
-            if (isset($expectedPins['expectedHandoffSha']) && ! hash_equals((string) $expectedPins['expectedHandoffSha'], (string) ($trustedDbReport['candidate_handoff_digest'] ?? ''))) {
-                $errors[] = "Trusted DB report candidate_handoff_digest mismatch: expected '{$expectedPins['expectedHandoffSha']}', got '".($trustedDbReport['candidate_handoff_digest'] ?? '')."'.";
+            if (isset($expectedPins['expectedHandoffSha']) && ! hash_equals((string) $expectedPins['expectedHandoffSha'], (string) ($trustedDbReport['candidate_handoff_digest'] ?? ($trustedDbReport['handoff_digest'] ?? '')))) {
+                $errors[] = "Trusted DB report candidate_handoff_digest mismatch: expected '{$expectedPins['expectedHandoffSha']}', got '".($trustedDbReport['candidate_handoff_digest'] ?? ($trustedDbReport['handoff_digest'] ?? ''))."'.";
             }
 
             if (! is_bool($trustedDbReport['is_canonical_delta_valid'] ?? null) || $trustedDbReport['is_canonical_delta_valid'] !== true) {

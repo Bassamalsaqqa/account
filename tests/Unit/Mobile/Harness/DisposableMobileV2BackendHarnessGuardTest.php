@@ -7252,34 +7252,78 @@ PHP;
         }
     }
 
+    /**
+     * Constructs a genuine canonical rollback probe snapshot fixture matching the strict
+     * contract of DisposableFinancialPostRunInspector::captureRollbackProbeSnapshot and assertRollbackZeroDelta:
+     * - Exactly the 9 financial table counts
+     * - Document sequences map
+     * - Table fingerprints mapping all 9 tables to 64-hex SHA-256 strings
+     * - Exact decimal strings for stock_movements_qty_delta_base and lot_allocations_qty_allocated_base
+     * - Authoritative aggregate row_fingerprint_sha256 computed via CanonicalJsonSerializer
+     */
+    public static function createCanonicalRollbackSnapshotFixture(array $overrides = []): array
+    {
+        $tableCounts = [
+            'sales_invoices' => 10,
+            'sales_invoice_lines' => 20,
+            'sales_invoice_lot_allocations' => 0,
+            'customer_payments' => 5,
+            'customer_payment_allocations' => 5,
+            'mobile_event_receipts' => 10,
+            'stock_movements' => 20,
+            'posting_batches' => 15,
+            'posting_lines' => 30,
+        ];
+
+        $tableFingerprints = [];
+        foreach (array_keys($tableCounts) as $t) {
+            $tableFingerprints[$t] = hash('sha256', "canonical_fixture_{$t}");
+        }
+
+        $sequences = [
+            'sales_invoice:2026' => 11,
+        ];
+
+        $stockQtySum = '100.000000';
+        $lotQtySum = '0.000000';
+
+        $fingerprintPayload = [
+            'table_fingerprints' => $tableFingerprints,
+            'document_sequences' => $sequences,
+            'stock_movements_qty_delta_base' => $stockQtySum,
+            'lot_allocations_qty_allocated_base' => $lotQtySum,
+        ];
+        $aggregateFingerprint = hash('sha256', CanonicalJsonSerializer::serialize($fingerprintPayload));
+
+        $snapshot = [
+            'sales_invoices' => $tableCounts['sales_invoices'],
+            'sales_invoice_lines' => $tableCounts['sales_invoice_lines'],
+            'sales_invoice_lot_allocations' => $tableCounts['sales_invoice_lot_allocations'],
+            'customer_payments' => $tableCounts['customer_payments'],
+            'customer_payment_allocations' => $tableCounts['customer_payment_allocations'],
+            'mobile_event_receipts' => $tableCounts['mobile_event_receipts'],
+            'stock_movements' => $tableCounts['stock_movements'],
+            'posting_batches' => $tableCounts['posting_batches'],
+            'posting_lines' => $tableCounts['posting_lines'],
+            'document_sequences' => $sequences,
+            'table_fingerprints' => $tableFingerprints,
+            'stock_movements_qty_delta_base' => $stockQtySum,
+            'lot_allocations_qty_allocated_base' => $lotQtySum,
+            'row_fingerprint_sha256' => $aggregateFingerprint,
+        ];
+
+        foreach ($overrides as $k => $v) {
+            $snapshot[$k] = $v;
+        }
+
+        return $snapshot;
+    }
+
     #[Test]
     public function test_genuine_producer_to_supervisor_to_trusted_compose_to_advanced_validator_flow(): void
     {
-        // 1. Synthetic pre/post zero-delta metrics
-        $baselineMetrics = [
-            'company_id' => 1,
-            'schema_name' => 'accounting_p8_tmp_0123456789ab',
-            'sales_invoices' => 10,
-            'sales_invoices_max_id' => 10,
-            'sales_invoice_lines' => 20,
-            'sales_invoice_lines_max_id' => 20,
-            'sales_invoice_lot_allocations' => 0,
-            'sales_invoice_lot_allocations_max_id' => 0,
-            'customer_payments' => 5,
-            'customer_payments_max_id' => 5,
-            'customer_payment_allocations' => 5,
-            'customer_payment_allocations_max_id' => 5,
-            'mobile_event_receipts' => 10,
-            'mobile_event_receipts_max_id' => 10,
-            'stock_movements' => 20,
-            'stock_movements_max_id' => 20,
-            'stock_movements_qty_sum' => '100.000000',
-            'posting_batches' => 15,
-            'posting_batches_max_id' => 15,
-            'posting_lines' => 30,
-            'posting_lines_max_id' => 30,
-            'document_sequences' => ['sales_invoice:2026' => 11],
-        ];
+        // 1. Synthetic pre/post zero-delta metrics using canonical scanner contract
+        $baselineMetrics = self::createCanonicalRollbackSnapshotFixture();
         $postMetrics = $baselineMetrics; // exact zero delta
 
         // 2. Build genuine raw recon artifact
@@ -7469,13 +7513,17 @@ PHP;
             $this->assertSame($acpSha, $trustedDbReport['advanced_control_packet_digest']);
 
             // 7. Test genuine validateAdvancedProbeEvidenceJson with mandatory manifest file and SHA pin
+            $payloadDigest = str_repeat('c', 64);
             $root = dirname(__DIR__, 4);
             $expectedPins = [
                 'expectedScope' => 'ROOT_AUTHORIZED_ADVANCED_PROBE_EXECUTION',
                 'expectedRunId' => $runId,
                 'expectedClientEventId' => $primaryEventId,
                 'expectedSchemaName' => 'accounting_p8_tmp_0123456789ab',
+                'expectedCompanyId' => 1,
+                'companyId' => 1,
                 'expectedHandoffSha' => str_repeat('a', 64),
+                'expectedPayloadDigest' => $payloadDigest,
                 'backendExecutionHead' => '4815546d4d00ffe82d428fb490981f96b60cf5d9',
                 'clientPublicationHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_PUBLICATION_SHA,
                 'clientExecutableHead' => DisposableFinancialPostRunInspector::APPROVED_ANDROID_EXECUTABLE_SHA,
@@ -7519,7 +7567,7 @@ PHP;
                     'recovery_method' => 'RETAINED_EVENT_GET_STATUS',
                     'recovery_http_status' => 200,
                     'receipt_status' => 'posted',
-                    'matching_payload_digest' => '',
+                    'matching_payload_digest' => $payloadDigest,
                 ],
                 'rollback_probes_evidence' => [
                     'probes' => [
@@ -7530,6 +7578,8 @@ PHP;
                             'economic_delta_zero' => true,
                             'reconciliations_healthy' => true,
                             'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                            'baseline_metrics' => $baselineMetrics,
+                            'post_metrics' => $postMetrics,
                         ],
                         [
                             'probe_name' => 'rollback_insufficient_stock',
@@ -7538,6 +7588,8 @@ PHP;
                             'economic_delta_zero' => true,
                             'reconciliations_healthy' => true,
                             'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                            'baseline_metrics' => $baselineMetrics,
+                            'post_metrics' => $postMetrics,
                         ],
                         [
                             'probe_name' => 'rollback_controlled_after_posting',
@@ -7546,6 +7598,8 @@ PHP;
                             'economic_delta_zero' => true,
                             'reconciliations_healthy' => true,
                             'reconciliations' => ['accounting' => true, 'inventory' => true, 'sales' => true, 'payables' => true, 'money' => true, 'phase7' => true],
+                            'baseline_metrics' => $baselineMetrics,
+                            'post_metrics' => $postMetrics,
                         ],
                     ],
                 ],
@@ -7594,8 +7648,8 @@ PHP;
             'zero_delta_verified' => true,
             'reconciliations_healthy' => true,
             'total_issue_count' => 0,
-            'baseline_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
-            'post_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
+            'baseline_metrics' => self::createCanonicalRollbackSnapshotFixture(),
+            'post_metrics' => self::createCanonicalRollbackSnapshotFixture(),
             'reconciliation_artifact_sha256' => hash('sha256', $rawReconContent),
             'reconciler_results' => $rawReconData['reconciler_results'],
         ];
@@ -7660,8 +7714,8 @@ PHP;
             'zero_delta_verified' => true,
             'reconciliations_healthy' => true,
             'total_issue_count' => 0,
-            'baseline_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
-            'post_metrics' => ['company_id' => 1, 'sales_invoices' => 0],
+            'baseline_metrics' => self::createCanonicalRollbackSnapshotFixture(),
+            'post_metrics' => self::createCanonicalRollbackSnapshotFixture(),
             'reconciliation_artifact_sha256' => hash('sha256', $rawReconContent),
             'reconciler_results' => $rawReconData['reconciler_results'],
         ];
@@ -7855,14 +7909,22 @@ PHP;
         $this->assertStringContainsString('Mandatory expectedProbeReportsManifestSha pin is missing', implode('; ', $res1['errors']));
 
         // 2. Missing manifest file when pin is provided is strictly refused (even if matching actualProbeReportsManifestSha is supplied)
-        $pinsWithPinOnly = array_merge($pinsWithoutManifestSha, [
-            'expectedProbeReportsManifestSha' => str_repeat('e', 64),
-            'actualProbeReportsManifestSha' => str_repeat('e', 64), // Provided matching actual hash MUST NOT bypass missing file
-            'probeReportsManifestPath' => '/nonexistent/path/to/probe_reports_manifest.json',
-        ]);
-        $res2 = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithPinOnly, $trustedDbReport);
-        $this->assertFalse($res2['is_valid']);
-        $this->assertStringContainsString('Probe reports manifest file is missing or a symlink', implode('; ', $res2['errors']));
+        $tmpMissing = sys_get_temp_dir() . '/test_m_' . bin2hex(random_bytes(6));
+        mkdir($tmpMissing, 0700, true);
+        try {
+            $pinsWithPinOnly = array_merge($pinsWithoutManifestSha, [
+                'expectedProbeReportsManifestSha' => str_repeat('e', 64),
+                'actualProbeReportsManifestSha' => str_repeat('e', 64), // Provided matching actual hash MUST NOT bypass missing file
+                'probeReportsManifestPath' => $tmpMissing . '/probe_reports_manifest.json',
+            ]);
+            $res2 = DisposableFinancialPostRunInspector::validateAdvancedProbeEvidenceJson($evidence, $pinsWithPinOnly, $trustedDbReport);
+            $this->assertFalse($res2['is_valid']);
+            $this->assertStringContainsString('PROBE_REPORTS_MANIFEST_FILE_NOT_FOUND', implode('; ', $res2['errors']));
+        } finally {
+            if (is_dir($tmpMissing)) {
+                @rmdir($tmpMissing);
+            }
+        }
     }
 
     #[Test]
@@ -8004,8 +8066,8 @@ PHP;
                 'reconciliations_healthy' => false,
                 'total_issue_count' => 1,
                 'reconciliation_artifact_sha256' => $rawReconSha,
-                'baseline_metrics' => ['company_id' => 1],
-                'post_metrics' => ['company_id' => 1],
+                'baseline_metrics' => self::createCanonicalRollbackSnapshotFixture(),
+                'post_metrics' => self::createCanonicalRollbackSnapshotFixture(),
             ];
             $badReportBytes = json_encode($badReport, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
             $badReportSha = hash('sha256', $badReportBytes);
@@ -8289,8 +8351,8 @@ PHP;
                 'reconciliations_healthy' => true,
                 'total_issue_count' => 0,
                 'reconciliation_artifact_sha256' => $recSha,
-                'baseline_metrics' => ['company_id' => 1],
-                'post_metrics' => ['company_id' => 1],
+                'baseline_metrics' => self::createCanonicalRollbackSnapshotFixture(),
+                'post_metrics' => self::createCanonicalRollbackSnapshotFixture(),
             ];
             $repBytes1 = json_encode($repData1, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
             $repSha1 = hash('sha256', $repBytes1);

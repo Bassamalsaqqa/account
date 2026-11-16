@@ -13,7 +13,7 @@
     "source_fixture_class": "Tests\\Support\\Harness\\DisposableMobileV2BackendHarness",
     "source_fixture_sha256": "d5a113cebe6e3222196fb5e7060a3f7a89e3fa48f5204c7da25956b78ce2bda8",
     "guard_test_class": "Tests\\Unit\\Mobile\\Harness\\DisposableMobileV2BackendHarnessGuardTest",
-    "guard_test_sha256": "1736b8580c23bf3c8bbada35168e6e1c54be646015b4218ce7572708310d4bdf",
+    "guard_test_sha256": "f11bbcd746ea8bceeff2bacf6eff829306fb720b3bd785179ab2fbe85a69c9e4",
     "cli_command_class": "Tests\\Support\\Harness\\MobileV2HarnessCommand",
     "cli_command_sha256": "0bda2eff08fc674b5493dffe58b229541be8ff468a045cc2e3cca55ff6dc4cc6",
     "cli_runner_script": "tests/Support/Harness/mobile-v2-harness-cli.php",
