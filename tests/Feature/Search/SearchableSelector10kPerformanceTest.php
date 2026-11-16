@@ -126,8 +126,13 @@ final class SearchableSelector10kPerformanceTest extends TestCase
     {
         $this->assertGreaterThanOrEqual(10000, Product::where('company_id', $this->company->id)->count(), 'Must have at least 10k products seeded.');
 
+        // Warm permission/role caches separately from catalog query measurement.
+        $this->service->search($this->company, $this->user, 'product', 'ضخم', null, 1, ['context' => 'sales']);
         DB::flushQueryLog();
         DB::enableQueryLog();
+        $this->service->search($this->company, $this->user, 'product', 'ضخم', null, 1, ['context' => 'sales']);
+        $singleItemQueries = DB::getQueryLog();
+        DB::flushQueryLog();
 
         // Perform search across the 10,000 products dataset
         $response = $this->service->search($this->company, $this->user, 'product', 'ضخم', null, 25, ['context' => 'sales']);
@@ -138,7 +143,9 @@ final class SearchableSelector10kPerformanceTest extends TestCase
         // The search must execute bounded queries without N+1 relations:
         // 1. Fastpath barcode lookup on product_barcodes
         // 2. Main product search query with CASE/COALESCE ranking
-        $this->assertLessThanOrEqual(2, count($queries), 'Search must not execute N+1 queries for relations.');
+        $this->assertCount(count($singleItemQueries), $queries, 'Query count must remain constant when the result limit grows from 1 to 25.');
+        $catalogQueries = array_filter($queries, fn (array $entry): bool => preg_match('/from\s+`?(products|product_barcodes)`?\b/i', $entry['query']) === 1);
+        $this->assertLessThanOrEqual(2, count($catalogQueries), 'Catalog lookup must remain bounded to barcode and main product queries.');
         $this->assertNotEmpty($response['items']);
         $this->assertLessThanOrEqual(25, count($response['items']));
     }
@@ -251,10 +258,11 @@ final class SearchableSelector10kPerformanceTest extends TestCase
             $sqlLower = strtolower($sql);
             $label = null;
 
-            if (str_contains($sqlLower, 'product_barcodes')) {
-                $label = 'fastpath_barcode';
-            } elseif (str_contains($sqlLower, '`products`') || str_contains($sqlLower, ' products ')) {
+            // Classify the outer table: the main products query also contains a barcode EXISTS subquery.
+            if (preg_match('/^select\s+.+?\s+from\s+`?products`?\b/is', $sql) === 1) {
                 $label = 'contains_products';
+            } elseif (preg_match('/^select\s+.+?\s+from\s+`?product_barcodes`?\b/is', $sql) === 1) {
+                $label = 'fastpath_barcode';
             }
 
             if ($label !== null && !isset($plans[$label])) {
