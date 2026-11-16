@@ -391,10 +391,9 @@ final class SearchableComboboxAccuracyTest extends TestCase
         $invoiceComponent = Livewire::test(InvoiceForm::class);
 
         // Attempting to query 'vendor' on InvoiceForm must be rejected with 403
-        $this->expectException(AuthorizationException::class);
         $invoiceComponent->call('searchSelector', 'vendor', 'test', null, [
             'capability' => 'sales.invoice.create', // Forged authority attempt
-        ]);
+        ])->assertForbidden();
     }
 
     public function test_livewire_invoice_and_quotation_clear_product_preserves_draft_state(): void
