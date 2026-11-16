@@ -373,45 +373,20 @@ try {
     $proofPath = $creds['proof_path'];
     $proofNonce = $creds['proof_nonce'];
 
-    // Discover process PIDs from child process_pids.json if written by harness
-    $harnessPgId = null;
-    $backendPid = null;
-    $proxyPid = null;
-    $caddyPid = null;
+    // Discover process PIDs path if written by harness (advanced execution)
     $pidsPath = $bootstrapDir . '/process_pids.json';
-    if (is_file($pidsPath)) {
-        SupervisedPairedFinancialDrill::assertSecureFilePermissions($pidsPath, 'PROCESS_PIDS');
-        $pidsRaw = json_decode((string) file_get_contents($pidsPath), true);
-        if (is_array($pidsRaw)) {
-            $harnessPgId = isset($pidsRaw['harness_pgid']) ? (int) $pidsRaw['harness_pgid'] : null;
-            $backendPid = isset($pidsRaw['backend_pid']) ? (int) $pidsRaw['backend_pid'] : null;
-            $proxyPid = isset($pidsRaw['proxy_pid']) ? (int) $pidsRaw['proxy_pid'] : null;
-            $caddyPid = isset($pidsRaw['caddy_pid']) ? (int) $pidsRaw['caddy_pid'] : null;
-        }
-    }
-
+    $pidsJsonPath = is_file($pidsPath) ? $pidsPath : null;
     $childPid = $childProcess->getPid();
-    $childStartId = SupervisedPairedFinancialDrill::getProcessStartIdentity($childPid);
-    $backendStartId = $backendPid !== null ? SupervisedPairedFinancialDrill::getProcessStartIdentity($backendPid) : null;
-    $proxyStartId = $proxyPid !== null ? SupervisedPairedFinancialDrill::getProcessStartIdentity($proxyPid) : null;
-    $caddyStartId = $caddyPid !== null ? SupervisedPairedFinancialDrill::getProcessStartIdentity($caddyPid) : null;
 
-    // Capture verified owned snapshot: performs full proof/nonce/permissions/assertPrimarySchema verification
+    // Capture verified owned snapshot: performs full proof/nonce/permissions/assertPrimarySchema and process ownership verification
     $snapshot = SupervisedPairedFinancialDrill::captureVerifiedOwnedSnapshot(
-        $schemaName,
-        $proofPath,
-        $proofNonce,
-        $harnessDir,
-        $childPid,
-        $repoRoot,
-        $harnessPgId,
-        $backendPid,
-        $proxyPid,
-        $caddyPid,
-        $childStartId,
-        $backendStartId,
-        $proxyStartId,
-        $caddyStartId
+        schemaName: $schemaName,
+        proofPath: $proofPath,
+        proofNonce: $proofNonce,
+        harnessDir: $harnessDir,
+        childPid: $childPid,
+        repoRoot: $repoRoot,
+        pidsJsonPath: $pidsJsonPath
     );
 
     // Construct explicit inspectorEnv array with testing flags and testing DB creds (subprocess env)

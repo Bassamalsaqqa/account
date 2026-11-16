@@ -46,6 +46,18 @@ class SupervisedPairedFinancialDrill
     public const PROOF_PARENT_DIR_REGEX = '/^p8_proof_[0-9a-f]{16}$/D';
 
     /**
+     * Optional test hook to override process identity verification without touching live /proc.
+     * Signature: ?callable(int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array{valid: bool, start_ticks: ?string, ppid: ?int, error: ?string}
+     */
+    public static ?\Closure $processIdentityVerifierHook = null;
+
+    /**
+     * Optional test hook to intercept signal sending without signaling live processes.
+     * Signature: ?callable(int $pid, int $signal): bool
+     */
+    public static ?\Closure $signalDispatcherHook = null;
+
+    /**
      * Validates prestart Root coordination approval file.
      * Enforces mandatory TTL, private permissions (0600 file, 0700 parent, current UID, no symlinks),
      * and asserts exact matches against dynamic HEAD, manifest SHA, and CWD.
@@ -353,32 +365,238 @@ class SupervisedPairedFinancialDrill
      *
      * @throws RuntimeException
     /**
-     * Resolves process start identity from Linux /proc/[pid]/stat (field 22: starttime).
-     * Returns null if unreadable or on non-Linux systems.
+     * Strictly verifies process ownership and lineage against live Linux /proc (or test hook).
+     * Refuses root PID (<= 1), supervisor own PID, and supervisor parent PID.
+     * Enforces non-symlink proc dir owned by current UID, stat PPID, start ticks, and cmdline substring.
+     *
+     * @return array{valid: bool, start_ticks: ?string, ppid: ?int, error: ?string}
      */
-    public static function getProcessStartIdentity(int $pid): ?string
-    {
-        if ($pid <= 0) {
-            return null;
+    public static function verifyProcessOwnership(
+        int $pid,
+        int $expectedPpid = -1,
+        ?string $expectedStartTicks = null,
+        ?string $expectedPathSubstring = null
+    ): array {
+        // 1. Immediate rejection of forbidden PIDs
+        if ($pid <= 1) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => "REFUSED_ROOT_OR_INVALID_PID_{$pid}",
+            ];
+        }
+        if ($pid === getmypid()) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => "REFUSED_OWN_SUPERVISOR_PID_{$pid}",
+            ];
+        }
+        if (function_exists('posix_getppid') && $pid === posix_getppid()) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => "REFUSED_PARENT_SUPERVISOR_PID_{$pid}",
+            ];
         }
 
-        $statPath = "/proc/{$pid}/stat";
-        if (is_file($statPath) && is_readable($statPath)) {
-            $content = @file_get_contents($statPath);
-            if ($content !== false && $content !== '') {
-                $lastParen = strrpos($content, ')');
-                if ($lastParen !== false) {
-                    $rest = trim(substr($content, $lastParen + 1));
-                    $fields = explode(' ', $rest);
-                    // field 22 is index 19 after ') state ppid ...'
-                    if (isset($fields[19])) {
-                        return $fields[19];
-                    }
-                }
+        // 2. Delegate to test hook if installed
+        if (self::$processIdentityVerifierHook !== null) {
+            return (self::$processIdentityVerifierHook)($pid, $expectedPpid, $expectedStartTicks, $expectedPathSubstring);
+        }
+
+        // 3. Live Linux /proc inspection
+        $procDir = "/proc/{$pid}";
+        if (! is_dir($procDir) || is_link($procDir)) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_DIR_MISSING_OR_LINK',
+            ];
+        }
+
+        if (function_exists('posix_getuid')) {
+            $ownerUid = @fileowner($procDir);
+            if ($ownerUid !== posix_getuid()) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => null,
+                    'ppid' => null,
+                    'error' => "PROC_UID_MISMATCH: owner {$ownerUid} vs expected " . posix_getuid(),
+                ];
             }
         }
 
-        return null;
+        $statPath = "{$procDir}/stat";
+        if (! is_file($statPath) || ! is_readable($statPath)) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_STAT_UNREADABLE',
+            ];
+        }
+        $statContent = @file_get_contents($statPath);
+        if ($statContent === false || $statContent === '') {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_STAT_EMPTY',
+            ];
+        }
+        $lastParen = strrpos($statContent, ')');
+        if ($lastParen === false) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_STAT_MALFORMED',
+            ];
+        }
+        $rest = trim(substr($statContent, $lastParen + 1));
+        $fields = explode(' ', $rest);
+        if (! isset($fields[1], $fields[19])) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_STAT_FIELDS_INCOMPLETE',
+            ];
+        }
+
+        $actualPpid = (int) $fields[1];
+        $actualStartTicks = (string) $fields[19];
+
+        if ($actualStartTicks === '' || $actualStartTicks === '0') {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => $actualPpid,
+                'error' => 'PROC_START_TICKS_INVALID',
+            ];
+        }
+
+        if ($expectedPpid > 0 && $actualPpid !== $expectedPpid) {
+            return [
+                'valid' => false,
+                'start_ticks' => $actualStartTicks,
+                'ppid' => $actualPpid,
+                'error' => "PROC_PPID_LINEAGE_MISMATCH: actual {$actualPpid} vs expected {$expectedPpid}",
+            ];
+        }
+
+        if ($expectedStartTicks !== null && $actualStartTicks !== $expectedStartTicks) {
+            return [
+                'valid' => false,
+                'start_ticks' => $actualStartTicks,
+                'ppid' => $actualPpid,
+                'error' => "PROC_START_TICKS_MISMATCH: actual {$actualStartTicks} vs expected {$expectedStartTicks}",
+            ];
+        }
+
+        if ($expectedPathSubstring !== null) {
+            $cmdPath = "{$procDir}/cmdline";
+            if (! is_file($cmdPath) || ! is_readable($cmdPath)) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => $actualStartTicks,
+                    'ppid' => $actualPpid,
+                    'error' => 'PROC_CMDLINE_UNREADABLE',
+                ];
+            }
+            $cmdContent = (string) @file_get_contents($cmdPath);
+            if ($cmdContent === '' || ! str_contains($cmdContent, $expectedPathSubstring)) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => $actualStartTicks,
+                    'ppid' => $actualPpid,
+                    'error' => 'PROC_CMDLINE_PATH_MISMATCH',
+                ];
+            }
+        }
+
+        return [
+            'valid' => true,
+            'start_ticks' => $actualStartTicks,
+            'ppid' => $actualPpid,
+            'error' => null,
+        ];
+    }
+
+    /**
+     * Resolves verified process start identity. Returns null if unverified.
+     */
+    public static function getProcessStartIdentity(int $pid): ?string
+    {
+        $res = self::verifyProcessOwnership($pid);
+
+        return ($res['valid'] ?? false) ? $res['start_ticks'] : null;
+    }
+
+    /**
+     * Checks if a process is alive without throwing.
+     */
+    public static function isProcessAlive(int $pid): bool
+    {
+        if ($pid <= 0) {
+            return false;
+        }
+        if (self::$processIdentityVerifierHook !== null) {
+            $res = (self::$processIdentityVerifierHook)($pid, -1, null, null);
+
+            return (bool) ($res['valid'] ?? false);
+        }
+        if (function_exists('posix_kill')) {
+            return @posix_kill($pid, 0);
+        }
+
+        return is_dir("/proc/{$pid}");
+    }
+
+    /**
+     * Dispatches a signal to a process using test hook or posix_kill.
+     */
+    public static function sendSignal(int $pid, int $signal): bool
+    {
+        if (self::$signalDispatcherHook !== null) {
+            return (bool) (self::$signalDispatcherHook)($pid, $signal);
+        }
+        if (function_exists('posix_kill')) {
+            return @posix_kill($pid, $signal);
+        }
+
+        return false;
+    }
+
+    /**
+     * Double-verifies process ownership and lineage immediately before sending a signal.
+     * Refuses root PID, supervisor own PID, supervisor parent PID, and mismatched start ticks.
+     */
+    public static function sendVerifiedSignal(
+        int $pid,
+        int $signal,
+        int $expectedPpid,
+        ?string $expectedStartTicks = null,
+        ?string $expectedPathSubstring = null
+    ): bool {
+        if ($pid <= 1 || $pid === getmypid()) {
+            return false;
+        }
+        if (function_exists('posix_getppid') && $pid === posix_getppid()) {
+            return false;
+        }
+
+        $check = self::verifyProcessOwnership($pid, $expectedPpid, $expectedStartTicks, $expectedPathSubstring);
+        if (! ($check['valid'] ?? false)) {
+            return false;
+        }
+
+        return self::sendSignal($pid, $signal);
     }
 
     /**
@@ -391,6 +609,7 @@ class SupervisedPairedFinancialDrill
      * @param  string  $harnessDir  Owned temporary directory path
      * @param  int     $childPid    Child CLI process PID (positive integer)
      * @param  string  $repoRoot    Checkout root directory
+     * @param  string|null  $pidsJsonPath  Path to process_pids.json for advanced execution
      *
      * @throws RuntimeException
      */
@@ -401,14 +620,7 @@ class SupervisedPairedFinancialDrill
         string $harnessDir,
         int $childPid,
         string $repoRoot,
-        ?int $harnessPgId = null,
-        ?int $backendPid = null,
-        ?int $proxyPid = null,
-        ?int $caddyPid = null,
-        ?string $childStartIdentity = null,
-        ?string $backendStartIdentity = null,
-        ?string $proxyStartIdentity = null,
-        ?string $caddyStartIdentity = null
+        ?string $pidsJsonPath = null
     ): VerifiedOwnedSnapshot {
         return VerifiedOwnedSnapshot::fromLiveOwnership(
             schemaName: $schemaName,
@@ -417,14 +629,7 @@ class SupervisedPairedFinancialDrill
             harnessDir: $harnessDir,
             childPid: $childPid,
             repoRoot: $repoRoot,
-            harnessPgId: $harnessPgId,
-            backendPid: $backendPid,
-            proxyPid: $proxyPid,
-            caddyPid: $caddyPid,
-            childStartIdentity: $childStartIdentity,
-            backendStartIdentity: $backendStartIdentity,
-            proxyStartIdentity: $proxyStartIdentity,
-            caddyStartIdentity: $caddyStartIdentity
+            pidsJsonPath: $pidsJsonPath
         );
     }
 
@@ -1100,9 +1305,15 @@ class SupervisedPairedFinancialDrill
                 } else {
                     $startIdMatches = true;
                     if ($snapshot->childStartIdentity !== null) {
-                        $liveStartId = self::getProcessStartIdentity($livePid);
-                        if ($liveStartId !== null && $liveStartId !== $snapshot->childStartIdentity) {
-                            $errors[] = "CLEANUP_PID_START_IDENTITY_MISMATCH: live process PID {$livePid} start identity '{$liveStartId}' does not match captured snapshot '{$snapshot->childStartIdentity}'. No signals sent.";
+                        // Double verification before SIGTERM: check UID, PPID, start ticks, and harness path
+                        $checkTerm = self::verifyProcessOwnership(
+                            pid: $livePid,
+                            expectedPpid: getmypid(),
+                            expectedStartTicks: $snapshot->childStartIdentity,
+                            expectedPathSubstring: $snapshot->harnessDir
+                        );
+                        if (! ($checkTerm['valid'] ?? false)) {
+                            $errors[] = "CLEANUP_PID_START_IDENTITY_MISMATCH: live process PID {$livePid} identity check failed ('" . ($checkTerm['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
                             $childReaped = false;
                             $startIdMatches = false;
                         }
@@ -1110,7 +1321,7 @@ class SupervisedPairedFinancialDrill
 
                     if ($startIdMatches) {
                         fwrite(STDERR, "[Cleanup] Sending SIGTERM to child process (PID {$livePid}, matches snapshot)...\n");
-                        $childProcess->signal(SIGTERM);
+                        self::sendSignal($livePid, SIGTERM);
 
                         $waitStart = hrtime(true) / 1e9;
                         while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $waitStart) < 5.0) {
@@ -1118,11 +1329,27 @@ class SupervisedPairedFinancialDrill
                         }
 
                         if ($childProcess->isRunning()) {
-                            fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
-                            $childProcess->signal(SIGKILL);
-                            $killStart = hrtime(true) / 1e9;
-                            while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $killStart) < 2.0) {
-                                usleep(100000);
+                            // Re-verify before SIGKILL:
+                            if ($snapshot->childStartIdentity !== null) {
+                                $checkKill = self::verifyProcessOwnership(
+                                    pid: $livePid,
+                                    expectedPpid: getmypid(),
+                                    expectedStartTicks: $snapshot->childStartIdentity,
+                                    expectedPathSubstring: $snapshot->harnessDir
+                                );
+                                if (! ($checkKill['valid'] ?? false)) {
+                                    $errors[] = "CLEANUP_PID_START_IDENTITY_MISMATCH: live process PID {$livePid} identity changed before SIGKILL ('" . ($checkKill['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
+                                    $startIdMatches = false;
+                                }
+                            }
+
+                            if ($startIdMatches) {
+                                fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
+                                self::sendSignal($livePid, SIGKILL);
+                                $killStart = hrtime(true) / 1e9;
+                                while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $killStart) < 2.0) {
+                                    usleep(100000);
+                                }
                             }
                         }
 
@@ -1140,7 +1367,7 @@ class SupervisedPairedFinancialDrill
         }
 
         // 1b. Terminate and reap tracked child subprocesses if still alive (backend, proxy, caddy)
-        if ($snapshot !== null) {
+        if ($snapshot !== null && $snapshot->backendPid !== null) {
             $trackedChildren = [
                 'proxy' => ['pid' => $snapshot->proxyPid, 'startId' => $snapshot->proxyStartIdentity],
                 'backend' => ['pid' => $snapshot->backendPid, 'startId' => $snapshot->backendStartIdentity],
@@ -1150,38 +1377,57 @@ class SupervisedPairedFinancialDrill
             foreach ($trackedChildren as $name => $info) {
                 $pid = $info['pid'];
                 $expectedStartId = $info['startId'];
-                if ($pid !== null && $pid > 0 && function_exists('posix_kill') && @posix_kill($pid, 0)) {
-                    if ($expectedStartId !== null) {
-                        $liveStartId = self::getProcessStartIdentity($pid);
-                        if ($liveStartId !== null && $liveStartId !== $expectedStartId) {
-                            $errors[] = "CLEANUP_{$name}_PID_IDENTITY_MISMATCH: PID {$pid} start identity '{$liveStartId}' does not match captured snapshot '{$expectedStartId}'. No signals sent. Manual remediation required.";
-                            continue;
-                        }
+                if ($pid === null || $pid <= 1 || $expectedStartId === null) {
+                    continue;
+                }
+
+                if (! self::isProcessAlive($pid)) {
+                    continue;
+                }
+
+                // Double verification before SIGTERM: UID, PPID=childPid, start ticks, and harness path
+                $checkTerm = self::verifyProcessOwnership(
+                    pid: $pid,
+                    expectedPpid: $snapshot->childPid,
+                    expectedStartTicks: $expectedStartId,
+                    expectedPathSubstring: $snapshot->harnessDir
+                );
+                if (! ($checkTerm['valid'] ?? false)) {
+                    $errors[] = "CLEANUP_{$name}_PID_IDENTITY_MISMATCH: PID {$pid} identity check failed ('" . ($checkTerm['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
+                    continue;
+                }
+
+                fwrite(STDERR, "[Cleanup] Sending SIGTERM to lingering {$name} process (PID {$pid})...\n");
+                self::sendSignal($pid, SIGTERM);
+                $wStart = hrtime(true) / 1e9;
+                while (self::isProcessAlive($pid) && ((hrtime(true) / 1e9) - $wStart) < 2.0) {
+                    usleep(50000);
+                }
+
+                if (self::isProcessAlive($pid)) {
+                    // Re-verify before SIGKILL:
+                    $checkKill = self::verifyProcessOwnership(
+                        pid: $pid,
+                        expectedPpid: $snapshot->childPid,
+                        expectedStartTicks: $expectedStartId,
+                        expectedPathSubstring: $snapshot->harnessDir
+                    );
+                    if (! ($checkKill['valid'] ?? false)) {
+                        $errors[] = "CLEANUP_{$name}_PID_IDENTITY_MISMATCH: PID {$pid} identity changed before SIGKILL ('" . ($checkKill['error'] ?? 'unverified') . "'). No signals sent. Manual remediation required.";
+                        continue;
                     }
 
-                    fwrite(STDERR, "[Cleanup] Sending SIGTERM to lingering {$name} process (PID {$pid})...\n");
-                    @posix_kill($pid, SIGTERM);
-                    $wStart = hrtime(true) / 1e9;
-                    while (@posix_kill($pid, 0) && ((hrtime(true) / 1e9) - $wStart) < 2.0) {
+                    fwrite(STDERR, "[Cleanup] Lingering {$name} process still alive; sending SIGKILL.\n");
+                    self::sendSignal($pid, SIGKILL);
+                    $kStart = hrtime(true) / 1e9;
+                    while (self::isProcessAlive($pid) && ((hrtime(true) / 1e9) - $kStart) < 1.0) {
                         usleep(50000);
                     }
-                    if (@posix_kill($pid, 0)) {
-                        fwrite(STDERR, "[Cleanup] Lingering {$name} process still alive; sending SIGKILL.\n");
-                        @posix_kill($pid, SIGKILL);
-                        $kStart = hrtime(true) / 1e9;
-                        while (@posix_kill($pid, 0) && ((hrtime(true) / 1e9) - $kStart) < 1.0) {
-                            usleep(50000);
-                        }
-                    }
-                    if (@posix_kill($pid, 0)) {
-                        $errors[] = "CHILD_{$name}_PROCESS_NOT_REAPED: PID {$pid} failed to terminate.";
-                    }
                 }
-            }
 
-            // Signal process group if valid and owned
-            if ($snapshot->harnessPgId !== null && $snapshot->harnessPgId > 1 && function_exists('posix_kill')) {
-                @posix_kill(-$snapshot->harnessPgId, SIGTERM);
+                if (self::isProcessAlive($pid)) {
+                    $errors[] = "CHILD_{$name}_PROCESS_NOT_REAPED: PID {$pid} failed to terminate.";
+                }
             }
         }
 
@@ -1798,7 +2044,6 @@ final class VerifiedOwnedSnapshot
         public readonly string $harnessDir,
         public readonly int $childPid,
         public readonly int $verifiedAt,
-        public readonly ?int $harnessPgId = null,
         public readonly ?int $backendPid = null,
         public readonly ?int $proxyPid = null,
         public readonly ?int $caddyPid = null,
@@ -1809,13 +2054,13 @@ final class VerifiedOwnedSnapshot
     ) {}
 
     /**
-     * Sole public validated factory.  Performs ALL pre-condition checks inline; there is no other
-     * constructor path.  Callers must supply an APP_ENV=testing + PHASE8_ALLOW_DISPOSABLE_DB=1
+     * Sole public validated factory. Performs ALL pre-condition checks inline; there is no other
+     * constructor path. Callers must supply an APP_ENV=testing + PHASE8_ALLOW_DISPOSABLE_DB=1
      * environment (via prior putenv) so that assertPrimarySchema does not refuse.
      *
      * Validations performed (in order):
      * 1. Schema name matches /^accounting_p8_tmp_[a-f0-9]{12}$/D and contains no NUL/backtick.
-     * 2. childPid is a positive integer.
+     * 2. childPid is an integer > 1 (PID 1, supervisor own PID, and supervisor parent PID refused).
      * 3. proofPath is a non-symlink 0600 file owned by the current UID under a 0700 parent.
      * 4. proofNonce matches /^[0-9a-f]{32,64}$/.
      * 5. harnessDir is a non-symlink 0700 directory owned by the current UID.
@@ -1825,16 +2070,17 @@ final class VerifiedOwnedSnapshot
      * 9. realpath(harnessDir) is a descendant of sys_get_temp_dir().
      * 10. PHASE8_DISPOSABLE_DB_PROOF/NONCE/ALLOW env vars are saved, set for assertPrimarySchema,
      *     then restored unconditionally in finally (zero net env side-effect).
-     * 11. DisposableMariaDbSchema::assertPrimarySchema($schemaName) passes (requires APP_ENV=testing
-     *     and PHASE8_ALLOW_DISPOSABLE_DB=1 to already be set by the caller before this factory is called).
+     * 11. DisposableMariaDbSchema::assertPrimarySchema($schemaName) passes.
      * 12. Proof parent directory name matches /^p8_proof_[0-9a-f]{16}$/D and is a descendant of sys_get_temp_dir().
+     * 13. Process ownership and lineage verification against live Linux /proc (or test hook).
      *
      * @param  string  $schemaName  Must match /^accounting_p8_tmp_[a-f0-9]{12}$/D
      * @param  string  $proofPath   Path to disposable DB ownership proof file
      * @param  string  $proofNonce  Ownership proof nonce (32-64 lowercase hex)
      * @param  string  $harnessDir  Owned harness directory path
-     * @param  int     $childPid    Positive integer child CLI process PID
+     * @param  int     $childPid    Positive integer child CLI process PID (> 1)
      * @param  string  $repoRoot    Checkout root directory (for containment check)
+     * @param  string|null  $pidsJsonPath  Path to process_pids.json for advanced execution
      *
      * @throws RuntimeException
      */
@@ -1845,14 +2091,7 @@ final class VerifiedOwnedSnapshot
         string $harnessDir,
         int $childPid,
         string $repoRoot,
-        ?int $harnessPgId = null,
-        ?int $backendPid = null,
-        ?int $proxyPid = null,
-        ?int $caddyPid = null,
-        ?string $childStartIdentity = null,
-        ?string $backendStartIdentity = null,
-        ?string $proxyStartIdentity = null,
-        ?string $caddyStartIdentity = null
+        ?string $pidsJsonPath = null
     ): self {
         // 1. Schema name
         if (preg_match(SupervisedPairedFinancialDrill::SCHEMA_REGEX, $schemaName) !== 1
@@ -1866,8 +2105,14 @@ final class VerifiedOwnedSnapshot
         }
 
         // 2. Child PID
-        if ($childPid <= 0) {
+        if ($childPid <= 1) {
             throw new RuntimeException("SNAPSHOT_INVALID_CHILD_PID: must be positive integer, got {$childPid}");
+        }
+        if ($childPid === getmypid()) {
+            throw new RuntimeException("SNAPSHOT_REFUSED_SUPERVISOR_PID: childPid cannot be current supervisor PID {$childPid}");
+        }
+        if (function_exists('posix_getppid') && $childPid === posix_getppid()) {
+            throw new RuntimeException("SNAPSHOT_REFUSED_PARENT_PID: childPid cannot be parent supervisor PID {$childPid}");
         }
 
         // 3. Proof file permissions (0600, uid-owned, no symlink, 0700 parent)
@@ -1997,6 +2242,128 @@ final class VerifiedOwnedSnapshot
         $proofParentDev = (int) $parentStat['dev'];
         $proofParentIno = (int) $parentStat['ino'];
 
+        // 13. Process ownership and lineage verification
+        $backendPid = null;
+        $proxyPid = null;
+        $caddyPid = null;
+        $childStartIdentity = null;
+        $backendStartIdentity = null;
+        $proxyStartIdentity = null;
+        $caddyStartIdentity = null;
+
+        if ($pidsJsonPath === null) {
+            // Basic snapshot mode: derive child start identity if live /proc exists or test hook provides it
+            if (SupervisedPairedFinancialDrill::$processIdentityVerifierHook !== null) {
+                $check = (SupervisedPairedFinancialDrill::$processIdentityVerifierHook)($childPid, getmypid(), null, $realHarness);
+                if ($check['valid'] ?? false) {
+                    $childStartIdentity = $check['start_ticks'];
+                }
+            } elseif (is_dir("/proc/{$childPid}")) {
+                $check = SupervisedPairedFinancialDrill::verifyProcessOwnership($childPid, getmypid(), null, $realHarness);
+                if ($check['valid'] ?? false) {
+                    $childStartIdentity = $check['start_ticks'];
+                }
+            }
+        } else {
+            // Advanced execution mode: process_pids.json is mandatory and strictly verified
+            SupervisedPairedFinancialDrill::assertSecureFilePermissions($pidsJsonPath, 'SNAPSHOT_PROCESS_PIDS');
+            $realPids = realpath($pidsJsonPath);
+            if ($realPids === false || ! str_starts_with($realPids, $realHarness . '/')) {
+                throw new RuntimeException("SNAPSHOT_PIDS_PATH_NOT_IN_HARNESS_DIR: '{$pidsJsonPath}'");
+            }
+
+            $pidsRaw = json_decode((string) file_get_contents($realPids), true);
+            if (! is_array($pidsRaw)) {
+                throw new RuntimeException('SNAPSHOT_INVALID_PROCESS_PIDS_JSON');
+            }
+
+            foreach (['backend_pid', 'proxy_pid', 'caddy_pid'] as $requiredKey) {
+                if (! isset($pidsRaw[$requiredKey]) || ! is_int($pidsRaw[$requiredKey]) || $pidsRaw[$requiredKey] <= 1) {
+                    throw new RuntimeException("SNAPSHOT_MISSING_OR_INVALID_REQUIRED_PID: key '{$requiredKey}' must be integer > 1");
+                }
+            }
+
+            $backendPid = (int) $pidsRaw['backend_pid'];
+            $proxyPid = (int) $pidsRaw['proxy_pid'];
+            $caddyPid = (int) $pidsRaw['caddy_pid'];
+
+            $allPids = [$childPid, $backendPid, $proxyPid, $caddyPid];
+            if (count(array_unique($allPids)) !== 4) {
+                throw new RuntimeException('SNAPSHOT_DUPLICATE_PROCESS_PIDS');
+            }
+
+            $myPid = getmypid();
+            $myParentPid = function_exists('posix_getppid') ? posix_getppid() : -1;
+            foreach (['backend' => $backendPid, 'proxy' => $proxyPid, 'caddy' => $caddyPid] as $role => $pid) {
+                if ($pid === $myPid) {
+                    throw new RuntimeException("SNAPSHOT_REFUSED_SUPERVISOR_PID: {$role} PID {$pid} cannot be supervisor PID");
+                }
+                if ($pid === $myParentPid) {
+                    throw new RuntimeException("SNAPSHOT_REFUSED_PARENT_PID: {$role} PID {$pid} cannot be supervisor parent PID");
+                }
+            }
+
+            // Verify child process identity and lineage (parent must be supervisor)
+            $childCheck = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $childPid,
+                expectedPpid: getmypid(),
+                expectedStartTicks: null,
+                expectedPathSubstring: $realHarness
+            );
+            if (! ($childCheck['valid'] ?? false)) {
+                throw new RuntimeException('SNAPSHOT_CHILD_PROCESS_NOT_PROVEN: ' . ($childCheck['error'] ?? 'unverified'));
+            }
+            $childStartIdentity = $childCheck['start_ticks'];
+            if ($childStartIdentity === null || $childStartIdentity === '') {
+                throw new RuntimeException('SNAPSHOT_CHILD_PROCESS_START_TICKS_EMPTY');
+            }
+
+            // Verify backend process identity and lineage (parent must be child CLI harness)
+            $bCheck = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $backendPid,
+                expectedPpid: $childPid,
+                expectedStartTicks: null,
+                expectedPathSubstring: $realHarness
+            );
+            if (! ($bCheck['valid'] ?? false)) {
+                throw new RuntimeException('SNAPSHOT_BACKEND_PROCESS_NOT_PROVEN: ' . ($bCheck['error'] ?? 'unverified'));
+            }
+            $backendStartIdentity = $bCheck['start_ticks'];
+            if ($backendStartIdentity === null || $backendStartIdentity === '') {
+                throw new RuntimeException('SNAPSHOT_BACKEND_PROCESS_START_TICKS_EMPTY');
+            }
+
+            // Verify proxy process identity and lineage (parent must be child CLI harness)
+            $pCheck = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $proxyPid,
+                expectedPpid: $childPid,
+                expectedStartTicks: null,
+                expectedPathSubstring: $realHarness
+            );
+            if (! ($pCheck['valid'] ?? false)) {
+                throw new RuntimeException('SNAPSHOT_PROXY_PROCESS_NOT_PROVEN: ' . ($pCheck['error'] ?? 'unverified'));
+            }
+            $proxyStartIdentity = $pCheck['start_ticks'];
+            if ($proxyStartIdentity === null || $proxyStartIdentity === '') {
+                throw new RuntimeException('SNAPSHOT_PROXY_PROCESS_START_TICKS_EMPTY');
+            }
+
+            // Verify caddy process identity and lineage (parent must be child CLI harness)
+            $cCheck = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $caddyPid,
+                expectedPpid: $childPid,
+                expectedStartTicks: null,
+                expectedPathSubstring: $realHarness
+            );
+            if (! ($cCheck['valid'] ?? false)) {
+                throw new RuntimeException('SNAPSHOT_CADDY_PROCESS_NOT_PROVEN: ' . ($cCheck['error'] ?? 'unverified'));
+            }
+            $caddyStartIdentity = $cCheck['start_ticks'];
+            if ($caddyStartIdentity === null || $caddyStartIdentity === '') {
+                throw new RuntimeException('SNAPSHOT_CADDY_PROCESS_START_TICKS_EMPTY');
+            }
+        }
+
         return new self(
             schemaName: $schemaName,
             proofPath: $expectedProofPath,
@@ -2009,7 +2376,6 @@ final class VerifiedOwnedSnapshot
             harnessDir: $realHarness,
             childPid: $childPid,
             verifiedAt: time(),
-            harnessPgId: $harnessPgId,
             backendPid: $backendPid,
             proxyPid: $proxyPid,
             caddyPid: $caddyPid,

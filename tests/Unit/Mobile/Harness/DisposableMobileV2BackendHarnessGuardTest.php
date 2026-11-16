@@ -59,6 +59,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
 
     protected function tearDown(): void
     {
+        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = null;
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = null;
         $this->restoreEnv('MOBILE_V2_HARNESS_ENABLE', $this->originalEnable);
         $this->restoreEnv('PHASE8_TEST_DB_HOST', $this->originalHost);
         $this->restoreEnv('PHASE8_TEST_DB_PORT', $this->originalPort);
@@ -6045,6 +6047,238 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $this->assertTrue($definition->hasOption('root-live-approval-file'));
         $this->assertTrue($definition->hasOption('advanced-probes'));
         $this->assertTrue($definition->hasOption('expected-scope'));
+    }
+
+    #[Test]
+    public function test_process_ownership_refuses_supervisor_own_pid_and_dispatches_zero_signals(): void
+    {
+        $signalsDispatched = [];
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
+            $signalsDispatched[] = [$pid, $sig];
+
+            return true;
+        };
+
+        $myPid = getmypid();
+        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership($myPid);
+        $this->assertFalse($check['valid']);
+        $this->assertStringContainsString('REFUSED_OWN_SUPERVISOR_PID', (string) $check['error']);
+
+        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal($myPid, SIGTERM, -1);
+        $this->assertFalse($sent);
+        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to supervisor own PID');
+    }
+
+    #[Test]
+    public function test_process_ownership_refuses_root_pid_one_and_dispatches_zero_signals(): void
+    {
+        $signalsDispatched = [];
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
+            $signalsDispatched[] = [$pid, $sig];
+
+            return true;
+        };
+
+        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(1);
+        $this->assertFalse($check['valid']);
+        $this->assertStringContainsString('REFUSED_ROOT_OR_INVALID_PID', (string) $check['error']);
+
+        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(1, SIGTERM, -1);
+        $this->assertFalse($sent);
+        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to root PID 1');
+    }
+
+    #[Test]
+    public function test_process_ownership_refuses_supervisor_parent_pid_and_dispatches_zero_signals(): void
+    {
+        if (! function_exists('posix_getppid')) {
+            $this->markTestSkipped('posix_getppid not available');
+        }
+
+        $signalsDispatched = [];
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
+            $signalsDispatched[] = [$pid, $sig];
+
+            return true;
+        };
+
+        $parentPid = posix_getppid();
+        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership($parentPid);
+        $this->assertFalse($check['valid']);
+        $this->assertStringContainsString('REFUSED_PARENT_SUPERVISOR_PID', (string) $check['error']);
+
+        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal($parentPid, SIGTERM, -1);
+        $this->assertFalse($sent);
+        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to supervisor parent PID');
+    }
+
+    #[Test]
+    public function test_process_ownership_rejects_foreign_ppid_ancestry_and_dispatches_zero_signals(): void
+    {
+        $signalsDispatched = [];
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
+            $signalsDispatched[] = [$pid, $sig];
+
+            return true;
+        };
+
+        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
+            // Simulate foreign PPID (process has PPID 9999, but caller expects 5555)
+            if ($expectedPpid > 0 && $expectedPpid !== 9999) {
+                return ['valid' => false, 'start_ticks' => '12345', 'ppid' => 9999, 'error' => 'PROC_PPID_LINEAGE_MISMATCH: actual 9999 vs expected ' . $expectedPpid];
+            }
+
+            return ['valid' => true, 'start_ticks' => '12345', 'ppid' => 9999, 'error' => null];
+        };
+
+        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(pid: 8888, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($check['valid']);
+        $this->assertStringContainsString('PROC_PPID_LINEAGE_MISMATCH', (string) $check['error']);
+
+        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(8888, SIGTERM, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($sent);
+        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals when PPID lineage mismatches');
+    }
+
+    #[Test]
+    public function test_process_ownership_rejects_invalid_or_missing_start_ticks_and_dispatches_zero_signals(): void
+    {
+        $signalsDispatched = [];
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
+            $signalsDispatched[] = [$pid, $sig];
+
+            return true;
+        };
+
+        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
+            return ['valid' => false, 'start_ticks' => null, 'ppid' => 5555, 'error' => 'PROC_START_TICKS_INVALID'];
+        };
+
+        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(pid: 8888, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($check['valid']);
+        $this->assertStringContainsString('PROC_START_TICKS_INVALID', (string) $check['error']);
+
+        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(8888, SIGTERM, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($sent);
+        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals when start ticks are missing/unreadable');
+    }
+
+    #[Test]
+    public function test_process_ownership_rejects_changed_start_ticks_and_dispatches_zero_signals(): void
+    {
+        $signalsDispatched = [];
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
+            $signalsDispatched[] = [$pid, $sig];
+
+            return true;
+        };
+
+        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
+            // Process exists but start ticks have changed from captured 12345 to 99999 (PID recycled)
+            if ($expectedStartTicks !== null && $expectedStartTicks !== '99999') {
+                return ['valid' => false, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => "PROC_START_TICKS_MISMATCH: actual 99999 vs expected {$expectedStartTicks}"];
+            }
+
+            return ['valid' => true, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => null];
+        };
+
+        $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(pid: 8888, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($check['valid']);
+        $this->assertStringContainsString('PROC_START_TICKS_MISMATCH', (string) $check['error']);
+
+        $sent = SupervisedPairedFinancialDrill::sendVerifiedSignal(8888, SIGTERM, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($sent);
+        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals when start ticks indicate recycled PID');
+    }
+
+    #[Test]
+    public function test_verified_owned_snapshot_from_live_ownership_rejects_supervisor_pid_in_child_pid(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('SNAPSHOT_REFUSED_SUPERVISOR_PID');
+
+        \Tests\Support\Harness\VerifiedOwnedSnapshot::fromLiveOwnership(
+            schemaName: 'accounting_p8_tmp_0123456789ab',
+            proofPath: sys_get_temp_dir() . '/dummy_proof.json',
+            proofNonce: str_repeat('a', 32),
+            harnessDir: sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
+            childPid: getmypid(),
+            repoRoot: dirname(__DIR__, 4)
+        );
+    }
+
+    #[Test]
+    public function test_execute_exact_cleanup_sends_zero_signals_on_identity_mismatch_and_no_group_kill(): void
+    {
+        $signalsDispatched = [];
+        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
+            $signalsDispatched[] = [$pid, $sig];
+
+            return true;
+        };
+
+        // Mock verifier that reports process 8888 is alive but start ticks mismatch
+        SupervisedPairedFinancialDrill::$processIdentityVerifierHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): array {
+            if ($expectedStartTicks !== null && $expectedStartTicks !== '99999') {
+                return ['valid' => false, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => 'PROC_START_TICKS_MISMATCH'];
+            }
+
+            return ['valid' => true, 'start_ticks' => '99999', 'ppid' => 5555, 'error' => null];
+        };
+
+        // Create a synthetic snapshot with childPid 5555 and proxyPid 8888
+        // Using reflection to construct snapshot directly for cleanup testing
+        $refClass = new \ReflectionClass(\Tests\Support\Harness\VerifiedOwnedSnapshot::class);
+        $constructor = $refClass->getConstructor();
+        $constructor->setAccessible(true);
+        $snapshot = $refClass->newInstanceWithoutConstructor();
+        $constructor->invoke(
+            $snapshot,
+            'accounting_p8_tmp_0123456789ab',
+            sys_get_temp_dir() . '/dummy/proof.json',
+            str_repeat('a', 32),
+            sys_get_temp_dir() . '/dummy',
+            str_repeat('b', 64),
+            posix_getuid(),
+            1,
+            1,
+            sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
+            5555,
+            time(),
+            7777, // backendPid
+            8888, // proxyPid
+            9999, // caddyPid
+            'child_ticks',
+            'backend_ticks',
+            'proxy_ticks', // expected: proxy_ticks, but hook returns 99999
+            'caddy_ticks'
+        );
+
+        $mockPortStmt = $this->createMock(\PDOStatement::class);
+        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+        $mockSchemaStmt = $this->createMock(\PDOStatement::class);
+        $mockSchemaStmt->method('fetch')->willReturn(false);
+        $mockPdo = $this->createMock(\PDO::class);
+        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
+            childProcess: null,
+            snapshot: $snapshot,
+            repoRoot: dirname(__DIR__, 4),
+            adminPdo: $mockPdo
+        );
+
+        $this->assertNotEmpty($result['errors']);
+        $errorStr = implode('; ', $result['errors']);
+        $this->assertStringContainsString('CLEANUP_proxy_PID_IDENTITY_MISMATCH', $errorStr);
+        $this->assertStringContainsString('No signals sent', $errorStr);
+
+        // Verify that NO negative process group signals or signals to mismatched PID were dispatched
+        foreach ($signalsDispatched as $entry) {
+            $this->assertGreaterThan(0, $entry[0], 'Must never dispatch negative process group signals');
+            $this->assertNotSame(8888, $entry[0], 'Must never dispatch signals to identity-mismatched PID 8888');
+        }
     }
 }
 

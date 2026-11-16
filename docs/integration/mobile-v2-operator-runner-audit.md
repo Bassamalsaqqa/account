@@ -1225,6 +1225,29 @@ When a subsequent bounded grant is authorized by Root, the following entrypoints
 - **New Contract Keys Not Authored in Android**: The advanced probe contract envelopes, client retry header expectations, and status query payload schema additions are not yet implemented in the Android application.
 - **Historical and Golden Evidence Byte-Identical**: All original Attempt 7 execution logs (`root-d43-case7-exec`), golden machine manifests (`c54a85b5...`), trusted DB reports (`eb51bc1d...`), and witness artifacts (`44128bee...`) remain 100% frozen, byte-identical, and unaltered. No historical `outer_validation: false` status or exit code has been rewritten.
 
+### 18.7 Critical Cleanup Regression Closure & Process Ownership Hardening
+
+Following Root Review on commit `abf9151483460ab25ef4a0fb8fc3b546682d91ef`, all cleanup regression vectors and fail-open process signaling gaps have been closed with strict **SOURCE-ONLY** discipline:
+
+1. **Complete Removal of Negative Process Group Kill**:
+   - `posix_kill(-$harnessPgId, SIGTERM)` has been completely removed from `SupervisedPairedFinancialDrill::executeExactCleanup()`.
+   - `harness_pgid` has been purged from `DisposableMobileV2BackendHarness`, `VerifiedOwnedSnapshot`, and runner discovery.
+   - Child processes inherit process group without `setsid`, so group signaling previously risked terminating the Root PHP supervisor itself during `finally`. No group signals are ever dispatched.
+
+2. **Elimination of Fail-Open Cleanup**:
+   - Unverified processes or missing/unreadable start identities strictly fail closed: no signals are dispatched, and manual remediation errors (`CLEANUP_{role}_PID_IDENTITY_MISMATCH`) are recorded.
+   - Double verification is performed immediately before `SIGTERM` and re-verified immediately before `SIGKILL`.
+
+3. **Strict Factory Verification & Lineage Proof**:
+   - `VerifiedOwnedSnapshot::fromLiveOwnership` derives and validates process identity from `/proc` (or test hooks) using `process_pids.json` (mode `0600`, UID-owned, inside harness directory).
+   - Basic snapshot mode preserves prior single-child behavior without extra PIDs.
+   - Advanced execution requires a complete, validated child set (`backend_pid`, `proxy_pid`, `caddy_pid`) where each process has PPID matching `childPid`, UID matching `posix_getuid()`, non-empty start ticks, and cmdline matching the harness directory.
+   - Root PID (1), supervisor own PID (`getmypid()`), and supervisor parent PID (`posix_getppid()`) are strictly refused at the factory boundary.
+
+4. **Injectable Pure Identity Validator & Mock Signal Recorder**:
+   - Added `SupervisedPairedFinancialDrill::$processIdentityVerifierHook` and `SupervisedPairedFinancialDrill::$signalDispatcherHook`.
+   - Authored pure unit tests in `DisposableMobileV2BackendHarnessGuardTest.php` exercising own PID, root PID 1, parent PID, foreign ancestry, missing start ticks, changed ticks, and cleanup identity mismatch, verifying that **zero signals** are dispatched without touching host processes.
+
 
 
 

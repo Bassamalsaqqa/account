@@ -192,11 +192,6 @@ final class DisposableMobileV2BackendHarness
         return $this->backendProcess?->getPid();
     }
 
-    public function getHarnessPgId(): ?int
-    {
-        return function_exists('posix_getpgid') ? posix_getpgid(getmypid()) : null;
-    }
-
     public function setRootPrestartApprovalPath(?string $path): void
     {
         $this->rootPrestartApprovalPath = $path;
@@ -2285,10 +2280,9 @@ PHP;
             );
             $this->caddyProcess->start();
 
-            // Record child process PIDs and process group for supervisor lifecycle management
+            // Record child process PIDs for supervisor lifecycle management
             $processPids = [
                 'harness_pid' => getmypid(),
-                'harness_pgid' => function_exists('posix_getpgid') ? posix_getpgid(getmypid()) : getmypid(),
                 'backend_pid' => $this->backendProcess?->getPid(),
                 'proxy_pid' => $this->proxyProcess?->getPid(),
                 'caddy_pid' => $this->caddyProcess?->getPid(),
