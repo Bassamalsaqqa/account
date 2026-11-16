@@ -401,8 +401,16 @@ class SupervisedPairedFinancialDrill
             ];
         }
 
-        // 2. Directory and link validation
-        if (isset($facts['is_dir']) && ! $facts['is_dir']) {
+        // 2. Directory and link validation: mandatory facts, no skipped validation
+        if (! isset($facts['is_dir']) || ! is_bool($facts['is_dir'])) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_FACTS_IS_DIR_MISSING',
+            ];
+        }
+        if (! $facts['is_dir']) {
             return [
                 'valid' => false,
                 'start_ticks' => null,
@@ -410,7 +418,16 @@ class SupervisedPairedFinancialDrill
                 'error' => 'PROC_DIR_MISSING',
             ];
         }
-        if (isset($facts['is_link']) && $facts['is_link']) {
+
+        if (! isset($facts['is_link']) || ! is_bool($facts['is_link'])) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_FACTS_IS_LINK_MISSING',
+            ];
+        }
+        if ($facts['is_link']) {
             return [
                 'valid' => false,
                 'start_ticks' => null,
@@ -419,22 +436,36 @@ class SupervisedPairedFinancialDrill
             ];
         }
 
-        // 3. UID check: must match current UID
-        if (function_exists('posix_getuid') && isset($facts['uid'])) {
-            $expectedUid = posix_getuid();
-            if ($facts['uid'] !== $expectedUid) {
-                return [
-                    'valid' => false,
-                    'start_ticks' => null,
-                    'ppid' => null,
-                    'error' => "PROC_UID_MISMATCH: owner {$facts['uid']} vs expected {$expectedUid}",
-                ];
-            }
+        // 3. Mandatory UID check: must be integer and match current process UID
+        if (! isset($facts['uid']) || ! is_int($facts['uid'])) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_FACTS_UID_MISSING',
+            ];
+        }
+        if (! function_exists('posix_getuid')) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'POSIX_GETUID_UNAVAILABLE',
+            ];
+        }
+        $expectedUid = posix_getuid();
+        if ($facts['uid'] !== $expectedUid) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => "PROC_UID_MISMATCH: owner {$facts['uid']} vs expected {$expectedUid}",
+            ];
         }
 
-        // 4. Start ticks check
-        $actualStartTicks = (string) ($facts['start_ticks'] ?? '');
-        if ($actualStartTicks === '' || $actualStartTicks === '0') {
+        // 4. Valid numeric start ticks check (must be non-empty, all-digits, > 0)
+        $actualStartTicks = isset($facts['start_ticks']) ? trim((string) $facts['start_ticks']) : '';
+        if ($actualStartTicks === '' || $actualStartTicks === '0' || ! ctype_digit($actualStartTicks)) {
             return [
                 'valid' => false,
                 'start_ticks' => null,
@@ -443,19 +474,29 @@ class SupervisedPairedFinancialDrill
             ];
         }
 
-        if ($expectedStartTicks !== null && $actualStartTicks !== $expectedStartTicks) {
-            return [
-                'valid' => false,
-                'start_ticks' => $actualStartTicks,
-                'ppid' => isset($facts['ppid']) ? (int) $facts['ppid'] : null,
-                'error' => "PROC_START_TICKS_MISMATCH: actual {$actualStartTicks} vs expected {$expectedStartTicks}",
-            ];
+        if ($expectedStartTicks !== null) {
+            if ($expectedStartTicks === '' || ! ctype_digit($expectedStartTicks)) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => $actualStartTicks,
+                    'ppid' => isset($facts['ppid']) ? (int) $facts['ppid'] : null,
+                    'error' => 'PROC_EXPECTED_START_TICKS_INVALID',
+                ];
+            }
+            if ($actualStartTicks !== $expectedStartTicks) {
+                return [
+                    'valid' => false,
+                    'start_ticks' => $actualStartTicks,
+                    'ppid' => isset($facts['ppid']) ? (int) $facts['ppid'] : null,
+                    'error' => "PROC_START_TICKS_MISMATCH: actual {$actualStartTicks} vs expected {$expectedStartTicks}",
+                ];
+            }
         }
 
-        // 5. PPID lineage check
-        $actualPpid = isset($facts['ppid']) ? (int) $facts['ppid'] : null;
+        // 5. PPID lineage check and orphan handling
+        $actualPpid = isset($facts['ppid']) && is_int($facts['ppid']) ? $facts['ppid'] : null;
         if ($expectedPpid > 0) {
-            if ($actualPpid === null) {
+            if ($actualPpid === null || $actualPpid <= 0) {
                 return [
                     'valid' => false,
                     'start_ticks' => $actualStartTicks,
@@ -464,9 +505,46 @@ class SupervisedPairedFinancialDrill
                 ];
             }
             if ($actualPpid !== $expectedPpid) {
-                // If the leader process already exited, child subprocesses are reparented to init (PID 1)
+                // Orphan adopted by init (PID 1) is ONLY allowed if:
+                // 1) $allowOrphanAdoptedByInit is true
+                // 2) Previously captured matching start ticks exist
+                // 3) Previously captured owned path substring exists and matches
                 $isAdoptedOrphan = $allowOrphanAdoptedByInit && $actualPpid === 1;
-                if (! $isAdoptedOrphan) {
+                if ($isAdoptedOrphan) {
+                    if ($expectedStartTicks === null || $expectedStartTicks === '' || ! ctype_digit($expectedStartTicks)) {
+                        return [
+                            'valid' => false,
+                            'start_ticks' => $actualStartTicks,
+                            'ppid' => $actualPpid,
+                            'error' => 'PROC_ORPHAN_START_TICKS_UNPROVEN',
+                        ];
+                    }
+                    if ($actualStartTicks !== $expectedStartTicks) {
+                        return [
+                            'valid' => false,
+                            'start_ticks' => $actualStartTicks,
+                            'ppid' => $actualPpid,
+                            'error' => "PROC_START_TICKS_MISMATCH: actual {$actualStartTicks} vs expected {$expectedStartTicks}",
+                        ];
+                    }
+                    if ($expectedPathSubstring === null || $expectedPathSubstring === '') {
+                        return [
+                            'valid' => false,
+                            'start_ticks' => $actualStartTicks,
+                            'ppid' => $actualPpid,
+                            'error' => 'PROC_ORPHAN_PATH_UNPROVEN',
+                        ];
+                    }
+                    $cmdContent = (string) ($facts['cmdline'] ?? '');
+                    if ($cmdContent === '' || ! str_contains($cmdContent, $expectedPathSubstring)) {
+                        return [
+                            'valid' => false,
+                            'start_ticks' => $actualStartTicks,
+                            'ppid' => $actualPpid,
+                            'error' => 'PROC_CMDLINE_PATH_MISMATCH',
+                        ];
+                    }
+                } else {
                     return [
                         'valid' => false,
                         'start_ticks' => $actualStartTicks,
@@ -544,7 +622,24 @@ class SupervisedPairedFinancialDrill
             ];
         }
 
-        $ownerUid = function_exists('posix_getuid') ? @fileowner($procDir) : null;
+        if (! function_exists('posix_getuid')) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'POSIX_GETUID_UNAVAILABLE',
+            ];
+        }
+
+        $ownerUid = @fileowner($procDir);
+        if ($ownerUid === false) {
+            return [
+                'valid' => false,
+                'start_ticks' => null,
+                'ppid' => null,
+                'error' => 'PROC_UID_UNREADABLE',
+            ];
+        }
 
         $statPath = "{$procDir}/stat";
         if (! is_file($statPath) || ! is_readable($statPath)) {
@@ -588,22 +683,14 @@ class SupervisedPairedFinancialDrill
         $actualStartTicks = (string) $fields[19];
 
         $cmdline = null;
-        if ($expectedPathSubstring !== null) {
-            $cmdPath = "{$procDir}/cmdline";
-            if (! is_file($cmdPath) || ! is_readable($cmdPath)) {
-                return [
-                    'valid' => false,
-                    'start_ticks' => $actualStartTicks,
-                    'ppid' => $actualPpid,
-                    'error' => 'PROC_CMDLINE_UNREADABLE',
-                ];
-            }
+        $cmdPath = "{$procDir}/cmdline";
+        if (is_file($cmdPath) && is_readable($cmdPath)) {
             $cmdline = (string) @file_get_contents($cmdPath);
         }
 
         $facts = [
             'pid' => $pid,
-            'uid' => $ownerUid,
+            'uid' => (int) $ownerUid,
             'ppid' => $actualPpid,
             'start_ticks' => $actualStartTicks,
             'cmdline' => $cmdline,
@@ -647,8 +734,9 @@ class SupervisedPairedFinancialDrill
 
     /**
      * Dispatches a signal to a process using test hook or posix_kill.
+     * Private dispatcher to prevent generic arbitrary signal injection.
      */
-    public static function sendSignal(int $pid, int $signal): bool
+    private static function sendSignal(int $pid, int $signal): bool
     {
         if (self::$signalDispatcherHook !== null) {
             return (bool) (self::$signalDispatcherHook)($pid, $signal);
@@ -662,14 +750,16 @@ class SupervisedPairedFinancialDrill
 
     /**
      * Double-verifies process ownership and lineage immediately before sending a signal.
-     * Refuses root PID, supervisor own PID, supervisor parent PID, and mismatched start ticks.
+     * Strictly private to cleanup; requires exact expected PPID, non-null numeric expected start ticks,
+     * and non-null expected path substring. Refuses root PID, supervisor own PID, supervisor parent PID,
+     * and mismatched start ticks/path.
      */
-    public static function sendVerifiedSignal(
+    private static function sendVerifiedSignal(
         int $pid,
         int $signal,
         int $expectedPpid,
-        ?string $expectedStartTicks = null,
-        ?string $expectedPathSubstring = null,
+        string $expectedStartTicks,
+        string $expectedPathSubstring,
         bool $allowOrphanAdoptedByInit = false
     ): bool {
         if ($pid <= 1 || $pid === getmypid()) {
@@ -1415,7 +1505,13 @@ class SupervisedPairedFinancialDrill
 
                     if ($startIdMatches) {
                         fwrite(STDERR, "[Cleanup] Sending SIGTERM to child process (PID {$livePid}, matches snapshot)...\n");
-                        self::sendSignal($livePid, SIGTERM);
+                        self::sendVerifiedSignal(
+                            pid: $livePid,
+                            signal: SIGTERM,
+                            expectedPpid: getmypid(),
+                            expectedStartTicks: (string) $snapshot->childStartIdentity,
+                            expectedPathSubstring: 'mobile-v2-harness-cli.php'
+                        );
 
                         $waitStart = hrtime(true) / 1e9;
                         while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $waitStart) < 5.0) {
@@ -1439,7 +1535,13 @@ class SupervisedPairedFinancialDrill
 
                             if ($startIdMatches) {
                                 fwrite(STDERR, "[Cleanup] Child process still running after 5s; sending SIGKILL.\n");
-                                self::sendSignal($livePid, SIGKILL);
+                                self::sendVerifiedSignal(
+                                    pid: $livePid,
+                                    signal: SIGKILL,
+                                    expectedPpid: getmypid(),
+                                    expectedStartTicks: (string) $snapshot->childStartIdentity,
+                                    expectedPathSubstring: 'mobile-v2-harness-cli.php'
+                                );
                                 $killStart = hrtime(true) / 1e9;
                                 while ($childProcess->isRunning() && ((hrtime(true) / 1e9) - $killStart) < 2.0) {
                                     usleep(100000);
@@ -1495,7 +1597,14 @@ class SupervisedPairedFinancialDrill
                 }
 
                 fwrite(STDERR, "[Cleanup] Sending SIGTERM to lingering {$name} process (PID {$pid})...\n");
-                self::sendSignal($pid, SIGTERM);
+                self::sendVerifiedSignal(
+                    pid: $pid,
+                    signal: SIGTERM,
+                    expectedPpid: $snapshot->childPid,
+                    expectedStartTicks: (string) $expectedStartId,
+                    expectedPathSubstring: $snapshot->harnessDir,
+                    allowOrphanAdoptedByInit: true
+                );
                 $wStart = hrtime(true) / 1e9;
                 while (self::isProcessAlive($pid) && ((hrtime(true) / 1e9) - $wStart) < 2.0) {
                     usleep(50000);
@@ -1516,7 +1625,14 @@ class SupervisedPairedFinancialDrill
                     }
 
                     fwrite(STDERR, "[Cleanup] Lingering {$name} process still alive; sending SIGKILL.\n");
-                    self::sendSignal($pid, SIGKILL);
+                    self::sendVerifiedSignal(
+                        pid: $pid,
+                        signal: SIGKILL,
+                        expectedPpid: $snapshot->childPid,
+                        expectedStartTicks: (string) $expectedStartId,
+                        expectedPathSubstring: $snapshot->harnessDir,
+                        allowOrphanAdoptedByInit: true
+                    );
                     $kStart = hrtime(true) / 1e9;
                     while (self::isProcessAlive($pid) && ((hrtime(true) / 1e9) - $kStart) < 1.0) {
                         usleep(50000);
@@ -2350,17 +2466,22 @@ final class VerifiedOwnedSnapshot
         $caddyStartIdentity = null;
 
         if ($pidsJsonPath === null) {
-            // Basic snapshot mode: derive child start identity if live /proc exists
-            if (is_dir("/proc/{$childPid}")) {
-                $check = SupervisedPairedFinancialDrill::verifyProcessOwnership(
-                    pid: $childPid,
-                    expectedPpid: getmypid(),
-                    expectedStartTicks: null,
-                    expectedPathSubstring: 'mobile-v2-harness-cli.php'
-                );
-                if ($check['valid'] ?? false) {
-                    $childStartIdentity = $check['start_ticks'];
-                }
+            // Basic snapshot mode: verify child process ownership and lineage against live /proc.
+            // If child process is missing from /proc, UID is unknown/mismatched, or identity is invalid:
+            // FAIL CLOSED: do not accept snapshot with childStart null. Absent child cannot capture
+            // a snapshot for cleanup; explicit manual owned DB cleanup is required if process cannot be proven.
+            $childCheck = SupervisedPairedFinancialDrill::verifyProcessOwnership(
+                pid: $childPid,
+                expectedPpid: getmypid(),
+                expectedStartTicks: null,
+                expectedPathSubstring: 'mobile-v2-harness-cli.php'
+            );
+            if (! ($childCheck['valid'] ?? false)) {
+                throw new RuntimeException('SNAPSHOT_CHILD_PROCESS_NOT_PROVEN: ' . ($childCheck['error'] ?? 'unverified'));
+            }
+            $childStartIdentity = $childCheck['start_ticks'];
+            if ($childStartIdentity === null || $childStartIdentity === '') {
+                throw new RuntimeException('SNAPSHOT_CHILD_PROCESS_START_TICKS_EMPTY');
             }
         } else {
             // Advanced execution mode: process_pids.json is mandatory and strictly verified

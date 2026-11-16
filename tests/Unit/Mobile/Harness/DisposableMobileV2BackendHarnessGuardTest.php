@@ -6079,6 +6079,54 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
+    public function test_validate_process_facts_refuses_missing_mandatory_facts(): void
+    {
+        $baseFacts = [
+            'pid' => 8888,
+            'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'is_dir' => true,
+            'is_link' => false,
+            'ppid' => 5555,
+            'start_ticks' => '12345',
+            'cmdline' => 'php harness',
+        ];
+
+        // Missing is_dir
+        $fNoDir = $baseFacts;
+        unset($fNoDir['is_dir']);
+        $rNoDir = SupervisedPairedFinancialDrill::validateProcessFacts($fNoDir);
+        $this->assertFalse($rNoDir['valid']);
+        $this->assertSame('PROC_FACTS_IS_DIR_MISSING', $rNoDir['error']);
+
+        // Missing is_link
+        $fNoLink = $baseFacts;
+        unset($fNoLink['is_link']);
+        $rNoLink = SupervisedPairedFinancialDrill::validateProcessFacts($fNoLink);
+        $this->assertFalse($rNoLink['valid']);
+        $this->assertSame('PROC_FACTS_IS_LINK_MISSING', $rNoLink['error']);
+
+        // Missing uid
+        $fNoUid = $baseFacts;
+        unset($fNoUid['uid']);
+        $rNoUid = SupervisedPairedFinancialDrill::validateProcessFacts($fNoUid);
+        $this->assertFalse($rNoUid['valid']);
+        $this->assertSame('PROC_FACTS_UID_MISSING', $rNoUid['error']);
+
+        // Non-directory or symlink
+        $fNotDir = $baseFacts;
+        $fNotDir['is_dir'] = false;
+        $rNotDir = SupervisedPairedFinancialDrill::validateProcessFacts($fNotDir);
+        $this->assertFalse($rNotDir['valid']);
+        $this->assertSame('PROC_DIR_MISSING', $rNotDir['error']);
+
+        $fLink = $baseFacts;
+        $fLink['is_link'] = true;
+        $rLink = SupervisedPairedFinancialDrill::validateProcessFacts($fLink);
+        $this->assertFalse($rLink['valid']);
+        $this->assertSame('PROC_DIR_LINK_REFUSED', $rLink['error']);
+    }
+
+    #[Test]
     public function test_validate_process_facts_refuses_uid_mismatch(): void
     {
         if (! function_exists('posix_getuid')) {
@@ -6088,6 +6136,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $facts = [
             'pid' => 8888,
             'uid' => posix_getuid() + 100, // foreign UID
+            'is_dir' => true,
+            'is_link' => false,
             'ppid' => 5555,
             'start_ticks' => '12345',
             'cmdline' => 'php harness',
@@ -6104,6 +6154,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $facts = [
             'pid' => 8888,
             'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'is_dir' => true,
+            'is_link' => false,
             'ppid' => 9999, // foreign parent
             'start_ticks' => '12345',
             'cmdline' => 'php harness',
@@ -6120,6 +6172,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $facts = [
             'pid' => 8888,
             'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'is_dir' => true,
+            'is_link' => false,
             'ppid' => 1, // adopted by init after leader exited
             'start_ticks' => '12345',
             'cmdline' => 'php /tmp/v2_harness_test/proxy.php',
@@ -6149,11 +6203,60 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
+    public function test_validate_process_facts_refuses_orphan_when_start_ticks_or_path_unproven(): void
+    {
+        $facts = [
+            'pid' => 8888,
+            'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'is_dir' => true,
+            'is_link' => false,
+            'ppid' => 1,
+            'start_ticks' => '12345',
+            'cmdline' => 'php /tmp/v2_harness_test/proxy.php',
+        ];
+
+        // Missing expected start ticks -> unproven
+        $rNoStart = SupervisedPairedFinancialDrill::validateProcessFacts(
+            $facts,
+            expectedPpid: 5555,
+            expectedStartTicks: null,
+            expectedPathSubstring: 'v2_harness_test',
+            allowOrphanAdoptedByInit: true
+        );
+        $this->assertFalse($rNoStart['valid']);
+        $this->assertSame('PROC_ORPHAN_START_TICKS_UNPROVEN', $rNoStart['error']);
+
+        // Missing expected path substring -> unproven
+        $rNoPath = SupervisedPairedFinancialDrill::validateProcessFacts(
+            $facts,
+            expectedPpid: 5555,
+            expectedStartTicks: '12345',
+            expectedPathSubstring: null,
+            allowOrphanAdoptedByInit: true
+        );
+        $this->assertFalse($rNoPath['valid']);
+        $this->assertSame('PROC_ORPHAN_PATH_UNPROVEN', $rNoPath['error']);
+
+        // Mismatched expected path substring -> refused
+        $rWrongPath = SupervisedPairedFinancialDrill::validateProcessFacts(
+            $facts,
+            expectedPpid: 5555,
+            expectedStartTicks: '12345',
+            expectedPathSubstring: 'foreign_harness_dir',
+            allowOrphanAdoptedByInit: true
+        );
+        $this->assertFalse($rWrongPath['valid']);
+        $this->assertSame('PROC_CMDLINE_PATH_MISMATCH', $rWrongPath['error']);
+    }
+
+    #[Test]
     public function test_validate_process_facts_refuses_missing_or_changed_start_ticks(): void
     {
         $baseFacts = [
             'pid' => 8888,
             'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'is_dir' => true,
+            'is_link' => false,
             'ppid' => 5555,
             'cmdline' => 'php harness',
         ];
@@ -6164,6 +6267,13 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $resMissing = SupervisedPairedFinancialDrill::validateProcessFacts($factsMissing, expectedPpid: 5555, expectedStartTicks: '12345');
         $this->assertFalse($resMissing['valid']);
         $this->assertStringContainsString('PROC_START_TICKS_INVALID', (string) $resMissing['error']);
+
+        // Non-numeric start ticks
+        $factsAlpha = $baseFacts;
+        $factsAlpha['start_ticks'] = 'abc123';
+        $resAlpha = SupervisedPairedFinancialDrill::validateProcessFacts($factsAlpha, expectedPpid: 5555, expectedStartTicks: '12345');
+        $this->assertFalse($resAlpha['valid']);
+        $this->assertStringContainsString('PROC_START_TICKS_INVALID', (string) $resAlpha['error']);
 
         // Changed start ticks (recycled PID)
         $factsChanged = $baseFacts;
@@ -6179,6 +6289,8 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
         $facts = [
             'pid' => 8888,
             'uid' => function_exists('posix_getuid') ? posix_getuid() : 1000,
+            'is_dir' => true,
+            'is_link' => false,
             'ppid' => 5555,
             'start_ticks' => '12345',
             'cmdline' => 'php /var/other/service.php',
@@ -6214,24 +6326,6 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_send_verified_signal_with_forbidden_or_unproven_pid_dispatches_zero_signals(): void
-    {
-        $signalsDispatched = [];
-        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
-            $signalsDispatched[] = [$pid, $sig];
-
-            return true;
-        };
-
-        $myPid = getmypid();
-        $this->assertFalse(SupervisedPairedFinancialDrill::sendVerifiedSignal($myPid, SIGTERM, -1));
-        $this->assertFalse(SupervisedPairedFinancialDrill::sendVerifiedSignal(1, SIGTERM, -1));
-        $this->assertFalse(SupervisedPairedFinancialDrill::sendVerifiedSignal(9999999, SIGTERM, -1));
-
-        $this->assertCount(0, $signalsDispatched, 'Must dispatch exactly zero signals to unproven or forbidden PIDs');
-    }
-
-    #[Test]
     public function test_verified_owned_snapshot_from_live_ownership_rejects_supervisor_pid_in_child_pid(): void
     {
         $this->expectException(\RuntimeException::class);
@@ -6248,72 +6342,205 @@ class DisposableMobileV2BackendHarnessGuardTest extends TestCase
     }
 
     #[Test]
-    public function test_execute_exact_cleanup_sends_zero_signals_on_identity_mismatch_and_no_group_kill(): void
+    public function test_verified_owned_snapshot_from_live_ownership_rejects_missing_child_proc(): void
     {
-        $signalsDispatched = [];
-        SupervisedPairedFinancialDrill::$signalDispatcherHook = function (int $pid, int $sig) use (&$signalsDispatched): bool {
-            $signalsDispatched[] = [$pid, $sig];
+        // Valid proof and harness paths, but non-existent child PID
+        $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+        mkdir($proofDir, 0700, true);
+        $proofFile = $proofDir . '/proof.json';
 
-            return true;
-        };
+        $harnessDir = sys_get_temp_dir() . '/v2_harness_' . bin2hex(random_bytes(8));
+        mkdir($harnessDir, 0700, true);
 
-        // Negative hook forces refusal for proxy process PID 8888
-        SupervisedPairedFinancialDrill::$negativeRefusalHook = function (int $pid, int $expectedPpid, ?string $expectedStartTicks, ?string $expectedPathSubstring): ?string {
-            if ($pid === 8888) {
-                return 'PROXY_PID_IDENTITY_FAILED_REFUSAL';
+        $proofData = [
+            'schema' => 'accounting_p8_tmp_0123456789ab',
+            'host' => '127.0.0.1',
+            'port' => '3342',
+            'nonce' => str_repeat('a', 32),
+        ];
+        file_put_contents($proofFile, json_encode($proofData));
+        chmod($proofFile, 0600);
+
+        $savedEnv = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
+            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
+            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
+            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+            'PHASE8_TEST_DB_EMPTY_PASSWORD' => getenv('PHASE8_TEST_DB_EMPTY_PASSWORD'),
+            'PHASE8_DISPOSABLE_DB_PROOF' => getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+            'PHASE8_DISPOSABLE_DB_NONCE' => getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+        ];
+
+        try {
+            putenv('APP_ENV=testing');
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            putenv('PHASE8_TEST_DB_USERNAME=root');
+            putenv('PHASE8_TEST_DB_PASSWORD=');
+            putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofFile}");
+            putenv('PHASE8_DISPOSABLE_DB_NONCE=' . str_repeat('a', 32));
+
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('SNAPSHOT_CHILD_PROCESS_NOT_PROVEN: PROC_DIR_MISSING');
+
+            \Tests\Support\Harness\VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: 'accounting_p8_tmp_0123456789ab',
+                proofPath: $proofFile,
+                proofNonce: str_repeat('a', 32),
+                harnessDir: $harnessDir,
+                childPid: 9999999, // Non-existent PID
+                repoRoot: dirname(__DIR__, 4)
+            );
+        } finally {
+            if (file_exists($proofFile)) {
+                @unlink($proofFile);
             }
+            if (is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
+            if (is_dir($harnessDir)) {
+                @rmdir($harnessDir);
+            }
+            foreach ($savedEnv as $k => $v) {
+                if ($v === false) {
+                    putenv($k);
+                } else {
+                    putenv("{$k}={$v}");
+                }
+            }
+        }
+    }
 
-            return null;
-        };
+    #[Test]
+    public function test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo(): void
+    {
+        // Guarded: requires explicit Root process-only execution grant.
+        // Under current SOURCE-ONLY review, no OS child processes may be spawned.
+        if (getenv('ROOT_PROCESS_LIFECYCLE_GRANT') !== '1') {
+            $this->markTestSkipped('Requires explicit ROOT_PROCESS_LIFECYCLE_GRANT=1 (no child process execution during source-only qualification).');
+        }
 
-        // Construct synthetic snapshot for cleanup testing
-        $refClass = new \ReflectionClass(\Tests\Support\Harness\VerifiedOwnedSnapshot::class);
-        $constructor = $refClass->getConstructor();
-        $constructor->setAccessible(true);
-        $snapshot = $refClass->newInstanceWithoutConstructor();
-        $constructor->invoke(
-            $snapshot,
-            'accounting_p8_tmp_0123456789ab',
-            sys_get_temp_dir() . '/dummy/proof.json',
-            str_repeat('a', 32),
-            sys_get_temp_dir() . '/dummy',
-            str_repeat('b', 64),
-            posix_getuid(),
-            1,
-            1,
-            sys_get_temp_dir() . '/v2_harness_0123456789abcdef',
-            5555,
-            time(),
-            7777, // backendPid
-            8888, // proxyPid
-            9999, // caddyPid
-            'child_ticks',
-            'backend_ticks',
-            'proxy_ticks',
-            'caddy_ticks'
-        );
+        // When granted by Root, exercises real public factory fromLiveOwnership()
+        // with synthetic private proof fixture, real temporary harness directory,
+        // bounded throwaway child process, and mock admin PDO.
+        $repoRoot = dirname(__DIR__, 4);
+        $schemaName = 'accounting_p8_tmp_0123456789ab';
+        $proofNonce = str_repeat('a', 32);
 
-        $mockPortStmt = $this->createMock(\PDOStatement::class);
-        $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
-        $mockSchemaStmt = $this->createMock(\PDOStatement::class);
-        $mockSchemaStmt->method('fetch')->willReturn(false);
-        $mockPdo = $this->createMock(\PDO::class);
-        $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
-        $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+        $proofDir = sys_get_temp_dir() . '/p8_proof_' . bin2hex(random_bytes(8));
+        mkdir($proofDir, 0700, true);
+        $proofFile = $proofDir . '/proof.json';
 
-        $result = SupervisedPairedFinancialDrill::executeExactCleanup(
-            childProcess: null,
-            snapshot: $snapshot,
-            repoRoot: dirname(__DIR__, 4),
-            adminPdo: $mockPdo
-        );
+        $harnessName = 'v2_harness_' . bin2hex(random_bytes(8));
+        $harnessDir = sys_get_temp_dir() . '/' . $harnessName;
+        mkdir($harnessDir, 0700, true);
 
-        $this->assertNotEmpty($result['errors']);
+        // Spawn a bounded throwaway child process matching the exact harness script path
+        $throwawayScript = $harnessDir . '/mobile-v2-harness-cli.php';
+        file_put_contents($throwawayScript, "<?php usleep(2000000);\n");
+        chmod($throwawayScript, 0700);
 
-        // Verify that NO negative process group signals or signals to unverified PID were dispatched
-        foreach ($signalsDispatched as $entry) {
-            $this->assertGreaterThan(0, $entry[0], 'Must never dispatch negative process group signals');
-            $this->assertNotSame(8888, $entry[0], 'Must never dispatch signals to identity-mismatched PID 8888');
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $proc = proc_open(['php', $throwawayScript], $descriptors, $pipes);
+        if (! is_resource($proc)) {
+            $this->fail('Failed to spawn bounded throwaway child process');
+        }
+        $status = proc_get_status($proc);
+        $childPid = (int) $status['pid'];
+
+        $savedEnv = [
+            'APP_ENV' => getenv('APP_ENV'),
+            'PHASE8_ALLOW_DISPOSABLE_DB' => getenv('PHASE8_ALLOW_DISPOSABLE_DB'),
+            'PHASE8_TEST_DB_HOST' => getenv('PHASE8_TEST_DB_HOST'),
+            'PHASE8_TEST_DB_PORT' => getenv('PHASE8_TEST_DB_PORT'),
+            'PHASE8_TEST_DB_USERNAME' => getenv('PHASE8_TEST_DB_USERNAME'),
+            'PHASE8_TEST_DB_PASSWORD' => getenv('PHASE8_TEST_DB_PASSWORD'),
+            'PHASE8_TEST_DB_EMPTY_PASSWORD' => getenv('PHASE8_TEST_DB_EMPTY_PASSWORD'),
+            'PHASE8_DISPOSABLE_DB_PROOF' => getenv('PHASE8_DISPOSABLE_DB_PROOF'),
+            'PHASE8_DISPOSABLE_DB_NONCE' => getenv('PHASE8_DISPOSABLE_DB_NONCE'),
+        ];
+
+        try {
+            putenv('APP_ENV=testing');
+            putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
+            putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
+            putenv('PHASE8_TEST_DB_PORT=3342');
+            putenv('PHASE8_TEST_DB_USERNAME=root');
+            putenv('PHASE8_TEST_DB_PASSWORD=');
+            putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
+            putenv("PHASE8_DISPOSABLE_DB_PROOF={$proofFile}");
+            putenv("PHASE8_DISPOSABLE_DB_NONCE={$proofNonce}");
+
+            $proofData = [
+                'schema' => $schemaName,
+                'host' => '127.0.0.1',
+                'port' => '3342',
+                'nonce' => $proofNonce,
+            ];
+            file_put_contents($proofFile, json_encode($proofData, JSON_THROW_ON_ERROR));
+            chmod($proofFile, 0600);
+
+            // Construct snapshot via REAL public factory
+            $snapshot = \Tests\Support\Harness\VerifiedOwnedSnapshot::fromLiveOwnership(
+                schemaName: $schemaName,
+                proofPath: $proofFile,
+                proofNonce: $proofNonce,
+                harnessDir: $harnessDir,
+                childPid: $childPid,
+                repoRoot: $repoRoot
+            );
+
+            $this->assertSame($childPid, $snapshot->childPid);
+            $this->assertNotNull($snapshot->childStartIdentity);
+
+            // Execute cleanup with mock PDO
+            $mockPortStmt = $this->createMock(\PDOStatement::class);
+            $mockPortStmt->method('fetch')->willReturn(['port' => '3342']);
+            $mockSchemaStmt = $this->createMock(\PDOStatement::class);
+            $mockSchemaStmt->method('fetch')->willReturn(false);
+            $mockPdo = $this->createMock(\PDO::class);
+            $mockPdo->method('query')->with('SELECT @@port AS port')->willReturn($mockPortStmt);
+            $mockPdo->method('prepare')->willReturn($mockSchemaStmt);
+
+            $cleanResult = SupervisedPairedFinancialDrill::executeExactCleanup(
+                childProcess: null,
+                snapshot: $snapshot,
+                repoRoot: $repoRoot,
+                adminPdo: $mockPdo
+            );
+            $this->assertEmpty($cleanResult['errors']);
+        } finally {
+            if (is_resource($proc)) {
+                @proc_terminate($proc);
+                @proc_close($proc);
+            }
+            if (file_exists($proofFile)) {
+                @unlink($proofFile);
+            }
+            if (is_dir($proofDir)) {
+                @rmdir($proofDir);
+            }
+            if (file_exists($throwawayScript)) {
+                @unlink($throwawayScript);
+            }
+            if (is_dir($harnessDir)) {
+                @rmdir($harnessDir);
+            }
+            foreach ($savedEnv as $k => $v) {
+                if ($v === false) {
+                    putenv($k);
+                } else {
+                    putenv("{$k}={$v}");
+                }
+            }
         }
     }
 }

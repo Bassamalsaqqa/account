@@ -1240,7 +1240,7 @@ Following Root Review on commit `abf9151483460ab25ef4a0fb8fc3b546682d91ef`, all 
 
 3. **Strict Factory Verification & Lineage Proof**:
    - `VerifiedOwnedSnapshot::fromLiveOwnership` derives and validates process identity from live `/proc` using `process_pids.json` (mode `0600`, UID-owned, inside harness directory).
-   - Basic snapshot mode preserves prior single-child behavior without extra PIDs.
+   - Basic snapshot mode strictly verifies the live child process; absent child processes, missing `/proc` directories, or unknown UIDs fail closed (`SNAPSHOT_CHILD_PROCESS_NOT_PROVEN`). No snapshot with null `childStartIdentity` is ever accepted.
    - Advanced execution requires a complete, validated child set (`backend_pid`, `proxy_pid`, `caddy_pid`) where each process has PPID matching `childPid`, UID matching `posix_getuid()`, non-empty start ticks, and cmdline matching the harness directory.
    - Root PID (1), supervisor own PID (`getmypid()`), and supervisor parent PID (`posix_getppid()`) are strictly refused at the factory boundary.
    - Production child process argv validation checks for `'mobile-v2-harness-cli.php'` (matching the actual supervisor invocation `php tests/Support/Harness/mobile-v2-harness-cli.php ...`), while backend/proxy/caddy subprocesses validate containment within `$harnessDir`.
@@ -1251,6 +1251,84 @@ Following Root Review on commit `abf9151483460ab25ef4a0fb8fc3b546682d91ef`, all 
    - Added optional `SupervisedPairedFinancialDrill::$negativeRefusalHook`, which can only force a refusal (`?string` error), never grant positive validity.
    - Added support for kernel process reparenting (`allowOrphanAdoptedByInit: true`): when the child harness CLI terminates under `SIGTERM`, surviving lingering subprocesses adopted by init (`PID 1`) remain safely verified and cleaned up using their immutable `start_ticks` (stat field 22) + UID + harness directory containment.
    - Authored comprehensive pure unit tests in `DisposableMobileV2BackendHarnessGuardTest.php` exercising all fact validation cases and negative refusal hooks, ensuring zero OS signals are dispatched to unverified PIDs.
+
+### 18.8 Provenance of Narrow 8/30 Qualification & Private Signaling Architecture
+
+Following Root qualification on commit `f0ca70f66d958c829e718c7ee397dc7a6881e481` (recorded in `/home/t3dev/.t3/userdata/attachments/root-process-facts-pure-b_6oml3t`), pure process fact validation and refusal logic achieved qualification with strict **SOURCE-ONLY** discipline:
+
+#### 18.8.1 Narrow 8/30 Qualification Results
+- **Evaluated Scope**: 8 pure process fact and negative hook methods in `DisposableMobileV2BackendHarnessGuardTest.php`.
+- **Results**: 30 assertions PASS, 0 failures, 0 errors, 0 skips.
+- **Side-Effect Verification**: Exactly zero OS signals dispatched, zero database queries issued, ambient sentinels OFF (port 1).
+- **Integrity**: Backend HEAD, working tree status, and file SHAs verified identical pre- and post-qualification.
+- **Scope Boundary**: Qualified strictly as narrow pure process facts verification; not an end-to-end qualification of cleanup lifecycle.
+
+#### 18.8.2 Closure of Arbitrary Signal Seams & Private Dispatch Scoping
+1. **Private Signal Dispatching**:
+   - `sendSignal()` and `sendVerifiedSignal()` have been made `private static` in `SupervisedPairedFinancialDrill`. No public generic signaling API exists.
+   - `sendVerifiedSignal()` strictly requires non-null numeric `expectedStartTicks`, exact `expectedPpid`, and non-null `expectedPathSubstring`. All permissive defaults (`expectedPpid = -1`, `expectedStartTicks = null`, `expectedPathSubstring = null`) have been eliminated.
+   - Only `executeExactCleanup()` invokes `sendVerifiedSignal()`, binding each dispatched signal strictly to the role-proven snapshot identity.
+
+2. **Mandatory Process Facts & Strict Orphan Verification**:
+   - `validateProcessFacts()` enforces mandatory `is_dir` (bool), `is_link` (bool), and `uid` (int) keys; missing facts fail closed immediately (`PROC_FACTS_*_MISSING`).
+   - Start ticks must be non-empty, all-digits (`ctype_digit`), and positive.
+   - Orphan adoption by init (`PID 1`) is allowed **only** when previously captured matching numeric `expectedStartTicks` and non-empty matching `expectedPathSubstring` are present. An unproven orphan or mismatched path strictly fails closed.
+
+3. **Factory Reject Missing Proc & Fail-Closed Cleanup Contract**:
+   - In `VerifiedOwnedSnapshot::fromLiveOwnership()`, basic snapshot mode now requires positive verification of the child process in live `/proc`. If the child process is absent or unproven, the factory throws `SNAPSHOT_CHILD_PROCESS_NOT_PROVEN: PROC_DIR_MISSING`.
+   - Snapshots with null `childStartIdentity` are never accepted.
+   - An absent child cannot capture a snapshot for cleanup; explicit manual owned DB cleanup with verifiable evidence is required when process ownership cannot be proven.
+
+4. **Elimination of Reflection Test Fabrication**:
+   - Removed reflection-based instantiation of `VerifiedOwnedSnapshot` from guard tests.
+   - Guard tests now evaluate refusal and no-signal guarantees through pure in-memory fact validation and live `/proc` rejection tests.
+   - Authored `test_bounded_throwaway_owned_child_lifecycle_via_real_public_factory_and_mock_pdo`, a dedicated lifecycle test using the real public factory `fromLiveOwnership()`, valid synthetic proof fixtures, and mock admin PDO, guarded by `ROOT_PROCESS_LIFECYCLE_GRANT=1` (deferred until explicit Root process-only execution grant).
+
+#### 18.8.3 Source Callgraph: Basic Legit CLI & Advanced 3-Child Lineage
+
+```mermaid
+flowchart TD
+    subgraph RootSupervisor ["Root Supervisor (PID = getmypid(), UID = posix_getuid())"]
+        RunBasic["runPairedFinancialDrillBasic()"]
+        RunAdvanced["runPairedFinancialDrill()"]
+        Cleanup["executeExactCleanup()"]
+    end
+
+    subgraph BasicExecution ["Basic CLI Execution Tuple"]
+        CliScript["tests/Support/Harness/mobile-v2-harness-cli.php"]
+        ManifestDoc["docs/integration/mobile-v2-integration-manifest.json"]
+        ChildCLI["Child CLI Harness (PID = childPid, PPID = getmypid())"]
+    end
+
+    subgraph AdvancedExecution ["Advanced 3-Child Lineage (process_pids.json 0600)"]
+        BackendProc["Backend: php -S 127.0.0.1:18080 (PPID = childPid, Path: harnessDir)"]
+        ProxyProc["Proxy: test-transport-proxy-cli.php (PPID = childPid, Path: harnessDir)"]
+        CaddyProc["Caddy: caddy run --config ... (PPID = childPid, Path: harnessDir)"]
+    end
+
+    subgraph FactoryGate ["VerifiedOwnedSnapshot::fromLiveOwnership()"]
+        ProcCheckLive["verifyProcessOwnership(live /proc)"]
+        ProofCheck["assertPrimarySchema + proof.json (0600)"]
+    end
+
+    RunBasic -->|spawns with exact script + manifest| ChildCLI
+    RunAdvanced -->|spawns with --scope advanced| ChildCLI
+    ChildCLI -->|spawns subprocess 1| BackendProc
+    ChildCLI -->|spawns subprocess 2| ProxyProc
+    ChildCLI -->|spawns subprocess 3| CaddyProc
+
+    ChildCLI --> FactoryGate
+    BackendProc --> FactoryGate
+    ProxyProc --> FactoryGate
+    CaddyProc --> FactoryGate
+
+    FactoryGate -->|returns proven immutable snapshot| Cleanup
+    Cleanup -->|private sendVerifiedSignal| ChildCLI
+    Cleanup -->|private sendVerifiedSignal (allowOrphanAdoptedByInit)| BackendProc
+    Cleanup -->|private sendVerifiedSignal (allowOrphanAdoptedByInit)| ProxyProc
+    Cleanup -->|private sendVerifiedSignal (allowOrphanAdoptedByInit)| CaddyProc
+```
+
 
 
 
