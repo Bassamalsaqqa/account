@@ -204,7 +204,7 @@ final class AuthController extends Controller
                 }
 
                 // 2. Lock & validate MobileDevice (hardware binding to user)
-                $device = MobileDevice::where('device_id', $payload['device_id'])->lockForUpdate()->first();
+                $device = MobileDevice::where('device_id', strtolower($payload['device_id']))->lockForUpdate()->first();
                 if ($device !== null && ($device->isRevoked() || (int) $device->user_id !== (int) $user->id)) {
                     RateLimiter::hit($actorKey, 60);
 
