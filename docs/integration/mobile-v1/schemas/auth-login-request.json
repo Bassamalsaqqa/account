@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/auth-login-request.json",
+  "title": "AuthLoginRequest",
+  "type": "object",
+  "required": [
+    "challenge_id",
+    "nonce",
+    "device_id",
+    "device_name",
+    "email",
+    "password"
+  ],
+  "properties": {
+    "challenge_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 128
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "device_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "maxLength": 255
+    },
+    "password": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "mfa_code": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{6}$"
+    },
+    "recovery_code": {
+      "type": ["string", "null"],
+      "pattern": "^[a-zA-Z0-9]{8,24}(-[a-zA-Z0-9]{8,24})?$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "mfa_code": { "type": "string" }
+        },
+        "required": ["mfa_code"]
+      },
+      "then": {
+        "properties": {
+          "recovery_code": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "recovery_code": { "type": "string" }
+        },
+        "required": ["recovery_code"]
+      },
+      "then": {
+        "properties": {
+          "mfa_code": { "type": "null" }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

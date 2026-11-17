@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/sale-event-status-response.json",
+  "title": "SaleEventStatusResponse",
+  "type": "object",
+  "required": ["client_event_id", "company_id", "status", "queried_at"],
+  "properties": {
+    "client_event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "company_id": {
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["posted", "parked_conflict", "unknown"]
+    },
+    "payload_digest": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "official_invoice": {
+      "type": ["object", "null"],
+      "required": ["invoice_id", "invoice_number", "grand_total", "posted_at"],
+      "properties": {
+        "invoice_id": {
+          "type": "string",
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "invoice_number": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "payment_id": {
+          "type": ["string", "null"],
+          "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        },
+        "payment_receipt_number": {
+          "type": ["string", "null"],
+          "maxLength": 64
+        },
+        "grand_total": {
+          "type": "string",
+          "pattern": "^(?:0\\.(?=[0-9]{1,6}$)[0-9]*[1-9][0-9]*|[1-9][0-9]{0,13}(?:\\.[0-9]{1,6})?)$"
+        },
+        "posted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "conflict": {
+      "type": ["object", "null"],
+      "required": ["conflict_code", "conflict_reason", "parked_at", "resolution_status"],
+      "properties": {
+        "conflict_code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "conflict_reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "parked_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolution_status": {
+          "type": "string",
+          "enum": ["pending_manager_review", "resolved", "rejected"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "queried_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

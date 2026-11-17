@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/auth-logout-response.json",
+  "title": "AuthLogoutResponse",
+  "type": "object",
+  "required": ["status", "revoked_at"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["logged_out"]
+    },
+    "revoked_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

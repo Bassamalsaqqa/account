@@ -1,0 +1,20 @@
+{
+  "request": {
+    "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "preview_token": "eyJ2ZXJzaW9uIjoxLCJjb21wYW55X3VsYWlkIjoiMDFKQ1Y4WDlNMk5RVzNUWVpEUjVTNjc4OUEiLCJkaWdlc3QiOiJzaGEyNTY6M2MxODhlMWI1NTg0MGM3ZWM1NDIyNGIwNjYxOGU4YTJkZjVkMDZjZDkxMjY5ODRiY2ZjZmNjNmM2ZWViZmI3OSJ9.sig_sample_preview_token_1234567890",
+    "payload_digest": "sha256:3c188e1b55840c7ec54224b06618e8a2df5d06cd9126984bcfcfcc6c6eebfb79",
+    "idempotency_key": "mobile-pos:3fa85f64-5717-4562-b3fc-2c963f66afa6"
+  },
+  "response": {
+    "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "status": "posted",
+    "invoice_id": "01JCV8X9ME7890123456789ABC",
+    "invoice_number": "INV-2026-00042",
+    "payment_id": "01JCV8X9MFGHJKMNPQRSTVWXYZ",
+    "payment_receipt_number": "RCT-2026-00042",
+    "grand_total": "58.000000",
+    "amount_paid": "58.000000",
+    "change_returned": "0.000000",
+    "posted_at": "2026-11-10T12:01:05Z"
+  }
+}
