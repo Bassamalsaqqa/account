@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "executor": "root Codex supervisor",
+  "recordedAt": "2026-11-13T18:27:44.610572+00:00",
+  "baseline": "f8a0cf7012c4875bec7320d42e0f8dde58593b52",
+  "qualifiedExecutableCommit": "085d9196704c8fa36c709724363abd62861b51d2",
+  "sourceInputs": {
+    "reports": "390dd2c4a23d46c85d13fba1da965e64d144ee2d",
+    "purchases": "b9b72abcce73e59ddffd4ba58357edc472dd24c4",
+    "contentionCorrection": "51f1486be9919843de649ef94602d4be75e1e4ed"
+  },
+  "suite": {
+    "command": "php tests/Support/run-phase8-disposable.php -- --filter='/(PurchaseDraftDeletionTest|PurchaseDraftDeletionConcurrencyTest|ReportPartySelectorTest)::/' tests/Feature",
+    "tests": 143,
+    "assertions": 780,
+    "schema": "accounting_p8_tmp_1882b0779bf6",
+    "casesByClass": {
+      "PurchaseDraftDeletionTest": 130,
+      "PurchaseDraftDeletionConcurrencyTest": 3,
+      "ReportPartySelectorTest": 10
+    },
+    "deletionClassComposition": "19 newly declared deletion methods plus 111 inherited/provider-expanded cases; no approximate per-method assertion count."
+  },
+  "populatedCanonicalStatements": {
+    "command": "php tests/Support/run-phase8-disposable.php -- --filter='test_customer_statement_(groups_currencies_and_computes_running_balance|multi_currency_never_sums_unlike_currencies)$' tests/Feature/Phase4/CustomerStatementAndSalesHistoryTest.php",
+    "tests": 2,
+    "assertions": 12,
+    "schema": "accounting_p8_tmp_29f9eea93841",
+    "note": "Only documentation changed after qualifiedExecutableCommit; executable blobs unchanged."
+  },
+  "environment": "APP_ENV=testing; explicit PHASE8_ALLOW_DISPOSABLE_DB=1; host127.0.0.1 port3342 usertest_runner; explicit empty test password and opt-in; synthetic APP_KEY. Fresh owned nonce-proved schemas only.",
+  "staticAnalysis": "all app/ plus both deletion classes, purchase worker and ReportPartySelectorTest; PHPStan configured Level6, 0 errors",
+  "pint": "10 changed application/test/worker PHP files; passed",
+  "build": {
+    "command": "GOMAXPROCS=1 RAYON_NUM_THREADS=1 UV_THREADPOOL_SIZE=1 npm run build",
+    "seconds": 3.09,
+    "manifestSha256": "12cee9f9dc2213615ff19d48060308c1a89030f255e694c530083538bd15fedd",
+    "sourceMaps": []
+  },
+  "changedBlobs": {
+    "app/Actions/Purchasing/DeletePurchaseDraftAction.php": "87e3a8e46e316f293658f0e8cd639d6edafd4eed",
+    "app/Application/Reporting/Presentation/ReportFilterOptions.php": "163e972d4186e6224a636f74b54e7f8fac10707f",
+    "app/Livewire/Pages/Purchasing/PurchaseDetail.php": "97ff40a4c12ff409fb3a3383f34e6cf8819e615c",
+    "app/Livewire/Pages/Purchasing/PurchaseIndex.php": "020074eddf2150955d6dd023e9663af0f27979f9",
+    "app/Livewire/Pages/Reporting/ReportView.php": "b4a76b9acfd1cc468ea05e808ee2f129e5fa28ba",
+    "app/Livewire/Pages/Sales/CustomerStatementView.php": "3563c9e2ad5ef39358087e2a0bda4d047d75e999",
+    "docs/evidence/purchase-draft-delete/ROLE_A.md": "e731b1307e9b34b113173323b2f7604bca228480",
+    "docs/implementation/REPORT_PARTY_SELECTORS.md": "dd063b320b48b9739ea112c77520922135ee34fa",
+    "resources/lang/ar/purchase_draft_delete.php": "f291d0a5f9e6fd5580220a28a190deabe7cfdac7",
+    "resources/lang/ar/reports.php": "29783b3eea30a627dc4fddacd0becf05f3bfd5d4",
+    "resources/lang/en/purchase_draft_delete.php": "aa238a7b4fb33c8e7e6c5eb9dfd978629335f5a9",
+    "resources/lang/en/reports.php": "cd6de0bf648ec0529c10280b9a84180827615b34",
+    "resources/views/components/report-party-selector.blade.php": "d5d07c12fffe5c7c8951fabc91517c9b12dc82f5",
+    "resources/views/livewire/pages/purchasing/purchase-detail.blade.php": "54c070698f9dd408c4b45dc3c75416a59214410b",
+    "resources/views/livewire/pages/purchasing/purchase-index.blade.php": "77fbff87a766278c81560a6f032a0e9f50603d9c",
+    "resources/views/livewire/pages/reporting/report.blade.php": "d19c4320b831412b900507d716795d5a345c5c74",
+    "resources/views/livewire/pages/sales/customer-statement-view.blade.php": "80b32e05928f8e23dac6da169539471e9c57645f",
+    "resources/views/livewire/partials/purchase-row-actions.blade.php": "d5e46b53b763b096ca4ff8c0a96db9be31a99e82",
+    "tests/Feature/Phase5B/PurchaseDraftDeletionConcurrencyTest.php": "ea0c0d1d543c5f2b9e16c98500de10b33845b503",
+    "tests/Feature/Phase5B/PurchaseDraftDeletionTest.php": "df730902e6f43b0db1e37a4c9d343bcac5918f6d",
+    "tests/Feature/Phase8/ReportPartySelectorTest.php": "9fd06e1a60373631faab9ad0e66965905acb18fe",
+    "tests/Support/Purchasing/purchase-delete-vs-post-worker.php": "078e9ec2e1a86f39deb61e46e1a7c312b033a3a4"
+  },
+  "migrationsChanged": [],
+  "cleanup": "Runner cleanup messages plus independent read-only information_schema absence check for the five owned successful/failed schema names. No pre-existing schemas dropped.",
+  "limits": [
+    "No production mutation, deployment, maintenance or main merge.",
+    "No PR87 stack, PR95 lock/auth code, PR93 currency changes or mobile-financial changes included.",
+    "Native financial flags/executor untouched; no grants expanded.",
+    "Original client modal500 still unconfirmed.",
+    "Browser rendering/physical scanner not verified; preview unavailable in worker runs.",
+    "Controlled release remains held for exact-head review, coherent independently verified off-host recovery, runtime preservation/reconciliation/authenticated smoke gates.",
+    "New report empty-customer regex case does not independently prove populated exact balances; separate 2/12 canonical regressions provide bounded populated-balance evidence."
+  ],
+  "logs": {
+    "focused": {
+      "rawSha256": "d7bd7708f05cb521a62aeb1c852f86cc1ffbb57a91156ec7410039c58ac2104a",
+      "publishedSha256": "99a835cb0bce3a07cc31f59504457b7b1ac0a1b57f914cc89331cc5401b27dee"
+    },
+    "exact-statements": {
+      "rawSha256": "3ce151f1135317ee1ee3c8979e1922994c44cd8d8189ae5640228cf80cf9e638",
+      "publishedSha256": "b5334d41520b3e89feb2bb8c3bf92a9f0f1a00bb6bc90b9f46b2ef5f2030656a"
+    },
+    "phpstan": {
+      "rawSha256": "c3ad44af134e0a525f87e64a54e8a88df2c5996fc5fb053e730c13894fb633ff",
+      "publishedSha256": "63ea4d33f355d8736f38efe6cf44f511c95212b87afd338b626cdff2d2d03b55"
+    },
+    "pint": {
+      "rawSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2",
+      "publishedSha256": "cd1a94fc2cf6a965b86e1a4809d6c7fb9148b1ee374e1010ed2ac96ff4876ec2"
+    },
+    "build": {
+      "rawSha256": "28d2b9976f4f54d81e70250b04e5ef35fb0b88dfe7a5e2c83bfe9c062198e602",
+      "publishedSha256": "28d2b9976f4f54d81e70250b04e5ef35fb0b88dfe7a5e2c83bfe9c062198e602"
+    },
+    "schema-absence": {
+      "rawSha256": "48b3c3575b27a28d3caf86511c174e915e1069740430e81ddfe2f2e77eff7045",
+      "publishedSha256": "48b3c3575b27a28d3caf86511c174e915e1069740430e81ddfe2f2e77eff7045"
+    },
+    "deletion-discovery": {
+      "rawSha256": "5e47f24945dec7efd96d889346110a8bbd09ae4f752b2a3e033a4b84312e60bd",
+      "publishedSha256": "5e47f24945dec7efd96d889346110a8bbd09ae4f752b2a3e033a4b84312e60bd"
+    },
+    "concurrency-discovery": {
+      "rawSha256": "5e9536333938d61a444e97652672c6a38812e056eefcf671e8062a6be51ff2b7",
+      "publishedSha256": "5e9536333938d61a444e97652672c6a38812e056eefcf671e8062a6be51ff2b7"
+    }
+  }
+}

@@ -61,29 +61,28 @@
                     </label>
 
                 </div>
-                @if($customers->count() >= 50 || trim($customerSearch) !== '')
-                <div class="flex gap-2 mb-1.5">
-                    <input id="invoice-customer-search" aria-label="{{ __('workflow.search_customers') }}" type="text"
-                           wire:model.live.debounce.300ms="customerSearch"
-                           placeholder="{{ __('workflow.search_customers') }}"
-                           class="w-full h-8 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                </div>
-                @endif
-                <div class="party-picker">
-<select id="invoice-customer-id" @error('customer_id') aria-invalid="true" aria-describedby="invoice-customer-id-error" @enderror wire:model.live="customer_id"
+                @php
+                    $selectedCustomer = $customer_id ? $customers->firstWhere('id', $customer_id) : null;
+                    $customerLabel = $selectedCustomer ? $selectedCustomer->displayName() . ' (' . ($selectedCustomer->default_currency_code ?? $baseCurrencyCode) . ')' : '';
+                @endphp
+                <div class="party-picker flex gap-2 items-center">
+                    <x-searchable-combobox
+                        id="invoice-customer-id"
+                        type="customer"
+                        context="sales"
+                        wire-model="customer_id"
+                        :selected-id="$customer_id"
+                        :selected-label="$customerLabel"
+                        :placeholder="__('sales.select_customer')"
+                        :aria-label="__('sales.customer')"
                         required
-                        class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
-                    <option value="">{{ __('sales.select_customer') }}</option>
-                    @foreach ($customers as $c)
-                        <option value="{{ $c->id }}">{{ $c->displayName() }} ({{ $c->default_currency_code ?? $baseCurrencyCode }})</option>
-                    @endforeach
-                </select>
-@if ($canManageCustomers)
-                        <button type="button" wire:click="openQuickCustomerModal" class="party-create-button" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
+                    />
+                    @if ($canManageCustomers)
+                        <button type="button" wire:click="openQuickCustomerModal" class="party-create-button shrink-0" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickCustomerModal" :disabled="documentBusy || saving">
                             + {{ __('workflow.quick_customer') }}
                         </button>
                     @endif
-</div>
+                </div>
                 @error('customer_id') <span id="invoice-customer-id-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
 
             </div>
@@ -219,15 +218,23 @@
                             <tr wire:key="inv-line-{{ $index }}">
                                 <td class="py-2 px-2 align-top space-y-1">
 <div class="entry-product-fields">
-                                    <select id="invoice-desktop-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
-                                        <option value="">-- {{ __('sales.product') }} --</option>
-                                        @foreach ($products as $p)
-                                            <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
-                                                {{ $p->displayName() }} ({{ $p->sku }})
-                                            </option>
-                                        @endforeach
-                                    </select> @error('lines.'.$index.'.product_id') <span id="invoice-desktop-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
+                                    @php
+                                        $lineProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                                        $lineProductLabel = $lineProduct ? $lineProduct->displayName() . ($lineProduct->sku ? ' (' . $lineProduct->sku . ')' : '') : '';
+                                    @endphp
+                                    <x-searchable-combobox
+                                        id="invoice-desktop-line-{{ $index }}-product-id"
+                                        type="product"
+                                        context="sales"
+                                        :selected-id="$line['product_id'] ?? null"
+                                        :selected-label="$lineProductLabel"
+                                        on-select="selectProduct"
+                                        :extra-args="[$index]"
+                                        compact
+                                        :placeholder="__('sales.product')"
+                                        :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                                    />
+                                    @error('lines.'.$index.'.product_id') <span id="invoice-desktop-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
                                     <input id="invoice-desktop-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-item-description-error" @enderror type="text"
                                            wire:model="lines.{{ $index }}.item_description"
                                            placeholder="{{ __('sales.description') }}..."
@@ -364,15 +371,22 @@
                         <!-- Product & Description -->
                         <div class="space-y-1">
                             <label for="invoice-mobile-line-{{ $index }}-product-id" class="block text-sm font-bold text-text-secondary">{{ __('sales.product') }}</label>
-                            <select id="invoice-mobile-line-{{ $index }}-product-id" aria-label="{{ __('sales.product') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-product-id-error" @enderror wire:change="selectProduct({{ $index }}, $event.target.value)"
-                                    class="w-full h-8 px-2 rounded-control border border-border bg-surface text-sm" :disabled="documentBusy || saving">
-                                <option value="">-- {{ __('sales.product') }} --</option>
-                                @foreach ($products as $p)
-                                    <option value="{{ $p->id }}" @selected($line['product_id'] == $p->id)>
-                                        {{ $p->displayName() }} ({{ $p->sku }})
-                                    </option>
-                                @endforeach
-                            </select> @error('lines.'.$index.'.product_id') <span id="invoice-mobile-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
+                            @php
+                                $mobileProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                                $mobileProductLabel = $mobileProduct ? $mobileProduct->displayName() . ($mobileProduct->sku ? ' (' . $mobileProduct->sku . ')' : '') : '';
+                            @endphp
+                            <x-searchable-combobox
+                                id="invoice-mobile-line-{{ $index }}-product-id"
+                                type="product"
+                                context="sales"
+                                :selected-id="$line['product_id'] ?? null"
+                                :selected-label="$mobileProductLabel"
+                                on-select="selectProduct"
+                                :extra-args="[$index]"
+                                :placeholder="__('sales.product')"
+                                :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                            />
+                            @error('lines.'.$index.'.product_id') <span id="invoice-mobile-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
                             <input id="invoice-mobile-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-item-description-error" @enderror type="text"
                                    wire:model="lines.{{ $index }}.item_description"
                                    placeholder="{{ __('sales.description') }}..."

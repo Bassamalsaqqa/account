@@ -55,9 +55,12 @@ class ProductSelectionSearchTest extends TestCase
             $this->owner->update(['locale' => $locale]);
             session(['locale' => $locale]);
             app()->setLocale($locale);
-            Livewire::test(InvoiceForm::class)
-                ->assertViewHas('baseCurrencyCode', $this->company->base_currency_code)
-                ->assertSee($this->customer->displayName().' ('.$this->company->base_currency_code.')');
+            $form = Livewire::test(InvoiceForm::class)
+                ->assertViewHas('baseCurrencyCode', $this->company->base_currency_code);
+            // Options are now rendered by Alpine; verify the actual shared selector response.
+            $response = $form->instance()->searchSelector('customer', $this->customer->displayName());
+            $labels = array_column($response['items'], 'label');
+            $this->assertContains($this->customer->displayName().' ('.$this->company->base_currency_code.')', $labels);
         }
         $this->assertSame($before, $this->economicCounts());
     }

@@ -9,10 +9,12 @@ use App\Application\Inventory\InventoryFormAvailability;
 use App\Domain\Inventory\DTO\StockTransferCommand;
 use App\Domain\Inventory\DTO\StockTransferLineCommand;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
 use App\Livewire\Pages\Inventory\Concerns\HandlesInventoryDraftControls;
 use App\Models\Company;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Inventory\InventoryMovementService;
@@ -28,6 +30,7 @@ class StockTransferForm extends Component
 {
     use AuthorizesInventoryPages;
     use HandlesInventoryDraftControls;
+    use HandlesSearchableSelectors;
 
     protected function authorizeInventoryContext(): Company
     {
@@ -76,12 +79,16 @@ class StockTransferForm extends Component
     {
         $this->lot_id = null;
         $company = $this->authorizeInventory('inventory.stock.transfer');
-        $this->unit_id = null;
         if ($this->product_id) {
             $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
-                $this->unit_id = $product->base_unit_id;
+                $unitValid = $this->unit_id && ($this->unit_id === $product->base_unit_id || ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('unit_id', $this->unit_id)->where('active', true)->exists());
+                if (! $unitValid) {
+                    $this->unit_id = $product->base_unit_id;
+                }
             }
+        } else {
+            $this->unit_id = null;
         }
     }
 
@@ -168,19 +175,26 @@ class StockTransferForm extends Component
     {
         $company = $this->authorizeInventory('inventory.stock.transfer');
 
-        $products = Product::where('company_id', $company->id)
+        $productsQuery = Product::where('company_id', $company->id)
             ->where('active', true)
-            ->where('track_stock', true)
-            ->with(['baseUnit', 'productUnits.unit'])
-            ->orderBy('name_ar')
-            ->get();
+            ->where('track_stock', true);
+
+        $products = (clone $productsQuery)->orderBy('name_ar')->orderBy('id')->limit(25)->get();
+        if ($this->product_id && ! $products->contains('id', $this->product_id)) {
+            $selected = Product::where('company_id', $company->id)->where('id', $this->product_id)->first();
+            if ($selected) {
+                $products->prepend($selected);
+            }
+        }
 
         $warehouses = Warehouse::where('company_id', $company->id)
             ->where('active', true)
             ->orderBy('name_ar')
             ->get();
 
-        $selectedProduct = $this->product_id ? $products->firstWhere('id', $this->product_id) : null;
+        $selectedProduct = $this->product_id
+            ? Product::with(['baseUnit', 'productUnits.unit'])->where('company_id', $company->id)->find($this->product_id)
+            : null;
 
         $availableUnits = collect();
         $availableLots = collect();

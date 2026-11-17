@@ -55,14 +55,27 @@
                 <label for="sales-payment-{{ $this->getId() }}-customer_id" class="block text-xs font-bold text-text-primary mb-1">
                     {{ __('sales.customer') }} <span class="text-danger">*</span>
                 </label>
-                <select id="sales-payment-{{ $this->getId() }}-customer_id" wire:model.live="customer_id"
-                        required
-                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-xs text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
-                    <option value="">{{ __('sales.select_customer') }}</option>
-                    @foreach ($customers as $c)
-                        <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
-                    @endforeach
-                </select>
+                @php
+                    $selectedCustomer = $customer_id ? $customers->firstWhere('id', $customer_id) : null;
+                    $customerLabel = $selectedCustomer ? $selectedCustomer->displayName() : '';
+                    $customerOptions = $customers->map(fn($c) => [
+                        'id' => (string) $c->id,
+                        'label' => $c->displayName(),
+                        'sublabel' => $c->code ?: $c->phone,
+                    ])->values()->all();
+                @endphp
+                <x-searchable-combobox
+                    id="sales-payment-{{ $this->getId() }}-customer_id"
+                    type="customer"
+                    context="receipt"
+                    wire-model="customer_id"
+                    :selected-id="$customer_id"
+                    :selected-label="$customerLabel"
+                    :options="$customerOptions"
+                    :placeholder="__('sales.select_customer')"
+                    :aria-label="__('sales.customer')"
+                    required
+                />
                 @error('customer_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 

@@ -21,6 +21,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
@@ -57,6 +58,7 @@ class InvoiceForm extends Component
     use AdjustsDocumentQuantity;
     use AiUnsavedForm;
     use CameraBarcodeScan;
+    use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -537,13 +539,51 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId): bool
+    public function selectProduct(int $index, ?int $productId = null, ?int $productUnitId = null): bool
     {
         if ($this->showPreview) {
             $this->cancelPreview();
         }
 
-        $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, $this->warehouse_id);
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
+        $user = auth()->user();
+        abort_unless($user->hasPermissionTo($this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'), 403);
+
+        abort_unless(isset($this->lines[$index]), 422);
+
+        if ($productId === null || $productId === 0) {
+            $this->lines[$index] = [
+                'product_id' => null,
+                'product_unit_id' => null,
+                'item_description' => '',
+                'quantity' => '1',
+                'unit_price' => '0',
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+            ];
+            $this->recalculate();
+
+            return true;
+        }
+
+        $product = Product::where('company_id', $this->pageCompanyId)
+            ->where('id', $productId)
+            ->where('active', true)
+            ->first();
+
+        if (! $product) {
+            return false;
+        }
+
+        $selected = app(SalesProductSelection::class)->select(
+            $productId,
+            $productUnitId,
+            $this->currency_code,
+            $this->exchange_rate,
+            $this->warehouse_id
+        );
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
 

@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Purchasing;
 
 use App\Actions\Purchasing\PostVendorPaymentAction;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
@@ -31,6 +32,7 @@ use Livewire\Component;
 class PaymentForm extends Component
 {
     use AuthorizesPurchasingPages;
+    use HandlesSearchableSelectors;
 
     public ?int $vendor_id = null;
 
@@ -584,11 +586,18 @@ class PaymentForm extends Component
         $this->authorizePurchasing('money.vendor_payment.create');
 
         $company = $context->company();
-        $vendors = Vendor::withTrashed()->where('company_id', $this->pageCompanyId)
+        $vendorsQuery = Vendor::withTrashed()->where('company_id', $this->pageCompanyId)
             ->where(function ($query): void {
                 $query->where(fn ($active) => $active->where('status', 'active')->whereNull('deleted_at'))
                     ->orWhereHas('purchases', fn ($purchase) => $purchase->where('status', Purchase::STATUS_POSTED));
-            })->orderBy('name_ar')->get();
+            });
+        $vendors = (clone $vendorsQuery)->orderBy('name_ar')->orderBy('id')->limit(25)->get();
+        if ($this->vendor_id && ! $vendors->contains('id', $this->vendor_id)) {
+            $selected = Vendor::withTrashed()->where('company_id', $this->pageCompanyId)->where('id', $this->vendor_id)->first();
+            if ($selected) {
+                $vendors->prepend($selected);
+            }
+        }
         $accounts = $this->eligibleMoneyAccounts()->orderBy('sort_order')->get();
 
         $minorUnits = (int) Currency::findOrFail($this->currency_code)->getAttribute('minor_units');

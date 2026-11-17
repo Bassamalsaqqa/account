@@ -19,4 +19,7 @@
         @endif
         <x-row-action :href="route('purchases.show', ['publicId' => $purchase->public_id, 'correction' => 'delete'])" :label="__('corrections.delete')" icon="trash" />
     @endif
+    @if($purchase->isDraft() && auth()->user()->hasRole('Owner') && auth()->user()->can('purchasing.purchase.edit_draft') && ($withCost ?? auth()->user()->can('purchasing.cost.view')))
+        <x-row-action :label="__('purchase_draft_delete.delete')" :short-label="__('workflow.delete')" icon="trash" tone="danger" wire:click="deleteDraft('{{ $purchase->public_id }}')" wire:confirm="{{ __('purchase_draft_delete.confirm') }}" wire:loading.attr="disabled" />
+    @endif
 </div>

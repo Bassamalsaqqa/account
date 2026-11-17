@@ -17,6 +17,7 @@ use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Models\Company;
@@ -45,6 +46,7 @@ class QuotationForm extends Component
 {
     use AdjustsDocumentQuantity;
     use CameraBarcodeScan;
+    use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -469,10 +471,37 @@ class QuotationForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, int $productId): bool
+    public function selectProduct(int $index, ?int $productId = null, ?int $productUnitId = null): bool
     {
         $this->authorizeQuoteAction();
-        $selected = app(SalesProductSelection::class)->select($productId, null, $this->currency_code, $this->exchange_rate, null);
+        abort_unless(isset($this->lines[$index]), 422);
+
+        if ($productId === null || $productId === 0) {
+            $this->lines[$index] = [
+                'product_id' => null,
+                'product_unit_id' => null,
+                'item_description' => '',
+                'quantity' => '1',
+                'unit_price' => '0',
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'tax_rate_id' => null,
+            ];
+            $this->recalculate();
+
+            return true;
+        }
+
+        $product = Product::where('company_id', $this->pageCompanyId)
+            ->where('id', $productId)
+            ->where('active', true)
+            ->first();
+
+        if (! $product) {
+            return false;
+        }
+
+        $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->currency_code, $this->exchange_rate, null);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Sales;
 
+use App\Application\Reporting\Security\ReportingGuard;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Models\Customer;
 use App\Models\PublicShare;
@@ -46,10 +47,10 @@ class CustomerStatementView extends Component
             ->firstOrFail();
 
         if ($this->fromDate === null) {
-            $this->fromDate = Carbon::now()->startOfYear()->toDateString();
+            $this->fromDate = Carbon::now($company->timezone)->startOfYear()->toDateString();
         }
         if ($this->toDate === null) {
-            $this->toDate = Carbon::now()->toDateString();
+            $this->toDate = Carbon::now($company->timezone)->toDateString();
         }
     }
 
@@ -74,7 +75,17 @@ class CustomerStatementView extends Component
     public function render(CompanyContext $context, CustomerStatementQuery $statementQuery): View
     {
         $company = $context->company();
-        $statements = $statementQuery->execute($this->customer, $this->fromDate ?: null, $this->toDate ?: null);
+        app(ReportingGuard::class)->authorize($company, requiredPermissions: ['sales.statement.view']);
+        $customer = Customer::where('company_id', $company->id)->whereKey($this->customer->id)->firstOrFail();
+        $this->resetValidation(['fromDate', 'toDate']);
+        $validator = validator(['fromDate' => $this->fromDate, 'toDate' => $this->toDate], [
+            'fromDate' => ['required', 'date_format:Y-m-d'],
+            'toDate' => ['required', 'date_format:Y-m-d', 'after_or_equal:fromDate'],
+        ]);
+        foreach ($validator->errors()->messages() as $field => $messages) {
+            $this->addError($field, __('reports.date_range_error'));
+        }
+        $statements = $validator->fails() ? ['currencies' => []] : $statementQuery->execute($customer, $this->fromDate, $this->toDate);
 
         return view('livewire.pages.sales.customer-statement-view', [
             'statements' => $statements['currencies'],

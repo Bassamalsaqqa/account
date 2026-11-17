@@ -6,6 +6,7 @@ namespace App\Livewire\Pages\Sales;
 
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\Customer;
@@ -28,6 +29,8 @@ use Livewire\Component;
 #[Layout('layouts.app')]
 class PaymentForm extends Component
 {
+    use HandlesSearchableSelectors;
+
     public ?int $customer_id = null;
 
     public ?int $money_account_id = null;
@@ -529,7 +532,14 @@ class PaymentForm extends Component
     {
         app(MoneyActorGuard::class)->authorize($this->pageCompanyId, 'money.receipt.create');
         $company = $context->company();
-        $customers = Customer::where('company_id', $company->id)->where('status', 'active')->orderBy('name_ar')->get();
+        $customersQuery = Customer::where('company_id', $company->id)->where('status', 'active');
+        $customers = (clone $customersQuery)->orderBy('name_ar')->orderBy('id')->limit(25)->get();
+        if ($this->customer_id && ! $customers->contains('id', $this->customer_id)) {
+            $selected = Customer::where('company_id', $company->id)->where('id', $this->customer_id)->first();
+            if ($selected) {
+                $customers->prepend($selected);
+            }
+        }
         $accounts = app(EligibleMoneyAccounts::class)->query((int) $company->id)->orderBy('sort_order')->get();
 
         return view('livewire.pages.sales.payment-form', [

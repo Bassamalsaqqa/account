@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'date_range_error' => 'Choose a start and end date, with the end on or after the start.',
     'loading' => 'Loading…',
     'search' => 'Find a filter option',
     'options' => [

@@ -7,10 +7,12 @@ namespace App\Livewire\Pages\Inventory;
 use App\Actions\Inventory\PostOpeningStockAction;
 use App\Application\Inventory\InventoryFormAvailability;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
 use App\Livewire\Pages\Inventory\Concerns\HandlesInventoryDraftControls;
 use App\Models\Company;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
@@ -25,6 +27,7 @@ class OpeningStockForm extends Component
 {
     use AuthorizesInventoryPages;
     use HandlesInventoryDraftControls;
+    use HandlesSearchableSelectors;
 
     public ?int $product_id = null;
 
@@ -85,17 +88,21 @@ class OpeningStockForm extends Component
         $this->expiry_date = '';
 
         $company = $this->authorizeInventoryContext();
-        $this->unit_id = null;
         if ($this->product_id) {
             $product = Product::where('company_id', $company->id)->where('active', true)->where('track_stock', true)->find($this->product_id);
             if ($product) {
-                $this->unit_id = $product->base_unit_id;
+                $unitValid = $this->unit_id && ($this->unit_id === $product->base_unit_id || ProductUnit::where('company_id', $company->id)->where('product_id', $product->id)->where('unit_id', $this->unit_id)->where('active', true)->exists());
+                if (! $unitValid) {
+                    $this->unit_id = $product->base_unit_id;
+                }
                 /** @var User $user */
                 $user = auth()->user();
                 if ($user->hasPermissionTo('inventory.cost.view') && $product->default_purchase_cost_base !== null) {
                     $this->unit_cost_base = (string) $product->default_purchase_cost_base;
                 }
             }
+        } else {
+            $this->unit_id = null;
         }
     }
 
@@ -167,12 +174,17 @@ class OpeningStockForm extends Component
         $user = auth()->user();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
 
-        $products = Product::where('company_id', $company->id)
+        $productsQuery = Product::where('company_id', $company->id)
             ->where('active', true)
-            ->where('track_stock', true)
-            ->with(['baseUnit', 'productUnits.unit'])
-            ->orderBy('name_ar')
-            ->get();
+            ->where('track_stock', true);
+
+        $products = (clone $productsQuery)->orderBy('name_ar')->orderBy('id')->limit(25)->get();
+        if ($this->product_id && ! $products->contains('id', $this->product_id)) {
+            $selected = Product::where('company_id', $company->id)->where('id', $this->product_id)->first();
+            if ($selected) {
+                $products->prepend($selected);
+            }
+        }
 
         $warehouses = Warehouse::where('company_id', $company->id)
             ->where('active', true)
@@ -180,7 +192,9 @@ class OpeningStockForm extends Component
             ->orderBy('name_ar')
             ->get();
 
-        $selectedProduct = $this->product_id ? $products->firstWhere('id', $this->product_id) : null;
+        $selectedProduct = $this->product_id
+            ? Product::with(['baseUnit', 'productUnits.unit'])->where('company_id', $company->id)->find($this->product_id)
+            : null;
 
         $availableUnits = collect();
         if ($selectedProduct) {

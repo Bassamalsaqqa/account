@@ -18,6 +18,7 @@ return [
     'offline_notice' => 'You are currently offline.',
     'error_occurred' => 'An error occurred while searching. Please try again.',
     'results_count' => '{0} No results found|{1} 1 result found|[2,*] :count results found',
+    'load_more' => 'Load more results',
 
     // Categories
     'categories' => [

@@ -136,6 +136,69 @@ trait HandlesInventoryDraftControls
     }
 
     /**
+     * Shared authorized product and barcode unit selection for inventory draft forms.
+     * Revalidates product, company, and package unit on the server.
+     */
+    public function selectProduct(mixed $productId, mixed $productUnitId = null): bool
+    {
+        $company = $this->authorizeInventoryContext();
+
+        if ($productId === null || $productId === '' || $productId === 0) {
+            $this->product_id = null;
+            $this->unit_id = null;
+            if (property_exists($this, 'lot_id')) {
+                $this->lot_id = null;
+            }
+            if (property_exists($this, 'lot_number')) {
+                $this->lot_number = '';
+            }
+            if (property_exists($this, 'expiry_date')) {
+                $this->expiry_date = '';
+            }
+            if (property_exists($this, 'unit_cost_base')) {
+                $this->unit_cost_base = '';
+            }
+
+            return true;
+        }
+
+        /** @var Product|null $product */
+        $product = Product::where('company_id', $company->id)
+            ->where('active', true)
+            ->where('track_stock', true)
+            ->where('product_type', Product::TYPE_STOCK)
+            ->find((int) $productId);
+
+        if ($product === null) {
+            return false;
+        }
+
+        $targetUnitId = (int) $product->base_unit_id;
+
+        // If specific package unit passed (e.g. from matched barcode), revalidate against server ProductUnit
+        if ($productUnitId !== null && $productUnitId !== '') {
+            $pu = ProductUnit::where('company_id', $company->id)
+                ->where('product_id', $product->id)
+                ->where('active', true)
+                ->where('id', (int) $productUnitId)
+                ->first();
+
+            if ($pu && $pu->unit_id) {
+                $targetUnitId = (int) $pu->unit_id;
+            } elseif ((int) $productUnitId === (int) $product->base_unit_id) {
+                $targetUnitId = (int) $product->base_unit_id;
+            }
+        }
+
+        $this->product_id = (int) $product->id;
+        $this->unit_id = $targetUnitId;
+        $this->updatedProductId();
+        $this->unit_id = $targetUnitId;
+
+        return true;
+    }
+
+    /**
      * Exact server quantity stepper for inventory draft forms.
      */
     public function stepInventoryQuantity(string $direction): void

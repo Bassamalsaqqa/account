@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Livewire\Pages\Purchasing;
 
+use App\Actions\Purchasing\DeletePurchaseDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
 use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\HasTablePageSize;
@@ -14,6 +15,7 @@ use App\Services\Purchasing\PurchasePayablePosition;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
@@ -46,6 +48,20 @@ class PurchaseIndex extends Component
     public function closePaymentModal(): void
     {
         $this->payingPurchaseId = null;
+    }
+
+    public function deleteDraft(string $publicId): void
+    {
+        $company = $this->authorizePurchasing('purchasing.purchase.edit_draft');
+        $this->authorizePurchasing('purchasing.cost.view');
+        $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
+        try {
+            app(DeletePurchaseDraftAction::class)->execute($purchase, auth()->user());
+            $this->resetPage();
+            session()->flash('success', __('purchase_draft_delete.deleted'));
+        } catch (ValidationException $e) {
+            $this->setErrorBag($e->validator->getMessageBag());
+        }
     }
 
     public function openPaymentModal(int $purchaseId): void

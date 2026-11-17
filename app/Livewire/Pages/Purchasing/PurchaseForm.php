@@ -20,6 +20,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
 use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
@@ -59,6 +60,7 @@ class PurchaseForm extends Component
     use AiUnsavedForm;
     use AuthorizesPurchasingPages;
     use CameraBarcodeScan;
+    use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
 
@@ -610,7 +612,7 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, mixed $productId): bool
+    public function selectProduct(int $index, mixed $productId, mixed $productUnitId = null): bool
     {
         if ($this->showPreview) {
             $this->cancelPreview();
@@ -618,7 +620,7 @@ class PurchaseForm extends Component
         $this->authorizeForm();
         abort_unless(isset($this->lines[$index]), 422);
         unset($this->expandedLotCustomization[$index]);
-        if ($productId === '') {
+        if ($productId === '' || $productId === null) {
             $this->lines[$index] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
             $this->recalculate();
@@ -626,7 +628,8 @@ class PurchaseForm extends Component
             return true;
         }
         try {
-            $selected = app(PurchaseProductSelection::class)->select((int) $productId, null, $this->currency_code, $this->exchange_rate);
+            $unitId = ($productUnitId !== null && $productUnitId !== '') ? (int) $productUnitId : null;
+            $selected = app(PurchaseProductSelection::class)->select((int) $productId, $unitId, $this->currency_code, $this->exchange_rate);
         } catch (\InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
             $this->addError('draft', __('purchasing.invalid_draft'));
 
@@ -1297,9 +1300,13 @@ class PurchaseForm extends Component
             )->get()
             : collect();
 
+        $matchingProducts = $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']);
+        $allProducts = $matchingProducts->merge($selectedProducts->values())->unique('id');
+
         return view('livewire.pages.purchasing.purchase-form', [
             'baseCurrencyCode' => $company->base_currency_code,
-            'products' => $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']),
+            'products' => $allProducts,
+            'selectedProducts' => $selectedProducts,
             'vendors' => $vendors,
             'warehouses' => Warehouse::where('company_id', $company->id)->where('active', true)->get(),
             'currencies' => $company->currencies()->where('enabled', true)->get(),
