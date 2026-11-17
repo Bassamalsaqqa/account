@@ -235,20 +235,20 @@ final class CustomerDirectoryTest extends TestCase
         $item1 = $customers->firstWhere('id', $nullCodeCustomer->public_id);
         $this->assertNotNull($item1);
         $this->assertNull($item1['code']);
-        $this->assertSame('Customer Without Code', $item1['name']);
+        $this->assertSame($nullCodeCustomer->displayName(), $item1['name']);
 
         $item2 = $customers->firstWhere('id', $emptyCodeCustomer->public_id);
         $this->assertNotNull($item2);
         $this->assertNull($item2['code']);
-        $this->assertSame('Customer Empty Code', $item2['name']);
+        $this->assertSame($emptyCodeCustomer->displayName(), $item2['name']);
 
         $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'customer-directory-response']);
         $validator->setInput((string) $response->getContent())->mustRun();
     }
 
-    public function test_customer_directory_fails_with_409_when_stored_customer_exceeds_wire_contract(): void
+    public function test_customer_directory_fails_with_409_when_stored_customer_has_no_name(): void
     {
-        // Stored customer with code exceeding maxLength: 64 violates schema
+        // A corrupt stored blank name must fail rather than drop the customer.
         $badCustomer = Customer::create([
             'company_id' => $this->company->id,
             'code' => 'TEMP-OVERLONG',
@@ -258,7 +258,7 @@ final class CustomerDirectoryTest extends TestCase
         ]);
         DB::table('customers')
             ->where('id', $badCustomer->id)
-            ->update(['code' => str_repeat('C', 65)]);
+            ->update(['name_ar' => '', 'name_en' => '']);
 
         $token = $this->issueToken();
         $this->withHeader('Authorization', "Bearer {$token}")

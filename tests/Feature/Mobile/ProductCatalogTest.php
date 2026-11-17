@@ -408,6 +408,14 @@ final class ProductCatalogTest extends TestCase
             return $product;
         });
 
+        $pricedProduct = $unpricedProduct->replicate(['public_id']);
+        $pricedProduct->sku = 'SKU-PRICED';
+        $pricedProduct->default_sale_price_base = '25.000000';
+        $pricedProduct->save();
+        $pricedUnit = ProductUnit::where('product_id', $unpricedProduct->id)->firstOrFail()->replicate();
+        $pricedUnit->product_id = $pricedProduct->id;
+        $pricedUnit->save();
+
         $token = $this->issueToken();
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products");
@@ -422,7 +430,7 @@ final class ProductCatalogTest extends TestCase
         $this->assertSame('SKU-UNPRICED', $item['sku']);
 
         // Verify priced product still retains exact price in same catalog
-        $oliveOil = $products->firstWhere('sku', 'SKU-OLIVE-OIL-1L');
+        $oliveOil = $products->firstWhere('sku', 'SKU-PRICED');
         $this->assertNotNull($oliveOil);
         $this->assertSame('25.000000', $oliveOil['unit_price']);
 
