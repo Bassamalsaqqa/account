@@ -379,9 +379,9 @@ final class ProductCatalogTest extends TestCase
         $first->assertJsonPath('products', []);
     }
 
-    public function test_product_catalog_fails_with_409_when_product_has_null_default_sale_price_base(): void
+    public function test_product_catalog_represents_unpriced_products_with_truthful_null_prices(): void
     {
-        CompanyScope::executeWithoutScope(function (): void {
+        $unpricedProduct = CompanyScope::executeWithoutScope(function (): Product {
             $product = Product::create([
                 'company_id' => $this->company->id,
                 'sku' => 'SKU-UNPRICED',
@@ -404,13 +404,37 @@ final class ProductCatalogTest extends TestCase
                 'default_sale_price_base' => null,
                 'active' => true,
             ]);
+
+            return $product;
         });
 
         $token = $this->issueToken();
-        $this->withHeader('Authorization', "Bearer {$token}")
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products")
-            ->assertStatus(409)
-            ->assertJsonPath('error.code', 'CONTRACT_INCOMPATIBLE');
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products");
+
+        $response->assertOk();
+        $products = collect((array) $response->json('products'));
+        $item = $products->firstWhere('id', $unpricedProduct->public_id);
+        $this->assertNotNull($item);
+        $this->assertNull($item['unit_price']);
+        $this->assertNull($item['default_unit']['sale_price']);
+        $this->assertNull($item['units'][0]['sale_price']);
+        $this->assertSame('SKU-UNPRICED', $item['sku']);
+
+        // Verify priced product still retains exact price in same catalog
+        $oliveOil = $products->firstWhere('sku', 'SKU-OLIVE-OIL-1L');
+        $this->assertNotNull($oliveOil);
+        $this->assertSame('25.000000', $oliveOil['unit_price']);
+
+        // Search preserves unpriced product without dropping
+        $searchResponse = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products?search=SKU-UNPRICED");
+        $searchResponse->assertOk();
+        $this->assertCount(1, $searchResponse->json('products'));
+        $this->assertSame($unpricedProduct->public_id, $searchResponse->json('products.0.id'));
+
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'product-catalog-response']);
+        $validator->setInput((string) $response->getContent())->mustRun();
     }
 
     public function test_product_catalog_computes_packaging_unit_with_nonbase_default_sale_unit(): void

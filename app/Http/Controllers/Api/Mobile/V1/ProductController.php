@@ -181,24 +181,20 @@ final class ProductController extends Controller
 
             $productsPayload = [];
             foreach ($records as $product) {
-                // 1. Price validation (Finding 2)
-                if ($product->default_sale_price_base === null) {
-                    throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
-                        code: 'CONTRACT_INCOMPATIBLE',
-                        message: 'Unpriced products cannot be represented by Mobile V1.',
-                        status: 409
-                    ));
-                }
-
-                try {
-                    $baseUnitPrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
-                        ->toScale(6, RoundingMode::UNNECESSARY);
-                } catch (\Throwable) {
-                    throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
-                        code: 'CONTRACT_INCOMPATIBLE',
-                        message: 'Product unit price cannot be represented in exact 6 decimal scale without rounding.',
-                        status: 409
-                    ));
+                // 1. Price validation
+                if ($product->default_sale_price_base !== null) {
+                    try {
+                        $baseUnitPrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
+                            ->toScale(6, RoundingMode::UNNECESSARY);
+                    } catch (\Throwable) {
+                        throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
+                            code: 'CONTRACT_INCOMPATIBLE',
+                            message: 'Product unit price cannot be represented in exact 6 decimal scale without rounding.',
+                            status: 409
+                        ));
+                    }
+                } else {
+                    $baseUnitPrice = null;
                 }
 
                 // 2. Base unit validation (Finding 3)
@@ -288,10 +284,12 @@ final class ProductController extends Controller
                     if ($defaultPu->default_sale_price_base !== null) {
                         $defaultSalePrice = (string) BigDecimal::of((string) $defaultPu->default_sale_price_base)
                             ->toScale(6, RoundingMode::UNNECESSARY);
-                    } else {
+                    } elseif ($product->default_sale_price_base !== null) {
                         $defaultSalePrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
                             ->multipliedBy(BigDecimal::of((string) $defaultPu->conversion_to_base))
                             ->toScale(6, RoundingMode::UNNECESSARY);
+                    } else {
+                        $defaultSalePrice = null;
                     }
                 } catch (\Throwable) {
                     throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
@@ -314,10 +312,12 @@ final class ProductController extends Controller
                     try {
                         if ($pu->default_sale_price_base !== null) {
                             $puSalePrice = (string) BigDecimal::of((string) $pu->default_sale_price_base)->toScale(6, RoundingMode::UNNECESSARY);
-                        } else {
+                        } elseif ($product->default_sale_price_base !== null) {
                             $puSalePrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
                                 ->multipliedBy(BigDecimal::of((string) $pu->conversion_to_base))
                                 ->toScale(6, RoundingMode::UNNECESSARY);
+                        } else {
+                            $puSalePrice = null;
                         }
                     } catch (\Throwable) {
                         throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(

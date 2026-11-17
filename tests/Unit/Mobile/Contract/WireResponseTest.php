@@ -82,4 +82,34 @@ final class WireResponseTest extends TestCase
         ];
         $this->assertFalse(WireResponse::accepts($invalidDisabled, 'bootstrap-response'));
     }
+
+    public function test_product_catalog_accepts_null_unit_price_and_rejects_invalid_price(): void
+    {
+        $fixture = json_decode(file_get_contents(base_path('docs/integration/mobile-v1/fixtures/golden-product-catalog.json')));
+        $this->assertTrue(WireResponse::accepts($fixture, 'product-catalog-response'));
+
+        // Null unit_price is accepted for unpriced products
+        $fixture->products[0]->unit_price = null;
+        $fixture->products[0]->default_unit->sale_price = null;
+        $fixture->products[0]->units[0]->sale_price = null;
+        $this->assertTrue(WireResponse::accepts($fixture, 'product-catalog-response'));
+
+        // Invalid negative unit_price is rejected
+        $fixture->products[0]->unit_price = '-1.000000';
+        $this->assertFalse(WireResponse::accepts($fixture, 'product-catalog-response'));
+    }
+
+    public function test_customer_directory_accepts_null_code_and_rejects_empty_code(): void
+    {
+        $fixture = json_decode(file_get_contents(base_path('docs/integration/mobile-v1/fixtures/golden-customer-directory.json')));
+        $this->assertTrue(WireResponse::accepts($fixture, 'customer-directory-response'));
+
+        // Null customer code is accepted
+        $fixture->customers[0]->code = null;
+        $this->assertTrue(WireResponse::accepts($fixture, 'customer-directory-response'));
+
+        // Empty string customer code is rejected (minLength: 1)
+        $fixture->customers[0]->code = '';
+        $this->assertFalse(WireResponse::accepts($fixture, 'customer-directory-response'));
+    }
 }

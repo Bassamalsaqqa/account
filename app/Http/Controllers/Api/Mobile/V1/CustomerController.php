@@ -160,9 +160,11 @@ final class CustomerController extends Controller
                 $isWalkIn = true;
             }
 
+            $code = $customer->code !== null && trim((string) $customer->code) !== '' ? trim((string) $customer->code) : null;
+
             return [
                 'id' => $customer->public_id,
-                'code' => (string) $customer->code,
+                'code' => $code,
                 'name' => (string) $customer->displayName(),
                 'phone' => $customer->phone !== null && trim((string) $customer->phone) !== '' ? trim((string) $customer->phone) : null,
                 'is_walk_in' => $isWalkIn,

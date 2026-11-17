@@ -202,19 +202,63 @@ final class CustomerDirectoryTest extends TestCase
             ->assertOk();
     }
 
-    public function test_customer_directory_fails_with_409_when_stored_customer_exceeds_wire_contract(): void
+    public function test_customer_directory_normalizes_null_and_empty_code_without_inventing_codes(): void
     {
-        // Stored customer with empty code violates schema minLength: 1
-        $badCustomer = CompanyScope::executeWithoutScope(fn () => Customer::create([
+        $nullCodeCustomer = Customer::create([
             'company_id' => $this->company->id,
-            'code' => 'TEMP-CODE',
-            'name_ar' => 'عميل بدون كود صالح',
+            'code' => null,
+            'name_ar' => 'عميل بدون كود',
+            'name_en' => 'Customer Without Code',
             'status' => 'active',
             'created_by' => $this->user->id,
-        ]));
+        ]);
+
+        $emptyCodeCustomer = Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'TEMP-EMPTY',
+            'name_ar' => 'عميل كود فارغ',
+            'name_en' => 'Customer Empty Code',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+        DB::table('customers')
+            ->where('id', $emptyCodeCustomer->id)
+            ->update(['code' => '   ']);
+
+        $token = $this->issueToken();
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers");
+
+        $response->assertOk();
+        $customers = collect((array) $response->json('customers'));
+
+        $item1 = $customers->firstWhere('id', $nullCodeCustomer->public_id);
+        $this->assertNotNull($item1);
+        $this->assertNull($item1['code']);
+        $this->assertSame('Customer Without Code', $item1['name']);
+
+        $item2 = $customers->firstWhere('id', $emptyCodeCustomer->public_id);
+        $this->assertNotNull($item2);
+        $this->assertNull($item2['code']);
+        $this->assertSame('Customer Empty Code', $item2['name']);
+
+        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'customer-directory-response']);
+        $validator->setInput((string) $response->getContent())->mustRun();
+    }
+
+    public function test_customer_directory_fails_with_409_when_stored_customer_exceeds_wire_contract(): void
+    {
+        // Stored customer with code exceeding maxLength: 64 violates schema
+        $badCustomer = Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'TEMP-OVERLONG',
+            'name_ar' => 'عميل بكود طويل جدا',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
         DB::table('customers')
             ->where('id', $badCustomer->id)
-            ->update(['code' => '']);
+            ->update(['code' => str_repeat('C', 65)]);
 
         $token = $this->issueToken();
         $this->withHeader('Authorization', "Bearer {$token}")
