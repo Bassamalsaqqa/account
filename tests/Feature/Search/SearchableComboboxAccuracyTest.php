@@ -792,4 +792,35 @@ final class SearchableComboboxAccuracyTest extends TestCase
             $this->assertStringContainsString('Unsupported context [unknown_workflow]', $e->getMessage());
         }
     }
+
+    public function test_purchase_form_selected_product_labels_work_beyond_first_fifty_on_reopen(): void
+    {
+        $unit = $this->getOrCreateUnit('piece');
+
+        // Create 55 products with sequential SKUs
+        $created = [];
+        for ($i = 1; $i <= 55; $i++) {
+            $created[] = Product::create([
+                'company_id' => $this->company->id,
+                'sku' => sprintf('PRD-%03d', $i),
+                'name_ar' => sprintf('صنف %03d', $i),
+                'name_en' => sprintf('Product %03d', $i),
+                'base_unit_id' => $unit->id,
+                'product_type' => Product::TYPE_STOCK,
+                'track_stock' => true,
+                'active' => true,
+                'created_by' => $this->user->id,
+            ]);
+        }
+
+        // Product #55 is alphabetically and ID-wise beyond the first 50 products
+        $product55 = $created[54];
+
+        // Simulate opening purchase form with product #55 selected on line 0
+        $form = Livewire::test(\App\Livewire\Pages\Purchasing\PurchaseForm::class);
+        $form->set('lines.0.product_id', $product55->id);
+        $form->assertViewHas('products', fn ($products) => $products->contains('id', $product55->id));
+        $form->assertViewHas('selectedProducts', fn ($selected) => $selected->has($product55->id));
+        $form->assertSee($product55->displayName());
+    }
 }

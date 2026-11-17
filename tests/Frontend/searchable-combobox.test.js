@@ -491,3 +491,254 @@ test('rapid selections: late success of first selection does not overwrite secon
     assert.equal(comp.selectedId, '20');
     assert.equal(comp.selectedLabel, 'Second Choice');
 });
+
+test('pendingclear focus: clear followed by immediate focus/performSearch properly clears syncing and avoids watch suppression', async () => {
+    const dServer = deferred();
+    const dSearch = deferred();
+
+    const comp = createComponent({
+        type: 'customer',
+        value: '50',
+        label: 'Customer Fifty',
+        onSelect: 'selectCustomer',
+        extraArgs: [],
+    });
+
+    let searchCount = 0;
+    comp.$wire = {
+        selectCustomer: async () => dServer.promise,
+        searchSelector: async () => {
+            searchCount++;
+            return dSearch.promise;
+        },
+    };
+
+    // When clear() focuses searchInput, simulate @focus -> handleFocus()
+    comp.$refs.searchInput.focus = () => {
+        comp.handleFocus();
+    };
+
+    const clearPromise = comp.clear();
+
+    assert.equal(comp.selectedId, null);
+    assert.equal(comp.syncing, true);
+    assert.equal(comp.searching, true);
+    assert.equal(searchCount, 1);
+
+    // Server clears selection successfully
+    dServer.resolve(true);
+    await clearPromise;
+
+    // Syncing MUST be cleared to false even though handleFocus/performSearch incremented search generation
+    assert.equal(comp.syncing, false);
+    assert.equal(comp.selectedId, null);
+    assert.equal(comp.selectedLabel, '');
+
+    dSearch.resolve({ generation: 1, items: [{ id: 100, label: 'Customer Hundred' }] });
+    await Promise.resolve();
+
+    assert.equal(comp.syncing, false);
+});
+
+test('search while selectionpending: performSearch does not overwrite pending selection label and resolves syncing cleanly', async () => {
+    const dSelect = deferred();
+    const dSearch = deferred();
+    const item = { id: 42, label: 'Widget Super', meta: { matched_product_unit_id: 7 } };
+
+    const comp = createComponent({
+        type: 'product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item],
+    });
+
+    comp.$wire = {
+        selectProduct: async () => dSelect.promise,
+        searchSelector: async () => dSearch.promise,
+    };
+
+    // User selects item
+    const selectPromise = comp.selectItem(item);
+    assert.equal(comp.selectedId, '42');
+    assert.equal(comp.selectedLabel, 'Widget Super');
+    assert.equal(comp.syncing, true);
+
+    // While selection is pending, performSearch runs (e.g. user input / focus)
+    const searchPromise = comp.performSearch();
+    assert.equal(comp.searching, true);
+    assert.equal(comp.syncing, true);
+
+    // Search resolves with a different selected_item
+    dSearch.resolve({
+        generation: 2,
+        items: [{ id: 42, label: 'Outdated Server Name' }],
+        selected_item: { id: 42, label: 'Outdated Server Name' },
+    });
+    await searchPromise;
+
+    // Pending selection label must NOT be overwritten while syncing!
+    assert.equal(comp.selectedLabel, 'Widget Super');
+
+    // Server selection completes
+    dSelect.resolve(true);
+    await selectPromise;
+
+    assert.equal(comp.selectedId, '42');
+    assert.equal(comp.selectedLabel, 'Widget Super');
+    assert.equal(comp.syncing, false);
+    assert.equal(comp.failed, false);
+});
+
+test('stale modelwatch while selectionpending: incoming wireModel watch does not revert newer choice', async () => {
+    const dSelect = deferred();
+    const item1 = { id: 10, label: 'Old Product' };
+    const item2 = { id: 20, label: 'New Choice' };
+
+    let wireWatchHandler = null;
+    const comp = searchableCombobox({
+        type: 'product',
+        wireModel: 'product_id',
+        value: '10',
+        label: 'Old Product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item1, item2],
+    });
+
+    comp.$dispatch = () => {};
+    comp.$nextTick = (fn) => { if (fn) fn(); };
+    comp.$refs = { searchInput: { focus() {} } };
+    comp.$watch = () => {};
+    comp.$wire = {
+        get: () => '10',
+        set: () => {},
+        $set: async () => {},
+        $watch: (prop, handler) => {
+            if (prop === 'product_id') wireWatchHandler = handler;
+        },
+        selectProduct: async () => dSelect.promise,
+    };
+    comp.init();
+
+    assert.equal(comp.selectedId, '10');
+
+    // User clicks New Choice
+    const selectPromise = comp.selectItem(item2);
+    assert.equal(comp.selectedId, '20');
+    assert.equal(comp.selectedLabel, 'New Choice');
+    assert.equal(comp.syncing, true);
+
+    // Livewire emits an older model value while selection is in flight
+    assert.ok(wireWatchHandler);
+    wireWatchHandler('10');
+
+    // Choice must NOT be reverted
+    assert.equal(comp.selectedId, '20');
+    assert.equal(comp.selectedLabel, 'New Choice');
+
+    // Server resolves
+    dSelect.resolve(true);
+    await selectPromise;
+
+    assert.equal(comp.selectedId, '20');
+    assert.equal(comp.selectedLabel, 'New Choice');
+    assert.equal(comp.syncing, false);
+});
+
+test('initwatch/focus interleaving: fallback search on initwatch does not invalidate concurrent focus search', async () => {
+    const dLookup = deferred();
+    const dFocusSearch = deferred();
+
+    let wireWatchHandler = null;
+    const comp = searchableCombobox({
+        type: 'customer',
+        wireModel: 'customer_id',
+        value: '77',
+        label: '',
+        options: [],
+    });
+
+    comp.$dispatch = () => {};
+    comp.$nextTick = (fn) => { if (fn) fn(); };
+    comp.$refs = { searchInput: { focus() {} } };
+    comp.$watch = () => {};
+    comp.$wire = {
+        get: () => '77',
+        set: () => {},
+        $watch: (prop, handler) => {
+            if (prop === 'customer_id') wireWatchHandler = handler;
+        },
+        searchSelector: async (type, query, selectedId, options) => {
+            if (options && options.limit === 1) {
+                return dLookup.promise;
+            }
+            return dFocusSearch.promise;
+        },
+    };
+    comp.init();
+
+    // Trigger initwatch
+    if (wireWatchHandler) {
+        wireWatchHandler('77');
+    }
+
+    // Concurrently trigger focus search
+    comp.handleFocus();
+    assert.equal(comp.open, true);
+    assert.equal(comp.searching, true);
+
+    // Lookup resolves
+    dLookup.resolve({
+        generation: 0,
+        selected_item: { id: 77, label: 'Customer Seventy Seven' },
+    });
+    await new Promise(r => setTimeout(r, 0));
+
+    assert.equal(comp.selectedLabel, 'Customer Seventy Seven');
+
+    // Focus search resolves
+    dFocusSearch.resolve({
+        generation: 1,
+        items: [{ id: 77, label: 'Customer Seventy Seven' }, { id: 78, label: 'Customer 78' }],
+    });
+    await new Promise(r => setTimeout(r, 0));
+
+    assert.equal(comp.items.length, 2);
+    assert.equal(comp.selectedLabel, 'Customer Seventy Seven');
+    assert.equal(comp.syncing, false);
+    assert.equal(comp.failed, false);
+});
+
+test('scopechange invalidates pending selection and prevents stale rollback across companies', async () => {
+    const dSelect = deferred();
+    const item = { id: 99, label: 'Company A Item' };
+
+    const comp = createComponent({
+        type: 'product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item],
+    });
+
+    comp.$wire = {
+        selectProduct: async () => dSelect.promise,
+    };
+
+    // User selects item
+    const selectPromise = comp.selectItem(item);
+    assert.equal(comp.selectedId, '99');
+    assert.equal(comp.syncing, true);
+
+    // Company switches before server responds
+    comp.setCompany(2);
+    assert.equal(comp.currentCompanyId, 2);
+    assert.equal(comp.syncing, false);
+
+    // Late rejection arrives from old company
+    dSelect.resolve(false);
+    await selectPromise;
+
+    // Discarded; does not trigger rollback or failed state for new company
+    assert.equal(comp.failed, false);
+    assert.equal(comp.syncing, false);
+});

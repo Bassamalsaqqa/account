@@ -6,6 +6,7 @@
 export function searchableCombobox(config) {
     let debounceTimer = null;
     let generation = 0;
+    let selectionToken = 0;
 
     return {
         id: config.id || 'combobox-' + Math.random().toString(36).substring(2, 9),
@@ -49,6 +50,10 @@ export function searchableCombobox(config) {
 
                 this.$wire.$watch(this.wireModel, (newVal) => {
                     const normVal = (newVal !== null && newVal !== undefined && newVal !== '') ? String(newVal) : null;
+                    if (this.syncing) {
+                        // Suppress stale modelwatch echoes while a selection or clear operation is actively pending
+                        return;
+                    }
                     if (normVal !== this.selectedId) {
                         this.selectedId = normVal;
                         if (!normVal) {
@@ -60,12 +65,16 @@ export function searchableCombobox(config) {
                                 this.selectedLabel = found.label;
                                 this.query = found.label;
                             } else if (this.$wire && typeof this.$wire.searchSelector === 'function') {
-                                const currentGen = this.invalidateIntent();
-                                this.$wire.searchSelector(this.type, '', parseInt(normVal, 10), { generation: currentGen, limit: 1 })
+                                const lookupToken = selectionToken;
+                                this.$wire.searchSelector(this.type, '', parseInt(normVal, 10), { limit: 1 })
                                     .then((res) => {
-                                        if (currentGen === generation && res?.selected_item && String(res.selected_item.id) === String(this.selectedId)) {
-                                            this.selectedLabel = res.selected_item.label;
-                                            this.query = res.selected_item.label;
+                                        if (lookupToken === selectionToken && String(this.selectedId) === String(normVal) && !this.syncing) {
+                                            if (res?.selected_item && String(res.selected_item.id) === String(normVal)) {
+                                                this.selectedLabel = res.selected_item.label;
+                                                if (!this.open) {
+                                                    this.query = res.selected_item.label;
+                                                }
+                                            }
                                         }
                                     }).catch(() => {});
                             }
@@ -75,18 +84,32 @@ export function searchableCombobox(config) {
             }
 
             // Initial selection sync
-            if (this.selectedId && !this.selectedLabel && this.items.length) {
+            if (this.selectedId && !this.selectedLabel) {
                 const found = this.items.find(i => String(i.id) === String(this.selectedId));
                 if (found) {
                     this.selectedLabel = found.label;
                     this.query = found.label;
+                } else if (this.$wire && typeof this.$wire.searchSelector === 'function') {
+                    const lookupToken = selectionToken;
+                    const initialId = this.selectedId;
+                    this.$wire.searchSelector(this.type, '', parseInt(initialId, 10), { limit: 1 })
+                        .then((res) => {
+                            if (lookupToken === selectionToken && String(this.selectedId) === String(initialId) && !this.syncing) {
+                                if (res?.selected_item && String(res.selected_item.id) === String(initialId)) {
+                                    this.selectedLabel = res.selected_item.label;
+                                    if (!this.open) {
+                                        this.query = res.selected_item.label;
+                                    }
+                                }
+                            }
+                        }).catch(() => {});
                 }
             }
 
             // Scope invalidation on type changes
             if (this.$watch) {
                 this.$watch('type', () => {
-                    this.invalidateIntent();
+                    this.invalidateScope();
                     this.items = [];
                     this.hasMore = false;
                     this.nextCursor = null;
@@ -132,8 +155,14 @@ export function searchableCombobox(config) {
             return nextGen;
         },
 
-        setCompany(companyId) {
+        invalidateScope() {
             this.invalidateIntent();
+            this.syncing = false;
+            return ++selectionToken;
+        },
+
+        setCompany(companyId) {
+            this.invalidateScope();
             this.currentCompanyId = companyId;
             this.items = [];
             this.hasMore = false;
@@ -208,7 +237,7 @@ export function searchableCombobox(config) {
                 this.items = Array.isArray(response.items) ? response.items : [];
                 this.hasMore = Boolean(response.has_more);
                 this.nextCursor = response.next_cursor || null;
-                if (response.selected_item && String(this.selectedId) === String(response.selected_item.id)) {
+                if (!this.syncing && response.selected_item && String(this.selectedId) === String(response.selected_item.id)) {
                     this.selectedLabel = response.selected_item.label;
                 }
                 this.activeIndex = -1;
@@ -358,7 +387,8 @@ export function searchableCombobox(config) {
             if (this.isBlocked() || !item) return;
             if (!this.items.some(candidate => String(candidate.id) === String(item.id))) return;
 
-            const currentGen = this.invalidateIntent();
+            this.invalidateIntent();
+            const currentToken = ++selectionToken;
             const prevId = this.selectedId;
             const prevLabel = this.selectedLabel;
             const prevQuery = this.query;
@@ -388,7 +418,7 @@ export function searchableCombobox(config) {
                         parseInt(item.id, 10),
                         item.meta?.matched_product_unit_id || null
                     );
-                    if (currentGen !== generation) {
+                    if (currentToken !== selectionToken) {
                         return;
                     }
                     if (success === false) {
@@ -407,18 +437,18 @@ export function searchableCombobox(config) {
                     }
                 } else if (this.wireModel && this.$wire) {
                     await this.$wire.$set(this.wireModel, item.id);
-                    if (currentGen !== generation) {
+                    if (currentToken !== selectionToken) {
                         return;
                     }
                 }
 
-                if (currentGen !== generation) {
+                if (currentToken !== selectionToken) {
                     return;
                 }
 
                 this.failed = false;
             } catch (err) {
-                if (currentGen === generation) {
+                if (currentToken === selectionToken) {
                     this.selectedId = prevId;
                     this.selectedLabel = prevLabel;
                     this.query = prevQuery;
@@ -431,7 +461,7 @@ export function searchableCombobox(config) {
                     });
                 }
             } finally {
-                if (currentGen === generation) {
+                if (currentToken === selectionToken) {
                     this.syncing = false;
                 }
             }
@@ -440,7 +470,8 @@ export function searchableCombobox(config) {
         async clear() {
             if (this.isBlocked()) return;
 
-            const currentGen = this.invalidateIntent();
+            this.invalidateIntent();
+            const currentToken = ++selectionToken;
             const prevId = this.selectedId;
             const prevLabel = this.selectedLabel;
             const prevQuery = this.query;
@@ -470,7 +501,7 @@ export function searchableCombobox(config) {
             try {
                 if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
                     const success = await this.$wire[this.onSelect](...this.extraArgs, null, null);
-                    if (currentGen !== generation) {
+                    if (currentToken !== selectionToken) {
                         return;
                     }
                     if (success === false) {
@@ -484,18 +515,18 @@ export function searchableCombobox(config) {
                     }
                 } else if (this.wireModel && this.$wire) {
                     await this.$wire.$set(this.wireModel, null);
-                    if (currentGen !== generation) {
+                    if (currentToken !== selectionToken) {
                         return;
                     }
                 }
 
-                if (currentGen !== generation) {
+                if (currentToken !== selectionToken) {
                     return;
                 }
 
                 this.failed = false;
             } catch (err) {
-                if (currentGen === generation) {
+                if (currentToken === selectionToken) {
                     this.selectedId = prevId;
                     this.selectedLabel = prevLabel;
                     this.query = prevQuery;
@@ -504,7 +535,7 @@ export function searchableCombobox(config) {
                     this.failed = true;
                 }
             } finally {
-                if (currentGen === generation) {
+                if (currentToken === selectionToken) {
                     this.syncing = false;
                 }
             }

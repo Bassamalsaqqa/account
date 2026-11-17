@@ -110,7 +110,7 @@
                     <div class="col-span-2 lg:col-span-4">
                         <label for="line-product-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.product') }}</label>
                         @php
-                            $lineProd = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                            $lineProd = !empty($line['product_id']) ? ($selectedProducts->get($line['product_id']) ?? $products->firstWhere('id', $line['product_id'])) : null;
                             $lineProdLabel = $lineProd ? $lineProd->displayName() . ($lineProd->sku ? ' (' . $lineProd->sku . ')' : '') : ($line['item_description'] ?? '');
                         @endphp
                         <x-searchable-combobox
