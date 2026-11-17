@@ -250,3 +250,244 @@ test('Livewire absent-property function proxies do not block search; real busy f
     comp.$wire.saving = true;
     assert.equal(comp.isBlocked(), true);
 });
+
+test('selectItem immediately sets truthful label, closes listbox, and marks syncing before server resolution', async () => {
+    const dServer = deferred();
+    const item = { id: 42, label: 'Widget Super', meta: { matched_product_unit_id: 7 } };
+    let dispatched = [];
+
+    const comp = createComponent({
+        type: 'product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item],
+    });
+    comp.$dispatch = (event, detail) => { dispatched.push({ event, detail }); };
+    comp.$wire = {
+        selectProduct: async (lineIndex, productId, unitId) => {
+            assert.equal(lineIndex, 0);
+            assert.equal(productId, 42);
+            assert.equal(unitId, 7);
+            return dServer.promise;
+        },
+    };
+
+    comp.open = true;
+    comp.query = 'wid';
+
+    // Call selectItem - MUST NOT await yet!
+    const selectPromise = comp.selectItem(item);
+
+    // Immediate truthful state check: 0ms presentation before server finishes
+    assert.equal(comp.selectedId, '42');
+    assert.equal(comp.selectedLabel, 'Widget Super');
+    assert.equal(comp.query, 'Widget Super');
+    assert.equal(comp.open, false);
+    assert.equal(comp.syncing, true);
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].event, 'combobox-selected');
+    assert.equal(dispatched[0].detail.value, 42);
+
+    // Server finishes with success
+    dServer.resolve(true);
+    await selectPromise;
+
+    // State confirmed, syncing cleared
+    assert.equal(comp.selectedId, '42');
+    assert.equal(comp.selectedLabel, 'Widget Super');
+    assert.equal(comp.query, 'Widget Super');
+    assert.equal(comp.syncing, false);
+    assert.equal(comp.failed, false);
+});
+
+test('selectItem rolls back to previous truthful state if server rejects with false', async () => {
+    const dServer = deferred();
+    const item = { id: 88, label: 'Rejected Product' };
+
+    const comp = createComponent({
+        type: 'product',
+        value: '10',
+        label: 'Initial Product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item, { id: 10, label: 'Initial Product' }],
+    });
+    comp.$wire = {
+        selectProduct: async () => dServer.promise,
+    };
+
+    comp.open = true;
+    const selectPromise = comp.selectItem(item);
+
+    // Immediate optimistic presentation
+    assert.equal(comp.selectedId, '88');
+    assert.equal(comp.selectedLabel, 'Rejected Product');
+    assert.equal(comp.open, false);
+
+    // Server rejects
+    dServer.resolve(false);
+    await selectPromise;
+
+    // State cleanly rolled back to previous truthful value
+    assert.equal(comp.selectedId, '10');
+    assert.equal(comp.selectedLabel, 'Initial Product');
+    assert.equal(comp.query, 'Initial Product');
+    assert.equal(comp.failed, true);
+    assert.equal(comp.syncing, false);
+});
+
+test('selectItem rolls back to previous truthful state if server throws error', async () => {
+    const dServer = deferred();
+    const item = { id: 99, label: 'Error Product' };
+
+    const comp = createComponent({
+        type: 'product',
+        value: '5',
+        label: 'Safe Product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item],
+    });
+    comp.$wire = {
+        selectProduct: async () => dServer.promise,
+    };
+
+    const selectPromise = comp.selectItem(item);
+    assert.equal(comp.selectedId, '99');
+
+    // Server network error
+    dServer.reject(new Error('Network disconnect'));
+    await selectPromise;
+
+    // Rolled back
+    assert.equal(comp.selectedId, '5');
+    assert.equal(comp.selectedLabel, 'Safe Product');
+    assert.equal(comp.query, 'Safe Product');
+    assert.equal(comp.failed, true);
+    assert.equal(comp.syncing, false);
+});
+
+test('clear immediately blanks query and resets selection, rolling back if server rejects', async () => {
+    const dServer = deferred();
+    let clearEvents = 0;
+
+    const comp = createComponent({
+        type: 'customer',
+        value: '50',
+        label: 'Customer Fifty',
+        onSelect: 'selectCustomer',
+        extraArgs: [],
+    });
+    comp.$dispatch = (event) => { if (event === 'combobox-cleared') clearEvents++; };
+    comp.$wire = {
+        selectCustomer: async () => dServer.promise,
+    };
+
+    const clearPromise = comp.clear();
+
+    // Immediate clear
+    assert.equal(comp.selectedId, null);
+    assert.equal(comp.selectedLabel, '');
+    assert.equal(comp.query, '');
+    assert.equal(comp.syncing, true);
+    assert.equal(clearEvents, 1);
+
+    // Server rejects clear
+    dServer.resolve(false);
+    await clearPromise;
+
+    // Rolled back to Customer Fifty
+    assert.equal(comp.selectedId, '50');
+    assert.equal(comp.selectedLabel, 'Customer Fifty');
+    assert.equal(comp.query, 'Customer Fifty');
+    assert.equal(comp.failed, true);
+    assert.equal(comp.syncing, false);
+});
+
+test('rapid selections: late rejection of first selection does not rollback second selection', async () => {
+    const dFirst = deferred();
+    const dSecond = deferred();
+
+    const item1 = { id: 1, label: 'Item 1' };
+    const item2 = { id: 2, label: 'Item 2' };
+
+    const comp = createComponent({
+        type: 'product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item1, item2],
+    });
+
+    comp.$wire = {
+        selectProduct: async (lineIndex, id) => {
+            if (id === 1) return dFirst.promise;
+            if (id === 2) return dSecond.promise;
+        },
+    };
+
+    // User rapidly clicks Item 1, then changes mind and clicks Item 2
+    const p1 = comp.selectItem(item1);
+    assert.equal(comp.selectedId, '1');
+
+    const p2 = comp.selectItem(item2);
+    assert.equal(comp.selectedId, '2');
+    assert.equal(comp.selectedLabel, 'Item 2');
+
+    // First selection rejects late
+    dFirst.resolve(false);
+    await p1;
+
+    // Item 2 MUST NOT be rolled back by stale first response!
+    assert.equal(comp.selectedId, '2');
+    assert.equal(comp.selectedLabel, 'Item 2');
+
+    // Second selection succeeds
+    dSecond.resolve(true);
+    await p2;
+
+    assert.equal(comp.selectedId, '2');
+    assert.equal(comp.selectedLabel, 'Item 2');
+    assert.equal(comp.syncing, false);
+    assert.equal(comp.failed, false);
+});
+
+test('rapid selections: late success of first selection does not overwrite second selection', async () => {
+    const dFirst = deferred();
+    const dSecond = deferred();
+
+    const item1 = { id: 10, label: 'First Choice' };
+    const item2 = { id: 20, label: 'Second Choice' };
+
+    const comp = createComponent({
+        type: 'product',
+        onSelect: 'selectProduct',
+        extraArgs: [0],
+        options: [item1, item2],
+    });
+
+    comp.$wire = {
+        selectProduct: async (lineIndex, id) => {
+            if (id === 10) return dFirst.promise;
+            if (id === 20) return dSecond.promise;
+        },
+    };
+
+    const p1 = comp.selectItem(item1);
+    const p2 = comp.selectItem(item2);
+
+    assert.equal(comp.selectedId, '20');
+
+    // First request resolves late with success
+    dFirst.resolve(true);
+    await p1;
+
+    // State must remain Second Choice
+    assert.equal(comp.selectedId, '20');
+    assert.equal(comp.selectedLabel, 'Second Choice');
+
+    dSecond.resolve(true);
+    await p2;
+
+    assert.equal(comp.selectedId, '20');
+    assert.equal(comp.selectedLabel, 'Second Choice');
+});

@@ -28,6 +28,7 @@ export function searchableCombobox(config) {
         hasMore: false,
         nextCursor: null,
         loadingMore: false,
+        syncing: false,
         failed: false,
         offline: false,
         currentCompanyId: null,
@@ -37,7 +38,7 @@ export function searchableCombobox(config) {
             if (this.wireModel && this.$wire) {
                 this.$watch('selectedId', (val) => {
                     const normVal = (val !== null && val !== undefined && val !== '') ? String(val) : null;
-                    if (this.wireModel && this.$wire) {
+                    if (this.wireModel && this.$wire && !this.syncing) {
                         const currentWireVal = this.$wire.get(this.wireModel);
                         const normWireVal = (currentWireVal !== null && currentWireVal !== undefined && currentWireVal !== '') ? String(currentWireVal) : null;
                         if (normWireVal !== normVal) {
@@ -58,6 +59,15 @@ export function searchableCombobox(config) {
                             if (found) {
                                 this.selectedLabel = found.label;
                                 this.query = found.label;
+                            } else if (this.$wire && typeof this.$wire.searchSelector === 'function') {
+                                const currentGen = this.invalidateIntent();
+                                this.$wire.searchSelector(this.type, '', parseInt(normVal, 10), { generation: currentGen, limit: 1 })
+                                    .then((res) => {
+                                        if (currentGen === generation && res?.selected_item && String(res.selected_item.id) === String(this.selectedId)) {
+                                            this.selectedLabel = res.selected_item.label;
+                                            this.query = res.selected_item.label;
+                                        }
+                                    }).catch(() => {});
                             }
                         }
                     }
@@ -353,6 +363,23 @@ export function searchableCombobox(config) {
             const prevLabel = this.selectedLabel;
             const prevQuery = this.query;
 
+            // Immediate truthful label and close before server await
+            this.selectedId = String(item.id);
+            this.selectedLabel = item.label;
+            this.query = item.label;
+            this.open = false;
+            this.activeIndex = -1;
+            this.activeId = null;
+            this.failed = false;
+            this.syncing = true;
+
+            this.$dispatch('combobox-selected', {
+                id: this.id,
+                type: this.type,
+                value: item.id,
+                item: item,
+            });
+
             try {
                 if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
                     // Canonical server action execution
@@ -365,10 +392,17 @@ export function searchableCombobox(config) {
                         return;
                     }
                     if (success === false) {
-                        // Backend rejected selection; restore previous display
+                        // Backend rejected selection; rollback to previous truthful state
                         this.selectedId = prevId;
                         this.selectedLabel = prevLabel;
                         this.query = prevQuery;
+                        this.failed = true;
+                        this.$dispatch('combobox-selected', {
+                            id: this.id,
+                            type: this.type,
+                            value: prevId,
+                            item: null,
+                        });
                         return;
                     }
                 } else if (this.wireModel && this.$wire) {
@@ -382,28 +416,23 @@ export function searchableCombobox(config) {
                     return;
                 }
 
-                // Canonical success confirmed
-                this.selectedId = String(item.id);
-                this.selectedLabel = item.label;
-                this.query = item.label;
-                this.open = false;
-                this.activeIndex = -1;
-                this.activeId = null;
                 this.failed = false;
-
-                this.$dispatch('combobox-selected', {
-                    id: this.id,
-                    type: this.type,
-                    value: item.id,
-                    item: item,
-                });
             } catch (err) {
                 if (currentGen === generation) {
-                    // Restore state on failure - NO fake optimistic cleared state!
                     this.selectedId = prevId;
                     this.selectedLabel = prevLabel;
                     this.query = prevQuery;
                     this.failed = true;
+                    this.$dispatch('combobox-selected', {
+                        id: this.id,
+                        type: this.type,
+                        value: prevId,
+                        item: null,
+                    });
+                }
+            } finally {
+                if (currentGen === generation) {
+                    this.syncing = false;
                 }
             }
         },
@@ -418,13 +447,25 @@ export function searchableCombobox(config) {
             const prevItems = this.items;
             const prevHasMore = this.hasMore;
 
-            // Immediately cancel debounce, reset items, hasMore, nextCursor, loadingMore, searching, open
+            // Immediate clear before server await
+            this.selectedId = null;
+            this.selectedLabel = '';
+            this.query = '';
             this.items = [];
             this.hasMore = false;
             this.nextCursor = null;
             this.loadingMore = false;
             this.searching = false;
             this.open = false;
+            this.activeIndex = -1;
+            this.activeId = null;
+            this.failed = false;
+            this.syncing = true;
+
+            this.$dispatch('combobox-cleared', { id: this.id });
+            this.$nextTick(() => {
+                this.$refs.searchInput?.focus();
+            });
 
             try {
                 if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
@@ -438,6 +479,7 @@ export function searchableCombobox(config) {
                         this.query = prevQuery;
                         this.items = prevItems;
                         this.hasMore = prevHasMore;
+                        this.failed = true;
                         return;
                     }
                 } else if (this.wireModel && this.$wire) {
@@ -451,18 +493,7 @@ export function searchableCombobox(config) {
                     return;
                 }
 
-                // Confirm clear on client
-                this.selectedId = null;
-                this.selectedLabel = '';
-                this.query = '';
-                this.activeIndex = -1;
-                this.activeId = null;
                 this.failed = false;
-
-                this.$dispatch('combobox-cleared', { id: this.id });
-                this.$nextTick(() => {
-                    this.$refs.searchInput?.focus();
-                });
             } catch (err) {
                 if (currentGen === generation) {
                     this.selectedId = prevId;
@@ -471,6 +502,10 @@ export function searchableCombobox(config) {
                     this.items = prevItems;
                     this.hasMore = prevHasMore;
                     this.failed = true;
+                }
+            } finally {
+                if (currentGen === generation) {
+                    this.syncing = false;
                 }
             }
         },

@@ -40,11 +40,6 @@
             @php
                 $selectedVendor = $vendor_id ? $vendors->firstWhere('id', $vendor_id) : null;
                 $vendorLabel = $selectedVendor ? $selectedVendor->displayName() : '';
-                $vendorOptions = $vendors->map(fn($v) => [
-                    'id' => (string) $v->id,
-                    'label' => $v->displayName(),
-                    'sublabel' => $v->code ?: $v->phone,
-                ])->values()->all();
             @endphp
             <div class="party-picker flex gap-2 items-center">
                 <x-searchable-combobox
@@ -54,7 +49,6 @@
                     wire-model="vendor_id"
                     :selected-id="$vendor_id"
                     :selected-label="$vendorLabel"
-                    :options="$vendorOptions"
                     :placeholder="__('purchasing.select_vendor')"
                     :aria-label="__('purchasing.vendor')"
                     required
@@ -118,11 +112,6 @@
                         @php
                             $lineProd = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                             $lineProdLabel = $lineProd ? $lineProd->displayName() . ($lineProd->sku ? ' (' . $lineProd->sku . ')' : '') : ($line['item_description'] ?? '');
-                            $prodOptions = $products->map(fn($p) => [
-                                'id' => (string) $p->id,
-                                'label' => $p->displayName() . ($p->sku ? ' (' . $p->sku . ')' : ''),
-                                'sublabel' => $p->sku,
-                            ])->values()->all();
                         @endphp
                         <x-searchable-combobox
                             id="line-product-{{ $index }}"
@@ -130,7 +119,6 @@
                             context="purchasing"
                             :selected-id="$line['product_id'] ?? null"
                             :selected-label="$lineProdLabel"
-                            :options="$prodOptions"
                             on-select="selectProduct"
                             :extra-args="[$index]"
                             :placeholder="__('purchasing.select_product')"

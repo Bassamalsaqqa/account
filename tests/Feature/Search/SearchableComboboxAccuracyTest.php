@@ -21,6 +21,7 @@ use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Search\SearchableSelectorService;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -733,6 +734,62 @@ final class SearchableComboboxAccuracyTest extends TestCase
                 'Missing cursor integrity signature.',
                 'Malformed pagination cursor encoding.',
             ], true), 'Exception message must indicate missing signature or malformed encoding.');
+        }
+    }
+
+    public function test_context_authorization_does_not_fall_through_to_unrelated_capabilities(): void
+    {
+        // Create a restricted staff user with ONLY reports.inventory.view
+        $staffUser = User::factory()->create();
+        $this->company->users()->attach($staffUser->id, ['role' => 'staff']);
+        $staffUser->givePermissionTo('reports.inventory.view');
+
+        // Product search in 'sales' context must be denied immediately without falling through
+        try {
+            $this->service->search(
+                $this->company,
+                $staffUser,
+                'product',
+                'test',
+                null,
+                25,
+                ['context' => 'sales']
+            );
+            $this->fail('Expected AuthorizationException for cross-context unauthorized search.');
+        } catch (AuthorizationException $e) {
+            $this->assertStringContainsString('Actor lacks permissions for [product] in context [sales]', $e->getMessage());
+        }
+
+        // Product search in 'purchasing' context must also be denied
+        try {
+            $this->service->search(
+                $this->company,
+                $staffUser,
+                'product',
+                'test',
+                null,
+                25,
+                ['context' => 'purchasing']
+            );
+            $this->fail('Expected AuthorizationException for cross-context unauthorized search.');
+        } catch (AuthorizationException $e) {
+            $this->assertStringContainsString('Actor lacks permissions for [product] in context [purchasing]', $e->getMessage());
+        }
+
+        // Unknown context must be rejected immediately
+        try {
+            $this->service->search(
+                $this->company,
+                $staffUser,
+                'product',
+                'test',
+                null,
+                25,
+                ['context' => 'unknown_workflow']
+            );
+            $this->fail('Expected AuthorizationException for unknown context.');
+        } catch (AuthorizationException $e) {
+            $this->assertStringContainsString('Unsupported context [unknown_workflow]', $e->getMessage());
         }
     }
 }

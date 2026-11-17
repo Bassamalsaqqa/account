@@ -64,11 +64,6 @@
                 @php
                     $selectedCustomer = $customer_id ? $customers->firstWhere('id', $customer_id) : null;
                     $customerLabel = $selectedCustomer ? $selectedCustomer->displayName() . ' (' . ($selectedCustomer->default_currency_code ?? $baseCurrencyCode) . ')' : '';
-                    $customerOptions = $customers->map(fn($c) => [
-                        'id' => (string) $c->id,
-                        'label' => $c->displayName() . ' (' . ($c->default_currency_code ?? $baseCurrencyCode) . ')',
-                        'sublabel' => $c->code ?: $c->phone,
-                    ])->values()->all();
                 @endphp
                 <div class="party-picker flex gap-2 items-center">
                     <x-searchable-combobox
@@ -78,7 +73,6 @@
                         wire-model="customer_id"
                         :selected-id="$customer_id"
                         :selected-label="$customerLabel"
-                        :options="$customerOptions"
                         :placeholder="__('sales.select_customer')"
                         :aria-label="__('sales.customer')"
                         required
@@ -227,11 +221,6 @@
                                     @php
                                         $lineProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                                         $lineProductLabel = $lineProduct ? $lineProduct->displayName() . ($lineProduct->sku ? ' (' . $lineProduct->sku . ')' : '') : '';
-                                        $productOptions = $products->map(fn($p) => [
-                                            'id' => (string) $p->id,
-                                            'label' => $p->displayName() . ($p->sku ? ' (' . $p->sku . ')' : ''),
-                                            'sublabel' => $p->sku,
-                                        ])->values()->all();
                                     @endphp
                                     <x-searchable-combobox
                                         id="invoice-desktop-line-{{ $index }}-product-id"
@@ -239,7 +228,6 @@
                                         context="sales"
                                         :selected-id="$line['product_id'] ?? null"
                                         :selected-label="$lineProductLabel"
-                                        :options="$productOptions"
                                         on-select="selectProduct"
                                         :extra-args="[$index]"
                                         compact
@@ -393,7 +381,6 @@
                                 context="sales"
                                 :selected-id="$line['product_id'] ?? null"
                                 :selected-label="$mobileProductLabel"
-                                :options="$productOptions ?? []"
                                 on-select="selectProduct"
                                 :extra-args="[$index]"
                                 :placeholder="__('sales.product')"

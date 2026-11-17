@@ -62,7 +62,7 @@
             @focus="handleFocus()"
             @keydown="handleKeydown($event)"
             placeholder="{{ $placeholder }}"
-            :disabled="{{ $disabled ? 'true' : 'false' }} || (typeof documentBusy !== 'undefined' && documentBusy) || (typeof saving !== 'undefined' && saving)"
+            :disabled="{{ $disabled ? 'true' : 'false' }} || (typeof saving !== 'undefined' && saving)"
             autocomplete="off"
             spellcheck="false"
             class="w-full rounded-control border border-border bg-canvas px-3 text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden transition-colors {{ $compact ? 'min-h-[44px] md:min-h-8 md:h-8 py-1' : 'min-h-[44px] h-11 py-2' }} ltr:pr-8 rtl:pl-8"
@@ -70,16 +70,16 @@
         />
 
         <div class="absolute inset-y-0 ltr:right-0 rtl:left-0 flex items-center ltr:pr-2 rtl:pl-2 gap-1 pointer-events-auto">
-            <span x-show="searching" x-cloak class="inline-block w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin text-primary" aria-hidden="true"></span>
+            <span x-show="searching || syncing" x-cloak class="inline-block w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin text-primary" aria-hidden="true"></span>
 
             <button
                 type="button"
-                x-show="isSelected && !searching"
+                x-show="isSelected && !searching && !syncing"
                 x-cloak
                 @click.stop="clear()"
                 title="{{ __('search.clear_search') }}"
                 aria-label="{{ __('search.clear_search') }}"
-                :disabled="(typeof documentBusy !== 'undefined' && documentBusy) || (typeof saving !== 'undefined' && saving)"
+                :disabled="{{ $disabled ? 'true' : 'false' }} || (typeof saving !== 'undefined' && saving)"
                 class="min-h-[44px] min-w-[32px] md:min-h-7 md:min-w-7 flex items-center justify-center text-text-muted hover:text-danger rounded-control transition-colors cursor-pointer"
             >
                 <span class="text-base font-bold leading-none">&times;</span>

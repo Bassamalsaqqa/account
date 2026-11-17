@@ -245,7 +245,11 @@ final class SearchableSelectorService
 
         $context = $options['context'] ?? null;
 
-        if ($context !== null && isset($allowlists[$context])) {
+        if ($context !== null) {
+            if (! isset($allowlists[$context])) {
+                throw new AuthorizationException("Unsupported context [{$context}] for selector type [{$type}].");
+            }
+
             foreach ($allowlists[$context] as $perm) {
                 try {
                     if ($actor->hasPermissionTo($perm)) {
