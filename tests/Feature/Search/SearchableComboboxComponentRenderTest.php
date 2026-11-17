@@ -91,7 +91,7 @@ final class SearchableComboboxComponentRenderTest extends TestCase
         // Clear action button
         $this->assertStringContainsString('@click.stop="clear()"', $html);
         // Loading indicator
-        $this->assertStringContainsString('x-show="searching"', $html);
+        $this->assertStringContainsString('x-show="searching || syncing"', $html);
         // Empty state announcement
         $this->assertStringContainsString('role="status"', $html);
     }

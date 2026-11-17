@@ -7,6 +7,7 @@ namespace Tests\Feature\Search;
 use App\Actions\Company\CreateCompanyAction;
 use App\Livewire\Pages\Inventory\OpeningStockForm;
 use App\Livewire\Pages\Inventory\StockMovementIndex;
+use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\Company;
@@ -741,7 +742,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
     {
         // Create a restricted staff user with ONLY reports.inventory.view
         $staffUser = User::factory()->create();
-        $this->company->users()->attach($staffUser->id, ['role' => 'staff']);
+        $this->company->users()->attach($staffUser->id, ['status' => 'active', 'is_owner' => false]);
         $staffUser->givePermissionTo('reports.inventory.view');
 
         // Product search in 'sales' context must be denied immediately without falling through
@@ -817,7 +818,7 @@ final class SearchableComboboxAccuracyTest extends TestCase
         $product55 = $created[54];
 
         // Simulate opening purchase form with product #55 selected on line 0
-        $form = Livewire::test(\App\Livewire\Pages\Purchasing\PurchaseForm::class);
+        $form = Livewire::test(PurchaseForm::class);
         $form->set('lines.0.product_id', $product55->id);
         $form->assertViewHas('products', fn ($products) => $products->contains('id', $product55->id));
         $form->assertViewHas('selectedProducts', fn ($selected) => $selected->has($product55->id));

@@ -404,92 +404,37 @@ test('clear immediately blanks query and resets selection, rolling back if serve
     assert.equal(comp.syncing, false);
 });
 
-test('rapid selections: late rejection of first selection does not rollback second selection', async () => {
-    const dFirst = deferred();
-    const dSecond = deferred();
-
-    const item1 = { id: 1, label: 'Item 1' };
-    const item2 = { id: 2, label: 'Item 2' };
-
-    const comp = createComponent({
-        type: 'product',
-        onSelect: 'selectProduct',
-        extraArgs: [0],
-        options: [item1, item2],
-    });
-
-    comp.$wire = {
-        selectProduct: async (lineIndex, id) => {
-            if (id === 1) return dFirst.promise;
-            if (id === 2) return dSecond.promise;
-        },
-    };
-
-    // User rapidly clicks Item 1, then changes mind and clicks Item 2
-    const p1 = comp.selectItem(item1);
+test('pending selection serializes clicks and rejection restores only the confirmed choice', async () => {
+    const request = deferred();
+    const first = { id: 1, label: 'First' };
+    const second = { id: 2, label: 'Second' };
+    const comp = createComponent({ type: 'product', value: '9', label: 'Confirmed', onSelect: 'selectProduct', options: [first, second] });
+    let calls = 0;
+    comp.$wire = { selectProduct: () => { calls++; return request.promise; } };
+    const pending = comp.selectItem(first);
+    await comp.selectItem(second);
+    await comp.clear();
+    assert.equal(calls, 1);
     assert.equal(comp.selectedId, '1');
-
-    const p2 = comp.selectItem(item2);
-    assert.equal(comp.selectedId, '2');
-    assert.equal(comp.selectedLabel, 'Item 2');
-
-    // First selection rejects late
-    dFirst.resolve(false);
-    await p1;
-
-    // Item 2 MUST NOT be rolled back by stale first response!
-    assert.equal(comp.selectedId, '2');
-    assert.equal(comp.selectedLabel, 'Item 2');
-
-    // Second selection succeeds
-    dSecond.resolve(true);
-    await p2;
-
-    assert.equal(comp.selectedId, '2');
-    assert.equal(comp.selectedLabel, 'Item 2');
+    request.resolve(false);
+    await pending;
+    assert.equal(comp.selectedId, '9');
+    assert.equal(comp.selectedLabel, 'Confirmed');
     assert.equal(comp.syncing, false);
-    assert.equal(comp.failed, false);
+    assert.equal(comp.failed, true);
 });
 
-test('rapid selections: late success of first selection does not overwrite second selection', async () => {
-    const dFirst = deferred();
-    const dSecond = deferred();
-
-    const item1 = { id: 10, label: 'First Choice' };
-    const item2 = { id: 20, label: 'Second Choice' };
-
-    const comp = createComponent({
-        type: 'product',
-        onSelect: 'selectProduct',
-        extraArgs: [0],
-        options: [item1, item2],
-    });
-
-    comp.$wire = {
-        selectProduct: async (lineIndex, id) => {
-            if (id === 10) return dFirst.promise;
-            if (id === 20) return dSecond.promise;
-        },
-    };
-
-    const p1 = comp.selectItem(item1);
-    const p2 = comp.selectItem(item2);
-
+test('after selection confirmation another choice can dispatch normally', async () => {
+    const first = { id: 10, label: 'First' };
+    const second = { id: 20, label: 'Second' };
+    const comp = createComponent({ type: 'product', onSelect: 'selectProduct', options: [first, second] });
+    const calls = [];
+    comp.$wire = { selectProduct: async (...args) => { calls.push(args); return true; } };
+    await comp.selectItem(first);
+    await comp.selectItem(second);
+    assert.equal(calls.length, 2);
     assert.equal(comp.selectedId, '20');
-
-    // First request resolves late with success
-    dFirst.resolve(true);
-    await p1;
-
-    // State must remain Second Choice
-    assert.equal(comp.selectedId, '20');
-    assert.equal(comp.selectedLabel, 'Second Choice');
-
-    dSecond.resolve(true);
-    await p2;
-
-    assert.equal(comp.selectedId, '20');
-    assert.equal(comp.selectedLabel, 'Second Choice');
+    assert.equal(comp.syncing, false);
 });
 
 test('pendingclear focus: clear followed by immediate focus/performSearch properly clears syncing and avoids watch suppression', async () => {

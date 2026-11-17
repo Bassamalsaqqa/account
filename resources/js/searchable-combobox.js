@@ -384,7 +384,7 @@ export function searchableCombobox(config) {
         },
 
         async selectItem(item) {
-            if (this.isBlocked() || !item) return;
+            if (this.isBlocked() || this.syncing || !item) return;
             if (!this.items.some(candidate => String(candidate.id) === String(item.id))) return;
 
             this.invalidateIntent();
@@ -468,7 +468,7 @@ export function searchableCombobox(config) {
         },
 
         async clear() {
-            if (this.isBlocked()) return;
+            if (this.isBlocked() || this.syncing) return;
 
             this.invalidateIntent();
             const currentToken = ++selectionToken;
