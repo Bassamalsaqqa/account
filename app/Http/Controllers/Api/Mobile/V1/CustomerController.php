@@ -4,16 +4,26 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
+use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Domain\Sales\Queries\CustomerBalanceQuery;
+use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\CompanyMobileSetting;
 use App\Models\Customer;
+use App\Models\MoneyAccount;
 use App\Models\User;
+use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Services\Sales\CustomerCatalogService;
 use App\Support\Mobile\WireResponse;
+use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Throwable;
 
 final class CustomerController extends Controller
 {
@@ -192,6 +202,356 @@ final class CustomerController extends Controller
         }
 
         return $response;
+    }
+
+    /**
+     * GET /api/mobile/v1/companies/{companyId}/customers/{customerId}
+     */
+    public function show(Request $request, string $companyId, string $customerId, CustomerBalanceQuery $balanceQuery): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $this->canReadCustomers($user, $company)) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required customer directory permissions.',
+                status: 403
+            );
+        }
+
+        $customer = Customer::where('company_id', $company->id)
+            ->where(function ($q) use ($customerId): void {
+                $q->where('public_id', $customerId)
+                    ->orWhere('id', $customerId);
+            })
+            ->first();
+
+        if ($customer === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
+        $cmu = CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code);
+        $balance = null;
+        try {
+            $balances = $balanceQuery->execute([(int) $customer->id]);
+            $custBalances = $balances[(int) $customer->id] ?? [];
+            $sum = BigDecimal::zero();
+            foreach ($custBalances as $curr => $data) {
+                $out = BigDecimal::of($data['outstanding']);
+                $sum = $sum->plus($out);
+            }
+            $balance = (string) $sum->toScale($cmu, RoundingMode::HALF_UP);
+        } catch (Throwable) {
+            // Balance remains null when error/unauthorized - never invent zero
+        }
+
+        $creditLimit = $customer->credit_limit_base !== null
+            ? (string) BigDecimal::of((string) $customer->credit_limit_base)->toScale($cmu, RoundingMode::HALF_UP)
+            : null;
+
+        return response()->json([
+            'id' => (string) $customer->public_id,
+            'code' => $customer->code,
+            'name' => (string) $customer->displayName(),
+            'name_ar' => $customer->name_ar,
+            'name_en' => $customer->name_en,
+            'phone' => $customer->phone,
+            'whatsapp' => $customer->whatsapp,
+            'email' => $customer->email,
+            'tax_number' => $customer->tax_number,
+            'address' => $customer->address_ar ?? $customer->address_line_1_ar ?? $customer->address_en,
+            'currency' => (string) $company->base_currency_code,
+            'currency_minor_units' => $cmu,
+            'balance' => $balance,
+            'balance_ils' => $balance ?? '0.00',
+            'credit_limit' => $creditLimit,
+            'credit_limit_ils' => $creditLimit,
+            'status' => (string) $customer->status,
+        ], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
+    }
+
+    /**
+     * POST /api/mobile/v1/companies/{companyId}/customers
+     */
+    public function store(Request $request, string $companyId, CustomerCatalogService $catalogService): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $user->hasPermissionTo('customers.manage')) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required customers.manage permission.',
+                status: 403
+            );
+        }
+
+        $payload = $request->json()->all();
+        if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name'])) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Customer name is required.',
+                status: 422
+            );
+        }
+
+        if (empty($payload['name_ar']) && ! empty($payload['name'])) {
+            $payload['name_ar'] = $payload['name'];
+        }
+
+        try {
+            app(CompanyContext::class)->setCompany($company, $user);
+            $customer = $catalogService->save($company, $user, $payload);
+        } catch (Throwable $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Failed to create customer: '.$e->getMessage(),
+                status: 422
+            );
+        }
+
+        return response()->json([
+            'id' => (string) $customer->public_id,
+            'name' => (string) $customer->displayName(),
+            'code' => $customer->code,
+            'phone' => $customer->phone,
+            'balance_ils' => '0.00',
+            'credit_limit_ils' => (string) BigDecimal::of((string) ($customer->credit_limit_base ?? '1000.00'))->toScale(2, RoundingMode::HALF_UP),
+        ], 201, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
+    }
+
+    /**
+     * PUT /api/mobile/v1/companies/{companyId}/customers/{customerId}
+     */
+    public function update(Request $request, string $companyId, string $customerId, CustomerCatalogService $catalogService): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $user->hasPermissionTo('customers.manage')) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required customers.manage permission.',
+                status: 403
+            );
+        }
+
+        $customer = Customer::where('company_id', $company->id)
+            ->where(function ($q) use ($customerId): void {
+                $q->where('public_id', $customerId)
+                    ->orWhere('id', $customerId);
+            })
+            ->first();
+
+        if ($customer === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
+        $payload = $request->json()->all();
+
+        try {
+            app(CompanyContext::class)->setCompany($company, $user);
+            $updated = $catalogService->save($company, $user, $payload, (int) $customer->id);
+        } catch (Throwable $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Failed to update customer: '.$e->getMessage(),
+                status: 422
+            );
+        }
+
+        return response()->json([
+            'id' => (string) $updated->public_id,
+            'name' => (string) $updated->displayName(),
+            'code' => $updated->code,
+            'phone' => $updated->phone,
+            'credit_limit_ils' => (string) BigDecimal::of((string) ($updated->credit_limit_base ?? '1000.00'))->toScale(2, RoundingMode::HALF_UP),
+        ], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
+    }
+
+    /**
+     * GET /api/mobile/v1/companies/{companyId}/customers/{customerId}/statement
+     */
+    public function statement(Request $request, string $companyId, string $customerId, CustomerStatementQuery $statementQuery): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $this->canReadCustomers($user, $company)) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required customer permissions.',
+                status: 403
+            );
+        }
+
+        $customer = Customer::where('company_id', $company->id)
+            ->where(function ($q) use ($customerId): void {
+                $q->where('public_id', $customerId)
+                    ->orWhere('id', $customerId);
+            })
+            ->first();
+
+        if ($customer === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
+        $fromDate = $request->query('from_date');
+        $toDate = $request->query('to_date');
+
+        try {
+            app(CompanyContext::class)->setCompany($company, $user);
+            $result = $statementQuery->execute($customer, is_string($fromDate) ? $fromDate : null, is_string($toDate) ? $toDate : null);
+        } catch (Throwable $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Statement generation failed: '.$e->getMessage(),
+                status: 422
+            );
+        }
+
+        return response()->json([
+            'customer_id' => (string) $customer->public_id,
+            'customer_name' => (string) $customer->displayName(),
+            'from_date' => $result['from_date'],
+            'to_date' => $result['to_date'],
+            'currencies' => $result['currencies'],
+        ], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
+    }
+
+    /**
+     * POST /api/mobile/v1/companies/{companyId}/customers/{customerId}/payments
+     * Customer debt collection voucher
+     */
+    public function recordPayment(Request $request, string $companyId, string $customerId, PostCustomerPaymentAction $postPaymentAction): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $user->hasPermissionTo('money.receipt.create')) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required money.receipt.create permission.',
+                status: 403
+            );
+        }
+
+        $customer = Customer::where('company_id', $company->id)
+            ->where(function ($q) use ($customerId): void {
+                $q->where('public_id', $customerId)
+                    ->orWhere('id', $customerId);
+            })
+            ->first();
+
+        if ($customer === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
+        $amount = $request->input('amount');
+        if ($amount === null || ! is_scalar($amount) || BigDecimal::of((string) $amount)->isNegativeOrZero()) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Amount must be a strictly positive decimal.',
+                status: 422
+            );
+        }
+
+        // Resolve cash account
+        $moneyAccountId = $request->input('money_account_id');
+        $cashAccount = null;
+        if ($moneyAccountId !== null) {
+            $cashAccount = MoneyAccount::where('company_id', $company->id)
+                ->where('public_id', (string) $moneyAccountId)
+                ->first();
+        }
+        if ($cashAccount === null) {
+            $cashAccount = MoneyAccount::where('company_id', $company->id)
+                ->where('account_type', MoneyAccount::TYPE_CASH)
+                ->where('is_active', true)
+                ->first();
+        }
+
+        if ($cashAccount === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'No approved cash account configured for this company.',
+                status: 422
+            );
+        }
+
+        $currency = (string) ($request->input('currency_code', $company->base_currency_code));
+        $paymentData = [
+            'customer_id' => $customer->id,
+            'money_account_id' => $cashAccount->id,
+            'currency_code' => $currency,
+            'exchange_rate' => '1.0000000000',
+            'amount' => (string) BigDecimal::of((string) $amount),
+            'payment_date' => (string) ($request->input('payment_date', now()->format('Y-m-d'))),
+            'payment_method' => 'cash',
+            'notes' => (string) ($request->input('notes', 'سند قبض دفعة من تطبيق الجوال')),
+            'allocations' => [],
+        ];
+
+        try {
+            app(CompanyContext::class)->setCompany($company, $user);
+            $payment = $postPaymentAction->execute($company, $user, $paymentData);
+        } catch (Throwable $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Customer debt payment failed: '.$e->getMessage(),
+                status: 422
+            );
+        }
+
+        return response()->json([
+            'id' => (string) $payment->public_id,
+            'payment_number' => (string) ($payment->payment_number ?? $payment->public_id),
+            'amount' => (string) BigDecimal::of((string) $payment->amount)->toScale(2, RoundingMode::HALF_UP),
+            'currency' => (string) $payment->currency_code,
+            'posted_at' => $payment->payment_date ? $payment->payment_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
+        ], 201, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
     }
 
     /**

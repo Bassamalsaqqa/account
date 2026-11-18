@@ -1,0 +1,64 @@
+{
+  "scenario": "Same client_event_id with altered economic payload must be rejected with 409 Conflict",
+  "stored_record": {
+    "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "payload_digest": "sha256:d442ce49a7609a9a42bb5165990d481d1c7c563cb8030403487099a9919728d9"
+  },
+  "incoming_request": {
+    "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+    "captured_at": "2026-11-10T12:00:00Z",
+    "payload_digest": "sha256:4516f569edc5fe6d2bd5a418291ae4ccbff7d7135082f509a67c21838f9fbc4f",
+    "event": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "event_version": 1,
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "actor_id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "device_lease_id": "7c1e5a2b-3d4f-5678-90ab-cdef12345678",
+      "captured_at": "2026-11-10T12:00:00Z",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "currency": "ILS",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "local_receipt_number": "REC-OFF-00042",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "quantity": "2.000000",
+          "unit_price": "20.000000",
+          "tax_rate": "16.000000",
+          "tax_amount": "6.400000",
+          "line_total": "46.400000"
+        }
+      ],
+      "payment": {
+        "mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount_tendered": "100.000000",
+        "amount_settled": "46.400000",
+        "change_returned": "53.600000"
+      }
+    }
+  },
+  "expected_status": 409,
+  "expected_response": {
+    "error": {
+      "code": "PAYLOAD_MISMATCH_CONFLICT",
+      "message": "Economic payload does not match the stored digest for this client event ID.",
+      "details": {
+        "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+      },
+      "conflict_evidence": {
+        "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "stored_payload_digest": "sha256:d442ce49a7609a9a42bb5165990d481d1c7c563cb8030403487099a9919728d9",
+        "incoming_payload_digest": "sha256:4516f569edc5fe6d2bd5a418291ae4ccbff7d7135082f509a67c21838f9fbc4f",
+        "conflict_detected_at": "2026-11-10T12:03:00Z"
+      }
+    }
+  }
+}

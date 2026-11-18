@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.smalltrader.app/mobile/v1/auth-challenge-request.json",
+  "title": "AuthChallengeRequest",
+  "type": "object",
+  "required": ["device_id", "app_version", "platform"],
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "app_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["android", "ios"]
+    }
+  },
+  "additionalProperties": false
+}

@@ -55,6 +55,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(StockEventScope::class, fn () => new StockEventScope);
         $this->app->scoped(MoneyEventScope::class, fn () => new MoneyEventScope);
         $this->app->scoped(Phase7EventScope::class, fn () => new Phase7EventScope);
+        $this->app->scoped(\App\Services\Money\CurrencyMinorUnitsResolver::class);
+        $this->app->bind(
+            \App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface::class,
+            \App\Support\Mobile\Receipt\DenyFinancialExecutionAdapter::class
+        );
     }
 
     /**

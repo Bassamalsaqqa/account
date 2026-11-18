@@ -48,7 +48,7 @@ foreach ($routes as $route) {
     if (str_starts_with($uri, 'api/mobile/v1')) {
         $v1Routes[] = $uri;
     }
-    if (str_contains($uri, 'mobile/v2')) {
+    if (str_contains($uri, 'mobile/v2') && ! str_contains($uri, 'fallbackPlaceholder')) {
         $v2Routes[] = $uri;
     }
 }

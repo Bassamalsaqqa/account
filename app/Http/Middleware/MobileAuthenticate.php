@@ -28,6 +28,7 @@ final class MobileAuthenticate
         try {
             return $this->handleAuthenticated($request, $next, $requiredPermission);
         } finally {
+            auth()->forgetUser();
             $context->clearSessionless();
         }
     }
@@ -174,6 +175,7 @@ final class MobileAuthenticate
         $request->attributes->set('mobile_token', $token);
         $request->attributes->set('mobile_device', $device);
         $request->setUserResolver(fn () => $user);
+        auth()->setUser($user);
 
         return $next($request);
     }

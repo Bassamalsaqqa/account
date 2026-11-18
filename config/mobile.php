@@ -16,6 +16,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Mobile V2 API Master Activation (Draft Boundary Qualification)
+    |--------------------------------------------------------------------------
+    |
+    | Gate mobile V2 API endpoints. Defaults to false.
+    | When disabled, all /api/mobile/v2/* routes return 404 with standard sanitized JSON error.
+    | Both mobile.enabled AND mobile.v2_enabled must be true to open the boundary.
+    |
+    */
+    'v2_enabled' => (bool) env('MOBILE_V2_API_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mobile V2 Cash Slice Activation (Default OFF)
+    |--------------------------------------------------------------------------
+    |
+    | Gate mobile V2 cash slice endpoint (POST /companies/{companyId}/sales/online-cash).
+    | Defaults to false. Both v2_enabled AND v2_cash_slice_enabled must be true to route.
+    |
+    */
+    'v2_cash_slice_enabled' => (bool) env('MOBILE_V2_CASH_SLICE_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Challenge and Token Lifetimes
     |--------------------------------------------------------------------------
     |

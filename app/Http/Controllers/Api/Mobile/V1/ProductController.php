@@ -8,16 +8,22 @@ use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\Product;
+use App\Models\ProductBarcode;
 use App\Models\ProductUnit;
+use App\Models\Unit;
 use App\Models\User;
 use App\Policies\ProductPolicy;
+use App\Services\Inventory\ProductCatalogService;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\CatalogSnapshot;
 use App\Support\Mobile\WireResponse;
+use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Throwable;
 
 final class ProductController extends Controller
 {
@@ -409,6 +415,261 @@ final class ProductController extends Controller
 
             return $response;
         });
+    }
+
+    /**
+     * GET /api/mobile/v1/companies/{companyId}/products/{productId}
+     */
+    public function show(Request $request, string $companyId, string $productId): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $this->canReadProducts($user, $company)) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required products permission.',
+                status: 403
+            );
+        }
+
+        $product = Product::where('company_id', $company->id)
+            ->where(function ($q) use ($productId): void {
+                $q->where('public_id', $productId)
+                    ->orWhere('id', $productId);
+            })
+            ->with(['baseUnit', 'primaryBarcode', 'costState', 'productUnits.unit'])
+            ->first();
+
+        if ($product === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested product was not found.',
+                status: 404
+            );
+        }
+
+        $canViewCost = $user->hasPermissionTo('purchasing.view') || $user->hasPermissionTo('reports.financial');
+        $cmu = CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code);
+
+        $salePrice = $product->default_sale_price_base !== null
+            ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale($cmu, RoundingMode::HALF_UP)
+            : null;
+
+        $purchaseCost = ($canViewCost && $product->default_purchase_cost_base !== null)
+            ? (string) BigDecimal::of((string) $product->default_purchase_cost_base)->toScale($cmu, RoundingMode::HALF_UP)
+            : null;
+
+        $stock = (string) BigDecimal::of((string) $product->totalStockBase())->toScale(4, RoundingMode::HALF_UP);
+        $minStock = $product->minimum_stock_base !== null
+            ? (string) BigDecimal::of((string) $product->minimum_stock_base)->toScale(4, RoundingMode::HALF_UP)
+            : null;
+
+        $units = $product->productUnits->map(function (ProductUnit $pu) use ($cmu): array {
+            $u = $pu->unit;
+            return [
+                'id' => (string) $pu->public_id,
+                'unit_id' => $u ? (string) $u->public_id : null,
+                'unit_code' => $u ? (string) $u->code : '',
+                'unit_name' => $u ? (string) $u->displayName() : '',
+                'conversion_factor' => (string) BigDecimal::of((string) ($pu->conversion_factor ?? '1.000000'))->toScale(6, RoundingMode::HALF_UP),
+                'sale_price' => $pu->sale_price !== null ? (string) BigDecimal::of((string) $pu->sale_price)->toScale($cmu, RoundingMode::HALF_UP) : null,
+                'barcode' => $pu->barcode,
+            ];
+        })->values()->all();
+
+        return response()->json([
+            'id' => (string) $product->public_id,
+            'sku' => (string) $product->sku,
+            'name' => (string) $product->displayName(),
+            'name_ar' => $product->name_ar,
+            'name_en' => $product->name_en,
+            'barcode' => $product->primaryBarcode?->barcode ?? '',
+            'currency' => (string) $company->base_currency_code,
+            'currency_minor_units' => $cmu,
+            'sale_price' => $salePrice,
+            'price_ils' => $salePrice ?? '0.00',
+            'purchase_cost' => $purchaseCost,
+            'cost_ils' => $purchaseCost ?? '0.00',
+            'base_unit' => $product->baseUnit ? [
+                'id' => (string) $product->baseUnit->public_id,
+                'code' => (string) $product->baseUnit->code,
+                'name' => (string) $product->baseUnit->displayName(),
+                'symbol' => $product->baseUnit->symbol_en ?? $product->baseUnit->symbol_ar,
+                'allows_fraction' => (bool) $product->baseUnit->allows_fraction,
+                'decimal_places' => (int) $product->baseUnit->decimal_places,
+            ] : null,
+            'units' => $units,
+            'available_quantity' => $stock,
+            'stock_count' => $stock,
+            'min_stock_threshold' => $minStock,
+            'is_stock_tracked' => (bool) $product->track_stock,
+            'is_weighted' => false,
+            'active' => (bool) $product->active,
+        ], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
+    }
+
+    /**
+     * POST /api/mobile/v1/companies/{companyId}/products
+     */
+    public function store(Request $request, string $companyId, ProductCatalogService $catalogService): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $user->hasPermissionTo('inventory.product.manage')) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required inventory.product.manage permission.',
+                status: 403
+            );
+        }
+
+        $payload = $request->json()->all();
+        if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name'])) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Product name is required.',
+                status: 422
+            );
+        }
+
+        if (empty($payload['name_ar']) && ! empty($payload['name'])) {
+            $payload['name_ar'] = $payload['name'];
+        }
+
+        // Resolve default base unit if not given
+        if (empty($payload['base_unit_id'])) {
+            $unit = Unit::where('company_id', $company->id)->where('active', true)->first();
+            if ($unit !== null) {
+                $payload['base_unit_id'] = $unit->id;
+            } else {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'No active measurement unit configured for company.',
+                    status: 422
+                );
+            }
+        }
+
+        if (isset($payload['price_ils'])) {
+            $payload['default_sale_price_base'] = (string) BigDecimal::of((string) $payload['price_ils'])->toScale(6);
+        }
+        if (isset($payload['cost_ils'])) {
+            $payload['default_purchase_cost_base'] = (string) BigDecimal::of((string) $payload['cost_ils'])->toScale(6);
+        }
+
+        try {
+            app(CompanyContext::class)->setCompany($company, $user);
+            $barcode = isset($payload['barcode']) && is_string($payload['barcode']) && trim($payload['barcode']) !== ''
+                ? trim($payload['barcode'])
+                : null;
+            unset($payload['barcode']);
+
+            $product = $catalogService->createProduct($company, $payload, (int) $user->id);
+
+            if ($barcode !== null) {
+                ProductBarcode::create([
+                    'company_id' => $company->id,
+                    'product_id' => $product->id,
+                    'unit_id' => $product->base_unit_id,
+                    'barcode' => $barcode,
+                    'type' => 'code128',
+                    'is_primary' => true,
+                ]);
+            }
+        } catch (Throwable $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Failed to create product SKU: '.$e->getMessage(),
+                status: 422
+            );
+        }
+
+        return response()->json([
+            'id' => (string) $product->public_id,
+            'name' => (string) $product->displayName(),
+            'sku' => $product->sku,
+            'price_ils' => (string) BigDecimal::of((string) ($product->default_sale_price_base ?? '0'))->toScale(2, RoundingMode::HALF_UP),
+            'stock_count' => '0.0000',
+        ], 201, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
+    }
+
+    /**
+     * PUT /api/mobile/v1/companies/{companyId}/products/{productId}
+     */
+    public function update(Request $request, string $companyId, string $productId, ProductCatalogService $catalogService): JsonResponse
+    {
+        /** @var Company $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if (! $user->hasPermissionTo('inventory.product.manage')) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required inventory.product.manage permission.',
+                status: 403
+            );
+        }
+
+        $product = Product::where('company_id', $company->id)
+            ->where(function ($q) use ($productId): void {
+                $q->where('public_id', $productId)
+                    ->orWhere('id', $productId);
+            })
+            ->first();
+
+        if ($product === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested product was not found.',
+                status: 404
+            );
+        }
+
+        $payload = $request->json()->all();
+
+        if (isset($payload['price_ils'])) {
+            $payload['default_sale_price_base'] = (string) BigDecimal::of((string) $payload['price_ils'])->toScale(6);
+        }
+        if (isset($payload['cost_ils'])) {
+            $payload['default_purchase_cost_base'] = (string) BigDecimal::of((string) $payload['cost_ils'])->toScale(6);
+        }
+        if (isset($payload['min_stock_threshold'])) {
+            $payload['minimum_stock_base'] = (string) BigDecimal::of((string) $payload['min_stock_threshold'])->toScale(6);
+        }
+
+        try {
+            app(CompanyContext::class)->setCompany($company, $user);
+            $updated = $catalogService->updateProduct($product, $payload, (int) $user->id);
+        } catch (Throwable $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Failed to update product: '.$e->getMessage(),
+                status: 422
+            );
+        }
+
+        return response()->json([
+            'id' => (string) $updated->public_id,
+            'name' => (string) $updated->displayName(),
+            'sku' => $updated->sku,
+            'price_ils' => (string) BigDecimal::of((string) ($updated->default_sale_price_base ?? '0'))->toScale(2, RoundingMode::HALF_UP),
+        ], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
     }
 
     /**
