@@ -10,11 +10,16 @@ use App\Domain\Sales\Queries\CustomerBalanceQuery;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
+use App\Models\CompanyMobileSetting;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
+use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
@@ -40,7 +45,8 @@ final class HomeController extends Controller
         string $companyId,
         MoneyBalanceQuery $moneyBalanceQuery,
         CustomerBalanceQuery $customerBalanceQuery,
-        VendorBalanceQuery $vendorBalanceQuery
+        VendorBalanceQuery $vendorBalanceQuery,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
     ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
@@ -58,40 +64,80 @@ final class HomeController extends Controller
         }
 
         $baseCurrency = (string) $company->base_currency_code;
-        $today = now()->format('Y-m-d');
+        $cmu = $minorUnitsResolver->resolve($baseCurrency, $company);
+        $companyTimezone = (string) ($company->timezone ?? config('app.timezone', 'UTC'));
+        $today = now($companyTimezone)->toDateString();
 
-        // 1. Today's sales invoices count and total volume (in base currency to prevent cross-currency distortion)
-        $salesTodayCount = 0;
-        $salesTodayTotal = BigDecimal::zero();
+        // 1. Today's sales invoices count and total volume in base currency (null if unauthorized)
+        $salesTodayCount = null;
+        $salesTodayTotal = null;
         if ($user->hasPermissionTo('sales.invoice.view')) {
             $todayInvoices = SalesInvoice::where('company_id', $company->id)
                 ->where('status', SalesInvoice::STATUS_POSTED)
+                ->where('currency_code', $baseCurrency)
                 ->whereDate('issue_date', $today)
-                ->get(['id', 'grand_total_base']);
+                ->get(['id', 'grand_total_currency']);
 
             $salesTodayCount = $todayInvoices->count();
+            $totalSales = BigDecimal::zero();
             foreach ($todayInvoices as $inv) {
-                $salesTodayTotal = $salesTodayTotal->plus((string) $inv->grand_total_base);
+                $totalSales = $totalSales->plus(BigDecimal::of((string) $inv->grand_total_currency));
             }
+            $salesTodayTotal = (string) $totalSales->toScale($cmu, RoundingMode::HALF_UP);
         }
 
-        // 2. Cash in drawer from active cash money accounts
-        $cashInDrawer = BigDecimal::zero();
+        // 2. Cash in drawer from approved cash drawer account or base currency cash accounts (null if unauthorized or unavailable)
+        $cashInDrawer = null;
         if ($user->hasPermissionTo('money.cash.view') || $user->hasPermissionTo('reports.financial.view')) {
             try {
+                app(CompanyContext::class)->setCompany($company, $user);
+                $setting = CompanyMobileSetting::where('company_id', $company->id)->first();
+                $approvedCashAccountId = $setting?->approved_cash_account_id;
+                $approvedCashAccount = null;
+                if ($approvedCashAccountId !== null) {
+                    $approvedCashAccount = MoneyAccount::where('id', $approvedCashAccountId)
+                        ->where('company_id', $company->id)
+                        ->where('account_type', 'cash')
+                        ->where('is_active', true)
+                        ->first();
+                }
+
                 $cashAccounts = $moneyBalanceQuery->forType($company, 'cash');
+                $drawerTotal = BigDecimal::zero();
+                $foundValidAccount = false;
+
                 foreach ($cashAccounts as $account) {
-                    if ($account['is_active'] && isset($account['balance_currency'])) {
-                        $cashInDrawer = $cashInDrawer->plus((string) $account['balance_currency']);
+                    if (! ($account['is_active'] ?? false)) {
+                        continue;
+                    }
+
+                    $matches = $approvedCashAccount !== null
+                        ? ($account['public_id'] === $approvedCashAccount->public_id)
+                        : ($account['currency_code'] === $baseCurrency);
+
+                    if ($matches) {
+                        if (! ($account['currency_balance_available'] ?? false) || ! isset($account['balance_currency'])) {
+                            // If balance is unavailable or unconvertible, do NOT invent zero
+                            $drawerTotal = null;
+                            $foundValidAccount = false;
+                            break;
+                        }
+
+                        $drawerTotal = $drawerTotal->plus(BigDecimal::of((string) $account['balance_currency']));
+                        $foundValidAccount = true;
                     }
                 }
+
+                if ($foundValidAccount && $drawerTotal !== null) {
+                    $cashInDrawer = (string) $drawerTotal->toScale($cmu, RoundingMode::HALF_UP);
+                }
             } catch (Throwable) {
-                // If money query not permitted or unconfigured, keep zero
+                $cashInDrawer = null;
             }
         }
 
-        // 3. Low stock products count
-        $lowStockCount = 0;
+        // 3. Low stock products count (null if unauthorized)
+        $lowStockCount = null;
         if ($user->hasPermissionTo('inventory.stock.view')) {
             $lowStockCount = Product::where('company_id', $company->id)
                 ->where('active', true)
@@ -103,8 +149,8 @@ final class HomeController extends Controller
                 ->count();
         }
 
-        // 4. Total customer receivables (base currency only, no cross-currency sums)
-        $totalReceivables = BigDecimal::zero();
+        // 4. Total customer receivables (base currency only, no cross-currency sums, null if unauthorized or error)
+        $totalReceivables = null;
         if ($user->hasPermissionTo('customers.view')) {
             $customerIds = Customer::where('company_id', $company->id)
                 ->where('status', 'active')
@@ -112,22 +158,25 @@ final class HomeController extends Controller
                 ->all();
 
             try {
+                app(CompanyContext::class)->setCompany($company, $user);
                 $customerBalances = $customerBalanceQuery->execute($customerIds);
+                $receivablesSum = BigDecimal::zero();
                 foreach ($customerBalances as $custCurrencies) {
                     if (isset($custCurrencies[$baseCurrency])) {
                         $out = BigDecimal::of($custCurrencies[$baseCurrency]['outstanding']);
                         if ($out->isPositive()) {
-                            $totalReceivables = $totalReceivables->plus($out);
+                            $receivablesSum = $receivablesSum->plus($out);
                         }
                     }
                 }
+                $totalReceivables = (string) $receivablesSum->toScale($cmu, RoundingMode::HALF_UP);
             } catch (Throwable) {
-                // Keep zero if unauthorized
+                $totalReceivables = null;
             }
         }
 
-        // 5. Total supplier payables (base currency only, no cross-currency sums)
-        $totalPayables = BigDecimal::zero();
+        // 5. Total supplier payables (base currency only, no cross-currency sums, null if unauthorized or error)
+        $totalPayables = null;
         if ($user->hasPermissionTo('vendors.view')) {
             $vendorIds = Vendor::where('company_id', $company->id)
                 ->where('status', 'active')
@@ -135,21 +184,24 @@ final class HomeController extends Controller
                 ->all();
 
             try {
+                app(CompanyContext::class)->setCompany($company, $user);
                 $vendorBalances = $vendorBalanceQuery->execute($vendorIds);
+                $payablesSum = BigDecimal::zero();
                 foreach ($vendorBalances as $vendCurrencies) {
                     if (isset($vendCurrencies[$baseCurrency])) {
                         $bal = BigDecimal::of($vendCurrencies[$baseCurrency]['balance']);
                         if ($bal->isPositive()) {
-                            $totalPayables = $totalPayables->plus($bal);
+                            $payablesSum = $payablesSum->plus($bal);
                         }
                     }
                 }
+                $totalPayables = (string) $payablesSum->toScale($cmu, RoundingMode::HALF_UP);
             } catch (Throwable) {
-                // Keep zero if unauthorized
+                $totalPayables = null;
             }
         }
 
-        // 6. Recent 5 posted sales invoices (using stored immutable customer snapshots)
+        // 6. Recent 5 posted sales invoices (using canonical financial summary and immutable frozen snapshots)
         $recentInvoices = [];
         if ($user->hasPermissionTo('sales.invoice.view')) {
             $recentInvoices = SalesInvoice::where('company_id', $company->id)
@@ -158,20 +210,30 @@ final class HomeController extends Controller
                 ->orderBy('id', 'desc')
                 ->limit(5)
                 ->get()
-                ->map(function (SalesInvoice $inv): array {
-                    $paid = BigDecimal::of((string) ($inv->paid_amount ?? '0.000000'));
+                ->map(function (SalesInvoice $inv) use ($cmu): array {
+                    $summary = $inv->calculateFinancialSummary();
+                    $paid = $summary['paid'];
                     $grandTotal = BigDecimal::of((string) $inv->grand_total_currency);
-                    $remaining = $grandTotal->minus($paid);
+                    $remaining = $summary['outstanding'];
 
-                    $paymentStatus = match (true) {
-                        $remaining->isZero() || $remaining->isNegative() => 'PAID_CASH',
-                        $paid->isPositive() => 'PARTIAL',
-                        default => 'ON_CREDIT',
-                    };
+                    $isPaidInFull = $remaining->isZero() || $remaining->isNegative();
+                    $isPartiallyPaid = $paid->isPositive() && $remaining->isPositive();
 
-                    $customerName = is_array($inv->customer_snapshot) && ! empty($inv->customer_snapshot['name'])
-                        ? (string) $inv->customer_snapshot['name']
-                        : (string) $inv->customer->displayName();
+                    if ($isPaidInFull) {
+                        $hasCashPayment = $inv->paymentAllocations()
+                            ->whereHas('customerPayment', fn ($q) => $q->where('payment_method', CustomerPayment::METHOD_CASH))
+                            ->exists();
+                        $paymentStatus = $hasCashPayment ? 'PAID_CASH' : 'PAID';
+                    } elseif ($isPartiallyPaid) {
+                        $paymentStatus = 'PARTIAL';
+                    } else {
+                        $paymentStatus = 'ON_CREDIT';
+                    }
+
+                    $snapshot = $inv->customer_snapshot;
+                    $customerName = is_array($snapshot)
+                        ? (string) ($snapshot['name_ar'] ?? $snapshot['name_en'] ?? $snapshot['business_name_ar'] ?? $snapshot['business_name_en'] ?? $snapshot['business_name'] ?? '')
+                        : '';
 
                     $date = $inv->issue_date instanceof Carbon
                         ? $inv->issue_date->format('Y-m-d')
@@ -182,9 +244,9 @@ final class HomeController extends Controller
                         'invoice_number' => (string) ($inv->invoice_number ?? $inv->public_id),
                         'customer_name' => $customerName,
                         'date' => $date,
-                        'total' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
-                        'paid' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
-                        'remaining' => (string) $remaining->toScale(2, RoundingMode::HALF_UP),
+                        'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
+                        'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+                        'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
                         'currency' => (string) $inv->currency_code,
                         'payment_status' => $paymentStatus,
                     ];
@@ -197,22 +259,23 @@ final class HomeController extends Controller
         $businessInfo = [
             'name_ar' => (string) ($company->name_ar ?? $company->displayName()),
             'name_en' => (string) ($company->name_en ?? $company->displayName()),
-            'city_ar' => (string) ($company->city_ar ?? ''),
-            'city_en' => (string) ($company->city_en ?? ''),
+            'city_ar' => (string) ($company->address_ar ?? ''),
+            'city_en' => (string) ($company->address_en ?? ''),
             'phone' => (string) ($company->phone ?? ''),
             'tax_number' => (string) ($company->tax_number ?? ''),
             'default_currency' => $baseCurrency,
+            'default_currency_minor_units' => $cmu,
         ];
 
         return response()->json([
             'company_id' => $company->public_id,
             'today' => $today,
             'sales_today_count' => $salesTodayCount,
-            'sales_today_total' => (string) $salesTodayTotal->toScale(2, RoundingMode::HALF_UP),
-            'cash_in_drawer' => (string) $cashInDrawer->toScale(2, RoundingMode::HALF_UP),
+            'sales_today_total' => $salesTodayTotal,
+            'cash_in_drawer' => $cashInDrawer,
             'low_stock_count' => $lowStockCount,
-            'total_receivables' => (string) $totalReceivables->toScale(2, RoundingMode::HALF_UP),
-            'total_payables' => (string) $totalPayables->toScale(2, RoundingMode::HALF_UP),
+            'total_receivables' => $totalReceivables,
+            'total_payables' => $totalPayables,
             'recent_invoices' => $recentInvoices,
             'business_info' => $businessInfo,
         ], 200, [

@@ -25,7 +25,9 @@ final class MigrationRollbackTest extends TestCase
         $this->assertTrue(Schema::hasColumn('mobile_devices', 'user_id'));
         $beforeProducts = Schema::getColumns('products');
         $migration = require database_path('migrations/2026_11_17_000001_create_mobile_read_api_tables.php');
-        // Roll back the dependent forward migration first; applied history stays frozen.
+        // Roll back dependent forward migrations first; applied history stays frozen.
+        $shiftClosureMigration = require database_path('migrations/2026_11_18_000002_create_mobile_shift_closures_table.php');
+        $shiftClosureMigration->down();
         $receiptMigration = require database_path('migrations/2026_11_18_000001_create_mobile_event_receipts_table.php');
         $receiptMigration->down();
         $migration->down();
@@ -35,7 +37,9 @@ final class MigrationRollbackTest extends TestCase
         $this->assertSame($beforeProducts, Schema::getColumns('products'));
         $migration->up();
         $receiptMigration->up();
+        $shiftClosureMigration->up();
         $this->assertTrue(Schema::hasTable('mobile_event_receipts'));
+        $this->assertTrue(Schema::hasTable('mobile_shift_closures'));
         $this->assertSame($beforeProducts, Schema::getColumns('products'));
 
         $this->assertTrue(Schema::hasTable('mobile_devices'));

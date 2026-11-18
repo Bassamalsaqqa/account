@@ -709,7 +709,7 @@
       "route_name": "mobile.v1.reports.shift_close",
       "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\ReportController::shiftClose",
       "permissions_required": ["reports.financial"],
-      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest",
+      "tested_in": "Tests\\Feature\\Mobile\\MerchantReportHttpTest",
       "request_schema": {
         "counted_cash": { "type": "string", "pattern": "^\\d+(\\.\\d{1,4})?$", "required": true },
         "notes": { "type": ["string", "null"] }
@@ -720,16 +720,22 @@
       },
       "response_schema": {
         "success": { "type": "boolean" },
+        "shift_closure_id": { "type": "string" },
         "shift_date": { "type": "string" },
-        "expected_cash": { "type": "string" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "currency_minor_units": { "type": "integer" },
+        "expected_cash": { "type": ["string", "null"] },
         "counted_cash": { "type": "string" },
-        "variance": { "type": "string" },
+        "variance": { "type": ["string", "null"] },
         "variance_status": { "type": "string", "enum": ["EXACT", "SHORTAGE", "OVERAGE"] },
         "closed_at": { "type": "string", "format": "iso8601" }
       },
       "response_example": {
         "success": true,
+        "shift_closure_id": "01JM78V5T4G894HZXA0B42M9NQ",
         "shift_date": "2026-11-18",
+        "currency": "ILS",
+        "currency_minor_units": 2,
         "expected_cash": "1055.50",
         "counted_cash": "1055.50",
         "variance": "0.00",

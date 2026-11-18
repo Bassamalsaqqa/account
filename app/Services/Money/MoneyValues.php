@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Money;
 
-use App\Models\Currency;
 use App\Services\Sales\ReceiptRequestValues;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\RoundingNecessaryException;

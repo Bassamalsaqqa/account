@@ -148,6 +148,7 @@ final class BusinessSettingsController extends Controller
             'tax_number' => (string) ($company->tax_number ?? ''),
             'default_currency' => (string) $company->base_currency_code,
             'default_currency_minor_units' => $baseCmu,
+            'timezone' => (string) ($company->timezone ?? config('app.timezone', 'UTC')),
             'default_tax_percent' => $defaultTaxPercent,
             'default_warehouse' => $warehouse,
             'approved_cash_account' => $cashAccount,

@@ -460,6 +460,7 @@ final class ProductController extends Controller
             );
         }
 
+        app(CompanyContext::class)->setCompany($company, $user);
         $canViewCost = app(ProductPolicy::class)->viewCost($user);
         $cmu = $minorUnitsResolver->resolve((string) $company->base_currency_code, $company);
 
