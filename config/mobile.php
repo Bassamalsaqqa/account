@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'merchant_api_enabled' => env('MOBILE_MERCHANT_API_ENABLED', false),
     /*
     |--------------------------------------------------------------------------
     | Mobile API Master Activation

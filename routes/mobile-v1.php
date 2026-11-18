@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Mobile\V1\SalesReturnController;
 use App\Http\Controllers\Api\Mobile\V1\SessionController;
 use App\Http\Controllers\Api\Mobile\V1\SupplierController;
 use App\Http\Middleware\MobileAuthenticate;
+use App\Http\Middleware\MobileMerchantBoundary;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -42,20 +43,25 @@ Route::post('/devices/{deviceId}/revoke', [DeviceController::class, 'revoke'])
     ->middleware(MobileAuthenticate::class)
     ->name('mobile.v1.devices.revoke');
 
-Route::middleware(MobileAuthenticate::class)->group(function (): void {
+Route::middleware([MobileMerchantBoundary::class, MobileAuthenticate::class])->group(function (): void {
     Route::get('/session', [SessionController::class, 'current'])->name('mobile.v1.session.current');
     Route::get('/sessions', [SessionController::class, 'index'])->name('mobile.v1.sessions.index');
     Route::delete('/sessions/{deviceId}', [SessionController::class, 'destroy'])->name('mobile.v1.sessions.destroy');
 });
 
+Route::prefix('companies/{companyId}')->group(function (): void {
+    Route::get('/bootstrap', [BootstrapController::class, 'show'])->middleware('mobile.auth:sales.invoice.create')->name('mobile.v1.bootstrap');
+    Route::get('/products', [ProductController::class, 'index'])->middleware('mobile.auth:product.viewAny')->name('mobile.v1.products.index');
+    Route::get('/customers', [CustomerController::class, 'index'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.index');
+});
+
 Route::prefix('companies/{companyId}')
+    ->middleware(MobileMerchantBoundary::class)
     ->group(function (): void {
         // Bootstrap & Home
-        Route::get('/bootstrap', [BootstrapController::class, 'show'])->middleware('mobile.auth:sales.invoice.create')->name('mobile.v1.bootstrap');
         Route::get('/home', [HomeController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.home');
 
         // Products
-        Route::get('/products', [ProductController::class, 'index'])->middleware('mobile.auth:product.viewAny')->name('mobile.v1.products.index');
         Route::get('/products/{productId}', [ProductController::class, 'show'])->middleware('mobile.auth:product.view')->name('mobile.v1.products.show');
         Route::post('/products', [ProductController::class, 'store'])->middleware('mobile.auth:products.manage')->name('mobile.v1.products.store');
         Route::put('/products/{productId}', [ProductController::class, 'update'])->middleware('mobile.auth:products.manage')->name('mobile.v1.products.update');
@@ -66,7 +72,6 @@ Route::prefix('companies/{companyId}')
         Route::post('/inventory/transfers/preview', [InventoryController::class, 'previewTransfer'])->middleware('mobile.auth:inventory.transfer')->name('mobile.v1.inventory.transfers.preview');
 
         // Customers
-        Route::get('/customers', [CustomerController::class, 'index'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.index');
         Route::get('/customers/{customerId}', [CustomerController::class, 'show'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.show');
         Route::post('/customers', [CustomerController::class, 'store'])->middleware('mobile.auth:customers.manage')->name('mobile.v1.customers.store');
         Route::put('/customers/{customerId}', [CustomerController::class, 'update'])->middleware('mobile.auth:customers.manage')->name('mobile.v1.customers.update');
