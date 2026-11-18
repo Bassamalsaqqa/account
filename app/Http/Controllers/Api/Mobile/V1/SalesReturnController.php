@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,12 +28,20 @@ final class SalesReturnController extends Controller
      */
     public function preview(Request $request, string $companyId): JsonResponse
     {
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        if (! $user->hasPermissionTo('sales.return.view')) {
+        if (! $user->hasPermissionTo('sales.return.view') && ! $user->hasPermissionTo('sales.invoice.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required sales.return.view permission.',
@@ -41,9 +50,17 @@ final class SalesReturnController extends Controller
         }
 
         $invoicePublicId = $request->input('sales_invoice_id');
+        if (! is_string($invoicePublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $invoicePublicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The original sales invoice was not found.',
+                status: 404
+            );
+        }
+
         $invoice = SalesInvoice::where('company_id', $company->id)
             ->where('public_id', $invoicePublicId)
-            ->with(['lines.product', 'lines.unit'])
+            ->with(['lines.product', 'warehouse'])
             ->first();
 
         if ($invoice === null) {
@@ -65,6 +82,7 @@ final class SalesReturnController extends Controller
 
         $restockItems = [];
         $totalReturnAmount = BigDecimal::zero();
+        $restockWarehouseId = $invoice->warehouse ? (string) $invoice->warehouse->public_id : (string) $invoice->warehouse_id;
 
         foreach ($requestedLines as $reqLine) {
             $productId = $reqLine['product_id'] ?? null;
@@ -82,11 +100,11 @@ final class SalesReturnController extends Controller
 
                 $restockItems[] = [
                     'product_id' => $productId,
-                    'product_name' => $origLine->product ? (string) $origLine->product->displayName() : (string) $origLine->description,
+                    'product_name' => $origLine->product ? (string) $origLine->product->displayName() : (string) $origLine->item_description,
                     'quantity_returned' => (string) $quantity,
                     'unit_price' => (string) $unitPrice->toScale(2, RoundingMode::HALF_UP),
                     'line_total' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
-                    'restock_warehouse_id' => (string) $invoice->warehouse_id,
+                    'restock_warehouse_id' => $restockWarehouseId,
                 ];
             }
         }
@@ -113,20 +131,45 @@ final class SalesReturnController extends Controller
         CreateSalesReturnDraftAction $createDraftAction,
         PostSalesReturnAction $postReturnAction
     ): JsonResponse {
+        $idempotencyKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        if (! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for sales returns.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        if (! $user->hasPermissionTo('sales.return.post')) {
+        if (! $user->hasPermissionTo('sales.return.create') || ! $user->hasPermissionTo('sales.return.post')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
-                message: 'Action is unauthorized. Missing required sales.return.post permission.',
+                message: 'Action is unauthorized. Missing required sales.return.create or sales.return.post permission.',
                 status: 403
             );
         }
 
         $invoicePublicId = $request->input('sales_invoice_id');
+        if (! is_string($invoicePublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $invoicePublicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The original sales invoice was not found.',
+                status: 404
+            );
+        }
+
         $invoice = SalesInvoice::where('company_id', $company->id)
             ->where('public_id', $invoicePublicId)
             ->with(['lines.product'])
@@ -161,21 +204,24 @@ final class SalesReturnController extends Controller
                     });
                     if ($origLine !== null) {
                         $draftLines[] = [
-                            'sales_invoice_line_id' => $origLine->id,
+                            'sales_invoice_line_id' => (int) $origLine->id,
                             'quantity' => (string) ($lineData['quantity'] ?? '1'),
-                            'unit_price' => (string) $origLine->unit_price,
                         ];
                     }
                 }
 
+                if (empty($draftLines)) {
+                    throw new \InvalidArgumentException('No valid invoice lines matched the return request.');
+                }
+
                 $draftData = [
-                    'sales_invoice_id' => $invoice->id,
+                    'sales_invoice_id' => (int) $invoice->id,
                     'issue_date' => now()->format('Y-m-d'),
                     'reason' => 'مرتجع مبيعات من تطبيق الجوال',
                     'lines' => $draftLines,
                 ];
 
-                $draft = $createDraftAction->execute($draftData, $user);
+                $draft = $createDraftAction->execute($company, $user, $draftData);
 
                 return $postReturnAction->execute($draft, $user);
             });
@@ -187,13 +233,17 @@ final class SalesReturnController extends Controller
             );
         }
 
+        $postedAt = $postedReturn->posted_at instanceof Carbon
+            ? $postedReturn->posted_at->format('Y-m-d\TH:i:s\Z')
+            : ($postedReturn->issue_date instanceof Carbon ? $postedReturn->issue_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'));
+
         return response()->json([
             'id' => (string) $postedReturn->public_id,
             'return_number' => (string) ($postedReturn->return_number ?? $postedReturn->public_id),
             'status' => (string) $postedReturn->status,
             'total_amount' => (string) BigDecimal::of((string) $postedReturn->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
             'currency' => (string) $postedReturn->currency_code,
-            'posted_at' => $postedReturn->posting_date ? $postedReturn->posting_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
+            'posted_at' => $postedAt,
         ], 201, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',

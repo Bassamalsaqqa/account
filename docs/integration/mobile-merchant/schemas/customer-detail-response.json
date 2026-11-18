@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CustomerDetailResponse",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "currency",
+    "currency_minor_units",
+    "status"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "code": { "type": ["string", "null"] },
+    "name": { "type": "string" },
+    "name_ar": { "type": ["string", "null"] },
+    "name_en": { "type": ["string", "null"] },
+    "phone": { "type": ["string", "null"] },
+    "whatsapp": { "type": ["string", "null"] },
+    "email": { "type": ["string", "null"] },
+    "tax_number": { "type": ["string", "null"] },
+    "address": { "type": ["string", "null"] },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "currency_minor_units": { "type": "integer", "minimum": 0, "maximum": 4 },
+    "balance": { "type": ["string", "null"], "pattern": "^-?\\d+\\.\\d{2,4}$" },
+    "credit_limit": { "type": ["string", "null"], "pattern": "^\\d+\\.\\d{2,4}$" },
+    "status": { "type": "string", "enum": ["active", "inactive"] }
+  }
+}

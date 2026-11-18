@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ShiftSummaryResponse",
+  "type": "object",
+  "required": [
+    "company_id",
+    "shift_date",
+    "currency",
+    "currency_minor_units",
+    "opening_float",
+    "cash_sales",
+    "cash_collections",
+    "cash_disbursements",
+    "operating_expenses",
+    "expected_cash",
+    "sales_count"
+  ],
+  "properties": {
+    "company_id": { "type": "string" },
+    "shift_date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "currency_minor_units": { "type": "integer", "minimum": 0, "maximum": 4 },
+    "opening_float": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "cash_sales": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "cash_collections": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "cash_disbursements": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "operating_expenses": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "expected_cash": { "type": "string", "pattern": "^-?\\d+\\.\\d{2}$" },
+    "sales_count": { "type": "integer", "minimum": 0 }
+  }
+}

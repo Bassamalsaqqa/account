@@ -69,7 +69,7 @@ final class InventoryController extends Controller
                 'id' => (string) $m->public_id,
                 'movement_type' => (string) $m->movement_type,
                 'delta' => (string) $delta->toScale(4, RoundingMode::HALF_UP),
-                'date' => $m->movement_date ? $m->movement_date->format('Y-m-d') : now()->format('Y-m-d'),
+                'date' => $m->movement_date->format('Y-m-d'),
                 'reason' => (string) ($m->notes ?? $m->movement_type),
                 'resulting_stock' => (string) BigDecimal::of((string) ($m->quantity_after_base ?? '0'))->toScale(4, RoundingMode::HALF_UP),
             ];
@@ -104,11 +104,16 @@ final class InventoryController extends Controller
         }
 
         $productId = $request->input('product_id');
+        if ($productId === null || ! is_string($productId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $productId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested product was not found.',
+                status: 404
+            );
+        }
+
         $product = Product::where('company_id', $company->id)
-            ->where(function ($q) use ($productId): void {
-                $q->where('public_id', $productId)
-                    ->orWhere('id', $productId);
-            })
+            ->where('public_id', $productId)
             ->first();
 
         if ($product === null) {
@@ -150,7 +155,7 @@ final class InventoryController extends Controller
             $reason = 'تعديل مخزني يدوي من تطبيق الجوال';
         }
 
-        $warehouse = Warehouse::where('company_id', $company->id)->where('is_active', true)->first();
+        $warehouse = Warehouse::where('company_id', $company->id)->where('active', true)->first();
         if ($warehouse === null) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -163,8 +168,17 @@ final class InventoryController extends Controller
             ? StockMovement::TYPE_ADJUSTMENT_INCREASE
             : StockMovement::TYPE_ADJUSTMENT_DECREASE;
 
-        $absQty = Quantity::from($delta->abs()->toScale(6, RoundingMode::HALF_UP)->toPlainString());
-        $idempotencyKey = (string) $request->header('Idempotency-Key', 'adj-'.uniqid('', true));
+        $absQty = Quantity::of((string) $delta->abs()->toScale(6, RoundingMode::HALF_UP));
+
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
+        }
 
         try {
             app(CompanyContext::class)->setCompany($company, $user);
@@ -195,7 +209,7 @@ final class InventoryController extends Controller
             'movement_type' => (string) $movement->movement_type,
             'delta' => (string) $delta,
             'resulting_stock' => (string) BigDecimal::of((string) ($movement->quantity_after_base ?? '0'))->toScale(4, RoundingMode::HALF_UP),
-            'posted_at' => $movement->movement_date ? $movement->movement_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
+            'posted_at' => $movement->movement_date->format('Y-m-d\TH:i:s\Z'),
         ], 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
@@ -222,11 +236,11 @@ final class InventoryController extends Controller
         }
 
         $warehouses = Warehouse::where('company_id', $company->id)
-            ->where('is_active', true)
+            ->where('active', true)
             ->get()
             ->map(fn (Warehouse $w) => [
                 'id' => (string) $w->public_id,
-                'name' => (string) $w->name,
+                'name' => (string) $w->displayName(),
                 'code' => $w->code,
             ])
             ->values()

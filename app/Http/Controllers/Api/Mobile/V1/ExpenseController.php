@@ -59,15 +59,18 @@ final class ExpenseController extends Controller
 
         $expenses = $records->map(function (Expense $e): array {
             $amount = BigDecimal::of((string) $e->amount);
+            $catName = $e->category ? (string) $e->category->name_ar : 'مصاريف عامة';
+            $paidFrom = $e->moneyAccount ? (string) $e->moneyAccount->name_ar : 'الصندوق الرئيسي';
+            $title = (string) ($e->description ?? $catName);
 
             return [
                 'id' => (string) $e->public_id,
                 'expense_number' => (string) ($e->expense_number ?? $e->public_id),
-                'date' => $e->expense_date ? $e->expense_date->format('Y-m-d') : now()->format('Y-m-d'),
-                'title' => (string) ($e->description ?? $e->category?->name_ar ?? 'مصروف تشغيلي'),
-                'category_name' => (string) ($e->category?->name_ar ?? 'مصاريف عامة'),
+                'date' => $e->expense_date->format('Y-m-d'),
+                'title' => $title,
+                'category_name' => $catName,
                 'amount_ils' => (string) $amount->toScale(2, RoundingMode::HALF_UP),
-                'paid_from' => (string) ($e->moneyAccount?->name_ar ?? 'الصندوق الرئيسي'),
+                'paid_from' => $paidFrom,
                 'currency' => (string) $e->currency_code,
             ];
         })->values()->all();
@@ -151,12 +154,9 @@ final class ExpenseController extends Controller
 
         $categoryPublicId = $request->input('category_id');
         $category = null;
-        if ($categoryPublicId !== null) {
+        if ($categoryPublicId !== null && is_string($categoryPublicId) && preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $categoryPublicId) === 1) {
             $category = ExpenseCategory::where('company_id', $company->id)
-                ->where(function ($q) use ($categoryPublicId): void {
-                    $q->where('public_id', $categoryPublicId)
-                        ->orWhere('id', $categoryPublicId);
-                })
+                ->where('public_id', $categoryPublicId)
                 ->first();
         }
 
@@ -185,7 +185,15 @@ final class ExpenseController extends Controller
             );
         }
 
-        $idempotencyKey = (string) $request->header('Idempotency-Key', 'exp-'.uniqid('', true));
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
+        }
 
         $expenseData = [
             'idempotency_key' => $idempotencyKey,
@@ -216,7 +224,7 @@ final class ExpenseController extends Controller
             'expense_number' => (string) ($expense->expense_number ?? $expense->public_id),
             'amount_ils' => (string) BigDecimal::of((string) $expense->amount)->toScale(2, RoundingMode::HALF_UP),
             'currency' => (string) $expense->currency_code,
-            'posted_at' => $expense->expense_date ? $expense->expense_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
+            'posted_at' => $expense->expense_date->format('Y-m-d\TH:i:s\Z'),
         ], 201, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',

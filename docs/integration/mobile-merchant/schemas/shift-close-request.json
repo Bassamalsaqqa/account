@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ShiftCloseRequest",
+  "type": "object",
+  "required": ["counted_cash"],
+  "properties": {
+    "counted_cash": { "type": "string", "pattern": "^\\d+(\\.\\d{1,4})?$" },
+    "notes": { "type": ["string", "null"] }
+  }
+}

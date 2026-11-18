@@ -20,7 +20,7 @@ final class SessionController extends Controller
      * GET /api/mobile/v1/session
      * Return currently authenticated user session, role, device, fresh permissions, and company info.
      */
-    public function current(Request $request): JsonResponse
+    public function current(Request $request, CurrencyMinorUnitsResolver $minorUnitsResolver): JsonResponse
     {
         /** @var User|null $user */
         $user = $request->attributes->get('mobile_user');
@@ -62,7 +62,7 @@ final class SessionController extends Controller
                 'id' => (string) $company->public_id,
                 'name' => (string) $company->displayName(),
                 'base_currency' => (string) $company->base_currency_code,
-                'base_currency_minor_units' => CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code),
+                'base_currency_minor_units' => $minorUnitsResolver->resolve((string) $company->base_currency_code, $company),
             ] : null,
         ], 200, [
             'Content-Type' => 'application/json',

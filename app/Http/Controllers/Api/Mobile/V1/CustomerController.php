@@ -207,8 +207,13 @@ final class CustomerController extends Controller
     /**
      * GET /api/mobile/v1/companies/{companyId}/customers/{customerId}
      */
-    public function show(Request $request, string $companyId, string $customerId, CustomerBalanceQuery $balanceQuery): JsonResponse
-    {
+    public function show(
+        Request $request,
+        string $companyId,
+        string $customerId,
+        CustomerBalanceQuery $balanceQuery,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
@@ -222,11 +227,16 @@ final class CustomerController extends Controller
             );
         }
 
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $customerId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
         $customer = Customer::where('company_id', $company->id)
-            ->where(function ($q) use ($customerId): void {
-                $q->where('public_id', $customerId)
-                    ->orWhere('id', $customerId);
-            })
+            ->where('public_id', $customerId)
             ->first();
 
         if ($customer === null) {
@@ -237,23 +247,23 @@ final class CustomerController extends Controller
             );
         }
 
-        $cmu = CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code);
+        $cmu = $minorUnitsResolver->resolve((string) $company->base_currency_code, $company);
         $balance = null;
         try {
+            app(CompanyContext::class)->setCompany($company, $user);
             $balances = $balanceQuery->execute([(int) $customer->id]);
             $custBalances = $balances[(int) $customer->id] ?? [];
-            $sum = BigDecimal::zero();
-            foreach ($custBalances as $curr => $data) {
-                $out = BigDecimal::of($data['outstanding']);
-                $sum = $sum->plus($out);
+            $baseCurr = (string) $company->base_currency_code;
+            if (isset($custBalances[$baseCurr])) {
+                $out = BigDecimal::of($custBalances[$baseCurr]['outstanding']);
+                $balance = (string) $out->toScale($cmu, RoundingMode::HALF_UP);
             }
-            $balance = (string) $sum->toScale($cmu, RoundingMode::HALF_UP);
         } catch (Throwable) {
             // Balance remains null when error/unauthorized - never invent zero
         }
 
-        $creditLimit = $customer->credit_limit_base !== null
-            ? (string) BigDecimal::of((string) $customer->credit_limit_base)->toScale($cmu, RoundingMode::HALF_UP)
+        $creditLimit = $customer->credit_limit !== null
+            ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale($cmu, RoundingMode::HALF_UP)
             : null;
 
         return response()->json([
@@ -270,10 +280,8 @@ final class CustomerController extends Controller
             'currency' => (string) $company->base_currency_code,
             'currency_minor_units' => $cmu,
             'balance' => $balance,
-            'balance_ils' => $balance ?? '0.00',
             'credit_limit' => $creditLimit,
-            'credit_limit_ils' => $creditLimit,
-            'status' => (string) $customer->status,
+            'status' => $customer->status === 'active' ? 'active' : 'inactive',
         ], 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
@@ -295,6 +303,16 @@ final class CustomerController extends Controller
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required customers.manage permission.',
                 status: 403
+            );
+        }
+
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
             );
         }
 
@@ -322,13 +340,17 @@ final class CustomerController extends Controller
             );
         }
 
+        $creditLimit = $customer->credit_limit !== null
+            ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale(2, RoundingMode::HALF_UP)
+            : null;
+
         return response()->json([
             'id' => (string) $customer->public_id,
             'name' => (string) $customer->displayName(),
             'code' => $customer->code,
             'phone' => $customer->phone,
-            'balance_ils' => '0.00',
-            'credit_limit_ils' => (string) BigDecimal::of((string) ($customer->credit_limit_base ?? '1000.00'))->toScale(2, RoundingMode::HALF_UP),
+            'balance' => null,
+            'credit_limit' => $creditLimit,
         ], 201, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
@@ -353,11 +375,26 @@ final class CustomerController extends Controller
             );
         }
 
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $customerId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
         $customer = Customer::where('company_id', $company->id)
-            ->where(function ($q) use ($customerId): void {
-                $q->where('public_id', $customerId)
-                    ->orWhere('id', $customerId);
-            })
+            ->where('public_id', $customerId)
             ->first();
 
         if ($customer === null) {
@@ -381,12 +418,16 @@ final class CustomerController extends Controller
             );
         }
 
+        $creditLimit = $updated->credit_limit !== null
+            ? (string) BigDecimal::of((string) $updated->credit_limit)->toScale(2, RoundingMode::HALF_UP)
+            : null;
+
         return response()->json([
             'id' => (string) $updated->public_id,
             'name' => (string) $updated->displayName(),
             'code' => $updated->code,
             'phone' => $updated->phone,
-            'credit_limit_ils' => (string) BigDecimal::of((string) ($updated->credit_limit_base ?? '1000.00'))->toScale(2, RoundingMode::HALF_UP),
+            'credit_limit' => $creditLimit,
         ], 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
@@ -411,11 +452,16 @@ final class CustomerController extends Controller
             );
         }
 
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $customerId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
         $customer = Customer::where('company_id', $company->id)
-            ->where(function ($q) use ($customerId): void {
-                $q->where('public_id', $customerId)
-                    ->orWhere('id', $customerId);
-            })
+            ->where('public_id', $customerId)
             ->first();
 
         if ($customer === null) {
@@ -471,11 +517,26 @@ final class CustomerController extends Controller
             );
         }
 
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for customer payment recording.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $customerId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
         $customer = Customer::where('company_id', $company->id)
-            ->where(function ($q) use ($customerId): void {
-                $q->where('public_id', $customerId)
-                    ->orWhere('id', $customerId);
-            })
+            ->where('public_id', $customerId)
             ->first();
 
         if ($customer === null) {
@@ -495,12 +556,12 @@ final class CustomerController extends Controller
             );
         }
 
-        // Resolve cash account
-        $moneyAccountId = $request->input('money_account_id');
+        // Resolve cash account from cash_account_id or money_account_id
+        $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
         $cashAccount = null;
-        if ($moneyAccountId !== null) {
+        if ($rawAccountId !== null && is_string($rawAccountId) && trim($rawAccountId) !== '') {
             $cashAccount = MoneyAccount::where('company_id', $company->id)
-                ->where('public_id', (string) $moneyAccountId)
+                ->where('public_id', trim($rawAccountId))
                 ->first();
         }
         if ($cashAccount === null) {
@@ -518,16 +579,16 @@ final class CustomerController extends Controller
             );
         }
 
-        $currency = (string) ($request->input('currency_code', $company->base_currency_code));
         $paymentData = [
-            'customer_id' => $customer->id,
-            'money_account_id' => $cashAccount->id,
-            'currency_code' => $currency,
-            'exchange_rate' => '1.0000000000',
+            'customer_id' => (int) $customer->id,
+            'money_account_id' => (int) $cashAccount->id,
             'amount' => (string) BigDecimal::of((string) $amount),
+            'exchange_rate' => '1.0000000000',
             'payment_date' => (string) ($request->input('payment_date', now()->format('Y-m-d'))),
             'payment_method' => 'cash',
-            'notes' => (string) ($request->input('notes', 'سند قبض دفعة من تطبيق الجوال')),
+            'notes' => $request->has('notes') && is_string($request->input('notes')) ? $request->input('notes') : null,
+            'reference_number' => $request->has('reference') && is_string($request->input('reference')) ? $request->input('reference') : null,
+            'idempotency_key' => $idempotencyKey,
             'allocations' => [],
         ];
 
@@ -559,6 +620,8 @@ final class CustomerController extends Controller
      */
     private function canReadCustomers(User $user, Company $company): bool
     {
+        setPermissionsTeamId($company->id);
+
         return $user->memberships()->where('company_id', $company->id)->where('status', 'active')->exists()
             && $user->hasPermissionTo('customers.view');
     }

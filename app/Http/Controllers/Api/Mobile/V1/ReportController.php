@@ -13,6 +13,7 @@ use App\Models\Expense;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Models\VendorPayment;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -25,12 +26,18 @@ final class ReportController extends Controller
     /**
      * GET /api/mobile/v1/companies/{companyId}/reports/shift-summary
      */
-    public function shiftSummary(Request $request, string $companyId, MoneyBalanceQuery $moneyBalanceQuery): JsonResponse
-    {
+    public function shiftSummary(
+        Request $request,
+        string $companyId,
+        MoneyBalanceQuery $moneyBalanceQuery,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
+
+        setPermissionsTeamId($company->id);
 
         if (! $user->hasPermissionTo('reports.financial.view') && ! $user->hasPermissionTo('money.cash.view')) {
             return MobileApiBoundary::buildErrorResponse(
@@ -40,37 +47,52 @@ final class ReportController extends Controller
             );
         }
 
+        $baseCurrency = (string) $company->base_currency_code;
+        $cmu = $minorUnitsResolver->resolve($baseCurrency, $company);
         $today = now()->format('Y-m-d');
 
-        // 1. Opening float (default float or previous balance)
-        $openingFloat = BigDecimal::of('350.00');
+        // 1. Opening float (from query or zero default - never invent 350.00)
+        $openingFloat = BigDecimal::zero();
+        if ($request->has('opening_float') && is_scalar($request->query('opening_float'))) {
+            try {
+                $openingFloat = BigDecimal::of((string) $request->query('opening_float'));
+            } catch (Throwable) {
+                $openingFloat = BigDecimal::zero();
+            }
+        }
 
         // 2. Today's cash sales
-        $cashSalesToday = SalesInvoice::where('company_id', $company->id)
+        $salesInvoicesQuery = SalesInvoice::where('company_id', $company->id)
             ->where('status', SalesInvoice::STATUS_POSTED)
-            ->whereDate('posting_date', $today)
-            ->sum('paid_amount');
-        $cashSales = BigDecimal::of((string) ($cashSalesToday ?? '0.00'));
+            ->where('currency_code', $baseCurrency)
+            ->whereDate('issue_date', $today);
+
+        $salesCount = $salesInvoicesQuery->count();
+        $cashSalesToday = $salesInvoicesQuery->sum('paid_amount');
+        $cashSales = BigDecimal::of((string) $cashSalesToday);
 
         // 3. Today's customer debt collections
         $collectionsToday = CustomerPayment::where('company_id', $company->id)
             ->where('is_reversed', false)
+            ->where('currency_code', $baseCurrency)
             ->whereDate('payment_date', $today)
             ->sum('amount');
-        $collections = BigDecimal::of((string) ($collectionsToday ?? '0.00'));
+        $collections = BigDecimal::of((string) $collectionsToday);
 
         // 4. Today's supplier cash disbursements
         $disbursementsToday = VendorPayment::where('company_id', $company->id)
             ->where('is_reversed', false)
+            ->where('currency_code', $baseCurrency)
             ->whereDate('payment_date', $today)
             ->sum('amount');
-        $disbursements = BigDecimal::of((string) ($disbursementsToday ?? '0.00'));
+        $disbursements = BigDecimal::of((string) $disbursementsToday);
 
         // 5. Today's cash expenses
         $expensesToday = Expense::where('company_id', $company->id)
+            ->where('currency_code', $baseCurrency)
             ->whereDate('expense_date', $today)
             ->sum('amount');
-        $expenses = BigDecimal::of((string) ($expensesToday ?? '0.00'));
+        $expenses = BigDecimal::of((string) $expensesToday);
 
         // 6. Expected book cash = opening float + cash sales + collections - disbursements - expenses
         $expectedCash = $openingFloat->plus($cashSales)->plus($collections)->minus($disbursements)->minus($expenses);
@@ -78,13 +100,15 @@ final class ReportController extends Controller
         return response()->json([
             'company_id' => $company->public_id,
             'shift_date' => $today,
-            'opening_float_ils' => (string) $openingFloat->toScale(2, RoundingMode::HALF_UP),
-            'cash_sales_ils' => (string) $cashSales->toScale(2, RoundingMode::HALF_UP),
-            'debt_collections_ils' => (string) $collections->toScale(2, RoundingMode::HALF_UP),
-            'supplier_disbursements_ils' => (string) $disbursements->toScale(2, RoundingMode::HALF_UP),
-            'expenses_ils' => (string) $expenses->toScale(2, RoundingMode::HALF_UP),
-            'expected_book_cash_ils' => (string) $expectedCash->toScale(2, RoundingMode::HALF_UP),
-            'currency' => (string) $company->base_currency_code,
+            'currency' => $baseCurrency,
+            'currency_minor_units' => $cmu,
+            'opening_float' => (string) $openingFloat->toScale(2, RoundingMode::HALF_UP),
+            'cash_sales' => (string) $cashSales->toScale(2, RoundingMode::HALF_UP),
+            'cash_collections' => (string) $collections->toScale(2, RoundingMode::HALF_UP),
+            'cash_disbursements' => (string) $disbursements->toScale(2, RoundingMode::HALF_UP),
+            'operating_expenses' => (string) $expenses->toScale(2, RoundingMode::HALF_UP),
+            'expected_cash' => (string) $expectedCash->toScale(2, RoundingMode::HALF_UP),
+            'sales_count' => $salesCount,
         ], 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
@@ -94,12 +118,18 @@ final class ReportController extends Controller
     /**
      * POST /api/mobile/v1/companies/{companyId}/reports/shift-close
      */
-    public function shiftClose(Request $request, string $companyId, MoneyBalanceQuery $moneyBalanceQuery): JsonResponse
-    {
+    public function shiftClose(
+        Request $request,
+        string $companyId,
+        MoneyBalanceQuery $moneyBalanceQuery,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
+
+        setPermissionsTeamId($company->id);
 
         if (! $user->hasPermissionTo('reports.financial.view') && ! $user->hasPermissionTo('money.cash.view')) {
             return MobileApiBoundary::buildErrorResponse(
@@ -109,7 +139,17 @@ final class ReportController extends Controller
             );
         }
 
-        $countedInput = $request->input('counted_physical_cash');
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for shift close.',
+                status: 422
+            );
+        }
+
+        $countedInput = $request->input('counted_cash', $request->input('counted_physical_cash'));
         if ($countedInput === null || ! is_scalar($countedInput)) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -127,31 +167,45 @@ final class ReportController extends Controller
             );
         }
 
+        $baseCurrency = (string) $company->base_currency_code;
+        $cmu = $minorUnitsResolver->resolve($baseCurrency, $company);
         $today = now()->format('Y-m-d');
-        $openingFloat = BigDecimal::of('350.00');
+
+        $openingFloat = BigDecimal::zero();
+        if ($request->has('opening_float') && is_scalar($request->input('opening_float'))) {
+            try {
+                $openingFloat = BigDecimal::of((string) $request->input('opening_float'));
+            } catch (Throwable) {
+                $openingFloat = BigDecimal::zero();
+            }
+        }
 
         $cashSalesToday = SalesInvoice::where('company_id', $company->id)
             ->where('status', SalesInvoice::STATUS_POSTED)
-            ->whereDate('posting_date', $today)
+            ->where('currency_code', $baseCurrency)
+            ->whereDate('issue_date', $today)
             ->sum('paid_amount');
-        $cashSales = BigDecimal::of((string) ($cashSalesToday ?? '0.00'));
+        $cashSales = BigDecimal::of((string) $cashSalesToday);
 
         $collectionsToday = CustomerPayment::where('company_id', $company->id)
             ->where('is_reversed', false)
+            ->where('currency_code', $baseCurrency)
             ->whereDate('payment_date', $today)
             ->sum('amount');
-        $collections = BigDecimal::of((string) ($collectionsToday ?? '0.00'));
+        $collections = BigDecimal::of((string) $collectionsToday);
 
         $disbursementsToday = VendorPayment::where('company_id', $company->id)
             ->where('is_reversed', false)
+            ->where('currency_code', $baseCurrency)
             ->whereDate('payment_date', $today)
             ->sum('amount');
-        $disbursements = BigDecimal::of((string) ($disbursementsToday ?? '0.00'));
+        $disbursements = BigDecimal::of((string) $disbursementsToday);
 
         $expensesToday = Expense::where('company_id', $company->id)
+            ->where('currency_code', $baseCurrency)
             ->whereDate('expense_date', $today)
             ->sum('amount');
-        $expenses = BigDecimal::of((string) ($expensesToday ?? '0.00'));
+        $expenses = BigDecimal::of((string) $expensesToday);
 
         $expectedCash = $openingFloat->plus($cashSales)->plus($collections)->minus($disbursements)->minus($expenses);
         $variance = $counted->minus($expectedCash);
@@ -188,6 +242,8 @@ final class ReportController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('reports.financial.view') && ! $user->hasPermissionTo('money.cash.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -209,8 +265,7 @@ final class ReportController extends Controller
 
         return response()->json([
             'company_id' => $company->public_id,
-            'base_currency' => (string) $company->base_currency_code,
-            'cash_drawers' => $cashAccounts,
+            'cash_accounts' => $cashAccounts,
             'bank_accounts' => $bankAccounts,
         ], 200, [
             'Content-Type' => 'application/json',

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
-use App\Actions\Inventory\AdjustStockAction;
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
 use App\Actions\Purchasing\CreatePurchaseReturnDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
@@ -16,13 +15,13 @@ use App\Models\Company;
 use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\Purchase;
-use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +34,14 @@ final class PurchaseController extends Controller
      */
     public function index(Request $request, string $companyId): JsonResponse
     {
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
@@ -90,7 +97,7 @@ final class PurchaseController extends Controller
                 'bill_number' => (string) ($p->vendor_invoice_number ?? $p->public_id),
                 'supplier_id' => $p->vendor ? (string) $p->vendor->public_id : null,
                 'supplier_name' => $p->vendor ? (string) $p->vendor->displayName() : 'مورد عام',
-                'date' => $p->purchase_date ? $p->purchase_date->format('Y-m-d') : now()->format('Y-m-d'),
+                'date' => $p->purchase_date->format('Y-m-d'),
                 'total_ils' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
                 'paid_ils' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
                 'remaining_payable_ils' => (string) $remaining->toScale(2, RoundingMode::HALF_UP),
@@ -116,6 +123,22 @@ final class PurchaseController extends Controller
      */
     public function show(Request $request, string $companyId, string $purchaseId): JsonResponse
     {
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $purchaseId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested purchase bill was not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
@@ -130,10 +153,7 @@ final class PurchaseController extends Controller
         }
 
         $purchase = Purchase::where('company_id', $company->id)
-            ->where(function ($q) use ($purchaseId): void {
-                $q->where('public_id', $purchaseId)
-                    ->orWhere('id', $purchaseId);
-            })
+            ->where('public_id', $purchaseId)
             ->with(['vendor', 'lines.product', 'warehouse'])
             ->first();
 
@@ -169,10 +189,10 @@ final class PurchaseController extends Controller
             'bill_number' => (string) ($purchase->vendor_invoice_number ?? $purchase->public_id),
             'supplier_id' => $purchase->vendor ? (string) $purchase->vendor->public_id : null,
             'supplier_name' => $purchase->vendor ? (string) $purchase->vendor->displayName() : 'مورد عام',
-            'date' => $purchase->purchase_date ? $purchase->purchase_date->format('Y-m-d') : now()->format('Y-m-d'),
+            'date' => $purchase->purchase_date->format('Y-m-d'),
             'total_ils' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
             'status' => (string) $purchase->status,
-            'warehouse' => $purchase->warehouse ? (string) $purchase->warehouse->name : 'المستودع الرئيسي',
+            'warehouse' => $purchase->warehouse ? (string) $purchase->warehouse->displayName() : 'المستودع الرئيسي',
             'lines' => $linesPayload,
         ], 200, [
             'Content-Type' => 'application/json',
@@ -190,6 +210,23 @@ final class PurchaseController extends Controller
         PostPurchaseAction $postPurchaseAction,
         PostVendorPaymentAction $postPaymentAction
     ): JsonResponse {
+        $idempotencyKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        if (! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for purchase bill creation.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
@@ -204,11 +241,16 @@ final class PurchaseController extends Controller
         }
 
         $supplierPublicId = $request->input('supplier_id');
+        if (! is_string($supplierPublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $supplierPublicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Valid supplier ULID is required.',
+                status: 422
+            );
+        }
+
         $vendor = Vendor::where('company_id', $company->id)
-            ->where(function ($q) use ($supplierPublicId): void {
-                $q->where('public_id', $supplierPublicId)
-                    ->orWhere('id', $supplierPublicId);
-            })
+            ->where('public_id', $supplierPublicId)
             ->first();
 
         if ($vendor === null) {
@@ -219,7 +261,7 @@ final class PurchaseController extends Controller
             );
         }
 
-        $warehouse = Warehouse::where('company_id', $company->id)->where('is_active', true)->first();
+        $warehouse = Warehouse::where('company_id', $company->id)->where('active', true)->first();
         if ($warehouse === null) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -237,17 +279,24 @@ final class PurchaseController extends Controller
             );
         }
 
+        $billNumber = $request->input('bill_number');
+        $resolvedBillNumber = is_string($billNumber) && trim($billNumber) !== ''
+            ? trim($billNumber)
+            : 'BILL-'.substr(sha1($idempotencyKey), 0, 10);
+
         try {
-            $posted = DB::transaction(function () use ($company, $user, $vendor, $warehouse, $linesInput, $request, $createDraftAction, $postPurchaseAction, $postPaymentAction): Purchase {
+            $posted = DB::transaction(function () use ($company, $user, $vendor, $warehouse, $linesInput, $resolvedBillNumber, $idempotencyKey, $request, $createDraftAction, $postPurchaseAction, $postPaymentAction): Purchase {
                 app(CompanyContext::class)->setCompany($company, $user);
 
                 $draftLines = [];
                 foreach ($linesInput as $l) {
+                    $prodId = $l['product_id'] ?? null;
+                    if (! is_string($prodId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $prodId) !== 1) {
+                        continue;
+                    }
+
                     $prod = Product::where('company_id', $company->id)
-                        ->where(function ($q) use ($l): void {
-                            $q->where('public_id', $l['product_id'] ?? '')
-                                ->orWhere('id', $l['product_id'] ?? 0);
-                        })
+                        ->where('public_id', $prodId)
                         ->first();
 
                     if ($prod !== null) {
@@ -260,13 +309,17 @@ final class PurchaseController extends Controller
                     }
                 }
 
+                if (empty($draftLines)) {
+                    throw new \InvalidArgumentException('No valid product lines found in purchase request.');
+                }
+
                 $draftData = [
                     'vendor_id' => $vendor->id,
                     'warehouse_id' => $warehouse->id,
                     'currency_code' => $company->base_currency_code,
                     'exchange_rate' => '1.0000000000',
                     'purchase_date' => now()->format('Y-m-d'),
-                    'vendor_invoice_number' => $request->input('bill_number', 'BILL-'.uniqid()),
+                    'vendor_invoice_number' => $resolvedBillNumber,
                     'lines' => $draftLines,
                 ];
 
@@ -291,7 +344,7 @@ final class PurchaseController extends Controller
                             'payment_date' => now()->format('Y-m-d'),
                             'payment_method' => 'cash',
                             'notes' => 'سداد نقدي عند شراء فاتورة #'.$postedPurchase->vendor_invoice_number,
-                            'idempotency_key' => 'purch-pay-'.uniqid('', true),
+                            'idempotency_key' => $idempotencyKey.'-pay',
                             'allocations' => [
                                 [
                                     'purchase_id' => $postedPurchase->id,
@@ -327,33 +380,55 @@ final class PurchaseController extends Controller
 
     /**
      * POST /api/mobile/v1/companies/{companyId}/purchases/{purchaseId}/grn
-     * Bounded Single-SKU / Multi-SKU physical goods receipt note (GRN)
+     * Canonical physical goods receipt note (GRN) linked to purchase draft/posting
      */
     public function receiveGoods(
         Request $request,
         string $companyId,
         string $purchaseId,
-        AdjustStockAction $adjustStockAction
+        PostPurchaseAction $postPurchaseAction
     ): JsonResponse {
+        $idempotencyKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        if (! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for GRN receipt.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $purchaseId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested purchase bill was not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        if (! $user->hasPermissionTo('inventory.stock.adjust')) {
+        if (! $user->hasPermissionTo('purchasing.purchase.post') && ! $user->hasPermissionTo('inventory.stock.adjust')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
-                message: 'Action is unauthorized. Missing required inventory.stock.adjust permission.',
+                message: 'Action is unauthorized. Missing required stock receipt permissions.',
                 status: 403
             );
         }
 
         $purchase = Purchase::where('company_id', $company->id)
-            ->where(function ($q) use ($purchaseId): void {
-                $q->where('public_id', $purchaseId)
-                    ->orWhere('id', $purchaseId);
-            })
-            ->with(['lines.product'])
+            ->where('public_id', $purchaseId)
+            ->with(['lines.product', 'lines.lots', 'warehouse', 'vendor'])
             ->first();
 
         if ($purchase === null) {
@@ -365,60 +440,56 @@ final class PurchaseController extends Controller
         }
 
         $productPublicId = $request->input('product_id');
-        $quantity = BigDecimal::of((string) ($request->input('quantity', '1')));
-
-        if (! $quantity->isPositive()) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Quantity to receive must be strictly positive.',
-                status: 422
-            );
-        }
-
-        $targetProduct = null;
         if ($productPublicId !== null) {
-            $targetProduct = Product::where('company_id', $company->id)
-                ->where(function ($q) use ($productPublicId): void {
-                    $q->where('public_id', $productPublicId)
-                        ->orWhere('id', $productPublicId);
-                })
-                ->first();
+            if (! is_string($productPublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $productPublicId) !== 1) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Invalid product ID format.',
+                    status: 422
+                );
+            }
+            $matchedLine = $purchase->lines->first(fn ($l) => $l->product && (string) $l->product->public_id === (string) $productPublicId);
+            if ($matchedLine === null) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Requested product does not belong to this purchase bill.',
+                    status: 422
+                );
+            }
         }
 
-        if ($targetProduct === null) {
-            $line = $purchase->lines->first();
-            $targetProduct = $line?->product;
-        }
+        if ($purchase->isPosted()) {
+            $firstLine = $purchase->lines->first();
+            $targetProduct = $firstLine?->product;
 
-        if ($targetProduct === null) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Text-only purchase bills without linked SKU cannot be received into physical stock.',
-                status: 422
-            );
+            return response()->json([
+                'purchase_id' => (string) $purchase->public_id,
+                'product_id' => $targetProduct ? (string) $targetProduct->public_id : null,
+                'product_name' => $targetProduct ? (string) $targetProduct->displayName() : 'بضاعة عامة',
+                'quantity_received' => (string) ($firstLine ? $firstLine->quantity : '0'),
+                'is_received' => true,
+            ], 200, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+            ]);
         }
-
-        $warehouse = $purchase->warehouse ?? Warehouse::where('company_id', $company->id)->first();
 
         try {
-            DB::transaction(function () use ($company, $user, $targetProduct, $warehouse, $quantity, $purchase, $adjustStockAction): void {
-                app(CompanyContext::class)->setCompany($company, $user);
+            app(CompanyContext::class)->setCompany($company, $user);
+            $postedPurchase = $postPurchaseAction->execute($purchase, $user);
+            $firstLine = $postedPurchase->lines->first();
+            $targetProduct = $firstLine?->product;
 
-                $adjustData = [
-                    'warehouse_id' => $warehouse->id,
-                    'reason' => 'GRN استلام بضاعة مخزني لفاتورة مشتريات #'.($purchase->vendor_invoice_number ?? $purchase->public_id),
-                    'notes' => 'سند استلام بضاعة مخزني عبر تطبيق الجوال',
-                    'lines' => [
-                        [
-                            'product_id' => $targetProduct->id,
-                            'quantity' => (string) $quantity,
-                            'unit_cost' => (string) ($targetProduct->default_purchase_cost_base ?? '0'),
-                        ],
-                    ],
-                ];
-
-                $adjustStockAction->execute($company, $user, $adjustData);
-            });
+            return response()->json([
+                'purchase_id' => (string) $postedPurchase->public_id,
+                'product_id' => $targetProduct ? (string) $targetProduct->public_id : null,
+                'product_name' => $targetProduct ? (string) $targetProduct->displayName() : 'بضاعة عامة',
+                'quantity_received' => (string) ($firstLine ? $firstLine->quantity : '0'),
+                'is_received' => true,
+            ], 200, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+            ]);
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -426,17 +497,6 @@ final class PurchaseController extends Controller
                 status: 422
             );
         }
-
-        return response()->json([
-            'purchase_id' => (string) $purchase->public_id,
-            'product_id' => (string) $targetProduct->public_id,
-            'product_name' => (string) $targetProduct->displayName(),
-            'quantity_received' => (string) $quantity,
-            'is_received' => true,
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**
@@ -444,12 +504,20 @@ final class PurchaseController extends Controller
      */
     public function previewReturn(Request $request, string $companyId): JsonResponse
     {
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        if (! $user->hasPermissionTo('purchasing.return.view')) {
+        if (! $user->hasPermissionTo('purchasing.return.view') && ! $user->hasPermissionTo('purchasing.purchase.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required purchasing.return.view permission.',
@@ -458,6 +526,14 @@ final class PurchaseController extends Controller
         }
 
         $purchasePublicId = $request->input('purchase_id');
+        if (! is_string($purchasePublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $purchasePublicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested purchase bill was not found.',
+                status: 404
+            );
+        }
+
         $purchase = Purchase::where('company_id', $company->id)
             ->where('public_id', $purchasePublicId)
             ->with(['lines.product'])
@@ -475,26 +551,28 @@ final class PurchaseController extends Controller
         $previewLines = [];
         $totalReturnCost = BigDecimal::zero();
 
-        foreach ($lines as $lineData) {
-            $productId = $lineData['product_id'] ?? null;
-            $quantity = BigDecimal::of((string) ($lineData['quantity'] ?? '1'));
+        if (is_array($lines)) {
+            foreach ($lines as $lineData) {
+                $productId = $lineData['product_id'] ?? null;
+                $quantity = BigDecimal::of((string) ($lineData['quantity'] ?? '1'));
 
-            $origLine = $purchase->lines->first(function ($l) use ($productId) {
-                return $l->product && (string) $l->product->public_id === (string) $productId;
-            });
+                $origLine = $purchase->lines->first(function ($l) use ($productId) {
+                    return $l->product && (string) $l->product->public_id === (string) $productId;
+                });
 
-            if ($origLine !== null) {
-                $unitCost = BigDecimal::of((string) $origLine->unit_cost);
-                $lineTotal = $quantity->multipliedBy($unitCost);
-                $totalReturnCost = $totalReturnCost->plus($lineTotal);
+                if ($origLine !== null) {
+                    $unitCost = BigDecimal::of((string) $origLine->unit_cost);
+                    $lineTotal = $quantity->multipliedBy($unitCost);
+                    $totalReturnCost = $totalReturnCost->plus($lineTotal);
 
-                $previewLines[] = [
-                    'product_id' => $productId,
-                    'product_name' => $origLine->product ? (string) $origLine->product->displayName() : 'بند مشتريات',
-                    'quantity' => (string) $quantity,
-                    'unit_cost_ils' => (string) $unitCost->toScale(2, RoundingMode::HALF_UP),
-                    'line_total_ils' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
-                ];
+                    $previewLines[] = [
+                        'product_id' => $productId,
+                        'product_name' => $origLine->product ? (string) $origLine->product->displayName() : 'بند مشتريات',
+                        'quantity' => (string) $quantity,
+                        'unit_cost_ils' => (string) $unitCost->toScale(2, RoundingMode::HALF_UP),
+                        'line_total_ils' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
+                    ];
+                }
             }
         }
 
@@ -518,20 +596,45 @@ final class PurchaseController extends Controller
         CreatePurchaseReturnDraftAction $createReturnDraftAction,
         PostPurchaseReturnAction $postReturnAction
     ): JsonResponse {
+        $idempotencyKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        if (! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for purchase returns.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $companyId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Company not found.',
+                status: 404
+            );
+        }
+
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        if (! $user->hasPermissionTo('purchasing.return.post')) {
+        if (! $user->hasPermissionTo('purchasing.return.manage') || ! $user->hasPermissionTo('purchasing.cost.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
-                message: 'Action is unauthorized. Missing required purchasing.return.post permission.',
+                message: 'Action is unauthorized. Missing required purchasing.return.manage permission.',
                 status: 403
             );
         }
 
         $purchasePublicId = $request->input('purchase_id');
+        if (! is_string($purchasePublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $purchasePublicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested purchase bill was not found.',
+                status: 404
+            );
+        }
+
         $purchase = Purchase::where('company_id', $company->id)
             ->where('public_id', $purchasePublicId)
             ->with(['lines.product'])
@@ -566,15 +669,18 @@ final class PurchaseController extends Controller
                     });
                     if ($origLine !== null) {
                         $draftLines[] = [
-                            'purchase_line_id' => $origLine->id,
+                            'purchase_line_id' => (int) $origLine->id,
                             'quantity' => (string) ($lineData['quantity'] ?? '1'),
-                            'unit_cost' => (string) $origLine->unit_cost,
                         ];
                     }
                 }
 
+                if (empty($draftLines)) {
+                    throw new \InvalidArgumentException('No valid purchase lines matched for return.');
+                }
+
                 $draftData = [
-                    'purchase_id' => $purchase->id,
+                    'purchase_id' => (int) $purchase->id,
                     'return_date' => now()->format('Y-m-d'),
                     'reason' => 'مرتجع مشتريات عبر تطبيق الجوال',
                     'lines' => $draftLines,

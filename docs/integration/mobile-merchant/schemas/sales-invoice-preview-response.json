@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SalesInvoicePreviewResponse",
+  "type": "object",
+  "required": [
+    "currency",
+    "currency_minor_units",
+    "subtotal",
+    "tax_total",
+    "discount_total",
+    "grand_total",
+    "lines"
+  ],
+  "properties": {
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "currency_minor_units": { "type": "integer", "minimum": 0, "maximum": 4 },
+    "subtotal": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "tax_total": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "discount_total": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "grand_total": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "product_id",
+          "product_name",
+          "quantity",
+          "unit_price",
+          "line_subtotal",
+          "tax_amount",
+          "line_total"
+        ],
+        "properties": {
+          "product_id": { "type": "string" },
+          "product_name": { "type": "string" },
+          "unit_id": { "type": ["string", "null"] },
+          "quantity": { "type": "string", "pattern": "^\\d+\\.\\d{4}$" },
+          "unit_price": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+          "line_subtotal": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+          "tax_amount": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" },
+          "line_total": { "type": "string", "pattern": "^\\d+\\.\\d{2}$" }
+        }
+      }
+    }
+  }
+}

@@ -26,12 +26,18 @@ final class SupplierController extends Controller
     /**
      * GET /api/mobile/v1/companies/{companyId}/suppliers
      */
-    public function index(Request $request, string $companyId, VendorBalanceQuery $balanceQuery): JsonResponse
-    {
+    public function index(
+        Request $request,
+        string $companyId,
+        VendorBalanceQuery $balanceQuery,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
+
+        setPermissionsTeamId($company->id);
 
         if (! $user->hasPermissionTo('vendors.view')) {
             return MobileApiBoundary::buildErrorResponse(
@@ -78,26 +84,23 @@ final class SupplierController extends Controller
             // Keep empty on error
         }
 
-        $cmu = CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code);
+        $baseCurr = (string) $company->base_currency_code;
+        $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
 
-        $suppliers = $records->map(function (Vendor $v) use ($balances, $company, $cmu): array {
+        $suppliers = $records->map(function (Vendor $v) use ($balances, $baseCurr, $cmu): array {
             $balData = $balances[$v->id] ?? null;
             $totalPayable = null;
             $totalAdvance = null;
 
-            if ($balData !== null) {
-                $pSum = BigDecimal::zero();
-                $aSum = BigDecimal::zero();
-                foreach ($balData as $curr => $amounts) {
-                    $b = BigDecimal::of($amounts['balance']);
-                    if ($b->isPositive()) {
-                        $pSum = $pSum->plus($b);
-                    } elseif ($b->isNegative()) {
-                        $aSum = $aSum->plus($b->abs());
-                    }
+            if ($balData !== null && isset($balData[$baseCurr])) {
+                $b = BigDecimal::of($balData[$baseCurr]['balance']);
+                if ($b->isPositive()) {
+                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                } elseif ($b->isNegative()) {
+                    $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+                } else {
+                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
                 }
-                $totalPayable = (string) $pSum->toScale($cmu, RoundingMode::HALF_UP);
-                $totalAdvance = (string) $aSum->toScale($cmu, RoundingMode::HALF_UP);
             }
 
             return [
@@ -107,12 +110,10 @@ final class SupplierController extends Controller
                 'name_ar' => $v->name_ar,
                 'name_en' => $v->name_en,
                 'phone' => $v->phone,
-                'currency' => (string) $company->base_currency_code,
+                'currency' => $baseCurr,
                 'currency_minor_units' => $cmu,
                 'balance_owed' => $totalPayable,
-                'balance_owed_ils' => $totalPayable ?? '0.00',
                 'advances' => $totalAdvance,
-                'advances_ils' => $totalAdvance ?? '0.00',
             ];
         })->values()->all();
 
@@ -130,12 +131,19 @@ final class SupplierController extends Controller
     /**
      * GET /api/mobile/v1/companies/{companyId}/suppliers/{supplierId}
      */
-    public function show(Request $request, string $companyId, string $supplierId, VendorBalanceQuery $balanceQuery): JsonResponse
-    {
+    public function show(
+        Request $request,
+        string $companyId,
+        string $supplierId,
+        VendorBalanceQuery $balanceQuery,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
+
+        setPermissionsTeamId($company->id);
 
         if (! $user->hasPermissionTo('vendors.view')) {
             return MobileApiBoundary::buildErrorResponse(
@@ -145,11 +153,16 @@ final class SupplierController extends Controller
             );
         }
 
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $supplierId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested supplier was not found.',
+                status: 404
+            );
+        }
+
         $vendor = Vendor::where('company_id', $company->id)
-            ->where(function ($q) use ($supplierId): void {
-                $q->where('public_id', $supplierId)
-                    ->orWhere('id', $supplierId);
-            })
+            ->where('public_id', $supplierId)
             ->first();
 
         if ($vendor === null) {
@@ -160,21 +173,22 @@ final class SupplierController extends Controller
             );
         }
 
-        $cmu = CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code);
+        $baseCurr = (string) $company->base_currency_code;
+        $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
         $totalPayable = null;
         try {
             app(CompanyContext::class)->setCompany($company, $user);
             $balances = $balanceQuery->execute([(int) $vendor->id]);
             $balData = $balances[(int) $vendor->id] ?? null;
-            if ($balData !== null) {
-                $pSum = BigDecimal::zero();
-                foreach ($balData as $curr => $amounts) {
-                    $b = BigDecimal::of($amounts['balance']);
-                    if ($b->isPositive()) {
-                        $pSum = $pSum->plus($b);
-                    }
+            if ($balData !== null && isset($balData[$baseCurr])) {
+                $b = BigDecimal::of($balData[$baseCurr]['balance']);
+                if ($b->isPositive()) {
+                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                } elseif ($b->isNegative()) {
+                    $totalPayable = '0.'.str_repeat('0', $cmu);
+                } else {
+                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
                 }
-                $totalPayable = (string) $pSum->toScale($cmu, RoundingMode::HALF_UP);
             }
         } catch (Throwable) {
             // Balance remains null when error/unauthorized - never invent zero
@@ -191,11 +205,10 @@ final class SupplierController extends Controller
             'email' => $vendor->email,
             'tax_number' => $vendor->tax_number,
             'address' => $vendor->address_ar ?? $vendor->address_en,
-            'currency' => (string) $company->base_currency_code,
+            'currency' => $baseCurr,
             'currency_minor_units' => $cmu,
             'balance_owed' => $totalPayable,
-            'balance_owed_ils' => $totalPayable ?? '0.00',
-            'status' => (string) $vendor->status,
+            'status' => $vendor->status === 'active' ? 'active' : 'inactive',
         ], 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
@@ -212,11 +225,23 @@ final class SupplierController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('vendors.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required vendors.manage permission.',
                 status: 403
+            );
+        }
+
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
             );
         }
 
@@ -249,7 +274,7 @@ final class SupplierController extends Controller
             'name' => (string) $vendor->displayName(),
             'code' => $vendor->code,
             'phone' => $vendor->phone,
-            'balance_owed_ils' => '0.00',
+            'balance_owed' => null,
         ], 201, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
@@ -266,6 +291,8 @@ final class SupplierController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('vendors.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -274,11 +301,26 @@ final class SupplierController extends Controller
             );
         }
 
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $supplierId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested supplier was not found.',
+                status: 404
+            );
+        }
+
         $vendor = Vendor::where('company_id', $company->id)
-            ->where(function ($q) use ($supplierId): void {
-                $q->where('public_id', $supplierId)
-                    ->orWhere('id', $supplierId);
-            })
+            ->where('public_id', $supplierId)
             ->first();
 
         if ($vendor === null) {
@@ -324,6 +366,8 @@ final class SupplierController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('money.vendor_payment.create')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -332,11 +376,26 @@ final class SupplierController extends Controller
             );
         }
 
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for supplier payment recording.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $supplierId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested supplier was not found.',
+                status: 404
+            );
+        }
+
         $vendor = Vendor::where('company_id', $company->id)
-            ->where(function ($q) use ($supplierId): void {
-                $q->where('public_id', $supplierId)
-                    ->orWhere('id', $supplierId);
-            })
+            ->where('public_id', $supplierId)
             ->first();
 
         if ($vendor === null) {
@@ -356,11 +415,11 @@ final class SupplierController extends Controller
             );
         }
 
-        $moneyAccountId = $request->input('money_account_id');
+        $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
         $cashAccount = null;
-        if ($moneyAccountId !== null) {
+        if ($rawAccountId !== null && is_string($rawAccountId) && trim($rawAccountId) !== '') {
             $cashAccount = MoneyAccount::where('company_id', $company->id)
-                ->where('public_id', (string) $moneyAccountId)
+                ->where('public_id', trim($rawAccountId))
                 ->first();
         }
         if ($cashAccount === null) {
@@ -378,18 +437,16 @@ final class SupplierController extends Controller
             );
         }
 
-        $currency = (string) ($request->input('currency_code', $company->base_currency_code));
-        $idempotencyKey = (string) $request->header('Idempotency-Key', 'vend-pay-'.uniqid('', true));
-
         $paymentData = [
-            'vendor_id' => $vendor->id,
-            'money_account_id' => $cashAccount->id,
-            'currency_code' => $currency,
+            'vendor_id' => (int) $vendor->id,
+            'money_account_id' => (int) $cashAccount->id,
+            'currency_code' => (string) $company->base_currency_code,
             'exchange_rate' => '1.0000000000',
             'amount' => (string) BigDecimal::of((string) $amount),
             'payment_date' => (string) ($request->input('payment_date', now()->format('Y-m-d'))),
             'payment_method' => 'cash',
-            'notes' => (string) ($request->input('notes', 'سند صرف للمورد من تطبيق الجوال')),
+            'notes' => $request->has('notes') && is_string($request->input('notes')) ? $request->input('notes') : 'سند صرف للمورد من تطبيق الجوال',
+            'reference_number' => $request->has('reference') && is_string($request->input('reference')) ? $request->input('reference') : null,
             'idempotency_key' => $idempotencyKey,
             'allocations' => [],
         ];

@@ -36,7 +36,10 @@ final class MerchantAdaptersAndCoverageTest extends TestCase
 
     public function test_all_contract_capabilities_have_matching_registered_routes(): void
     {
-        $contractPath = '/home/t3dev/.t3/userdata/attachments/full-app-integration-20261118/contract/backend-capabilities.json';
+        $contractPath = base_path('docs/integration/mobile-merchant/backend-capabilities.json');
+        if (! file_exists($contractPath)) {
+            $contractPath = '/home/t3dev/.t3/userdata/attachments/full-app-integration-20261118/contract/backend-capabilities.json';
+        }
         $this->assertFileExists($contractPath);
 
         $contract = json_decode((string) file_get_contents($contractPath), true, 512, JSON_THROW_ON_ERROR);
@@ -104,12 +107,11 @@ final class MerchantAdaptersAndCoverageTest extends TestCase
 
     public function test_nullable_prices_and_costs_are_not_coerced_to_zero(): void
     {
-        $rawPrice = null;
-        $formattedPrice = $rawPrice !== null ? (string) BigDecimal::of((string) $rawPrice)->toScale(2, RoundingMode::HALF_UP) : null;
-        $this->assertNull($formattedPrice, 'Unpriced product must retain null price, never coerce to 0.00');
+        $formatPrice = static fn (?string $value): ?string => $value !== null
+            ? (string) BigDecimal::of($value)->toScale(2, RoundingMode::HALF_UP)
+            : null;
 
-        $unauthorizedCost = null;
-        $formattedCost = $unauthorizedCost !== null ? (string) BigDecimal::of((string) $unauthorizedCost)->toScale(2, RoundingMode::HALF_UP) : null;
-        $this->assertNull($formattedCost, 'Unauthorized cost must retain null, never invent 0.00');
+        $this->assertNull($formatPrice(null), 'Unpriced product must retain null price, never coerce to 0.00');
+        $this->assertSame('12.50', $formatPrice('12.5'), 'Priced product formats to expected scale');
     }
 }

@@ -8,24 +8,34 @@ use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\UpdateSalesInvoiceDraftAction;
+use App\Application\Commands\ImmediateSaleCommands;
 use App\Application\Commands\SalesInvoiceCommands;
 use App\Domain\Money\ValueObjects\MoneyAmount;
+use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
+use App\Domain\Sales\Calculators\SalesLineCalculationInput;
+use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
 use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\SalesInvoice;
+use App\Models\SalesInvoiceLine;
+use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
@@ -40,6 +50,8 @@ final class SalesInvoiceController extends Controller
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
+
+        setPermissionsTeamId($company->id);
 
         if (! $user->hasPermissionTo('sales.invoice.view')) {
             return MobileApiBoundary::buildErrorResponse(
@@ -105,10 +117,10 @@ final class SalesInvoiceController extends Controller
 
         // Date range filters
         if ($request->has('date_from')) {
-            $query->whereDate('posting_date', '>=', (string) $request->query('date_from'));
+            $query->whereDate('issue_date', '>=', (string) $request->query('date_from'));
         }
         if ($request->has('date_to')) {
-            $query->whereDate('posting_date', '<=', (string) $request->query('date_to'));
+            $query->whereDate('issue_date', '<=', (string) $request->query('date_to'));
         }
 
         $records = $query->orderBy('id', 'desc')
@@ -131,13 +143,17 @@ final class SalesInvoiceController extends Controller
                 default => 'ON_CREDIT',
             };
 
+            $date = $inv->issue_date instanceof Carbon
+                ? $inv->issue_date->format('Y-m-d')
+                : substr((string) $inv->issue_date, 0, 10);
+
             return [
                 'id' => (string) $inv->public_id,
                 'invoice_number' => (string) ($inv->invoice_number ?? $inv->public_id),
                 'status' => (string) $inv->status,
-                'customer_id' => $inv->customer ? (string) $inv->customer->public_id : null,
-                'customer_name' => $inv->customer ? (string) $inv->customer->displayName() : 'عميل نقدي عام',
-                'date' => $inv->posting_date ? $inv->posting_date->format('Y-m-d') : ($inv->issue_date ? $inv->issue_date->format('Y-m-d') : now()->format('Y-m-d')),
+                'customer_id' => (string) $inv->customer->public_id,
+                'customer_name' => (string) $inv->customer->displayName(),
+                'date' => $date,
                 'subtotal' => (string) BigDecimal::of((string) ($inv->subtotal_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
                 'discount' => (string) BigDecimal::of((string) ($inv->discount_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
                 'tax' => (string) BigDecimal::of((string) ($inv->tax_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
@@ -171,6 +187,8 @@ final class SalesInvoiceController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('sales.invoice.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -179,9 +197,17 @@ final class SalesInvoiceController extends Controller
             );
         }
 
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $publicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested sales invoice was not found.',
+                status: 404
+            );
+        }
+
         $invoice = SalesInvoice::where('company_id', $company->id)
             ->where('public_id', $publicId)
-            ->with(['customer', 'lines.product', 'lines.unit', 'allocations.customerPayment'])
+            ->with(['customer', 'lines.product', 'lines.productUnit.unit', 'allocations.customerPayment'])
             ->first();
 
         if ($invoice === null) {
@@ -202,32 +228,50 @@ final class SalesInvoiceController extends Controller
             default => 'ON_CREDIT',
         };
 
-        $linesPayload = $invoice->lines->map(function ($line): array {
+        $linesPayload = $invoice->lines->map(function (SalesInvoiceLine $line): array {
+            $unitName = $line->unit_name_ar ?? $line->unit_name_en ?? ($line->productUnit?->unit ? (string) $line->productUnit->unit->displayName() : '');
+
             return [
                 'id' => (string) $line->id,
                 'product_id' => $line->product ? (string) $line->product->public_id : null,
-                'product_name' => $line->product ? (string) $line->product->displayName() : (string) $line->description,
-                'unit' => $line->unit ? (string) $line->unit->displayName() : '',
+                'product_name' => $line->product ? (string) $line->product->displayName() : (string) $line->item_description,
+                'unit' => (string) $unitName,
                 'quantity' => (string) BigDecimal::of((string) $line->quantity)->toScale(4, RoundingMode::HALF_UP),
                 'unit_price' => (string) BigDecimal::of((string) $line->unit_price)->toScale(2, RoundingMode::HALF_UP),
                 'line_total' => (string) BigDecimal::of((string) $line->line_total)->toScale(2, RoundingMode::HALF_UP),
-                'tax_rate' => (string) ($line->tax_percent ?? '0.00'),
-                'discount' => (string) BigDecimal::of((string) ($line->discount_amount ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
+                'tax_rate' => (string) ($line->tax_rate_snapshot ?? '0.00'),
+                'discount' => (string) BigDecimal::of((string) $line->line_discount)->toScale(2, RoundingMode::HALF_UP),
             ];
         })->values()->all();
 
-        // Thermal receipt layout payload
+        // Stored immutable snapshots for thermal receipt layout
+        $storeNameAr = is_array($invoice->company_snapshot) && ! empty($invoice->company_snapshot['name_ar'])
+            ? (string) $invoice->company_snapshot['name_ar']
+            : (string) ($company->name_ar ?? $company->displayName());
+
+        $storeNameEn = is_array($invoice->company_snapshot) && ! empty($invoice->company_snapshot['name_en'])
+            ? (string) $invoice->company_snapshot['name_en']
+            : (string) ($company->name_en ?? $company->displayName());
+
+        $customerName = is_array($invoice->customer_snapshot) && ! empty($invoice->customer_snapshot['name'])
+            ? (string) $invoice->customer_snapshot['name']
+            : (string) $invoice->customer->displayName();
+
+        $dateTime = $invoice->posted_at
+            ? $invoice->posted_at->format('Y-m-d H:i')
+            : ($invoice->issue_date instanceof Carbon ? $invoice->issue_date->format('Y-m-d H:i') : substr((string) $invoice->issue_date, 0, 16));
+
         $thermalReceipt = [
-            'store_name_ar' => (string) ($company->name_ar ?? $company->name),
-            'store_name_en' => (string) ($company->name_en ?? $company->name),
-            'city_ar' => (string) ($company->city_ar ?? $company->city ?? ''),
-            'city_en' => (string) ($company->city_en ?? $company->city ?? ''),
+            'store_name_ar' => $storeNameAr,
+            'store_name_en' => $storeNameEn,
+            'city_ar' => (string) ($company->city_ar ?? ''),
+            'city_en' => (string) ($company->city_en ?? ''),
             'phone' => (string) ($company->phone ?? ''),
             'tax_number' => (string) ($company->tax_number ?? ''),
             'invoice_number' => (string) ($invoice->invoice_number ?? $invoice->public_id),
-            'date_time' => $invoice->posting_date ? $invoice->posting_date->format('Y-m-d H:i') : now()->format('Y-m-d H:i'),
+            'date_time' => $dateTime,
             'cashier' => (string) $user->name,
-            'customer_name' => $invoice->customer ? (string) $invoice->customer->displayName() : 'عميل نقدي عام',
+            'customer_name' => $customerName,
             'subtotal' => (string) BigDecimal::of((string) ($invoice->subtotal_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
             'discount' => (string) BigDecimal::of((string) ($invoice->discount_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
             'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
@@ -244,9 +288,9 @@ final class SalesInvoiceController extends Controller
             'invoice_number' => (string) ($invoice->invoice_number ?? $invoice->public_id),
             'status' => (string) $invoice->status,
             'payment_status' => $paymentStatus,
-            'customer_id' => $invoice->customer ? (string) $invoice->customer->public_id : null,
-            'customer_name' => $invoice->customer ? (string) $invoice->customer->displayName() : 'عميل نقدي عام',
-            'date' => $invoice->posting_date ? $invoice->posting_date->format('Y-m-d') : ($invoice->issue_date ? $invoice->issue_date->format('Y-m-d') : now()->format('Y-m-d')),
+            'customer_id' => (string) $invoice->customer->public_id,
+            'customer_name' => $customerName,
+            'date' => $invoice->issue_date instanceof Carbon ? $invoice->issue_date->format('Y-m-d') : substr((string) $invoice->issue_date, 0, 10),
             'currency' => (string) $invoice->currency_code,
             'subtotal' => (string) BigDecimal::of((string) ($invoice->subtotal_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
             'discount' => (string) BigDecimal::of((string) ($invoice->discount_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
@@ -272,6 +316,8 @@ final class SalesInvoiceController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('sales.invoice.create')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -280,9 +326,14 @@ final class SalesInvoiceController extends Controller
             );
         }
 
-        $idempotencyKey = (string) $request->header('Idempotency-Key', $request->input('idempotency_key', ''));
-        if (trim($idempotencyKey) === '') {
-            $idempotencyKey = 'mobile-draft-'.uniqid('', true);
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
         }
 
         $payload = $request->json()->all();
@@ -338,11 +389,31 @@ final class SalesInvoiceController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('sales.invoice.create')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required sales.invoice.create permission.',
                 status: 403
+            );
+        }
+
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $publicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested sales invoice was not found.',
+                status: 404
             );
         }
 
@@ -356,11 +427,6 @@ final class SalesInvoiceController extends Controller
                 message: 'The requested sales invoice was not found.',
                 status: 404
             );
-        }
-
-        $idempotencyKey = (string) $request->header('Idempotency-Key', $request->input('idempotency_key', ''));
-        if (trim($idempotencyKey) === '') {
-            $idempotencyKey = 'mobile-update-'.uniqid('', true);
         }
 
         $payload = $request->json()->all();
@@ -402,12 +468,19 @@ final class SalesInvoiceController extends Controller
     /**
      * POST /api/mobile/v1/companies/{companyId}/sales/invoices/preview
      */
-    public function preview(Request $request, string $companyId, SalesInvoiceCommands $commands): JsonResponse
-    {
+    public function preview(
+        Request $request,
+        string $companyId,
+        SalesLineCalculator $lineCalculator,
+        SalesDocumentTotalsCalculator $totalsCalculator,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
+
+        setPermissionsTeamId($company->id);
 
         if (! $user->hasPermissionTo('sales.invoice.create')) {
             return MobileApiBoundary::buildErrorResponse(
@@ -427,42 +500,101 @@ final class SalesInvoiceController extends Controller
             );
         }
 
-        $subtotal = BigDecimal::zero();
-        $totalTax = BigDecimal::zero();
-        $discountAmount = BigDecimal::of((string) ($payload['discount_amount'] ?? '0.000000'));
+        $currency = (string) ($payload['currency_code'] ?? $company->base_currency_code);
+        $cmu = $minorUnitsResolver->resolve($currency, $company);
+        $baseCmu = $minorUnitsResolver->resolve((string) $company->base_currency_code, $company);
 
+        $lineResults = [];
         $previewLines = [];
-        foreach ($lines as $line) {
-            $qty = BigDecimal::of((string) ($line['quantity'] ?? '1'));
-            $price = BigDecimal::of((string) ($line['unit_price'] ?? '0'));
-            $lineSub = $qty->multipliedBy($price);
-            $taxRate = BigDecimal::of((string) ($line['tax_percent'] ?? '0'));
-            $tax = $lineSub->multipliedBy($taxRate)->dividedBy(100, 6, RoundingMode::HALF_UP);
-            $lineTotal = $lineSub->plus($tax);
 
-            $subtotal = $subtotal->plus($lineSub);
-            $totalTax = $totalTax->plus($tax);
+        foreach ($lines as $lineData) {
+            $productPublicId = $lineData['product_id'] ?? null;
+            if ($productPublicId === null || ! is_string($productPublicId)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Each line must specify a product_id.',
+                    status: 422
+                );
+            }
 
-            $previewLines[] = [
-                'product_id' => $line['product_id'] ?? null,
-                'quantity' => (string) $qty,
-                'unit_price' => (string) $price,
-                'tax_amount' => (string) $tax->toScale(2, RoundingMode::HALF_UP),
-                'line_total' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
-            ];
+            $product = Product::where('company_id', $company->id)
+                ->where('public_id', $productPublicId)
+                ->first();
+
+            if ($product === null) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: "Product [{$productPublicId}] was not found.",
+                    status: 422
+                );
+            }
+
+            $qty = $lineData['quantity'] ?? '1';
+            $unitPrice = $lineData['unit_price'] ?? $product->default_sale_price_base;
+            if ($unitPrice === null) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: "Product [{$productPublicId}] is unpriced and unit_price was not supplied.",
+                    status: 422
+                );
+            }
+
+            $taxRate = null;
+            if (isset($lineData['tax_rate']) && is_numeric($lineData['tax_rate'])) {
+                $taxRate = (string) $lineData['tax_rate'];
+            } elseif (! empty($lineData['tax_rate_id']) && is_string($lineData['tax_rate_id'])) {
+                $tr = TaxRate::where('company_id', $company->id)->where('public_id', $lineData['tax_rate_id'])->first();
+                if ($tr !== null) {
+                    $taxRate = (string) $tr->rate;
+                }
+            }
+
+            $isTaxInclusive = (bool) ($lineData['is_tax_inclusive'] ?? false);
+            $discountVal = $lineData['discount_amount'] ?? '0';
+
+            try {
+                $calcInput = new SalesLineCalculationInput(
+                    quantity: (string) $qty,
+                    unitPrice: (string) $unitPrice,
+                    discountType: 'fixed',
+                    discountValue: (string) $discountVal,
+                    taxRate: $taxRate,
+                    taxInclusive: $isTaxInclusive,
+                    currencyMinorUnits: $cmu,
+                    exchangeRate: '1.0000000000',
+                    baseCurrencyMinorUnits: $baseCmu
+                );
+                $calcResult = $lineCalculator->calculate($calcInput);
+                $lineResults[] = $calcResult;
+
+                $previewLines[] = [
+                    'product_id' => (string) $product->public_id,
+                    'product_name' => (string) $product->displayName(),
+                    'unit_id' => $lineData['unit_id'] ?? null,
+                    'quantity' => (string) BigDecimal::of((string) $qty)->toScale(4, RoundingMode::HALF_UP),
+                    'unit_price' => (string) BigDecimal::of((string) $unitPrice)->toScale(2, RoundingMode::HALF_UP),
+                    'line_subtotal' => (string) $calcResult->subtotal->toScale(2, RoundingMode::HALF_UP),
+                    'tax_amount' => (string) $calcResult->tax->toScale(2, RoundingMode::HALF_UP),
+                    'line_total' => (string) $calcResult->total->toScale(2, RoundingMode::HALF_UP),
+                ];
+            } catch (Throwable $e) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Sales line calculation error: '.$e->getMessage(),
+                    status: 422
+                );
+            }
         }
 
-        $grandTotal = $subtotal->minus($discountAmount)->plus($totalTax);
-        if ($grandTotal->isNegative()) {
-            $grandTotal = BigDecimal::zero();
-        }
+        $totals = $totalsCalculator->calculate($lineResults);
 
         return response()->json([
-            'subtotal' => (string) $subtotal->toScale(2, RoundingMode::HALF_UP),
-            'discount_amount' => (string) $discountAmount->toScale(2, RoundingMode::HALF_UP),
-            'tax_total' => (string) $totalTax->toScale(2, RoundingMode::HALF_UP),
-            'grand_total' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
-            'currency' => (string) ($payload['currency_code'] ?? $company->base_currency_code),
+            'currency' => $currency,
+            'currency_minor_units' => $cmu,
+            'subtotal' => (string) $totals->subtotalCurrency->toScale(2, RoundingMode::HALF_UP),
+            'tax_total' => (string) $totals->taxTotalCurrency->toScale(2, RoundingMode::HALF_UP),
+            'discount_total' => (string) $totals->discountTotalCurrency->toScale(2, RoundingMode::HALF_UP),
+            'grand_total' => (string) $totals->grandTotalCurrency->toScale(2, RoundingMode::HALF_UP),
             'lines' => $previewLines,
         ], 200, [
             'Content-Type' => 'application/json',
@@ -477,19 +609,38 @@ final class SalesInvoiceController extends Controller
         Request $request,
         string $companyId,
         string $publicId,
-        PostSalesInvoiceAction $postInvoiceAction,
-        PostCustomerPaymentAction $postPaymentAction
+        ImmediateSaleCommands $immediateSaleCommands
     ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
+        setPermissionsTeamId($company->id);
+
         if (! $user->hasPermissionTo('sales.invoice.post')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required sales.invoice.post permission.',
                 status: 403
+            );
+        }
+
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $publicId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested sales invoice was not found.',
+                status: 404
             );
         }
 
@@ -513,55 +664,60 @@ final class SalesInvoiceController extends Controller
             );
         }
 
-        $paidNow = $request->input('paid_now');
-        $moneyAccountId = $request->input('money_account_id');
-
         try {
-            $posted = DB::transaction(function () use ($company, $user, $invoice, $postInvoiceAction, $postPaymentAction, $paidNow, $moneyAccountId): SalesInvoice {
-                app(CompanyContext::class)->setCompany($company, $user);
-
-                $postedInvoice = $postInvoiceAction->execute($invoice, $user);
-
-                if ($paidNow !== null && is_scalar($paidNow)) {
-                    $paidAmount = BigDecimal::of((string) $paidNow);
-                    if ($paidAmount->isPositive()) {
-                        $cashAccount = null;
-                        if ($moneyAccountId !== null) {
-                            $cashAccount = MoneyAccount::where('company_id', $company->id)
-                                ->where('public_id', (string) $moneyAccountId)
-                                ->first();
-                        }
-                        if ($cashAccount === null) {
-                            $cashAccount = MoneyAccount::where('company_id', $company->id)
-                                ->where('account_type', MoneyAccount::TYPE_CASH)
-                                ->where('is_active', true)
-                                ->first();
-                        }
-
-                        if ($cashAccount !== null) {
-                            $paymentData = [
-                                'customer_id' => $postedInvoice->customer_id,
-                                'money_account_id' => $cashAccount->id,
-                                'currency_code' => $postedInvoice->currency_code,
-                                'exchange_rate' => $postedInvoice->exchange_rate,
-                                'amount' => (string) $paidAmount,
-                                'payment_date' => now()->format('Y-m-d'),
-                                'payment_method' => 'cash',
-                                'notes' => 'سداد نقدي عند إنشاء الفاتورة #'.$postedInvoice->invoice_number,
-                                'allocations' => [
-                                    [
-                                        'invoice_id' => $postedInvoice->id,
-                                        'amount' => (string) $paidAmount,
-                                    ],
-                                ],
-                            ];
-                            $postPaymentAction->execute($company, $user, $paymentData);
-                        }
+            app(CompanyContext::class)->setCompany($company, $user);
+            $token = $request->input('confirmation_token');
+            if (! is_string($token) || trim($token) === '') {
+                $paidNow = $request->input('paid_now');
+                $choice = ['mode' => 'unpaid'];
+                if ($paidNow !== null && is_scalar($paidNow) && BigDecimal::of((string) $paidNow)->isPositive()) {
+                    $rawAccountId = $request->input('money_account_id', $request->input('cash_account_id'));
+                    $cashAccount = null;
+                    if ($rawAccountId !== null && is_string($rawAccountId) && trim($rawAccountId) !== '') {
+                        $cashAccount = MoneyAccount::where('company_id', $company->id)
+                            ->where('public_id', trim($rawAccountId))
+                            ->first();
+                    }
+                    if ($cashAccount === null) {
+                        $cashAccount = MoneyAccount::where('company_id', $company->id)
+                            ->where('account_type', MoneyAccount::TYPE_CASH)
+                            ->where('active', true)
+                            ->first();
+                    }
+                    if ($cashAccount === null) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'No approved cash account configured for this company.',
+                            status: 422
+                        );
+                    }
+                    $paidBd = BigDecimal::of((string) $paidNow);
+                    $grandTotalBd = BigDecimal::of((string) $invoice->grand_total_currency);
+                    $isFull = $paidBd->isGreaterThanOrEqualTo($grandTotalBd);
+                    $choice = [
+                        'mode' => $isFull ? 'full' : 'partial',
+                        'money_account_id' => (int) $cashAccount->id,
+                        'payment_method' => CustomerPayment::METHOD_CASH,
+                        'payment_date' => now()->format('Y-m-d'),
+                        'amount' => (string) $paidBd,
+                        'exchange_rate' => (string) $invoice->exchange_rate,
+                    ];
+                    if (! $isFull) {
+                        $choice['invoice_amount'] = (string) $paidBd;
                     }
                 }
+                $preview = $immediateSaleCommands->preview($invoice, $user, $choice);
+                $token = (string) $preview['confirmation_token'];
+            }
 
-                return $postedInvoice->fresh(['customer', 'lines']);
-            });
+            $result = $immediateSaleCommands->execute($invoice, $user, $token, $idempotencyKey);
+            $posted = $result['invoice'];
+        } catch (HttpException $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: $e->getStatusCode() === 409 ? 'CONFLICT' : 'VALIDATION_FAILED',
+                message: $e->getMessage(),
+                status: $e->getStatusCode()
+            );
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -576,7 +732,7 @@ final class SalesInvoiceController extends Controller
             'status' => (string) $posted->status,
             'total' => (string) BigDecimal::of((string) $posted->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
             'currency' => (string) $posted->currency_code,
-            'posted_at' => $posted->posting_date ? $posted->posting_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
+            'posted_at' => $posted->posted_at ? $posted->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
         ], 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',

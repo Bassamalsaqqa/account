@@ -27,7 +27,7 @@ final class BusinessSettingsController extends Controller
      * Comprehensive store profile, authoritative server currency minor units,
      * and warehouse / cash drawer / walk-in mapping.
      */
-    public function show(Request $request, string $companyId): JsonResponse
+    public function show(Request $request, string $companyId, CurrencyMinorUnitsResolver $currencyResolver): JsonResponse
     {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
@@ -49,7 +49,7 @@ final class BusinessSettingsController extends Controller
             }
         }
         if ($warehouse === null) {
-            $wh = Warehouse::where('company_id', $company->id)->where('is_active', true)->first();
+            $wh = Warehouse::where('company_id', $company->id)->where('active', true)->first();
             if ($wh !== null) {
                 $warehouse = [
                     'id' => (string) $wh->public_id,
@@ -62,14 +62,17 @@ final class BusinessSettingsController extends Controller
         // Cash account mapping
         $cashAccount = null;
         if ($setting?->approved_cash_account_id) {
-            $ca = MoneyAccount::where('id', $setting->approved_cash_account_id)->where('company_id', $company->id)->first();
+            $ca = MoneyAccount::where('id', $setting->approved_cash_account_id)
+                ->where('company_id', $company->id)
+                ->with('ledgerAccount')
+                ->first();
             if ($ca !== null) {
                 $cashAccount = [
                     'id' => (string) $ca->public_id,
-                    'code' => (string) $ca->code,
+                    'code' => (string) ($ca->ledgerAccount->code ?? ''),
                     'name' => (string) $ca->displayName(),
                     'currency' => (string) $ca->currency_code,
-                    'currency_minor_units' => CurrencyMinorUnitsResolver::resolve((string) $ca->currency_code),
+                    'currency_minor_units' => $currencyResolver->resolve((string) $ca->currency_code, $company),
                 ];
             }
         }
@@ -104,7 +107,7 @@ final class BusinessSettingsController extends Controller
                 'code' => (string) $c->code,
                 'name' => (string) $c->name,
                 'symbol' => (string) ($c->symbol ?? $c->code),
-                'minor_units' => CurrencyMinorUnitsResolver::resolve((string) $c->code),
+                'minor_units' => $currencyResolver->resolve((string) $c->code, $company),
                 'is_base' => (string) $c->code === (string) $company->base_currency_code,
             ])
             ->values()
@@ -133,14 +136,14 @@ final class BusinessSettingsController extends Controller
             ->values()
             ->all();
 
-        $baseCmu = CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code);
+        $baseCmu = $currencyResolver->resolveForCompany($company, (string) $company->base_currency_code);
 
         return response()->json([
             'company_id' => (string) $company->public_id,
-            'name_ar' => (string) ($company->name_ar ?? $company->name),
-            'name_en' => (string) ($company->name_en ?? $company->name),
-            'city_ar' => (string) ($company->city_ar ?? $company->city ?? ''),
-            'city_en' => (string) ($company->city_en ?? $company->city ?? ''),
+            'name_ar' => (string) $company->name_ar,
+            'name_en' => (string) ($company->name_en ?? $company->name_ar),
+            'city_ar' => (string) ($company->address_ar ?? ''),
+            'city_en' => (string) ($company->address_en ?? ''),
             'phone' => (string) ($company->phone ?? ''),
             'tax_number' => (string) ($company->tax_number ?? ''),
             'default_currency' => (string) $company->base_currency_code,

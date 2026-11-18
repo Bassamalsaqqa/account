@@ -420,8 +420,12 @@ final class ProductController extends Controller
     /**
      * GET /api/mobile/v1/companies/{companyId}/products/{productId}
      */
-    public function show(Request $request, string $companyId, string $productId): JsonResponse
-    {
+    public function show(
+        Request $request,
+        string $companyId,
+        string $productId,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
@@ -435,11 +439,16 @@ final class ProductController extends Controller
             );
         }
 
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $productId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested product was not found.',
+                status: 404
+            );
+        }
+
         $product = Product::where('company_id', $company->id)
-            ->where(function ($q) use ($productId): void {
-                $q->where('public_id', $productId)
-                    ->orWhere('id', $productId);
-            })
+            ->where('public_id', $productId)
             ->with(['baseUnit', 'primaryBarcode', 'costState', 'productUnits.unit'])
             ->first();
 
@@ -452,7 +461,7 @@ final class ProductController extends Controller
         }
 
         $canViewCost = $user->hasPermissionTo('purchasing.view') || $user->hasPermissionTo('reports.financial');
-        $cmu = CurrencyMinorUnitsResolver::resolve((string) $company->base_currency_code);
+        $cmu = $minorUnitsResolver->resolve((string) $company->base_currency_code, $company);
 
         $salePrice = $product->default_sale_price_base !== null
             ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale($cmu, RoundingMode::HALF_UP)
@@ -470,13 +479,14 @@ final class ProductController extends Controller
         $units = $product->productUnits->map(function (ProductUnit $pu) use ($cmu): array {
             $u = $pu->unit;
             return [
-                'id' => (string) $pu->public_id,
+                'id' => $u ? (string) $u->public_id : (string) $pu->id,
                 'unit_id' => $u ? (string) $u->public_id : null,
                 'unit_code' => $u ? (string) $u->code : '',
                 'unit_name' => $u ? (string) $u->displayName() : '',
-                'conversion_factor' => (string) BigDecimal::of((string) ($pu->conversion_factor ?? '1.000000'))->toScale(6, RoundingMode::HALF_UP),
-                'sale_price' => $pu->sale_price !== null ? (string) BigDecimal::of((string) $pu->sale_price)->toScale($cmu, RoundingMode::HALF_UP) : null,
-                'barcode' => $pu->barcode,
+                'conversion_factor' => (string) BigDecimal::of((string) ($pu->conversion_to_base ?? '1.000000'))->toScale(6, RoundingMode::HALF_UP),
+                'sale_price' => $pu->default_sale_price_base !== null ? (string) BigDecimal::of((string) $pu->default_sale_price_base)->toScale($cmu, RoundingMode::HALF_UP) : null,
+                'is_base' => (bool) $pu->is_base,
+                'is_default_sale' => (bool) $pu->is_default_sale,
             ];
         })->values()->all();
 
@@ -486,13 +496,13 @@ final class ProductController extends Controller
             'name' => (string) $product->displayName(),
             'name_ar' => $product->name_ar,
             'name_en' => $product->name_en,
-            'barcode' => $product->primaryBarcode?->barcode ?? '',
+            'barcode' => $product->primaryBarcode !== null ? (string) $product->primaryBarcode->barcode : '',
             'currency' => (string) $company->base_currency_code,
             'currency_minor_units' => $cmu,
             'sale_price' => $salePrice,
-            'price_ils' => $salePrice ?? '0.00',
+            'price_ils' => $salePrice,
             'purchase_cost' => $purchaseCost,
-            'cost_ils' => $purchaseCost ?? '0.00',
+            'cost_ils' => $purchaseCost,
             'base_unit' => $product->baseUnit ? [
                 'id' => (string) $product->baseUnit->public_id,
                 'code' => (string) $product->baseUnit->code,
@@ -529,6 +539,16 @@ final class ProductController extends Controller
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required inventory.product.manage permission.',
                 status: 403
+            );
+        }
+
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
             );
         }
 
@@ -597,7 +617,7 @@ final class ProductController extends Controller
             'id' => (string) $product->public_id,
             'name' => (string) $product->displayName(),
             'sku' => $product->sku,
-            'price_ils' => (string) BigDecimal::of((string) ($product->default_sale_price_base ?? '0'))->toScale(2, RoundingMode::HALF_UP),
+            'price_ils' => $product->default_sale_price_base !== null ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale(2, RoundingMode::HALF_UP) : null,
             'stock_count' => '0.0000',
         ], 201, [
             'Content-Type' => 'application/json',
@@ -623,11 +643,26 @@ final class ProductController extends Controller
             );
         }
 
+        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
+        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
+        if ($idempotencyKey === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'MISSING_IDEMPOTENCY_KEY',
+                message: 'Idempotency-Key header is required for this operation.',
+                status: 422
+            );
+        }
+
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $productId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested product was not found.',
+                status: 404
+            );
+        }
+
         $product = Product::where('company_id', $company->id)
-            ->where(function ($q) use ($productId): void {
-                $q->where('public_id', $productId)
-                    ->orWhere('id', $productId);
-            })
+            ->where('public_id', $productId)
             ->first();
 
         if ($product === null) {
@@ -665,10 +700,9 @@ final class ProductController extends Controller
             'id' => (string) $updated->public_id,
             'name' => (string) $updated->displayName(),
             'sku' => $updated->sku,
-            'price_ils' => (string) BigDecimal::of((string) ($updated->default_sale_price_base ?? '0'))->toScale(2, RoundingMode::HALF_UP),
+            'price_ils' => $updated->default_sale_price_base !== null ? (string) BigDecimal::of((string) $updated->default_sale_price_base)->toScale(2, RoundingMode::HALF_UP) : null,
         ], 200, [
             'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
         ]);
     }
 

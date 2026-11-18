@@ -88,9 +88,12 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::disableForeignKeyConstraints();
+        Schema::dropIfExists('mobile_event_receipts');
         Schema::dropIfExists('company_mobile_settings');
         Schema::dropIfExists('mobile_access_tokens');
         Schema::dropIfExists('mobile_auth_challenges');
         Schema::dropIfExists('mobile_devices');
+        Schema::enableForeignKeyConstraints();
     }
 };
