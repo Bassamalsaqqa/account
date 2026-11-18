@@ -25,12 +25,17 @@ final class MigrationRollbackTest extends TestCase
         $this->assertTrue(Schema::hasColumn('mobile_devices', 'user_id'));
         $beforeProducts = Schema::getColumns('products');
         $migration = require database_path('migrations/2026_11_17_000001_create_mobile_read_api_tables.php');
+        // Roll back the dependent forward migration first; applied history stays frozen.
+        $receiptMigration = require database_path('migrations/2026_11_18_000001_create_mobile_event_receipts_table.php');
+        $receiptMigration->down();
         $migration->down();
         foreach (['mobile_devices', 'mobile_auth_challenges', 'mobile_access_tokens', 'company_mobile_settings'] as $table) {
             $this->assertFalse(Schema::hasTable($table));
         }
         $this->assertSame($beforeProducts, Schema::getColumns('products'));
         $migration->up();
+        $receiptMigration->up();
+        $this->assertTrue(Schema::hasTable('mobile_event_receipts'));
         $this->assertSame($beforeProducts, Schema::getColumns('products'));
 
         $this->assertTrue(Schema::hasTable('mobile_devices'));

@@ -62,14 +62,14 @@ Route::prefix('companies/{companyId}')
         Route::get('/home', [HomeController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.home');
 
         // Products
-        Route::get('/products/{productId}', [ProductController::class, 'show'])->middleware('mobile.auth:product.view')->name('mobile.v1.products.show');
-        Route::post('/products', [ProductController::class, 'store'])->middleware('mobile.auth:products.manage')->name('mobile.v1.products.store');
-        Route::put('/products/{productId}', [ProductController::class, 'update'])->middleware('mobile.auth:products.manage')->name('mobile.v1.products.update');
+        Route::get('/products/{productId}', [ProductController::class, 'show'])->middleware('mobile.auth:product.viewAny')->name('mobile.v1.products.show');
+        Route::post('/products', [ProductController::class, 'store'])->middleware('mobile.auth:inventory.product.manage')->name('mobile.v1.products.store');
+        Route::put('/products/{productId}', [ProductController::class, 'update'])->middleware('mobile.auth:inventory.product.manage')->name('mobile.v1.products.update');
 
         // Inventory
-        Route::get('/products/{productId}/movements', [InventoryController::class, 'movements'])->middleware('mobile.auth:inventory.view')->name('mobile.v1.inventory.movements');
-        Route::post('/inventory/adjustments', [InventoryController::class, 'adjust'])->middleware('mobile.auth:inventory.adjust')->name('mobile.v1.inventory.adjust');
-        Route::post('/inventory/transfers/preview', [InventoryController::class, 'previewTransfer'])->middleware('mobile.auth:inventory.transfer')->name('mobile.v1.inventory.transfers.preview');
+        Route::get('/products/{productId}/movements', [InventoryController::class, 'movements'])->middleware('mobile.auth:inventory.stock.view')->name('mobile.v1.inventory.movements');
+        Route::post('/inventory/adjustments', [InventoryController::class, 'adjust'])->middleware('mobile.auth:inventory.stock.adjust')->name('mobile.v1.inventory.adjust');
+        Route::post('/inventory/transfers/preview', [InventoryController::class, 'previewTransfer'])->middleware('mobile.auth:inventory.stock.transfer')->name('mobile.v1.inventory.transfers.preview');
 
         // Customers
         Route::get('/customers/{customerId}', [CustomerController::class, 'show'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.show');
@@ -83,7 +83,7 @@ Route::prefix('companies/{companyId}')
         Route::get('/suppliers/{supplierId}', [SupplierController::class, 'show'])->middleware('mobile.auth:vendors.view')->name('mobile.v1.suppliers.show');
         Route::post('/suppliers', [SupplierController::class, 'store'])->middleware('mobile.auth:vendors.manage')->name('mobile.v1.suppliers.store');
         Route::put('/suppliers/{supplierId}', [SupplierController::class, 'update'])->middleware('mobile.auth:vendors.manage')->name('mobile.v1.suppliers.update');
-        Route::post('/suppliers/{supplierId}/payments', [SupplierController::class, 'recordPayment'])->middleware('mobile.auth:purchasing.payments.create')->name('mobile.v1.suppliers.payments');
+        Route::post('/suppliers/{supplierId}/payments', [SupplierController::class, 'recordPayment'])->middleware('mobile.auth:money.vendor_payment.create')->name('mobile.v1.suppliers.payments');
 
         // Sales Invoices & Execution
         Route::get('/sales/invoices', [SalesInvoiceController::class, 'index'])->middleware('mobile.auth:sales.invoice.view')->name('mobile.v1.sales.invoices.index');
@@ -95,25 +95,25 @@ Route::prefix('companies/{companyId}')
 
         // Sales Returns / Credit Notes
         Route::post('/sales/returns/preview', [SalesReturnController::class, 'preview'])->middleware('mobile.auth:sales.invoice.view')->name('mobile.v1.sales.returns.preview');
-        Route::post('/sales/returns', [SalesReturnController::class, 'store'])->middleware('mobile.auth:sales.returns.post')->name('mobile.v1.sales.returns.store');
+        Route::post('/sales/returns', [SalesReturnController::class, 'store'])->middleware('mobile.auth:sales.return.post')->name('mobile.v1.sales.returns.store');
 
         // Purchases & GRN
-        Route::get('/purchases', [PurchaseController::class, 'index'])->middleware('mobile.auth:purchases.view')->name('mobile.v1.purchases.index');
-        Route::get('/purchases/{purchaseId}', [PurchaseController::class, 'show'])->middleware('mobile.auth:purchases.view')->name('mobile.v1.purchases.show');
-        Route::post('/purchases', [PurchaseController::class, 'store'])->middleware('mobile.auth:purchases.post')->name('mobile.v1.purchases.store');
-        Route::post('/purchases/{purchaseId}/grn', [PurchaseController::class, 'receiveGoods'])->middleware('mobile.auth:inventory.adjust')->name('mobile.v1.purchases.grn');
-        Route::post('/purchases/returns/preview', [PurchaseController::class, 'previewReturn'])->middleware('mobile.auth:purchases.view')->name('mobile.v1.purchases.returns.preview');
-        Route::post('/purchases/returns', [PurchaseController::class, 'storeReturn'])->middleware('mobile.auth:purchases.returns.post')->name('mobile.v1.purchases.returns.store');
+        Route::get('/purchases', [PurchaseController::class, 'index'])->middleware('mobile.auth:purchasing.purchase.view')->name('mobile.v1.purchases.index');
+        Route::get('/purchases/{purchaseId}', [PurchaseController::class, 'show'])->middleware('mobile.auth:purchasing.purchase.view')->name('mobile.v1.purchases.show');
+        Route::post('/purchases', [PurchaseController::class, 'store'])->middleware('mobile.auth:purchasing.purchase.post')->name('mobile.v1.purchases.store');
+        Route::post('/purchases/{purchaseId}/grn', [PurchaseController::class, 'receiveGoods'])->middleware('mobile.auth:inventory.stock.adjust')->name('mobile.v1.purchases.grn');
+        Route::post('/purchases/returns/preview', [PurchaseController::class, 'previewReturn'])->middleware('mobile.auth:purchasing.purchase.view')->name('mobile.v1.purchases.returns.preview');
+        Route::post('/purchases/returns', [PurchaseController::class, 'storeReturn'])->middleware('mobile.auth:purchasing.return.post')->name('mobile.v1.purchases.returns.store');
 
         // Expenses
-        Route::get('/expenses', [ExpenseController::class, 'index'])->middleware('mobile.auth:expenses.view')->name('mobile.v1.expenses.index');
-        Route::get('/expenses/categories', [ExpenseController::class, 'categories'])->middleware('mobile.auth:expenses.view')->name('mobile.v1.expenses.categories');
-        Route::post('/expenses', [ExpenseController::class, 'store'])->middleware('mobile.auth:expenses.create')->name('mobile.v1.expenses.store');
+        Route::get('/expenses', [ExpenseController::class, 'index'])->middleware('mobile.auth:money.expense.view')->name('mobile.v1.expenses.index');
+        Route::get('/expenses/categories', [ExpenseController::class, 'categories'])->middleware('mobile.auth:money.expense.view')->name('mobile.v1.expenses.categories');
+        Route::post('/expenses', [ExpenseController::class, 'store'])->middleware('mobile.auth:money.expense.manage')->name('mobile.v1.expenses.store');
 
         // Reports
-        Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('mobile.auth:reports.financial')->name('mobile.v1.reports.shift_summary');
-        Route::post('/reports/shift-close', [ReportController::class, 'shiftClose'])->middleware('mobile.auth:reports.financial')->name('mobile.v1.reports.shift_close');
-        Route::get('/reports/treasury', [ReportController::class, 'treasury'])->middleware('mobile.auth:reports.financial')->name('mobile.v1.reports.treasury');
+        Route::get('/reports/shift-summary', [ReportController::class, 'shiftSummary'])->middleware('mobile.auth:reports.financial.view')->name('mobile.v1.reports.shift_summary');
+        Route::post('/reports/shift-close', [ReportController::class, 'shiftClose'])->middleware('mobile.auth:reports.financial.view')->name('mobile.v1.reports.shift_close');
+        Route::get('/reports/treasury', [ReportController::class, 'treasury'])->middleware('mobile.auth:reports.financial.view')->name('mobile.v1.reports.treasury');
 
         // Settings
         Route::get('/settings/business', [BusinessSettingsController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.settings.business');

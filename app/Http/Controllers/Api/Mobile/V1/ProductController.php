@@ -192,7 +192,7 @@ final class ProductController extends Controller
                     try {
                         $baseUnitPrice = (string) BigDecimal::of((string) $product->default_sale_price_base)
                             ->toScale(6, RoundingMode::UNNECESSARY);
-                    } catch (\Throwable) {
+                    } catch (Throwable) {
                         throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
                             code: 'CONTRACT_INCOMPATIBLE',
                             message: 'Product unit price cannot be represented in exact 6 decimal scale without rounding.',
@@ -238,7 +238,7 @@ final class ProductController extends Controller
                             throw new \InvalidArgumentException;
                         }
                         $conv->toScale(6, RoundingMode::UNNECESSARY);
-                    } catch (\Throwable) {
+                    } catch (Throwable) {
                         throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
                             code: 'CONTRACT_INCOMPATIBLE',
                             message: 'Unit conversion factor must be positive and representable in 6 decimal scale.',
@@ -297,7 +297,7 @@ final class ProductController extends Controller
                     } else {
                         $defaultSalePrice = null;
                     }
-                } catch (\Throwable) {
+                } catch (Throwable) {
                     throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
                         code: 'CONTRACT_INCOMPATIBLE',
                         message: 'Default sales unit price cannot be represented without rounding.',
@@ -325,7 +325,7 @@ final class ProductController extends Controller
                         } else {
                             $puSalePrice = null;
                         }
-                    } catch (\Throwable) {
+                    } catch (Throwable) {
                         throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
                             code: 'CONTRACT_INCOMPATIBLE',
                             message: 'Unit sale price cannot be represented without rounding.',
@@ -364,7 +364,7 @@ final class ProductController extends Controller
                 }
                 try {
                     $availableQuantity = (string) $qty->toScale(6, RoundingMode::UNNECESSARY);
-                } catch (\Throwable) {
+                } catch (Throwable) {
                     throw new HttpResponseException(MobileApiBoundary::buildErrorResponse(
                         code: 'CONTRACT_INCOMPATIBLE',
                         message: 'Available quantity cannot be represented without rounding.',
@@ -460,31 +460,32 @@ final class ProductController extends Controller
             );
         }
 
-        $canViewCost = $user->hasPermissionTo('purchasing.view') || $user->hasPermissionTo('reports.financial');
+        $canViewCost = app(ProductPolicy::class)->viewCost($user);
         $cmu = $minorUnitsResolver->resolve((string) $company->base_currency_code, $company);
 
         $salePrice = $product->default_sale_price_base !== null
-            ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale($cmu, RoundingMode::HALF_UP)
+            ? (string) BigDecimal::of((string) $product->default_sale_price_base)->toScale(6, RoundingMode::UNNECESSARY)
             : null;
 
         $purchaseCost = ($canViewCost && $product->default_purchase_cost_base !== null)
-            ? (string) BigDecimal::of((string) $product->default_purchase_cost_base)->toScale($cmu, RoundingMode::HALF_UP)
+            ? (string) BigDecimal::of((string) $product->default_purchase_cost_base)->toScale(6, RoundingMode::UNNECESSARY)
             : null;
 
-        $stock = (string) BigDecimal::of((string) $product->totalStockBase())->toScale(4, RoundingMode::HALF_UP);
+        $stock = (string) BigDecimal::of((string) $product->totalStockBase())->toScale(6, RoundingMode::UNNECESSARY);
         $minStock = $product->minimum_stock_base !== null
-            ? (string) BigDecimal::of((string) $product->minimum_stock_base)->toScale(4, RoundingMode::HALF_UP)
+            ? (string) BigDecimal::of((string) $product->minimum_stock_base)->toScale(6, RoundingMode::UNNECESSARY)
             : null;
 
-        $units = $product->productUnits->map(function (ProductUnit $pu) use ($cmu): array {
+        $units = $product->productUnits->map(function (ProductUnit $pu): array {
             $u = $pu->unit;
+
             return [
                 'id' => $u ? (string) $u->public_id : (string) $pu->id,
                 'unit_id' => $u ? (string) $u->public_id : null,
                 'unit_code' => $u ? (string) $u->code : '',
                 'unit_name' => $u ? (string) $u->displayName() : '',
                 'conversion_factor' => (string) BigDecimal::of((string) ($pu->conversion_to_base ?? '1.000000'))->toScale(6, RoundingMode::HALF_UP),
-                'sale_price' => $pu->default_sale_price_base !== null ? (string) BigDecimal::of((string) $pu->default_sale_price_base)->toScale($cmu, RoundingMode::HALF_UP) : null,
+                'sale_price' => $pu->default_sale_price_base !== null ? (string) BigDecimal::of((string) $pu->default_sale_price_base)->toScale(6, RoundingMode::UNNECESSARY) : null,
                 'is_base' => (bool) $pu->is_base,
                 'is_default_sale' => (bool) $pu->is_default_sale,
             ];
