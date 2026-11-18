@@ -712,7 +712,8 @@
       "tested_in": "Tests\\Feature\\Mobile\\MerchantReportHttpTest",
       "request_schema": {
         "counted_cash": { "type": "string", "pattern": "^\\d+(\\.\\d{1,4})?$", "required": true },
-        "notes": { "type": ["string", "null"] }
+        "notes": { "type": ["string", "null"], "maxLength": 1000 },
+        "cash_account_id": { "type": ["string", "null"], "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" }
       },
       "request_example": {
         "counted_cash": "1055.50",
@@ -720,6 +721,9 @@
       },
       "response_schema": {
         "success": { "type": "boolean" },
+        "observation_recorded": { "type": "boolean" },
+        "is_shift_closed": { "type": "boolean" },
+        "id": { "type": "string" },
         "shift_closure_id": { "type": "string" },
         "shift_date": { "type": "string" },
         "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
@@ -732,6 +736,9 @@
       },
       "response_example": {
         "success": true,
+        "observation_recorded": true,
+        "is_shift_closed": false,
+        "id": "01JM78V5T4G894HZXA0B42M9NQ",
         "shift_closure_id": "01JM78V5T4G894HZXA0B42M9NQ",
         "shift_date": "2026-11-18",
         "currency": "ILS",

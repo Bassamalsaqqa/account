@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\Queries\MoneyBalanceQuery;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
@@ -11,12 +12,14 @@ use App\Models\Company;
 use App\Models\CompanyMobileSetting;
 use App\Models\CustomerPayment;
 use App\Models\Expense;
+use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MobileShiftClosure;
 use App\Models\MoneyAccount;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Models\VendorPayment;
+use App\Services\Audit\AuditService;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -64,17 +67,14 @@ final class ReportController extends Controller
 
         // 1. Opening cash from canonical money ledger (as of start of day); never trust client float or invent zero on error
         $openingFloat = null;
-        if ($user->hasPermissionTo('money.cash.view')) {
+        if ($approvedCashAccount !== null && $user->hasPermissionTo('money.cash.view')) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
                 $openingBalances = $moneyBalanceQuery->forType($company, 'cash', $yesterday);
                 foreach ($openingBalances as $row) {
-                    $matches = $approvedCashAccount !== null
-                        ? ($row['public_id'] === $approvedCashAccount->public_id)
-                        : ($row['currency_code'] === $baseCurrency);
-                    if ($matches && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
-                        $bal = BigDecimal::of((string) $row['balance_currency']);
-                        $openingFloat = $openingFloat !== null ? $openingFloat->plus($bal) : $bal;
+                    if ($row['public_id'] === $approvedCashAccount->public_id && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
+                        $openingFloat = BigDecimal::of((string) $row['balance_currency']);
+                        break;
                     }
                 }
             } catch (Throwable) {
@@ -94,18 +94,35 @@ final class ReportController extends Controller
 
         // 3. Today's customer cash movements: segregated into cash_sales (paid on today's posted invoices)
         // and cash_collections (prior invoices / on-account credit), preventing double counting.
-        [$cashSales, $cashCollections] = $this->calculateCashSalesAndCollections($company, $baseCurrency, $today, $approvedCashAccount);
+        [$cashSales, $cashCollections] = $approvedCashAccount !== null
+            ? $this->calculateCashSalesAndCollections($company, $baseCurrency, $today, $approvedCashAccount)
+            : [BigDecimal::zero(), BigDecimal::zero()];
 
         // 4. Today's cash disbursements
-        $disbursements = $this->calculateCashDisbursements($company, $baseCurrency, $today, $approvedCashAccount);
+        $disbursements = $approvedCashAccount !== null
+            ? $this->calculateCashDisbursements($company, $baseCurrency, $today, $approvedCashAccount)
+            : BigDecimal::zero();
 
         // 5. Today's operating cash expenses
-        $expenses = $this->calculateCashExpenses($company, $baseCurrency, $today, $approvedCashAccount);
+        $expenses = $approvedCashAccount !== null
+            ? $this->calculateCashExpenses($company, $baseCurrency, $today, $approvedCashAccount)
+            : BigDecimal::zero();
 
-        // 6. Expected book cash
+        // 6. Expected drawer cash must come from canonical CURRENT MoneyBalanceQuery for exact approved account
         $expectedCash = null;
-        if ($openingFloat !== null) {
-            $expectedCash = $openingFloat->plus($cashSales)->plus($cashCollections)->minus($disbursements)->minus($expenses);
+        if ($approvedCashAccount !== null && $user->hasPermissionTo('money.cash.view')) {
+            try {
+                app(CompanyContext::class)->setCompany($company, $user);
+                $currentBalances = $moneyBalanceQuery->forType($company, 'cash');
+                foreach ($currentBalances as $row) {
+                    if ($row['public_id'] === $approvedCashAccount->public_id && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
+                        $expectedCash = BigDecimal::of((string) $row['balance_currency']);
+                        break;
+                    }
+                }
+            } catch (Throwable) {
+                $expectedCash = null;
+            }
         }
 
         return response()->json([
@@ -160,162 +177,279 @@ final class ReportController extends Controller
                 status: 422
             );
         }
+        if (strlen($idempotencyKey) > 128) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Idempotency-Key header must not exceed 128 characters.',
+                status: 422
+            );
+        }
 
         $countedInput = $request->input('counted_cash', $request->input('counted_physical_cash'));
-        if ($countedInput === null || ! is_scalar($countedInput)) {
+        if ($countedInput === null || ! is_string($countedInput)) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
-                message: 'Counted physical cash is required.',
+                message: 'Counted physical cash is required and must be a decimal string.',
                 status: 422
             );
         }
 
-        $strCounted = trim((string) $countedInput);
-        if (preg_match('/^\d+(\.\d{1,4})?$/', $strCounted) !== 1) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Counted physical cash must be a non-negative decimal string with at most 4 decimal places.',
-                status: 422
-            );
-        }
-
-        $counted = BigDecimal::of($strCounted);
         $baseCurrency = (string) $company->base_currency_code;
         $cmu = $minorUnitsResolver->resolve($baseCurrency, $company);
         $companyTimezone = (string) ($company->timezone ?? config('app.timezone', 'UTC'));
         $today = now($companyTimezone)->toDateString();
-        $yesterday = now($companyTimezone)->subDay()->toDateString();
 
-        // Resolve explicit approved same-company cash account
-        $cashAccount = null;
-        $rawAccountId = $request->input('cash_account_id');
-        if ($rawAccountId !== null && is_scalar($rawAccountId)) {
-            $caStr = trim((string) $rawAccountId);
-            $cashAccount = preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $caStr) === 1
-                ? MoneyAccount::where('company_id', $company->id)->where('public_id', $caStr)->where('account_type', 'cash')->where('is_active', true)->first()
-                : (ctype_digit($caStr) ? MoneyAccount::where('company_id', $company->id)->where('id', (int) $caStr)->where('account_type', 'cash')->where('is_active', true)->first() : null);
-
-            if ($cashAccount === null) {
-                return MobileApiBoundary::buildErrorResponse(
-                    code: 'VALIDATION_FAILED',
-                    message: 'The specified cash account is invalid, inactive, or belongs to another company.',
-                    status: 422
-                );
-            }
-        }
-
-        if ($cashAccount === null) {
-            $cashAccount = $this->resolveApprovedCashAccount($company, $baseCurrency);
-        }
-
-        if ($cashAccount === null) {
+        $strCounted = trim($countedInput);
+        $maxDecimals = $cmu;
+        $pattern = $maxDecimals > 0 ? '/^\d{1,14}(\.\d{1,'.$maxDecimals.'})?$/' : '/^\d{1,14}$/';
+        if (preg_match($pattern, $strCounted) !== 1) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
-                message: 'An approved company cash account is required for shift close.',
+                message: "Counted physical cash must be a non-negative decimal string with at most {$maxDecimals} decimal places.",
                 status: 422
             );
         }
+        $counted = BigDecimal::of($strCounted);
 
         $rawNotes = $request->input('notes');
-        $notes = is_string($rawNotes) ? trim($rawNotes) : null;
-
-        $payloadForDigest = [
-            'counted_cash' => (string) $counted,
-            'cash_account_id' => (string) $cashAccount->public_id,
-            'notes' => $notes,
-        ];
-        $requestHash = hash('sha256', json_encode($payloadForDigest, JSON_THROW_ON_ERROR));
-
-        // Idempotent persistence check
-        $existing = MobileShiftClosure::where('company_id', $company->id)
-            ->where('idempotency_key', $idempotencyKey)
-            ->first();
-
-        if ($existing !== null) {
-            if ($existing->request_hash !== $requestHash) {
+        $notes = null;
+        if ($rawNotes !== null) {
+            if (! is_string($rawNotes)) {
                 return MobileApiBoundary::buildErrorResponse(
-                    code: 'IDEMPOTENCY_CONFLICT',
-                    message: 'A different payload was previously submitted with this idempotency key.',
-                    status: 409
+                    code: 'VALIDATION_FAILED',
+                    message: 'Notes must be a string.',
+                    status: 422
                 );
             }
-
-            return response()->json([
-                'success' => true,
-                'id' => (string) $existing->public_id,
-                'shift_date' => (string) $existing->shift_date->format('Y-m-d'),
-                'currency' => (string) $existing->currency_code,
-                'currency_minor_units' => (int) $existing->currency_minor_units,
-                'expected_cash' => (string) BigDecimal::of((string) $existing->expected_cash)->toScale($existing->currency_minor_units, RoundingMode::HALF_UP),
-                'counted_cash' => (string) BigDecimal::of((string) $existing->counted_cash)->toScale($existing->currency_minor_units, RoundingMode::HALF_UP),
-                'variance' => (string) BigDecimal::of((string) $existing->variance)->toScale($existing->currency_minor_units, RoundingMode::HALF_UP),
-                'variance_status' => (string) $existing->variance_status,
-                'is_shift_closed' => true,
-                'closed_at' => $existing->closed_at->toIso8601ZuluString(),
-            ], 200, [
-                'Content-Type' => 'application/json',
-                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-            ]);
-        }
-
-        // Canonical ledger calculations scoped to the approved cash account
-        $openingFloat = BigDecimal::zero();
-        try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $openingBalances = $moneyBalanceQuery->forType($company, 'cash', $yesterday);
-            foreach ($openingBalances as $row) {
-                if ($row['public_id'] === $cashAccount->public_id && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
-                    $openingFloat = BigDecimal::of((string) $row['balance_currency']);
-                    break;
-                }
+            if (mb_strlen($rawNotes) > 1000) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Notes must not exceed 1000 characters.',
+                    status: 422
+                );
             }
-        } catch (Throwable) {
-            $openingFloat = BigDecimal::zero();
+            $notes = trim($rawNotes);
         }
 
-        [$cashSales, $cashCollections] = $this->calculateCashSalesAndCollections($company, $baseCurrency, $today, $cashAccount);
-        $disbursements = $this->calculateCashDisbursements($company, $baseCurrency, $today, $cashAccount);
-        $expenses = $this->calculateCashExpenses($company, $baseCurrency, $today, $cashAccount);
-
-        $expectedCash = $openingFloat->plus($cashSales)->plus($cashCollections)->minus($disbursements)->minus($expenses);
-        $variance = $counted->minus($expectedCash);
-
-        $varianceStatus = match (true) {
-            $variance->isZero() => 'EXACT',
-            $variance->isPositive() => 'OVERAGE',
-            default => 'SHORTAGE',
-        };
+        // Validate explicit cash account ID format (canonical ULID string only)
+        $explicitAccountId = null;
+        if ($request->has('cash_account_id')) {
+            $rawAccountId = $request->input('cash_account_id');
+            if ($rawAccountId !== null) {
+                if (! is_string($rawAccountId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', trim($rawAccountId)) !== 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'The specified cash account ID must be a canonical 26-character ULID string.',
+                        status: 422
+                    );
+                }
+                $explicitAccountId = trim($rawAccountId);
+            }
+        }
 
         $device = $request->attributes->get('mobile_device');
         $deviceId = $device instanceof MobileDevice ? (string) $device->device_id : (string) ($request->attributes->get('mobile_device_id') ?? '');
+        $rawBearer = (string) $request->bearerToken();
+        $tokenHash = hash('sha256', $rawBearer);
 
-        // Immutable audited count observation persistence: does NOT mutate ledger or auto-correct variance
-        $closure = DB::transaction(function () use (
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use (
             $company,
-            $cashAccount,
             $user,
             $deviceId,
-            $today,
+            $tokenHash,
+            $explicitAccountId,
+            $idempotencyKey,
+            $counted,
+            $notes,
             $baseCurrency,
             $cmu,
-            $openingFloat,
-            $expectedCash,
-            $counted,
-            $variance,
-            $varianceStatus,
-            $idempotencyKey,
-            $requestHash,
-            $notes
-        ): MobileShiftClosure {
-            return MobileShiftClosure::create([
+            $today,
+            $moneyBalanceQuery
+        ): JsonResponse {
+            // 1. Lock company (tenant root)
+            /** @var Company|null $lockedCompany */
+            $lockedCompany = Company::whereKey($company->id)->lockForUpdate()->first();
+            if ($lockedCompany === null || $lockedCompany->status !== 'active') {
+                return MobileApiBoundary::buildErrorResponse('FORBIDDEN', 'Target company not found or inactive.', 403);
+            }
+
+            // 2. Lock membership
+            $membership = DB::table('company_user')
+                ->where('company_id', $company->id)
+                ->where('user_id', $user->id)
+                ->where('status', 'active')
+                ->lockForUpdate()
+                ->first();
+            if ($membership === null) {
+                return MobileApiBoundary::buildErrorResponse('FORBIDDEN', 'User is not an active member of this company.', 403);
+            }
+
+            // 3. Lock principal (user)
+            /** @var User|null $lockedUser */
+            $lockedUser = User::whereKey($user->id)->lockForUpdate()->first();
+            if ($lockedUser === null) {
+                return MobileApiBoundary::buildErrorResponse('UNAUTHENTICATED', 'User not found.', 401);
+            }
+
+            // 4. Lock device
+            /** @var MobileDevice|null $lockedDevice */
+            $lockedDevice = MobileDevice::where('device_id', $deviceId)->lockForUpdate()->first();
+            if ($lockedDevice === null || $lockedDevice->isRevoked() || (int) $lockedDevice->user_id !== (int) $lockedUser->id) {
+                return MobileApiBoundary::buildErrorResponse('UNAUTHENTICATED', 'Device has been revoked or does not match user.', 401);
+            }
+
+            // 5. Lock bearer token and revalidate credentials
+            /** @var MobileAccessToken|null $lockedToken */
+            $lockedToken = MobileAccessToken::where('token_hash', $tokenHash)->lockForUpdate()->first();
+            if ($lockedToken === null || ! $lockedToken->isValid() || (int) $lockedToken->user_id !== (int) $lockedUser->id || $lockedToken->device_id !== $lockedDevice->device_id) {
+                return MobileApiBoundary::buildErrorResponse('UNAUTHENTICATED', 'The Bearer token has been revoked or expired.', 401);
+            }
+            if ($lockedToken->company_id !== null && (int) $lockedToken->company_id !== (int) $company->id) {
+                return MobileApiBoundary::buildErrorResponse('FORBIDDEN', 'Token is bound to a different company.', 403);
+            }
+            $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $lockedUser->password), 0, 16);
+            if (! hash_equals($expectedEpoch, (string) $lockedToken->password_epoch)) {
+                return MobileApiBoundary::buildErrorResponse('UNAUTHENTICATED', 'User credentials have changed since token establishment.', 401);
+            }
+
+            // Revalidate permissions under lock
+            setPermissionsTeamId($company->id);
+            $lockedUser->unsetRelation('roles')->unsetRelation('permissions');
+            if (! $lockedUser->hasPermissionTo('reports.financial.view') && ! $lockedUser->hasPermissionTo('money.cash.view')) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'FORBIDDEN',
+                    message: 'Action is unauthorized. Missing required reports permission.',
+                    status: 403
+                );
+            }
+
+            // 6. Lock approved/explicit cash account and verify ledger provenance
+            $lockedCashAccount = null;
+            if ($explicitAccountId !== null) {
+                $lockedCashAccount = MoneyAccount::where('company_id', $company->id)
+                    ->where('public_id', $explicitAccountId)
+                    ->where('account_type', MoneyAccount::TYPE_CASH)
+                    ->where('currency_code', $baseCurrency)
+                    ->where('is_active', true)
+                    ->with('ledgerAccount')
+                    ->lockForUpdate()
+                    ->first();
+            } else {
+                $setting = CompanyMobileSetting::where('company_id', $company->id)->lockForUpdate()->first();
+                if ($setting?->approved_cash_account_id) {
+                    $lockedCashAccount = MoneyAccount::where('id', $setting->approved_cash_account_id)
+                        ->where('company_id', $company->id)
+                        ->where('account_type', MoneyAccount::TYPE_CASH)
+                        ->where('currency_code', $baseCurrency)
+                        ->where('is_active', true)
+                        ->with('ledgerAccount')
+                        ->lockForUpdate()
+                        ->first();
+                }
+            }
+
+            $lockedLedger = $lockedCashAccount?->ledgerAccount;
+            if ($lockedCashAccount === null || $lockedLedger === null || (int) $lockedLedger->company_id !== (int) $company->id || ! $lockedLedger->active || empty(trim((string) $lockedLedger->code))) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'An approved company cash account with active ledger provenance is required for shift close.',
+                    status: 422
+                );
+            }
+
+            // Payload digest
+            $payloadForDigest = [
+                'counted_cash' => (string) $counted,
+                'cash_account_id' => (string) $lockedCashAccount->public_id,
+                'notes' => $notes,
+            ];
+            $requestHash = hash('sha256', json_encode($payloadForDigest, JSON_THROW_ON_ERROR));
+
+            // Check existing idempotency record under lock
+            $existing = MobileShiftClosure::withoutGlobalScopes()
+                ->where('company_id', $company->id)
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing !== null) {
+                // Scope check: must match original actor and device
+                if ((int) $existing->actor_id !== (int) $lockedUser->id || (string) ($existing->device_id ?? '') !== (string) $lockedDevice->device_id) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'FORBIDDEN',
+                        message: 'Idempotent replay is scoped to original actor and device.',
+                        status: 403
+                    );
+                }
+
+                if ($existing->request_hash !== $requestHash) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'IDEMPOTENCY_CONFLICT',
+                        message: 'A different payload was previously submitted with this idempotency key.',
+                        status: 409
+                    );
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'observation_recorded' => true,
+                    'is_shift_closed' => false,
+                    'id' => (string) $existing->public_id,
+                    'shift_closure_id' => (string) $existing->public_id,
+                    'shift_date' => (string) $existing->shift_date->format('Y-m-d'),
+                    'currency' => (string) $existing->currency_code,
+                    'currency_minor_units' => (int) $existing->currency_minor_units,
+                    'expected_cash' => (string) BigDecimal::of((string) $existing->expected_cash)->toScale($existing->currency_minor_units, RoundingMode::HALF_UP),
+                    'counted_cash' => (string) BigDecimal::of((string) $existing->counted_cash)->toScale($existing->currency_minor_units, RoundingMode::HALF_UP),
+                    'variance' => (string) BigDecimal::of((string) $existing->variance)->toScale($existing->currency_minor_units, RoundingMode::HALF_UP),
+                    'variance_status' => (string) $existing->variance_status,
+                    'closed_at' => $existing->closed_at->toIso8601ZuluString(),
+                ], 200, [
+                    'Content-Type' => 'application/json',
+                    'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                ]);
+            }
+
+            // Expected drawer cash must come from canonical CURRENT MoneyBalanceQuery for exact approved account
+            $expectedCash = null;
+            try {
+                app(CompanyContext::class)->setCompany($company, $lockedUser);
+                $currentBalances = $moneyBalanceQuery->forType($company, 'cash');
+                foreach ($currentBalances as $row) {
+                    if ($row['public_id'] === $lockedCashAccount->public_id && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
+                        $expectedCash = BigDecimal::of((string) $row['balance_currency']);
+                        break;
+                    }
+                }
+            } catch (Throwable) {
+                $expectedCash = null;
+            }
+
+            if ($expectedCash === null) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'LEDGER_UNAVAILABLE',
+                    message: 'Authoritative ledger cash balance is unavailable for this drawer.',
+                    status: 503
+                );
+            }
+
+            $variance = $counted->minus($expectedCash);
+            $varianceStatus = match (true) {
+                $variance->isZero() => 'EXACT',
+                $variance->isPositive() => 'OVERAGE',
+                default => 'SHORTAGE',
+            };
+
+            // Immutable audited count observation persistence
+            $closure = MobileShiftClosure::create([
                 'company_id' => $company->id,
-                'cash_account_id' => $cashAccount->id,
-                'actor_id' => $user->id,
-                'device_id' => $deviceId !== '' ? $deviceId : null,
+                'cash_account_id' => $lockedCashAccount->id,
+                'actor_id' => $lockedUser->id,
+                'device_id' => $lockedDevice->device_id,
                 'shift_date' => $today,
                 'currency_code' => $baseCurrency,
                 'currency_minor_units' => $cmu,
-                'opening_cash' => (string) $openingFloat,
+                'opening_cash' => null,
                 'expected_cash' => (string) $expectedCash,
                 'counted_cash' => (string) $counted,
                 'variance' => (string) $variance,
@@ -324,31 +458,53 @@ final class ReportController extends Controller
                 'request_hash' => $requestHash,
                 'notes' => $notes,
                 'actor_snapshot' => [
-                    'id' => (int) $user->id,
-                    'public_id' => (string) ($user->public_id ?? ''),
-                    'name' => (string) $user->name,
-                    'email' => (string) $user->email,
+                    'id' => (int) $lockedUser->id,
+                    'public_id' => (string) ($lockedUser->public_id ?? ''),
+                    'name' => (string) $lockedUser->name,
+                    'email' => (string) $lockedUser->email,
                 ],
                 'closed_at' => now(),
             ]);
-        });
 
-        return response()->json([
-            'success' => true,
-            'id' => (string) $closure->public_id,
-            'shift_date' => $today,
-            'currency' => $baseCurrency,
-            'currency_minor_units' => $cmu,
-            'expected_cash' => (string) $expectedCash->toScale($cmu, RoundingMode::HALF_UP),
-            'counted_cash' => (string) $counted->toScale($cmu, RoundingMode::HALF_UP),
-            'variance' => (string) $variance->toScale($cmu, RoundingMode::HALF_UP),
-            'variance_status' => $varianceStatus,
-            'is_shift_closed' => true,
-            'closed_at' => $closure->closed_at->toIso8601ZuluString(),
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
+            app(AuditService::class)->log(
+                companyId: (int) $company->id,
+                eventKey: 'mobile.shift_closure.recorded',
+                summary: 'Mobile cash count observation recorded',
+                actorUserId: (int) $lockedUser->id,
+                subject: $closure,
+                after: [
+                    'public_id' => $closure->public_id,
+                    'counted_cash' => (string) $counted,
+                    'expected_cash' => (string) $expectedCash,
+                    'variance' => (string) $variance,
+                    'variance_status' => $varianceStatus,
+                ],
+                meta: [
+                    'cash_account_id' => $lockedCashAccount->public_id,
+                    'device_id' => $lockedDevice->device_id,
+                    'idempotency_key' => $idempotencyKey,
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'observation_recorded' => true,
+                'is_shift_closed' => false,
+                'id' => (string) $closure->public_id,
+                'shift_closure_id' => (string) $closure->public_id,
+                'shift_date' => $today,
+                'currency' => $baseCurrency,
+                'currency_minor_units' => $cmu,
+                'expected_cash' => (string) $expectedCash->toScale($cmu, RoundingMode::HALF_UP),
+                'counted_cash' => (string) $counted->toScale($cmu, RoundingMode::HALF_UP),
+                'variance' => (string) $variance->toScale($cmu, RoundingMode::HALF_UP),
+                'variance_status' => $varianceStatus,
+                'closed_at' => $closure->closed_at->toIso8601ZuluString(),
+            ], 200, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+            ]);
+        });
     }
 
     /**
@@ -396,21 +552,23 @@ final class ReportController extends Controller
     {
         $setting = CompanyMobileSetting::where('company_id', $company->id)->first();
         if ($setting?->approved_cash_account_id) {
+            /** @var MoneyAccount|null $ca */
             $ca = MoneyAccount::where('id', $setting->approved_cash_account_id)
                 ->where('company_id', $company->id)
-                ->where('account_type', 'cash')
+                ->where('account_type', MoneyAccount::TYPE_CASH)
+                ->where('currency_code', $baseCurrency)
                 ->where('is_active', true)
+                ->with('ledgerAccount')
                 ->first();
             if ($ca !== null) {
-                return $ca;
+                $ledger = $ca->ledgerAccount;
+                if ($ledger !== null && (int) $ledger->company_id === (int) $company->id && $ledger->active && ! empty(trim((string) $ledger->code))) {
+                    return $ca;
+                }
             }
         }
 
-        return MoneyAccount::where('company_id', $company->id)
-            ->where('account_type', 'cash')
-            ->where('currency_code', $baseCurrency)
-            ->where('is_active', true)
-            ->first();
+        return null;
     }
 
     /**

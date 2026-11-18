@@ -22,7 +22,7 @@ return new class extends Migration
             $table->char('device_id', 36)->nullable();
             $table->date('shift_date');
             $table->char('currency_code', 3);
-            $table->unsignedTinyInteger('currency_minor_units')->default(2);
+            $table->unsignedTinyInteger('currency_minor_units');
             $table->decimal('opening_cash', 20, 6)->nullable();
             $table->decimal('expected_cash', 20, 6);
             $table->decimal('counted_cash', 20, 6);

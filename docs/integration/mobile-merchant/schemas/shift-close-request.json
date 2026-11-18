@@ -5,6 +5,7 @@
   "required": ["counted_cash"],
   "properties": {
     "counted_cash": { "type": "string", "pattern": "^\\d+(\\.\\d{1,4})?$" },
-    "notes": { "type": ["string", "null"] }
+    "notes": { "type": ["string", "null"], "maxLength": 1000 },
+    "cash_account_id": { "type": ["string", "null"], "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" }
   }
 }

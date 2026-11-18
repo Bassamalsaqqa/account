@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Support\Tenancy\BelongsToCompany;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
@@ -84,6 +85,14 @@ final class MobileShiftClosure extends Model
             if (empty($model->public_id)) {
                 $model->public_id = (string) Str::ulid();
             }
+        });
+
+        self::updating(function (): void {
+            throw new ImmutableRecordException('Mobile shift closure records are immutable and cannot be updated once persisted.');
+        });
+
+        self::deleting(function (): void {
+            throw new ImmutableRecordException('Mobile shift closure records are immutable and cannot be deleted.');
         });
     }
 

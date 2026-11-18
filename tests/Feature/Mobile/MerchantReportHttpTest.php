@@ -6,11 +6,13 @@ namespace Tests\Feature\Mobile;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Expenses\PostExpenseAction;
+use App\Actions\Money\PostMoneyTransferAction;
 use App\Actions\Purchasing\PostVendorPaymentAction;
 use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyMobileSetting;
@@ -120,6 +122,9 @@ final class MerchantReportHttpTest extends TestCase
         $this->token = $rawToken;
     }
 
+    /**
+     * @return array<string, string>
+     */
     private function authHeader(): array
     {
         return ['Authorization' => 'Bearer '.$this->token];
@@ -283,11 +288,15 @@ final class MerchantReportHttpTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('is_shift_closed', true)
+            ->assertJsonPath('observation_recorded', true)
+            ->assertJsonPath('is_shift_closed', false)
             ->assertJsonPath('counted_cash', '145.50')
             ->assertJsonStructure([
                 'success',
+                'observation_recorded',
+                'is_shift_closed',
                 'id',
+                'shift_closure_id',
                 'shift_date',
                 'currency',
                 'currency_minor_units',
@@ -295,7 +304,6 @@ final class MerchantReportHttpTest extends TestCase
                 'counted_cash',
                 'variance',
                 'variance_status',
-                'is_shift_closed',
                 'closed_at',
             ]);
 
@@ -317,6 +325,15 @@ final class MerchantReportHttpTest extends TestCase
         $this->assertSame('إغلاق وردية - نقص طفيف 4.50', $closure->notes);
         $this->assertSame($this->owner->id, $closure->actor_snapshot['id']);
         $this->assertSame('مالك المتجر', $closure->actor_snapshot['name']);
+
+        // Canonical audit event in same transaction
+        $this->assertDatabaseHas('audit_events', [
+            'company_id' => $this->company->id,
+            'actor_user_id' => $this->owner->id,
+            'event_key' => 'mobile.shift_closure.recorded',
+            'subject_type' => MobileShiftClosure::class,
+            'subject_id' => $closure->id,
+        ]);
     }
 
     public function test_shift_close_idempotent_replay_and_conflict_behavior(): void
@@ -333,7 +350,9 @@ final class MerchantReportHttpTest extends TestCase
             'Idempotency-Key' => $idempotencyKey,
         ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", $payload);
 
-        $firstResponse->assertOk();
+        $firstResponse->assertOk()
+            ->assertJsonPath('observation_recorded', true)
+            ->assertJsonPath('is_shift_closed', false);
         $firstId = $firstResponse->json('id');
         $firstClosedAt = $firstResponse->json('closed_at');
 
@@ -343,6 +362,8 @@ final class MerchantReportHttpTest extends TestCase
         ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", $payload);
 
         $replayResponse->assertOk()
+            ->assertJsonPath('observation_recorded', true)
+            ->assertJsonPath('is_shift_closed', false)
             ->assertJsonPath('id', $firstId)
             ->assertJsonPath('closed_at', $firstClosedAt);
 
@@ -382,6 +403,311 @@ final class MerchantReportHttpTest extends TestCase
             ])
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_shift_close_rejects_numeric_malformed_and_overprecision_counted_cash(): void
+    {
+        // Numeric float rejection (must be string, no silent precision loss)
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-num-1']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", ['counted_cash' => 145.50])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Numeric integer rejection
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-num-2']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", ['counted_cash' => 100])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Malformed non-numeric string
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-malformed']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", ['counted_cash' => 'not-a-number'])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Overprecision (ILS base currency minor units is 2; 3 decimals must fail)
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-overprecision']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", ['counted_cash' => '145.555'])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Key length > 128 characters
+        $longKey = str_repeat('k', 129);
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => $longKey]))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", ['counted_cash' => '100.00'])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Notes length > 1000 characters
+        $longNotes = str_repeat('n', 1001);
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-notes-len']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+                'counted_cash' => '100.00',
+                'notes' => $longNotes,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_shift_close_rejects_internal_account_id_and_foreign_currency_account(): void
+    {
+        // 1. Internal numeric ID string rejection (e.g. "1")
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-internal-id']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+                'counted_cash' => '100.00',
+                'cash_account_id' => '1',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 2. Foreign currency cash account rejection
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->actingAs($this->owner);
+
+        Currency::updateOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'symbol' => '$', 'minor_units' => 2, 'active' => true]);
+        CompanyCurrency::firstOrCreate(
+            ['company_id' => $this->company->id, 'currency_code' => 'USD'],
+            ['enabled' => true, 'is_base' => false]
+        );
+        $usdAccount = app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, [
+            'account_type' => MoneyAccount::TYPE_CASH,
+            'currency_code' => 'USD',
+            'name_ar' => 'صندوق الدولار',
+            'name_en' => 'USD Cash Box',
+        ]);
+
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-foreign-curr']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+                'counted_cash' => '100.00',
+                'cash_account_id' => $usdAccount->public_id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 3. Inactive cash account rejection
+        $usdAccount->update(['is_active' => false]);
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-inactive-acc']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+                'counted_cash' => '100.00',
+                'cash_account_id' => $usdAccount->public_id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_shift_close_fails_closed_when_no_cash_account_configured(): void
+    {
+        CompanyMobileSetting::where('company_id', $this->company->id)->update([
+            'approved_cash_account_id' => null,
+        ]);
+
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-no-config']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+                'counted_cash' => '100.00',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_shift_summary_returns_null_metrics_when_no_cash_account_configured(): void
+    {
+        CompanyMobileSetting::where('company_id', $this->company->id)->update([
+            'approved_cash_account_id' => null,
+        ]);
+
+        $response = $this->withHeaders($this->authHeader())
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-summary");
+
+        $response->assertOk()
+            ->assertJsonPath('opening_float', null)
+            ->assertJsonPath('expected_cash', null)
+            ->assertJsonPath('cash_sales', '0.00')
+            ->assertJsonPath('cash_collections', '0.00')
+            ->assertJsonPath('cash_disbursements', '0.00')
+            ->assertJsonPath('operating_expenses', '0.00');
+    }
+
+    public function test_shift_close_fails_closed_when_ledger_balance_unavailable(): void
+    {
+        // Disable the ledger account under the approved cash account to break ledger provenance
+        $this->cashAccount->ledgerAccount()->update(['active' => false]);
+
+        $this->withHeaders(array_merge($this->authHeader(), ['Idempotency-Key' => 'key-ledger-fail']))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+                'counted_cash' => '100.00',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Verify no closure row persisted
+        $this->assertDatabaseMissing('mobile_shift_closures', [
+            'company_id' => $this->company->id,
+            'idempotency_key' => 'key-ledger-fail',
+        ]);
+    }
+
+    public function test_shift_close_revalidates_credentials_and_device_against_revocation_race(): void
+    {
+        // 1. Revoked device race
+        $revokedDevice = MobileDevice::create([
+            'device_id' => (string) Str::uuid(),
+            'device_name' => 'Revoked Device',
+            'user_id' => $this->owner->id,
+            'revoked_at' => now(),
+        ]);
+        $revokedToken = 'st_m_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $revokedToken),
+            'device_id' => $revokedDevice->device_id,
+            'user_id' => $this->owner->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', $this->owner->password), 0, 16),
+            'expires_at' => now()->addHour(),
+        ]);
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$revokedToken,
+            'Idempotency-Key' => 'key-revoked-dev',
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '100.00',
+        ])->assertStatus(401);
+
+        // 2. Changed password race (stale token epoch)
+        $staleToken = 'st_m_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $staleToken),
+            'device_id' => $this->device->device_id,
+            'user_id' => $this->owner->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-stale-000000',
+            'expires_at' => now()->addHour(),
+        ]);
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$staleToken,
+            'Idempotency-Key' => 'key-stale-pass',
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '100.00',
+        ])->assertStatus(401);
+    }
+
+    public function test_shift_close_idempotent_replay_scoped_to_original_actor_and_device(): void
+    {
+        $idempotencyKey = 'key-cross-actor-'.Str::random(12);
+
+        // First successful close from Owner / Device 1
+        $this->withHeaders(array_merge($this->authHeader(), [
+            'Idempotency-Key' => $idempotencyKey,
+        ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '100.00',
+        ])->assertOk();
+
+        // Create second user with financial reports permission
+        $user2 = User::factory()->create(['name' => 'المشرف الثاني']);
+        $this->company->users()->attach($user2->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($this->company->id);
+        $role = Role::findOrCreate('Auditor', 'web');
+        $role->syncPermissions(['reports.financial.view', 'money.cash.view']);
+        $user2->assignRole($role);
+
+        $device2 = MobileDevice::create([
+            'device_id' => (string) Str::uuid(),
+            'device_name' => 'Device 2',
+            'user_id' => $user2->id,
+        ]);
+        $token2 = 'st_m_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $token2),
+            'device_id' => $device2->device_id,
+            'user_id' => $user2->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', $user2->password), 0, 16),
+            'expires_at' => now()->addHour(),
+        ]);
+
+        // Second user attempts to replay the same key -> 403 Forbidden
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$token2,
+            'Idempotency-Key' => $idempotencyKey,
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '100.00',
+        ])->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+    }
+
+    public function test_shift_closure_records_are_immutable_and_reject_update_or_delete(): void
+    {
+        $idempotencyKey = 'key-immutable-'.Str::random(12);
+
+        $response = $this->withHeaders(array_merge($this->authHeader(), [
+            'Idempotency-Key' => $idempotencyKey,
+        ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '150.00',
+        ]);
+        $response->assertOk();
+
+        $closure = MobileShiftClosure::withoutGlobalScopes()
+            ->where('company_id', $this->company->id)
+            ->where('public_id', $response->json('id'))
+            ->firstOrFail();
+
+        // Direct update rejection
+        $updateRejected = false;
+        try {
+            $closure->update(['notes' => 'tampered notes']);
+        } catch (ImmutableRecordException) {
+            $updateRejected = true;
+        }
+        $this->assertTrue($updateRejected, 'Expected ImmutableRecordException on update.');
+
+        // Direct delete rejection
+        $deleteRejected = false;
+        try {
+            $closure->delete();
+        } catch (ImmutableRecordException) {
+            $deleteRejected = true;
+        }
+        $this->assertTrue($deleteRejected, 'Expected ImmutableRecordException on delete.');
+    }
+
+    public function test_shift_reports_include_canonical_cash_transfers_in_expected_balance(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->actingAs($this->owner);
+
+        // Execute canonical transfer from bank to cash account: 250.00 ILS
+        app(PostMoneyTransferAction::class)->execute($this->company, $this->owner, [
+            'from_money_account_id' => $this->bankAccount->id,
+            'to_money_account_id' => $this->cashAccount->id,
+            'transfer_date' => now($this->company->timezone)->toDateString(),
+            'from_amount' => '250.000000',
+            'to_amount' => '250.000000',
+            'from_exchange_rate' => '1.0000000000',
+            'to_exchange_rate' => '1.0000000000',
+            'idempotency_key' => 'transfer-test-'.Str::random(12),
+            'notes' => 'Transfer from bank to cashier drawer',
+        ]);
+
+        // 1. Shift summary expected_cash reflects the cash transfer
+        $summaryResp = $this->withHeaders($this->authHeader())
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-summary");
+        $summaryResp->assertOk()
+            ->assertJsonPath('expected_cash', '250.00');
+
+        // 2. Shift close expected_cash reflects the cash transfer
+        $closeResp = $this->withHeaders(array_merge($this->authHeader(), [
+            'Idempotency-Key' => 'key-transfer-close-'.Str::random(12),
+        ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '250.00',
+        ]);
+
+        $closeResp->assertOk()
+            ->assertJsonPath('observation_recorded', true)
+            ->assertJsonPath('is_shift_closed', false)
+            ->assertJsonPath('expected_cash', '250.00')
+            ->assertJsonPath('counted_cash', '250.00')
+            ->assertJsonPath('variance', '0.00')
+            ->assertJsonPath('variance_status', 'EXACT');
     }
 
     public function test_reports_permission_denial_for_unauthorized_actor(): void
