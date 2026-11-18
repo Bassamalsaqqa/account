@@ -22,6 +22,8 @@ class DocumentSequence extends Model
 
     public const string TYPE_PURCHASE = 'purchase';
 
+    public const string TYPE_GOODS_RECEIPT = 'goods_receipt';
+
     public const string TYPE_PURCHASE_RETURN = 'purchase_return';
 
     public const string TYPE_VENDOR_PAYMENT = 'vendor_payment';

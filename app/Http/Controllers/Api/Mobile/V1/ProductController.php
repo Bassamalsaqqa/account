@@ -150,7 +150,7 @@ final class ProductController extends Controller
                     'baseUnit' => fn ($q) => $q->where('company_id', $company->id)->where('active', true),
                     'primaryBarcode' => fn ($q) => $q->where('company_id', $company->id),
                     'barcodes' => fn ($q) => $q->where('company_id', $company->id),
-                    'balances' => fn ($q) => $q->where('company_id', $company->id),
+                    'balances' => fn ($q) => $q->where('company_id', $company->id)->whereHas('warehouse', fn ($wq) => $wq->where('is_transit', false)->where('active', true)),
                     'productUnits' => fn ($q) => $q->where('company_id', $company->id)
                         ->where('active', true)
                         ->with(['unit' => fn ($uq) => $uq->where('company_id', $company->id)->where('active', true)]),

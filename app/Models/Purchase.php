@@ -75,6 +75,7 @@ class Purchase extends Model
         'exchange_rate', 'document_locale', 'subtotal_currency', 'discount_total_currency',
         'tax_total_currency', 'grand_total_currency', 'subtotal_base', 'discount_total_base',
         'tax_total_base', 'grand_total_base', 'notes', 'vendor_snapshot', 'company_snapshot',
+        'is_staged', 'idempotency_key', 'request_hash', 'response_snapshot',
         'posting_batch_id', 'posted_at', 'posted_by', 'void_business_date', 'voided_at', 'voided_by', 'void_reason',
         'void_posting_batch_id', 'created_by', 'updated_by',
     ];
@@ -89,6 +90,8 @@ class Purchase extends Model
             'vendor_snapshot' => 'array', 'company_snapshot' => 'array',
             'posted_at' => 'datetime', 'void_business_date' => 'date', 'voided_at' => 'datetime',
             'exchange_rate' => 'string',
+            'is_staged' => 'boolean',
+            'response_snapshot' => 'array',
         ];
     }
 
@@ -337,6 +340,17 @@ class Purchase extends Model
     public function landedCostAllocations(): HasMany
     {
         return $this->hasMany(LandedCostAllocation::class)->orderBy('id');
+    }
+
+    /** @return HasMany<GoodsReceiptNote, $this> */
+    public function goodsReceiptNotes(): HasMany
+    {
+        return $this->hasMany(GoodsReceiptNote::class)->orderBy('id');
+    }
+
+    public function isStaged(): bool
+    {
+        return (bool) $this->is_staged;
     }
 
     public function payablePosition(): PurchasePayablePosition

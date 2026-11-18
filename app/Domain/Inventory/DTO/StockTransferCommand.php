@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Inventory\DTO;
 
+use App\Services\Purchasing\GoodsReceiptCapability;
 use InvalidArgumentException;
 
 final readonly class StockTransferCommand
@@ -22,6 +23,7 @@ final readonly class StockTransferCommand
         public string $sourceType = 'warehouse_transfer',
         public int $sourceId = 1,
         public ?string $reason = null,
+        public ?GoodsReceiptCapability $capability = null,
     ) {
         if ($this->companyId <= 0) {
             throw new InvalidArgumentException("Company ID must be a positive integer. Given [{$this->companyId}].");

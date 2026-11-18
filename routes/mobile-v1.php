@@ -101,7 +101,7 @@ Route::prefix('companies/{companyId}')
         Route::get('/purchases', [PurchaseController::class, 'index'])->middleware('mobile.auth:purchasing.purchase.view')->name('mobile.v1.purchases.index');
         Route::get('/purchases/{purchaseId}', [PurchaseController::class, 'show'])->middleware('mobile.auth:purchasing.purchase.view')->name('mobile.v1.purchases.show');
         Route::post('/purchases', [PurchaseController::class, 'store'])->middleware('mobile.auth:purchasing.purchase.post')->name('mobile.v1.purchases.store');
-        Route::post('/purchases/{purchaseId}/grn', [PurchaseController::class, 'receiveGoods'])->middleware('mobile.auth:inventory.stock.adjust')->name('mobile.v1.purchases.grn');
+        Route::post('/purchases/{purchaseId}/grn', [PurchaseController::class, 'receiveGoods'])->middleware('mobile.auth:inventory.stock.transfer')->name('mobile.v1.purchases.grn');
         Route::post('/purchases/returns/preview', [PurchaseController::class, 'previewReturn'])->middleware('mobile.auth:purchasing.purchase.view')->name('mobile.v1.purchases.returns.preview');
         Route::post('/purchases/returns', [PurchaseController::class, 'storeReturn'])->middleware('mobile.auth:purchasing.return.post')->name('mobile.v1.purchases.returns.store');
 

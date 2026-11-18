@@ -16,6 +16,7 @@ use App\Services\Inventory\StockEventScope;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\MoneyEventScope;
 use App\Services\Phase7\Phase7EventScope;
+use App\Services\Purchasing\GoodsReceiptScope;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
 use App\Services\Purchasing\PurchaseReturnVoidScope;
@@ -48,6 +49,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(AiProviderDeadline::class, fn () => new AiProviderDeadline);
         $this->app->singleton(CompanyContext::class, fn () => new CompanyContext);
         $this->app->singleton(AuditService::class, fn () => new AuditService);
+        $this->app->scoped(GoodsReceiptScope::class, fn () => new GoodsReceiptScope);
         $this->app->scoped(PurchasePostingScope::class, fn () => new PurchasePostingScope);
         $this->app->scoped(PurchaseReturnPostingScope::class, fn () => new PurchaseReturnPostingScope);
         $this->app->scoped(PurchaseVoidScope::class, fn () => new PurchaseVoidScope);

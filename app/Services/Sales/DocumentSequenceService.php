@@ -18,6 +18,7 @@ class DocumentSequenceService
         DocumentSequence::TYPE_SALES_RETURN => 'RET',
         DocumentSequence::TYPE_CUSTOMER_PAYMENT => 'RCT',
         DocumentSequence::TYPE_PURCHASE => 'PUR',
+        DocumentSequence::TYPE_GOODS_RECEIPT => 'GRN',
         DocumentSequence::TYPE_PURCHASE_RETURN => 'PRT',
         DocumentSequence::TYPE_VENDOR_PAYMENT => 'VPM',
         DocumentSequence::TYPE_MONEY_TRANSFER => 'TRF',

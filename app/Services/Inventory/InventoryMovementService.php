@@ -28,6 +28,7 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Services\Purchasing\GoodsReceiptScope;
 use App\Services\Purchasing\HistoricalPurchaseReceiptValue;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReceiptCapability;
@@ -1130,6 +1131,15 @@ class InventoryMovementService
             /** @var Warehouse $destWarehouse */
             $destWarehouse = $lockedWarehouses->get($command->destinationWarehouseId);
 
+            if ($sourceWarehouse->is_transit || $destWarehouse->is_transit) {
+                app(GoodsReceiptScope::class)->assertTransferAuthorized(
+                    (int) $company->id,
+                    $sourceWarehouse,
+                    $destWarehouse,
+                    $command->capability
+                );
+            }
+
             // 8. Lock Warehouse Balances in sorted (warehouse_id, product_id) order
             $existingBalances = InventoryBalance::where('company_id', $company->id)
                 ->whereIn('product_id', $productIds)
@@ -1371,6 +1381,10 @@ class InventoryMovementService
 
                 $createdMovements[] = $movementOut;
                 $createdMovements[] = $movementIn;
+            }
+
+            if ($command->capability !== null) {
+                app(GoodsReceiptScope::class)->recordTransferCompleted($command->capability);
             }
 
             return $createdMovements;
