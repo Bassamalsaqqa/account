@@ -146,7 +146,7 @@ final class MobileRouteCacheTest extends TestCase
         );
 
         $this->assertFalse($valRes['routes_are_cached']);
-        $this->assertSame(48, $valRes['v1_count']);
+        $this->assertSame(49, $valRes['v1_count']);
         $this->assertSame(0, $valRes['v2_count']);
         $this->assertSame([], $valRes['v2_routes']);
         $this->assertSame(422, $valRes['status']);
@@ -188,7 +188,7 @@ final class MobileRouteCacheTest extends TestCase
         );
 
         $this->assertTrue($valRes['routes_are_cached']);
-        $this->assertSame(48, $valRes['v1_count']);
+        $this->assertSame(49, $valRes['v1_count']);
         $this->assertSame(0, $valRes['v2_count']);
         $this->assertSame([], $valRes['v2_routes']);
         $this->assertSame(422, $valRes['status']);

@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Mobile\V1\HomeController;
 use App\Http\Controllers\Api\Mobile\V1\InventoryController;
 use App\Http\Controllers\Api\Mobile\V1\ProductController;
 use App\Http\Controllers\Api\Mobile\V1\PurchaseController;
+use App\Http\Controllers\Api\Mobile\V1\ReceiptStatusController;
 use App\Http\Controllers\Api\Mobile\V1\ReportController;
 use App\Http\Controllers\Api\Mobile\V1\SalesInvoiceController;
 use App\Http\Controllers\Api\Mobile\V1\SalesReturnController;
@@ -117,4 +118,7 @@ Route::prefix('companies/{companyId}')
 
         // Settings
         Route::get('/settings/business', [BusinessSettingsController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.settings.business');
+
+        // Receipts & Command Status
+        Route::get('/receipts/{idempotencyKey}/status', [ReceiptStatusController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.receipts.status');
     });
