@@ -19,6 +19,13 @@ use InvalidArgumentException;
 
 final class NativeCommandReceiptManager
 {
+    /**
+     * Optional testing callback invoked after domain execution and BEFORE receipt insertion.
+     *
+     * @var (Closure(Company, User, string, string, array{snapshot: array<string, mixed>, entity_type?: string|null, entity_id?: int|null, entity_public_id?: string|null}): void)|null
+     */
+    public static ?Closure $onBeforeReceiptInsert = null;
+
     public function __construct(
         private readonly TenantWriteAccess $tenantWriteAccess,
         private readonly NativeAdmissionGuard $admissionGuard,
@@ -99,6 +106,11 @@ final class NativeCommandReceiptManager
 
             // 3. Fresh execution: invoke domain executor closure under active lock and transaction
             $executionResult = $executor($lockedCompany, $lockedActor, $lockedDevice, $lockedToken);
+
+            // Fault injection hook: test transaction rollback after domain effects before receipt insert
+            if (self::$onBeforeReceiptInsert !== null) {
+                (self::$onBeforeReceiptInsert)($lockedCompany, $lockedActor, $commandType, $trimmedKey, $executionResult);
+            }
 
             // 4. Persist durable receipt
             $receipt = NativeCommandReceipt::create([

@@ -13,6 +13,7 @@ use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeOnlineCashFinancialExecutionAdapter;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\DisposableMariaDbSchema;
@@ -33,6 +34,91 @@ if (! preg_match('/^worker-[ab]$/D', $slot) || ! str_starts_with(basename($direc
 }
 
 $input = json_decode(file_get_contents($directory.'/'.$slot.'.json'), true, 512, JSON_THROW_ON_ERROR);
+
+$mode = (string) ($input['mode'] ?? 'v2_receipt');
+
+if ($mode === 'http') {
+    config([
+        'mobile.enabled' => true,
+        'mobile.merchant_api_enabled' => true,
+    ]);
+
+    $holdTable = $input['hold_lock_table'] ?? null;
+    $waitForFile = $input['wait_for_file'] ?? null;
+    $lockSignaled = false;
+    $barrier = new StrictBarrier;
+
+    if ($holdTable !== null) {
+        DB::listen(function ($query) use ($holdTable, $directory, $slot, $waitForFile, &$lockSignaled, $barrier) {
+            $sql = strtolower($query->sql);
+            if (! $lockSignaled && $barrier->observe($sql, $holdTable)) {
+                $lockSignaled = true;
+                file_put_contents($directory.'/'.$slot.'.locked', 'locked');
+                if ($waitForFile !== null) {
+                    $timeout = microtime(true) + 15;
+                    while (! is_file($directory.'/'.$waitForFile)) {
+                        if (microtime(true) > $timeout) {
+                            throw new RuntimeException('Held-lock release ACK deadline expired.');
+                        }
+                        usleep(1000);
+                    }
+                } else {
+                    throw new RuntimeException('Explicit held-lock release ACK is required; timed holds are unqualified.');
+                }
+            }
+        });
+    }
+
+    // Signal connection ID and readiness at the barrier
+    file_put_contents($directory.'/'.$slot.'.connection', (string) DB::selectOne('SELECT CONNECTION_ID() AS id')->id);
+    file_put_contents($directory.'/'.$slot.'.ready', 'ready');
+
+    // Wait for go signal
+    $deadline = microtime(true) + 30;
+    while (! is_file($directory.'/go') && ! is_file($directory.'/go-'.$slot)) {
+        if (microtime(true) > $deadline) {
+            throw new RuntimeException('Mobile receipt race barrier timeout waiting for go.');
+        }
+        usleep(1000);
+    }
+
+    // Execute through normal HTTP Kernel
+    $http = $input['http'] ?? [];
+    $method = (string) ($http['method'] ?? 'POST');
+    $uri = (string) ($http['uri'] ?? '/');
+    $headers = (array) ($http['headers'] ?? []);
+    $body = $http['body'] ?? [];
+
+    $server = ['REMOTE_ADDR' => '127.0.0.1'];
+    foreach ($headers as $k => $v) {
+        $upper = strtoupper(str_replace('-', '_', (string) $k));
+        if (in_array($upper, ['CONTENT_TYPE', 'CONTENT_LENGTH'], true)) {
+            $server[$upper] = (string) $v;
+        } else {
+            $server['HTTP_'.$upper] = (string) $v;
+        }
+    }
+
+    $rawContent = is_array($body) ? json_encode($body, JSON_THROW_ON_ERROR) : (string) $body;
+    $kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+    $request = Request::create($uri, $method, [], [], [], $server, $rawContent);
+    $response = $kernel->handle($request);
+
+    $content = (string) $response->getContent();
+    $decodedBody = json_decode($content, true);
+
+    echo json_encode([
+        'status' => $response->getStatusCode(),
+        'headers' => [
+            'Idempotency-Key' => $response->headers->get('Idempotency-Key'),
+            'X-Idempotent-Replay' => $response->headers->get('X-Idempotent-Replay'),
+        ],
+        'body' => $decodedBody ?? $content,
+    ], JSON_THROW_ON_ERROR);
+
+    $kernel->terminate($request, $response);
+    exit(0);
+}
 
 $companyId = (int) $input['company_id'];
 $clientEventId = (string) $input['client_event_id'];

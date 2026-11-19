@@ -399,8 +399,8 @@ final class InventoryController extends Controller
                         'id' => (string) $movement->public_id,
                         'product_id' => (string) $product->public_id,
                         'movement_type' => (string) $movement->movement_type,
-                        'delta' => (string) $deltaBc,
-                        'resulting_stock' => (string) BigDecimal::of((string) ($movement->quantity_after_product_company ?? $movement->quantity_after_base ?? '0'))->toScale(4, RoundingMode::HALF_UP),
+                        'delta' => (string) $deltaBc->toScale(6, RoundingMode::HALF_UP),
+                        'resulting_stock' => (string) BigDecimal::of((string) ($movement->quantity_after_product_company ?? $movement->quantity_after_base ?? '0'))->toScale(6, RoundingMode::HALF_UP),
                         'posted_at' => $movement->movement_date->format('Y-m-d\TH:i:s\Z'),
                         'idempotency_key' => $idempotencyKey,
                     ];

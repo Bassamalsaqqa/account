@@ -24,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $notes
  * @property string $idempotency_key
  * @property string $request_hash
- * @property array<string, mixed> $response_snapshot
+ * @property array<string, mixed>|null $response_snapshot
  * @property int $created_by
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -73,6 +73,12 @@ class GoodsReceiptNote extends Model
     public static function boot(): void
     {
         parent::boot();
+
+        static::saving(function (GoodsReceiptNote $grn): void {
+            if ($grn->status === self::STATUS_DRAFT && $grn->response_snapshot !== null) {
+                throw new ImmutableRecordException('Draft Goods Receipt Notes cannot carry a response snapshot.');
+            }
+        });
 
         static::updating(function (GoodsReceiptNote $grn): void {
             if ($grn->getOriginal('status') === self::STATUS_POSTED) {

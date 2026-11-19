@@ -16,6 +16,7 @@ use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Services\Purchasing\StagedPurchaseFreezeCapability;
 use App\Support\Mobile\NativeAdmissionGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -28,6 +29,13 @@ use InvalidArgumentException;
  */
 final class RecordStagedPurchaseBillAction
 {
+    private ?StagedPurchaseFreezeCapability $activeFreezeCapability = null;
+
+    public function ownsFreezeCapability(StagedPurchaseFreezeCapability $capability): bool
+    {
+        return $this->activeFreezeCapability === $capability;
+    }
+
     /**
      * @param  list<array<string, mixed>>  $linesInput
      * @return array{is_replay: bool, snapshot: array<string, mixed>}
@@ -288,7 +296,18 @@ final class RecordStagedPurchaseBillAction
                 'posted_at' => $postedPurchase->posted_at ? $postedPurchase->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
             ];
 
-            $postedPurchase->freezeResponseSnapshot($snapshot);
+            $capability = new StagedPurchaseFreezeCapability(
+                $this,
+                (int) $lockedCompany->id,
+                (int) $lockedActor->id,
+                (int) $postedPurchase->id
+            );
+            $this->activeFreezeCapability = $capability;
+            try {
+                $postedPurchase->freezeResponseSnapshot($snapshot, $capability);
+            } finally {
+                $this->activeFreezeCapability = null;
+            }
 
             return [
                 'is_replay' => false,

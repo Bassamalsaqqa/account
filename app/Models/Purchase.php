@@ -13,6 +13,7 @@ use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Purchasing\PurchaseVoidCapability;
 use App\Services\Purchasing\PurchaseVoidScope;
+use App\Services\Purchasing\StagedPurchaseFreezeCapability;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
@@ -205,11 +206,23 @@ class Purchase extends Model
     /**
      * @param  array<string, mixed>  $snapshot
      */
-    public function freezeResponseSnapshot(array $snapshot): void
+    public function freezeResponseSnapshot(array $snapshot, ?StagedPurchaseFreezeCapability $capability = null): void
     {
+        if ($capability === null) {
+            throw new ImmutableRecordException('Response snapshot can only be frozen by an active canonical staged purchase bill action.');
+        }
+
+        $capability->assertValidFor($this);
+
         if (! $this->isPosted() && ! $this->isDraft()) {
             throw new ImmutableRecordException('Response snapshot can only be frozen on valid purchase records.');
         }
+
+        if ($this->response_snapshot !== null || $this->getOriginal('response_snapshot') !== null) {
+            throw new ImmutableRecordException('Purchase response snapshot is immutable and already frozen.');
+        }
+
+        $capability->consume();
         $this->freezingSnapshot = true;
         try {
             $this->response_snapshot = $snapshot;
@@ -229,7 +242,13 @@ class Purchase extends Model
                     if (array_diff(array_keys($purchase->getDirty()), ['response_snapshot', 'updated_at']) !== []) {
                         throw new ImmutableRecordException('Only response_snapshot may be updated during snapshot freeze.');
                     }
+                    if ($purchase->getOriginal('response_snapshot') !== null) {
+                        throw new ImmutableRecordException('Purchase response snapshot is immutable and cannot be overwritten.');
+                    }
                 } else {
+                    if ($purchase->isDirty('response_snapshot')) {
+                        throw new ImmutableRecordException('Purchase response snapshot cannot be modified outside canonical freeze.');
+                    }
                     $purchase->assertMutableDraft();
                 }
                 if ($purchase->isDirty(['company_id', 'public_id', 'created_by'])) {

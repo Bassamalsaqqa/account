@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Mobile\V1;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Purchasing\RecordStagedPurchaseBillAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
@@ -12,13 +13,16 @@ use App\Models\Company;
 use App\Models\CompanyMobileSetting;
 use App\Models\Currency;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
 use App\Models\ExpenseCategory;
+use App\Models\GoodsReceiptNote;
 use App\Models\LedgerAccount;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MoneyAccount;
 use App\Models\NativeCommandReceipt;
 use App\Models\Product;
+use App\Models\Purchase;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
@@ -29,9 +33,11 @@ use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Inventory\ProductCatalogService;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
+use App\Services\Purchasing\StagedPurchaseFreezeCapability;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Services\Sales\CustomerCatalogService;
 use App\Services\Sales\SalesReconciliationService;
+use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -318,7 +324,7 @@ final class NativeEconomicWritesQualificationTest extends TestCase
                 }
                 $this->fail('A completed receipt must remain immutable.');
             } catch (ImmutableRecordException) {
-                $this->assertTrue(true);
+                $this->addToAssertionCount(1);
             }
         }
     }
@@ -500,7 +506,7 @@ final class NativeEconomicWritesQualificationTest extends TestCase
         $this->assertNotEmpty($jsonInc['id']);
         $this->assertSame('adjustment_increase', $jsonInc['movement_type']);
         $this->assertSame('10.000000', $jsonInc['delta']);
-        $this->assertSame('10.0000', $jsonInc['resulting_stock']);
+        $this->assertSame('10.000000', $jsonInc['resulting_stock']);
 
         // 2. Replay of increase: HTTP 200 OK
         $resIncReplay = $this->withHeaders($this->authHeaders($keyInc))->postJson($url, $payloadInc);
@@ -526,7 +532,43 @@ final class NativeEconomicWritesQualificationTest extends TestCase
         $jsonDec = $resDec->json();
         $this->assertSame('adjustment_decrease', $jsonDec['movement_type']);
         $this->assertSame('-3.000000', $jsonDec['delta']);
-        $this->assertSame('7.0000', $jsonDec['resulting_stock']);
+        $this->assertSame('7.000000', $jsonDec['resulting_stock']);
+
+        // 4b. Fractional adjustment exact 6 decimals (0.000001) without truncation
+        $this->rebindContext();
+        $microUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'MICRO',
+            'name_ar' => 'وحدة ميكرو',
+            'name_en' => 'Micro Unit',
+            'allows_fraction' => true,
+            'decimal_places' => 6,
+            'active' => true,
+        ]);
+        $fracProduct = app(ProductCatalogService::class)->createProduct($this->company, [
+            'name_ar' => 'سلعة قابلة للتجزئة الكسرية',
+            'name_en' => 'Fractional Stock Item',
+            'sku' => 'SKU-FRAC-001',
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'track_expiry' => false,
+            'default_sale_price_base' => '50.000000',
+            'default_purchase_cost_base' => '30.000000',
+            'base_unit_id' => $microUnit->id,
+        ], $this->user->id);
+
+        $keyFrac = 'inv-frac-'.(string) Str::uuid();
+        $payloadFrac = [
+            'product_id' => $fracProduct->public_id,
+            'delta' => '0.000001',
+            'reason' => 'تعديل كسري دقيق بمقدار ميكرو واحد',
+            'unit_cost' => '10.000000',
+        ];
+        $resFrac = $this->withHeaders($this->authHeaders($keyFrac))->postJson($url, $payloadFrac);
+        $resFrac->assertStatus(201);
+        $jsonFrac = $resFrac->json();
+        $this->assertSame('0.000001', $jsonFrac['delta']);
+        $this->assertSame('0.000001', $jsonFrac['resulting_stock']);
 
         // 5. Zero delta rejected: 422
         $keyZero = 'inv-zero-'.(string) Str::uuid();
@@ -774,5 +816,219 @@ final class NativeEconomicWritesQualificationTest extends TestCase
         $phase7Report = app(Phase7ReconciliationService::class)->reconcile($this->company);
         $this->assertTrue($phase7Report->isHealthy, 'Phase 7 reconciliation reported unhealthy: '.json_encode($phase7Report->violations));
         $this->assertEmpty($phase7Report->violations);
+    }
+
+    public function test_purchase_freeze_snapshot_rejects_direct_outside_call_or_fake_capability(): void
+    {
+        $this->rebindContext();
+
+        // 1. Create a staged purchase bill canonically
+        $key = 'freeze-bill-'.(string) Str::uuid();
+        $action = app(RecordStagedPurchaseBillAction::class);
+        $res = $action->execute(
+            company: $this->company,
+            actor: $this->user,
+            supplierPublicId: $this->vendor->public_id,
+            billNumber: 'BILL-FREEZE-1',
+            linesInput: [
+                ['product_id' => $this->product->public_id, 'quantity' => '10', 'unit_cost_ils' => '15.00'],
+            ],
+            idempotencyKey: $key,
+            mobileToken: MobileAccessToken::where('token_hash', hash('sha256', $this->rawToken))->first(),
+            mobileDevice: $this->device
+        );
+
+        $purchase = Purchase::where('company_id', $this->company->id)->where('public_id', $res['snapshot']['id'])->firstOrFail();
+        $this->assertNotNull($purchase->response_snapshot);
+
+        // 2. Direct outside call with no capability must throw ImmutableRecordException
+        try {
+            $purchase->freezeResponseSnapshot(['hacked' => true]);
+            $this->fail('Expected ImmutableRecordException when calling freezeResponseSnapshot directly from outside.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Response snapshot can only be frozen by an active canonical staged purchase bill action', $e->getMessage());
+        }
+
+        // 3. Fake capability or fake owner must throw ImmutableRecordException
+        $caught = false;
+        try {
+            $fakeAction = new RecordStagedPurchaseBillAction;
+            // Fake capability created outside active action invocation
+            $fakeCapability = new StagedPurchaseFreezeCapability($fakeAction, (int) $this->company->id, (int) $this->user->id, (int) $purchase->id);
+            $purchase->freezeResponseSnapshot(['hacked' => true], $fakeCapability);
+        } catch (ImmutableRecordException $e) {
+            $caught = true;
+            $this->assertTrue(
+                str_contains($e->getMessage(), 'active transaction') ||
+                str_contains($e->getMessage(), 'Only the executing canonical staged purchase bill action')
+            );
+        }
+        $this->assertTrue($caught, 'Expected ImmutableRecordException when freezing with fake capability');
+    }
+
+    public function test_purchase_freeze_snapshot_rejects_repeated_freeze_on_already_frozen_record(): void
+    {
+        $this->rebindContext();
+
+        $key = 'freeze-bill-rep-'.(string) Str::uuid();
+        $action = app(RecordStagedPurchaseBillAction::class);
+        $res = $action->execute(
+            company: $this->company,
+            actor: $this->user,
+            supplierPublicId: $this->vendor->public_id,
+            billNumber: 'BILL-FREEZE-REP',
+            linesInput: [
+                ['product_id' => $this->product->public_id, 'quantity' => '5', 'unit_cost_ils' => '20.00'],
+            ],
+            idempotencyKey: $key,
+            mobileToken: MobileAccessToken::where('token_hash', hash('sha256', $this->rawToken))->first(),
+            mobileDevice: $this->device
+        );
+
+        $purchase = Purchase::where('company_id', $this->company->id)->where('public_id', $res['snapshot']['id'])->firstOrFail();
+        $this->assertNotNull($purchase->response_snapshot);
+
+        // Direct call or repeated call must throw
+        $this->expectException(ImmutableRecordException::class);
+        $purchase->freezeResponseSnapshot(['tampered' => true]);
+    }
+
+    public function test_purchase_rejects_arbitrary_dirty_response_snapshot_mutation(): void
+    {
+        $this->rebindContext();
+
+        $key = 'freeze-bill-mut-'.(string) Str::uuid();
+        $action = app(RecordStagedPurchaseBillAction::class);
+        $res = $action->execute(
+            company: $this->company,
+            actor: $this->user,
+            supplierPublicId: $this->vendor->public_id,
+            billNumber: 'BILL-FREEZE-MUT',
+            linesInput: [
+                ['product_id' => $this->product->public_id, 'quantity' => '2', 'unit_cost_ils' => '50.00'],
+            ],
+            idempotencyKey: $key,
+            mobileToken: MobileAccessToken::where('token_hash', hash('sha256', $this->rawToken))->first(),
+            mobileDevice: $this->device
+        );
+
+        $purchase = Purchase::where('company_id', $this->company->id)->where('public_id', $res['snapshot']['id'])->firstOrFail();
+
+        // Direct attribute modification followed by save must throw
+        $purchase->response_snapshot = ['overwritten' => true];
+        $this->expectException(ImmutableRecordException::class);
+        $purchase->save();
+    }
+
+    public function test_goods_receipt_note_posted_immutability_and_draft_snapshot_rejection(): void
+    {
+        $this->rebindContext();
+
+        $purchase = Purchase::where('company_id', $this->company->id)->first();
+        if ($purchase === null) {
+            $action = app(RecordStagedPurchaseBillAction::class);
+            $res = $action->execute(
+                company: $this->company,
+                actor: $this->user,
+                supplierPublicId: $this->vendor->public_id,
+                billNumber: 'BILL-GRN-IMM',
+                linesInput: [
+                    ['product_id' => $this->product->public_id, 'quantity' => '10', 'unit_cost_ils' => '15.00'],
+                ],
+                idempotencyKey: 'grn-imm-bill-'.(string) Str::uuid(),
+                mobileToken: MobileAccessToken::where('token_hash', hash('sha256', $this->rawToken))->first(),
+                mobileDevice: $this->device
+            );
+            $purchase = Purchase::where('company_id', $this->company->id)->where('public_id', $res['snapshot']['id'])->firstOrFail();
+        }
+
+        // 1. Creating a draft GRN with non-null response_snapshot must throw
+        try {
+            GoodsReceiptNote::create([
+                'public_id' => (string) Str::ulid(),
+                'company_id' => $this->company->id,
+                'purchase_id' => $purchase->id,
+                'grn_number' => 'GRN-TEST-DRAFT',
+                'warehouse_id' => $this->warehouse->id,
+                'receipt_date' => now()->format('Y-m-d'),
+                'status' => GoodsReceiptNote::STATUS_DRAFT,
+                'inventory_operation_id' => null,
+                'idempotency_key' => 'grn-draft-key',
+                'request_hash' => 'hash123',
+                'response_snapshot' => ['invalid_on_draft' => true],
+                'created_by' => $this->user->id,
+            ]);
+            $this->fail('Expected draft GRN with response_snapshot to throw ImmutableRecordException');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Draft Goods Receipt Notes cannot carry a response snapshot', $e->getMessage());
+        }
+
+        // 2. A posted GRN cannot be modified
+        $line = $purchase->lines()->firstOrFail();
+        $grnRes = $this->withHeaders($this->authHeaders('grn-test-key-imm'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchase->public_id}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'receipt_date' => now()->format('Y-m-d'),
+                'lines' => [
+                    [
+                        'purchase_line_id' => $line->public_id,
+                        'quantity' => '1',
+                    ],
+                ],
+            ]);
+        $grnRes->assertStatus(201);
+        $grn = GoodsReceiptNote::withoutGlobalScopes()->where('company_id', $this->company->id)->firstOrFail();
+        $this->assertNotNull($grn->response_snapshot);
+
+        // Attempt to update response_snapshot on posted GRN must throw
+        try {
+            $grn->response_snapshot = ['tampered' => true];
+            $grn->save();
+            $this->fail('Expected modifying posted GRN to throw ImmutableRecordException');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Goods Receipt Notes are strictly immutable once posted', $e->getMessage());
+        }
+
+        // Attempt to delete posted GRN must throw
+        try {
+            $grn->delete();
+            $this->fail('Expected deleting posted GRN to throw ImmutableRecordException');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Goods Receipt Notes cannot be deleted', $e->getMessage());
+        }
+    }
+
+    public function test_fault_rollback_before_receipt_insert_rolls_back_all_domain_effects_with_zero_orphans(): void
+    {
+        $this->rebindContext();
+
+        $key = 'fault-cust-'.(string) Str::uuid();
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+        $payload = [
+            'amount' => '150.000000',
+            'notes' => 'دفعة سيتم محاكاة عطل بعدها قبل حفظ الإيصال',
+        ];
+
+        // 1. Inject fault callback after domain action before receipt insert
+        NativeCommandReceiptManager::$onBeforeReceiptInsert = function (): void {
+            throw new \RuntimeException('SIMULATED CRASH: Power loss after customer payment posting before receipt persistence.');
+        };
+
+        try {
+            $res = $this->withHeaders($this->authHeaders($key))->postJson($url, $payload);
+            $this->assertContains($res->status(), [422, 500]);
+        } finally {
+            NativeCommandReceiptManager::$onBeforeReceiptInsert = null;
+        }
+
+        // 2. Verify complete transaction rollback: no receipt, no customer payment, no posting batches
+        $this->assertSame(0, NativeCommandReceipt::withoutGlobalScopes()->where('idempotency_key', $key)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+
+        // 3. Retry same request cleanly: succeeds 201 Created without stale receipt conflict
+        $resClean = $this->withHeaders($this->authHeaders($key))->postJson($url, $payload);
+        $resClean->assertStatus(201);
+        $this->assertSame(1, NativeCommandReceipt::withoutGlobalScopes()->where('idempotency_key', $key)->count());
+        $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
     }
 }
