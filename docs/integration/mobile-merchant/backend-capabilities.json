@@ -368,46 +368,72 @@
       }
     },
     {
-      "id": "sales.execute",
-      "domain": "sales",
-      "status": "implemented",
-      "method": "POST",
-      "path": "/api/mobile/v1/companies/{companyId}/sales/invoices/{publicId}/execute",
-      "route_name": "mobile.v1.sales.invoices.execute",
-      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::execute",
-      "permissions_required": ["sales.invoice.post"],
-      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest",
-      "request_schema": {
-        "settlement_mode": { "type": "string", "enum": ["full", "partial", "unpaid"], "required": true },
-        "payment_method": { "type": ["string", "null"], "enum": ["cash", "card", "bank_transfer", null] },
-        "cash_account_id": { "type": ["string", "null"] },
-        "paid_amount": { "type": ["string", "null"], "pattern": "^\\d+(\\.\\d{1,4})?$" }
+        "id": "sales.execute",
+        "domain": "sales",
+        "status": "retired",
+        "method": "POST",
+        "path": "/api/mobile/v1/companies/{companyId}/sales/invoices/{publicId}/execute",
+        "route_name": "mobile.v1.sales.invoices.execute",
+        "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::execute",
+        "permissions_required": [
+          "sales.invoice.post"
+        ],
+        "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest",
+        "request_schema": {
+          "settlement_mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "partial",
+              "unpaid"
+            ],
+            "required": true
+          },
+          "payment_method": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "cash",
+              "card",
+              "bank_transfer",
+              null
+            ]
+          },
+          "cash_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paid_amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d+(\\.\\d{1,4})?$"
+          }
+        },
+        "request_example": {
+          "settlement_mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01JCV8X9MCA123456789ABCDEF0",
+          "paid_amount": "17.40"
+        },
+        "response_schema": {
+          "error": {
+            "code": "DURABLE_EVENT_REQUIRED"
+          }
+        },
+        "response_example": {
+          "error": {
+            "code": "DURABLE_EVENT_REQUIRED",
+            "message": "Submit the original sale intent through the native V2 event endpoint."
+          }
+        },
+        "release_note": "HTTP 410: use durable V2 sale intent and scoped event status; legacy draft execution cannot post."
       },
-      "request_example": {
-        "settlement_mode": "full",
-        "payment_method": "cash",
-        "cash_account_id": "01JCV8X9MCA123456789ABCDEF0",
-        "paid_amount": "17.40"
-      },
-      "response_schema": {
-        "success": { "type": "boolean" },
-        "invoice_id": { "type": "string" },
-        "invoice_number": { "type": "string" },
-        "grand_total": { "type": "string" },
-        "amount_paid": { "type": "string" },
-        "payment_id": { "type": ["string", "null"] },
-        "receipt_number": { "type": ["string", "null"] }
-      },
-      "response_example": {
-        "success": true,
-        "invoice_id": "01JCV8X9ME7890123456789ABC",
-        "invoice_number": "INV-2026-00103",
-        "grand_total": "17.40",
-        "amount_paid": "17.40",
-        "payment_id": "01JCV8X9MPAY123456789ABCD",
-        "receipt_number": "RCT-2026-00045"
-      }
-    },
     {
       "id": "sales_v2.online_cash",
       "domain": "sales_v2",

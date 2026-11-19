@@ -11,6 +11,7 @@ use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventForeignScopeException;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
+use App\Support\Mobile\Receipt\NativeOnlineCashFinancialExecutionAdapter;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -48,6 +49,17 @@ $companyRecord = Company::findOrFail($companyId);
 $executor = null;
 if ($executorMode === 'qualified_cash' || $executorMode === 'canonical') {
     $executor = new QualifiedCashFinancialExecutionAdapter;
+    $app->instance(FinancialExecutionAdapterInterface::class, $executor);
+}
+
+if ($executorMode === 'production_cash') {
+    config([
+        'mobile.enabled' => true,
+        'mobile.merchant_api_enabled' => true,
+        'mobile.v2_enabled' => true,
+        'mobile.v2_cash_slice_enabled' => true,
+    ]);
+    $executor = app(NativeOnlineCashFinancialExecutionAdapter::class);
     $app->instance(FinancialExecutionAdapterInterface::class, $executor);
 }
 

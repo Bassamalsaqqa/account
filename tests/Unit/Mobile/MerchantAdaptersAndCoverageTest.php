@@ -48,7 +48,11 @@ final class MerchantAdaptersAndCoverageTest extends TestCase
         $routes = RouteFacade::getRoutes()->getRoutes();
 
         foreach ($contract['capabilities'] as $cap) {
-            $this->assertSame('implemented', $cap['status'], "Capability {$cap['id']} must be marked implemented");
+            $this->assertContains($cap['status'], ['implemented', 'retired']);
+            if ($cap['status'] === 'retired') {
+                $this->assertSame('sales.execute', $cap['id']);
+                $this->assertStringContainsString('HTTP 410', $cap['release_note']);
+            }
             $this->assertNotEmpty($cap['path']);
             $this->assertNotEmpty($cap['method']);
             $this->assertNotEmpty($cap['action_class']);

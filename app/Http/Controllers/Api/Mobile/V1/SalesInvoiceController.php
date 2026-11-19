@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
-use App\Application\Commands\ImmediateSaleCommands;
 use App\Application\Commands\SalesInvoiceCommands;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
@@ -13,22 +12,18 @@ use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\Customer;
-use App\Models\CustomerPayment;
-use App\Models\MoneyAccount;
 use App\Models\Product;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
-use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
@@ -598,137 +593,12 @@ final class SalesInvoiceController extends Controller
     /**
      * POST /api/mobile/v1/companies/{companyId}/sales/invoices/{publicId}/execute
      */
-    public function execute(
-        Request $request,
-        string $companyId,
-        string $publicId,
-        ImmediateSaleCommands $immediateSaleCommands
-    ): JsonResponse {
-        /** @var Company $company */
-        $company = $request->attributes->get('mobile_company');
-        /** @var User $user */
-        $user = $request->attributes->get('mobile_user');
-
-        setPermissionsTeamId($company->id);
-
-        if (! $user->hasPermissionTo('sales.invoice.post')) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'FORBIDDEN',
-                message: 'Action is unauthorized. Missing required sales.invoice.post permission.',
-                status: 403
-            );
-        }
-
-        $rawKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
-        $idempotencyKey = is_string($rawKey) ? trim($rawKey) : '';
-        if ($idempotencyKey === '') {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'MISSING_IDEMPOTENCY_KEY',
-                message: 'Idempotency-Key header is required for this operation.',
-                status: 422
-            );
-        }
-
-        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $publicId) !== 1) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'NOT_FOUND',
-                message: 'The requested sales invoice was not found.',
-                status: 404
-            );
-        }
-
-        $invoice = SalesInvoice::where('company_id', $company->id)
-            ->where('public_id', $publicId)
-            ->first();
-
-        if ($invoice === null) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'NOT_FOUND',
-                message: 'The requested sales invoice was not found.',
-                status: 404
-            );
-        }
-
-        if (! $invoice->isDraft()) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'CONFLICT',
-                message: "Sales invoice is in [{$invoice->status}] status and cannot be executed.",
-                status: 409
-            );
-        }
-
-        try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $token = $request->input('confirmation_token');
-            if (! is_string($token) || trim($token) === '') {
-                $paidNow = $request->input('paid_now');
-                $choice = ['mode' => 'unpaid'];
-                if ($paidNow !== null && is_scalar($paidNow) && BigDecimal::of((string) $paidNow)->isPositive()) {
-                    $rawAccountId = $request->input('money_account_id', $request->input('cash_account_id'));
-                    $cashAccount = null;
-                    if ($rawAccountId !== null && is_string($rawAccountId) && trim($rawAccountId) !== '') {
-                        $cashAccount = MoneyAccount::where('company_id', $company->id)
-                            ->where('public_id', trim($rawAccountId))
-                            ->first();
-                    }
-                    if ($cashAccount === null) {
-                        $cashAccount = MoneyAccount::where('company_id', $company->id)
-                            ->where('account_type', MoneyAccount::TYPE_CASH)
-                            ->where('active', true)
-                            ->first();
-                    }
-                    if ($cashAccount === null) {
-                        return MobileApiBoundary::buildErrorResponse(
-                            code: 'VALIDATION_FAILED',
-                            message: 'No approved cash account configured for this company.',
-                            status: 422
-                        );
-                    }
-                    $paidBd = BigDecimal::of((string) $paidNow);
-                    $grandTotalBd = BigDecimal::of((string) $invoice->grand_total_currency);
-                    $isFull = $paidBd->isGreaterThanOrEqualTo($grandTotalBd);
-                    $choice = [
-                        'mode' => $isFull ? 'full' : 'partial',
-                        'money_account_id' => (int) $cashAccount->id,
-                        'payment_method' => CustomerPayment::METHOD_CASH,
-                        'payment_date' => now()->format('Y-m-d'),
-                        'amount' => (string) $paidBd,
-                        'exchange_rate' => (string) $invoice->exchange_rate,
-                    ];
-                    if (! $isFull) {
-                        $choice['invoice_amount'] = (string) $paidBd;
-                    }
-                }
-                $preview = $immediateSaleCommands->preview($invoice, $user, $choice);
-                $token = (string) $preview['confirmation_token'];
-            }
-
-            $result = $immediateSaleCommands->execute($invoice, $user, $token, $idempotencyKey);
-            $posted = $result['invoice'];
-        } catch (HttpException $e) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: $e->getStatusCode() === 409 ? 'CONFLICT' : 'VALIDATION_FAILED',
-                message: $e->getMessage(),
-                status: $e->getStatusCode()
-            );
-        } catch (Throwable $e) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Execution failed: '.$e->getMessage(),
-                status: 422
-            );
-        }
-
-        return response()->json([
-            'id' => (string) $posted->public_id,
-            'invoice_number' => (string) ($posted->invoice_number ?? $posted->public_id),
-            'status' => (string) $posted->status,
-            'total' => (string) BigDecimal::of((string) $posted->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
-            'currency' => (string) $posted->currency_code,
-            'posted_at' => $posted->posted_at ? $posted->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
+    public function execute(Request $request, string $companyId, string $publicId): JsonResponse
+    {
+        return MobileApiBoundary::buildErrorResponse(
+            code: 'DURABLE_EVENT_REQUIRED',
+            message: 'Submit the original sale intent through the native V2 event endpoint.',
+            status: 410
+        );
     }
 }

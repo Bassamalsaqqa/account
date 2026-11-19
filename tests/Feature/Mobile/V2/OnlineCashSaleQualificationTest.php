@@ -849,7 +849,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'event_version' => 2,
                 'representation' => 'v2_online_sale_intent',
                 'canonical_bytes' => $canonicalBytes,
-                'executor_mode' => 'qualified_cash',
+                'executor_mode' => 'production_cash',
                 'hold_lock_table' => 'companies',
                 'wait_for_file' => 'release-holder',
             ];
@@ -861,7 +861,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'event_version' => 2,
                 'representation' => 'v2_online_sale_intent',
                 'canonical_bytes' => $canonicalBytes,
-                'executor_mode' => 'qualified_cash',
+                'executor_mode' => 'production_cash',
             ];
 
             $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $inputHolder);
@@ -1463,6 +1463,15 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'v2_online_sale_intent',
             $canonicalBytes
         );
+    }
+
+    public function test_legacy_v1_sale_execution_cannot_bypass_durable_events(): void
+    {
+        $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/01M3WMTQQZE7P30Z3KC93N7YJ9/execute", [])
+            ->assertStatus(410)->assertJsonPath('error.code', 'DURABLE_EVENT_REQUIRED');
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
     }
 
     public function test_production_adapter_binding_in_app_service_provider(): void
