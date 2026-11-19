@@ -51,11 +51,16 @@ final class InventoryController extends Controller
             );
         }
 
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $productId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested product was not found.',
+                status: 404
+            );
+        }
+
         $product = Product::where('company_id', $company->id)
-            ->where(function ($q) use ($productId): void {
-                $q->where('public_id', $productId)
-                    ->orWhere('id', $productId);
-            })
+            ->where('public_id', $productId)
             ->first();
 
         if ($product === null) {

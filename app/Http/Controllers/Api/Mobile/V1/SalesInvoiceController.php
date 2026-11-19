@@ -12,6 +12,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
 use App\Models\Product;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
@@ -32,7 +33,7 @@ final class SalesInvoiceController extends Controller
     /**
      * GET /api/mobile/v1/companies/{companyId}/sales/invoices
      */
-    public function index(Request $request, string $companyId): JsonResponse
+    public function index(Request $request, string $companyId, CurrencyMinorUnitsResolver $minorUnitsResolver): JsonResponse
     {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
@@ -59,21 +60,29 @@ final class SalesInvoiceController extends Controller
 
         // Filter by invoice status or payment status
         $statusFilter = $request->query('status');
-        if ($statusFilter !== null && is_string($statusFilter)) {
+        if ($statusFilter !== null && is_string($statusFilter) && trim($statusFilter) !== '') {
             $statusUpper = strtoupper(trim($statusFilter));
             if (in_array($statusUpper, ['DRAFT', 'POSTED', 'VOID'], true)) {
                 $query->where('status', strtolower($statusUpper));
-            } elseif ($statusUpper === 'PAID_CASH') {
-                $query->where('status', SalesInvoice::STATUS_POSTED)
-                    ->whereRaw('paid_amount >= grand_total_currency');
-            } elseif ($statusUpper === 'PARTIAL') {
-                $query->where('status', SalesInvoice::STATUS_POSTED)
-                    ->whereRaw('paid_amount > 0 AND paid_amount < grand_total_currency');
-            } elseif ($statusUpper === 'ON_CREDIT') {
-                $query->where('status', SalesInvoice::STATUS_POSTED)
-                    ->where(function ($q): void {
-                        $q->whereNull('paid_amount')->orWhere('paid_amount', '<=', 0);
-                    });
+            } elseif (in_array($statusUpper, ['PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
+                $allocatedSql = '(SELECT COALESCE(SUM(cpa.allocated_amount), 0) FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
+                $returnedSql = '(SELECT COALESCE(SUM(sr.grand_total_currency), 0) FROM sales_returns sr WHERE sr.sales_invoice_id = sales_invoices.id AND sr.status = "posted")';
+                $hasCashSql = 'EXISTS (SELECT 1 FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND cp.payment_method = "cash" AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
+
+                $query->where('status', SalesInvoice::STATUS_POSTED);
+
+                if ($statusUpper === 'PAID_CASH') {
+                    $query->whereRaw("({$allocatedSql} + {$returnedSql}) >= sales_invoices.grand_total_currency")
+                        ->whereRaw($hasCashSql);
+                } elseif ($statusUpper === 'PAID') {
+                    $query->whereRaw("({$allocatedSql} + {$returnedSql}) >= sales_invoices.grand_total_currency");
+                } elseif ($statusUpper === 'PARTIAL') {
+                    $query->whereRaw("{$allocatedSql} > 0")
+                        ->whereRaw("({$allocatedSql} + {$returnedSql}) < sales_invoices.grand_total_currency");
+                } elseif ($statusUpper === 'ON_CREDIT') {
+                    $query->whereRaw("{$allocatedSql} = 0")
+                        ->whereRaw("{$returnedSql} < sales_invoices.grand_total_currency");
+                }
             }
         }
 
@@ -94,21 +103,30 @@ final class SalesInvoiceController extends Controller
 
         // Customer filter
         $customerPublicId = $request->query('customer_id');
-        if ($customerPublicId !== null && is_string($customerPublicId)) {
-            $customer = Customer::where('company_id', $company->id)
-                ->where('public_id', $customerPublicId)
-                ->first();
-            if ($customer !== null) {
-                $query->where('customer_id', $customer->id);
+        if ($customerPublicId !== null && is_string($customerPublicId) && trim($customerPublicId) !== '') {
+            $trimmedCustomerPublicId = trim($customerPublicId);
+            if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $trimmedCustomerPublicId) === 1) {
+                $customer = Customer::where('company_id', $company->id)
+                    ->where('public_id', $trimmedCustomerPublicId)
+                    ->first();
+                if ($customer !== null) {
+                    $query->where('customer_id', $customer->id);
+                } else {
+                    $query->whereRaw('1 = 0');
+                }
+            } else {
+                $query->whereRaw('1 = 0');
             }
         }
 
         // Date range filters
-        if ($request->has('date_from')) {
-            $query->whereDate('issue_date', '>=', (string) $request->query('date_from'));
+        $dateFrom = $request->query('date_from');
+        if ($dateFrom !== null && is_string($dateFrom) && trim($dateFrom) !== '') {
+            $query->whereDate('issue_date', '>=', trim($dateFrom));
         }
-        if ($request->has('date_to')) {
-            $query->whereDate('issue_date', '<=', (string) $request->query('date_to'));
+        $dateTo = $request->query('date_to');
+        if ($dateTo !== null && is_string($dateTo) && trim($dateTo) !== '') {
+            $query->whereDate('issue_date', '<=', trim($dateTo));
         }
 
         $records = $query->orderBy('id', 'desc')
@@ -120,35 +138,35 @@ final class SalesInvoiceController extends Controller
             $records = $records->slice(0, $limit);
         }
 
-        $invoices = $records->map(function (SalesInvoice $inv): array {
-            $paid = BigDecimal::of((string) ($inv->paid_amount ?? '0.000000'));
-            $grandTotal = BigDecimal::of((string) $inv->grand_total_currency);
-            $remaining = $grandTotal->minus($paid);
-
-            $paymentStatus = match (true) {
-                $remaining->isZero() || $remaining->isNegative() => 'PAID_CASH',
-                $paid->isPositive() => 'PARTIAL',
-                default => 'ON_CREDIT',
-            };
+        $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver): array {
+            $cmu = $minorUnitsResolver->resolve((string) $inv->currency_code, $company);
+            $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($inv);
+            $paid = $financialSummary['paid'];
+            $grandTotal = $financialSummary['grand_total'];
+            $remaining = $financialSummary['remaining'];
+            $paymentStatus = $financialSummary['payment_status'];
 
             $date = $inv->issue_date instanceof Carbon
                 ? $inv->issue_date->format('Y-m-d')
                 : substr((string) $inv->issue_date, 0, 10);
+
+            $customerName = $this->resolveCustomerName($inv, $inv->customer);
 
             return [
                 'id' => (string) $inv->public_id,
                 'invoice_number' => (string) ($inv->invoice_number ?? $inv->public_id),
                 'status' => (string) $inv->status,
                 'customer_id' => (string) $inv->customer->public_id,
-                'customer_name' => (string) $inv->customer->displayName(),
+                'customer_name' => $customerName,
                 'date' => $date,
-                'subtotal' => (string) BigDecimal::of((string) ($inv->subtotal_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-                'discount' => (string) BigDecimal::of((string) ($inv->discount_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-                'tax' => (string) BigDecimal::of((string) ($inv->tax_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-                'total' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
-                'paid' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
-                'remaining' => (string) $remaining->toScale(2, RoundingMode::HALF_UP),
+                'subtotal' => (string) BigDecimal::of((string) ($inv->subtotal_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+                'discount' => (string) BigDecimal::of((string) ($inv->discount_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+                'tax' => (string) BigDecimal::of((string) ($inv->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+                'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
+                'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+                'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
                 'currency' => (string) $inv->currency_code,
+                'currency_minor_units' => $cmu,
                 'payment_status' => $paymentStatus,
                 'created_at' => $inv->created_at?->format('Y-m-d\TH:i:s\Z'),
             ];
@@ -168,7 +186,7 @@ final class SalesInvoiceController extends Controller
     /**
      * GET /api/mobile/v1/companies/{companyId}/sales/invoices/{publicId}
      */
-    public function show(Request $request, string $companyId, string $publicId): JsonResponse
+    public function show(Request $request, string $companyId, string $publicId, CurrencyMinorUnitsResolver $minorUnitsResolver): JsonResponse
     {
         /** @var Company $company */
         $company = $request->attributes->get('mobile_company');
@@ -195,7 +213,7 @@ final class SalesInvoiceController extends Controller
 
         $invoice = SalesInvoice::where('company_id', $company->id)
             ->where('public_id', $publicId)
-            ->with(['customer', 'lines.product', 'lines.productUnit.unit', 'allocations.customerPayment'])
+            ->with(['customer', 'poster', 'lines.product', 'lines.productUnit.unit', 'allocations.customerPayment'])
             ->first();
 
         if ($invoice === null) {
@@ -206,66 +224,89 @@ final class SalesInvoiceController extends Controller
             );
         }
 
-        $paid = BigDecimal::of((string) ($invoice->paid_amount ?? '0.000000'));
-        $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
-        $remaining = $grandTotal->minus($paid);
+        $cmu = $minorUnitsResolver->resolve((string) $invoice->currency_code, $company);
+        $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($invoice);
+        $paid = $financialSummary['paid'];
+        $grandTotal = $financialSummary['grand_total'];
+        $remaining = $financialSummary['remaining'];
+        $paymentStatus = $financialSummary['payment_status'];
 
-        $paymentStatus = match (true) {
-            $remaining->isZero() || $remaining->isNegative() => 'PAID_CASH',
-            $paid->isPositive() => 'PARTIAL',
-            default => 'ON_CREDIT',
-        };
+        $isPosted = $invoice->isPosted() || $invoice->isVoid();
 
-        $linesPayload = $invoice->lines->map(function (SalesInvoiceLine $line): array {
-            $unitName = $line->unit_name_ar ?? $line->unit_name_en ?? ($line->productUnit?->unit ? (string) $line->productUnit->unit->displayName() : '');
+        $linesPayload = $invoice->lines->map(function (SalesInvoiceLine $line) use ($invoice, $cmu, $isPosted): array {
+            if ($isPosted) {
+                $productName = ($invoice->document_locale ?? 'ar') === 'en'
+                    ? ($line->product_name_en ?? $line->product_name_ar ?? $line->item_description)
+                    : ($line->product_name_ar ?? $line->product_name_en ?? $line->item_description);
+                $unitName = ($invoice->document_locale ?? 'ar') === 'en'
+                    ? ($line->unit_name_en ?? $line->unit_name_ar ?? '')
+                    : ($line->unit_name_ar ?? $line->unit_name_en ?? '');
+            } else {
+                $productName = $line->product ? (string) $line->product->displayName() : (string) $line->item_description;
+                $unitName = $line->unit_name_ar ?? $line->unit_name_en ?? ($line->productUnit?->unit ? (string) $line->productUnit->unit->displayName() : '');
+            }
 
             return [
-                'id' => (string) $line->id,
+                'id' => (string) $line->public_id,
                 'product_id' => $line->product ? (string) $line->product->public_id : null,
-                'product_name' => $line->product ? (string) $line->product->displayName() : (string) $line->item_description,
+                'product_name' => (string) $productName,
                 'unit' => (string) $unitName,
-                'quantity' => (string) BigDecimal::of((string) $line->quantity)->toScale(4, RoundingMode::HALF_UP),
-                'unit_price' => (string) BigDecimal::of((string) $line->unit_price)->toScale(2, RoundingMode::HALF_UP),
-                'line_total' => (string) BigDecimal::of((string) $line->line_total)->toScale(2, RoundingMode::HALF_UP),
-                'tax_rate' => (string) ($line->tax_rate_snapshot ?? '0.00'),
-                'discount' => (string) BigDecimal::of((string) $line->line_discount)->toScale(2, RoundingMode::HALF_UP),
+                'quantity' => (string) BigDecimal::of((string) $line->quantity),
+                'unit_price' => (string) BigDecimal::of((string) $line->unit_price),
+                'line_total' => (string) BigDecimal::of((string) $line->line_total)->toScale($cmu, RoundingMode::HALF_UP),
+                'tax_rate' => $line->tax_rate_snapshot !== null ? (string) BigDecimal::of((string) $line->tax_rate_snapshot) : '0.00',
+                'discount' => (string) BigDecimal::of((string) ($line->line_discount ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
             ];
         })->values()->all();
 
         // Stored immutable snapshots for thermal receipt layout
-        $storeNameAr = is_array($invoice->company_snapshot) && ! empty($invoice->company_snapshot['name_ar'])
-            ? (string) $invoice->company_snapshot['name_ar']
-            : (string) ($company->name_ar ?? $company->displayName());
+        if ($isPosted && is_array($invoice->company_snapshot)) {
+            $cs = $invoice->company_snapshot;
+            $storeNameAr = ! empty($cs['name_ar']) ? (string) $cs['name_ar'] : null;
+            $storeNameEn = ! empty($cs['name_en']) ? (string) $cs['name_en'] : null;
+            $cityAr = ! empty($cs['city_ar']) ? (string) $cs['city_ar'] : (! empty($cs['city']) ? (string) $cs['city'] : null);
+            $cityEn = ! empty($cs['city_en']) ? (string) $cs['city_en'] : null;
+            $phone = ! empty($cs['phone']) ? (string) $cs['phone'] : null;
+            $taxNumber = ! empty($cs['tax_number']) ? (string) $cs['tax_number'] : null;
+        } else {
+            $storeNameAr = (string) ($company->name_ar ?? $company->displayName());
+            $storeNameEn = (string) ($company->name_en ?? $company->displayName());
+            $cityAr = null;
+            $cityEn = null;
+            $phone = $company->phone !== null ? (string) $company->phone : null;
+            $taxNumber = $company->tax_number !== null ? (string) $company->tax_number : null;
+        }
 
-        $storeNameEn = is_array($invoice->company_snapshot) && ! empty($invoice->company_snapshot['name_en'])
-            ? (string) $invoice->company_snapshot['name_en']
-            : (string) ($company->name_en ?? $company->displayName());
-
-        $customerName = is_array($invoice->customer_snapshot) && ! empty($invoice->customer_snapshot['name'])
-            ? (string) $invoice->customer_snapshot['name']
-            : (string) $invoice->customer->displayName();
+        $customerName = $this->resolveCustomerName($invoice, $invoice->customer);
 
         $dateTime = $invoice->posted_at
             ? $invoice->posted_at->format('Y-m-d H:i')
             : ($invoice->issue_date instanceof Carbon ? $invoice->issue_date->format('Y-m-d H:i') : substr((string) $invoice->issue_date, 0, 16));
 
+        $cashier = null;
+        if ($isPosted) {
+            $cashier = $invoice->poster?->name;
+        } else {
+            $cashier = (string) $user->name;
+        }
+
         $thermalReceipt = [
             'store_name_ar' => $storeNameAr,
             'store_name_en' => $storeNameEn,
-            'city_ar' => (string) ($company->city_ar ?? ''),
-            'city_en' => (string) ($company->city_en ?? ''),
-            'phone' => (string) ($company->phone ?? ''),
-            'tax_number' => (string) ($company->tax_number ?? ''),
+            'city_ar' => $cityAr,
+            'city_en' => $cityEn,
+            'phone' => $phone,
+            'tax_number' => $taxNumber,
             'invoice_number' => (string) ($invoice->invoice_number ?? $invoice->public_id),
             'date_time' => $dateTime,
-            'cashier' => (string) $user->name,
+            'cashier' => $cashier,
             'customer_name' => $customerName,
-            'subtotal' => (string) BigDecimal::of((string) ($invoice->subtotal_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-            'discount' => (string) BigDecimal::of((string) ($invoice->discount_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-            'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-            'grand_total' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
-            'paid_amount' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
-            'remaining_balance' => (string) $remaining->toScale(2, RoundingMode::HALF_UP),
+            'subtotal' => (string) BigDecimal::of((string) ($invoice->subtotal_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+            'discount' => (string) BigDecimal::of((string) ($invoice->discount_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+            'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+            'grand_total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
+            'paid_amount' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'remaining_balance' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'currency' => (string) $invoice->currency_code,
             'lines' => $linesPayload,
         ];
@@ -280,18 +321,88 @@ final class SalesInvoiceController extends Controller
             'customer_name' => $customerName,
             'date' => $invoice->issue_date instanceof Carbon ? $invoice->issue_date->format('Y-m-d') : substr((string) $invoice->issue_date, 0, 10),
             'currency' => (string) $invoice->currency_code,
-            'subtotal' => (string) BigDecimal::of((string) ($invoice->subtotal_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-            'discount' => (string) BigDecimal::of((string) ($invoice->discount_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-            'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale(2, RoundingMode::HALF_UP),
-            'total' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
-            'paid' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
-            'remaining' => (string) $remaining->toScale(2, RoundingMode::HALF_UP),
+            'currency_minor_units' => $cmu,
+            'subtotal' => (string) BigDecimal::of((string) ($invoice->subtotal_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+            'discount' => (string) BigDecimal::of((string) ($invoice->discount_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+            'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
+            'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
+            'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'lines' => $linesPayload,
             'thermal_receipt' => $thermalReceipt,
         ], 200, [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
         ]);
+    }
+
+    /**
+     * @return array{paid: BigDecimal, grand_total: BigDecimal, remaining: BigDecimal, payment_status: string}
+     */
+    private function resolveFinancialSummaryAndPaymentStatus(SalesInvoice $invoice): array
+    {
+        if (! $invoice->isPosted()) {
+            $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
+
+            return [
+                'paid' => BigDecimal::zero(),
+                'grand_total' => $grandTotal,
+                'remaining' => $invoice->isVoid() ? BigDecimal::zero() : $grandTotal,
+                'payment_status' => 'ON_CREDIT',
+            ];
+        }
+
+        $summary = $invoice->calculateFinancialSummary();
+        $paid = $summary['paid'];
+        $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
+        $remaining = $summary['outstanding'];
+
+        $isPaidInFull = $remaining->isZero() || $remaining->isNegative();
+        $isPartiallyPaid = $paid->isPositive() && $remaining->isPositive();
+
+        if ($isPaidInFull) {
+            $hasCashPayment = $invoice->paymentAllocations()
+                ->active()
+                ->whereHas('customerPayment', fn ($q) => $q->where('payment_method', CustomerPayment::METHOD_CASH))
+                ->exists();
+            $paymentStatus = $hasCashPayment ? 'PAID_CASH' : 'PAID';
+        } elseif ($isPartiallyPaid) {
+            $paymentStatus = 'PARTIAL';
+        } else {
+            $paymentStatus = 'ON_CREDIT';
+        }
+
+        return [
+            'paid' => $paid,
+            'grand_total' => $grandTotal,
+            'remaining' => $remaining,
+            'payment_status' => $paymentStatus,
+        ];
+    }
+
+    private function resolveCustomerName(SalesInvoice $invoice, ?Customer $customer = null): ?string
+    {
+        if ($invoice->isPosted() || $invoice->isVoid()) {
+            $cs = $invoice->customer_snapshot;
+            if (is_array($cs)) {
+                $isEn = ($invoice->document_locale ?? 'ar') === 'en';
+                $name = $isEn
+                    ? ($cs['name_en'] ?? $cs['name_ar'] ?? $cs['business_name_en'] ?? $cs['business_name_ar'] ?? $cs['business_name'] ?? null)
+                    : ($cs['name_ar'] ?? $cs['name_en'] ?? $cs['business_name_ar'] ?? $cs['business_name_en'] ?? $cs['business_name'] ?? null);
+
+                if ($name !== null && trim((string) $name) !== '') {
+                    return trim((string) $name);
+                }
+            }
+
+            return null;
+        }
+
+        if ($customer !== null) {
+            return (string) $customer->displayName();
+        }
+
+        return (string) $invoice->customer->displayName();
     }
 
     /**

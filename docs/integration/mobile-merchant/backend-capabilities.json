@@ -321,6 +321,30 @@
       }
     },
     {
+      "id": "sales.invoices.index",
+      "domain": "sales",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/sales/invoices",
+      "route_name": "mobile.v1.sales.invoices.index",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::index",
+      "permissions_required": ["sales.invoice.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\SalesInvoiceReadRegressionTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/sales-invoice-index-response.json"
+    },
+    {
+      "id": "sales.invoices.show",
+      "domain": "sales",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/sales/invoices/{publicId}",
+      "route_name": "mobile.v1.sales.invoices.show",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::show",
+      "permissions_required": ["sales.invoice.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\SalesInvoiceReadRegressionTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/sales-invoice-detail-response.json"
+    },
+    {
       "id": "sales.preview",
       "domain": "sales",
       "status": "implemented",
