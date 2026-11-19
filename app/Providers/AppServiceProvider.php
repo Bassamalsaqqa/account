@@ -24,8 +24,8 @@ use App\Services\Purchasing\PurchaseVoidScope;
 use App\Services\Purchasing\VendorPaymentApplicationScope;
 use App\Services\Purchasing\VendorPaymentPostingScope;
 use App\Services\Purchasing\VendorPaymentReversalScope;
-use App\Support\Mobile\Receipt\DenyFinancialExecutionAdapter;
 use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
+use App\Support\Mobile\Receipt\NativeOnlineCashFinancialExecutionAdapter;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Events\TransactionCommitting;
@@ -63,7 +63,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(CurrencyMinorUnitsResolver::class);
         $this->app->bind(
             FinancialExecutionAdapterInterface::class,
-            DenyFinancialExecutionAdapter::class
+            NativeOnlineCashFinancialExecutionAdapter::class
         );
     }
 
