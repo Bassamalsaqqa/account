@@ -115,8 +115,8 @@ class CreateSalesInvoiceDraftAction
             $warehouseId = null;
             if (array_key_exists('warehouse_id', $data) && $data['warehouse_id'] !== null) {
                 $wh = Warehouse::where('company_id', $company->id)->where('id', $data['warehouse_id'])->first();
-                if ($wh === null || ! $wh->active) {
-                    throw new InvalidArgumentException("Warehouse [{$data['warehouse_id']}] is invalid or inactive.");
+                if ($wh === null || ! $wh->active || $wh->is_transit) {
+                    throw new InvalidArgumentException("Warehouse [{$data['warehouse_id']}] is invalid, inactive, or an in-transit warehouse.");
                 }
                 $warehouseId = $wh->id;
             } else {
@@ -124,7 +124,7 @@ class CreateSalesInvoiceDraftAction
                 $warehouseId = $invSettings?->default_warehouse_id;
                 if ($warehouseId !== null) {
                     $wh = Warehouse::where('company_id', $company->id)->where('id', $warehouseId)->first();
-                    if ($wh === null || ! $wh->active) {
+                    if ($wh === null || ! $wh->active || $wh->is_transit) {
                         $warehouseId = null;
                     }
                 }

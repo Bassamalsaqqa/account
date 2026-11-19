@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PurchaseDetailResponse",
+  "type": "object",
+  "required": [
+    "id",
+    "bill_number",
+    "date",
+    "total_ils",
+    "status",
+    "receiving_status",
+    "warehouse",
+    "lines"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "bill_number": { "type": "string" },
+    "supplier_id": { "type": ["string", "null"] },
+    "supplier_name": { "type": "string" },
+    "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "total_ils": { "type": "string" },
+    "status": { "type": "string" },
+    "receiving_status": { "type": "string", "enum": ["pending", "partial", "received"] },
+    "warehouse": { "type": "string" },
+    "lines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "ordered_quantity",
+          "previously_received_quantity",
+          "remaining_quantity",
+          "is_received",
+          "unit_cost_ils",
+          "total_cost_ils",
+          "unit_name"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "product_id": { "type": ["string", "null"] },
+          "product_name": { "type": "string" },
+          "ordered_quantity": { "type": "string" },
+          "previously_received_quantity": { "type": "string" },
+          "remaining_quantity": { "type": "string" },
+          "is_received": { "type": "boolean" },
+          "unit_cost_ils": { "type": "string" },
+          "total_cost_ils": { "type": "string" },
+          "unit_name": { "type": "string" }
+        }
+      }
+    }
+  }
+}

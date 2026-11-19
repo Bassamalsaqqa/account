@@ -749,6 +749,69 @@
         "variance_status": "EXACT",
         "closed_at": "2026-11-18T22:00:00Z"
       }
+    },
+    {
+      "id": "purchases.index",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases",
+      "route_name": "mobile.v1.purchases.index",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::index",
+      "permissions_required": ["purchasing.purchase.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-index-response.json"
+    },
+    {
+      "id": "purchases.show",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases/{purchaseId}",
+      "route_name": "mobile.v1.purchases.show",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::show",
+      "permissions_required": ["purchasing.purchase.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-detail-response.json"
+    },
+    {
+      "id": "purchases.store",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases",
+      "route_name": "mobile.v1.purchases.store",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::store",
+      "permissions_required": ["purchasing.purchase.create", "purchasing.purchase.post"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "request_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-create-request.json",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-create-response.json"
+    },
+    {
+      "id": "purchases.grn",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases/{purchaseId}/grn",
+      "route_name": "mobile.v1.purchases.grn",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::receiveGoods",
+      "permissions_required": ["inventory.stock.transfer", "purchasing.purchase.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "request_schema_ref": "docs/integration/mobile-merchant/schemas/goods-receipt-request.json",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/goods-receipt-response.json"
+    },
+    {
+      "id": "purchases.returns.store",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases/returns",
+      "route_name": "mobile.v1.purchases.returns.store",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::storeReturn",
+      "permissions_required": ["purchasing.return.manage"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "request_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-return-request.json",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-return-response.json"
     }
   ]
 }

@@ -112,8 +112,8 @@ class PostSalesReturnAction implements StockEventOwner
             if ($lockedReturn->warehouse_id !== null) {
                 /** @var Warehouse $warehouse */
                 $warehouse = Warehouse::where('company_id', $company->id)->where('id', $lockedReturn->warehouse_id)->lockForUpdate()->firstOrFail();
-                if (! $warehouse->active) {
-                    throw new InvalidArgumentException("Warehouse [{$warehouse->id}] is inactive.");
+                if (! $warehouse->active || $warehouse->is_transit) {
+                    throw new InvalidArgumentException("Warehouse [{$warehouse->id}] cannot be used for sales returns (must be active and non-transit).");
                 }
             }
 

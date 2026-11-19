@@ -48,12 +48,12 @@ return new class extends Migration
             $table->string('grn_number', 64);
             $table->foreignId('warehouse_id')->constrained('warehouses')->restrictOnDelete();
             $table->date('receipt_date');
-            $table->string('status', 32)->default('posted');
-            $table->foreignId('inventory_operation_id')->constrained('inventory_operations')->restrictOnDelete();
+            $table->string('status', 32)->default('draft');
+            $table->foreignId('inventory_operation_id')->nullable()->constrained('inventory_operations')->restrictOnDelete();
             $table->text('notes')->nullable();
             $table->string('idempotency_key', 255);
             $table->char('request_hash', 64);
-            $table->json('response_snapshot');
+            $table->json('response_snapshot')->nullable();
             $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
             $table->timestamps();
 
@@ -75,8 +75,8 @@ return new class extends Migration
             $table->foreignId('lot_id')->nullable()->constrained('inventory_lots')->restrictOnDelete();
             $table->decimal('quantity', 18, 6);
             $table->decimal('quantity_base', 18, 6);
-            $table->foreignId('transfer_out_movement_id')->constrained('stock_movements')->restrictOnDelete();
-            $table->foreignId('transfer_in_movement_id')->constrained('stock_movements')->restrictOnDelete();
+            $table->foreignId('transfer_out_movement_id')->nullable()->constrained('stock_movements')->restrictOnDelete();
+            $table->foreignId('transfer_in_movement_id')->nullable()->constrained('stock_movements')->restrictOnDelete();
             $table->timestamps();
 
             $table->index(['company_id', 'purchase_line_id']);

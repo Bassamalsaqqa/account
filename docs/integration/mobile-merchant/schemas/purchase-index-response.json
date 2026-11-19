@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PurchaseIndexResponse",
+  "type": "object",
+  "required": [
+    "company_id",
+    "count",
+    "has_more",
+    "purchases",
+    "data"
+  ],
+  "properties": {
+    "company_id": { "type": "string" },
+    "count": { "type": "integer" },
+    "has_more": { "type": "boolean" },
+    "data": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/purchaseItem" }
+    },
+    "purchases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/purchaseItem" }
+    }
+  },
+  "$defs": {
+    "purchaseItem": {
+      "type": "object",
+      "required": [
+        "id",
+        "bill_number",
+        "date",
+        "total",
+        "total_ils",
+        "paid",
+        "paid_ils",
+        "remaining_payable_ils",
+        "status",
+        "is_received",
+        "items_summary",
+        "lines_count"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "bill_number": { "type": "string" },
+        "supplier_id": { "type": ["string", "null"] },
+        "supplier_name": { "type": "string" },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "total": { "type": "string" },
+        "total_ils": { "type": "string" },
+        "paid": { "type": "string" },
+        "paid_ils": { "type": "string" },
+        "remaining_payable_ils": { "type": "string" },
+        "status": { "type": "string" },
+        "is_received": { "type": "boolean" },
+        "items_summary": { "type": "string" },
+        "lines_count": { "type": "integer" }
+      }
+    }
+  }
+}

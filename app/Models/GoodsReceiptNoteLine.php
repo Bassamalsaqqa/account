@@ -48,14 +48,29 @@ class GoodsReceiptNoteLine extends Model
     ];
 
     /**
-     * Immutability enforcement: GRN lines are immutable once created.
+     * Immutability enforcement: GRN lines are immutable once movements are attached.
      */
     public static function boot(): void
     {
         parent::boot();
 
-        static::updating(function (): void {
-            throw new ImmutableRecordException('Goods Receipt Note lines are strictly immutable once created.');
+        static::updating(function (GoodsReceiptNoteLine $line): void {
+            if ($line->getOriginal('transfer_out_movement_id') !== null || $line->getOriginal('transfer_in_movement_id') !== null) {
+                throw new ImmutableRecordException('Goods Receipt Note lines are strictly immutable once posted.');
+            }
+
+            if ($line->isDirty([
+                'company_id',
+                'goods_receipt_note_id',
+                'purchase_line_id',
+                'product_id',
+                'product_unit_id',
+                'lot_id',
+                'quantity',
+                'quantity_base',
+            ])) {
+                throw new ImmutableRecordException('Goods Receipt Note line identity and quantities cannot be modified.');
+            }
         });
 
         static::deleting(function (): void {

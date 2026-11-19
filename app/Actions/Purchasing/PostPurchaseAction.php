@@ -16,6 +16,7 @@ use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\TaxRate;
 use App\Models\User;
+use App\Models\Warehouse;
 use App\Services\Audit\AuditService;
 use App\Services\Inventory\InventoryMovementService;
 use App\Services\Posting\AccountingPostingService;
@@ -30,6 +31,7 @@ use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\SalesActorGuard;
 use Brick\Math\BigDecimal;
+use InvalidArgumentException;
 
 final class PostPurchaseAction
 {
@@ -61,7 +63,14 @@ final class PostPurchaseAction
                 return $locked;
             }
             $vendor = $locked->vendor()->where('company_id', $company->id)->lockForUpdate()->firstOrFail();
-            $locked->warehouse()->where('company_id', $company->id)->lockForUpdate()->firstOrFail();
+            /** @var Warehouse $lockedWarehouse */
+            $lockedWarehouse = $locked->warehouse()->where('company_id', $company->id)->lockForUpdate()->firstOrFail();
+            if ($lockedWarehouse->is_transit && ! $locked->is_staged) {
+                throw new InvalidArgumentException('Direct-receipt purchase bills cannot use an in-transit warehouse.');
+            }
+            if (! $lockedWarehouse->is_transit && $locked->is_staged) {
+                throw new InvalidArgumentException('Staged purchase bills must use an in-transit warehouse.');
+            }
             $locked->setRelation('lines', $locked->lines()->withoutGlobalScopes()->lockForUpdate()->get());
             foreach ($locked->lines as $line) {
                 $line->setRelation('lots', $line->lots()->withoutGlobalScopes()->lockForUpdate()->get());
@@ -102,10 +111,10 @@ final class PostPurchaseAction
                         foreach ($expenseIds as $expenseId) {
                             $expense = $expenses->get($expenseId);
                             if ($expense === null || $expense->status !== Expense::STATUS_POSTED || $expense->reversed_at !== null || $expense->classification !== Expense::CLASSIFICATION_LANDED_COST) {
-                                throw new \InvalidArgumentException(__('purchasing.post_integrity_failed'));
+                                throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
                             }
                             if ($locked->purchase_date->toDateString() < $expense->expense_date->toDateString()) {
-                                throw new \InvalidArgumentException('The purchase business date cannot precede the attached landed cost expense date.');
+                                throw new InvalidArgumentException('The purchase business date cannot precede the attached landed cost expense date.');
                             }
 
                             $expAllocations = $draftAllocations->where('expense_id', $expenseId);
@@ -114,7 +123,7 @@ final class PostPurchaseAction
                                 $allocSum = $allocSum->plus($alloc->allocated_base);
                             }
                             if (! $allocSum->isEqualTo($expense->base_amount)) {
-                                throw new \InvalidArgumentException(__('purchasing.post_integrity_failed'));
+                                throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
                             }
                         }
 

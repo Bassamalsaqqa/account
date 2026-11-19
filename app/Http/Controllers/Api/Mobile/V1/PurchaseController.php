@@ -4,17 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
-use App\Actions\Purchasing\CreatePurchaseDraftAction;
-use App\Actions\Purchasing\CreatePurchaseReturnDraftAction;
-use App\Actions\Purchasing\EnsureCompanyInTransitWarehouseAction;
-use App\Actions\Purchasing\PostPurchaseAction;
-use App\Actions\Purchasing\PostPurchaseReturnAction;
-use App\Actions\Purchasing\PostVendorPaymentAction;
+use App\Actions\Purchasing\ExecutePhysicalPurchaseReturnAction;
 use App\Actions\Purchasing\RecordPurchaseGoodsReceiptAction;
-use App\Domain\Inventory\DTO\StockTransferCommand;
-use App\Domain\Inventory\DTO\StockTransferLineCommand;
+use App\Actions\Purchasing\RecordStagedPurchaseBillAction;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
-use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Purchasing\DTO\GoodsReceiptLineCommand;
 use App\Domain\Purchasing\DTO\RecordGoodsReceiptCommand;
 use App\Domain\Purchasing\Exceptions\OverReceiptLimitException;
@@ -25,19 +18,12 @@ use App\Models\CompanyPurchaseSetting;
 use App\Models\GoodsReceiptNoteLine;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
-use App\Models\MoneyAccount;
-use App\Models\Product;
-use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnAllocation;
 use App\Models\User;
-use App\Models\Vendor;
 use App\Models\Warehouse;
-use App\Services\Inventory\InventoryMovementService;
-use App\Services\Purchasing\GoodsReceiptCapability;
-use App\Services\Purchasing\GoodsReceiptScope;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -45,8 +31,6 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 use Throwable;
 
 final class PurchaseController extends Controller
@@ -134,17 +118,24 @@ final class PurchaseController extends Controller
                 $isReceived = $p->lines->contains(fn ($l) => $l->stock_movement_id !== null);
             }
 
+            $itemsSummary = $p->lines->map(function ($l) {
+                return $l->product_name_ar ?? ($l->product ? (string) $l->product->displayName() : (string) $l->item_description);
+            })->filter()->values()->take(3)->implode('، ');
+
             return [
                 'id' => (string) $p->public_id,
                 'bill_number' => (string) ($p->vendor_invoice_number ?? $p->purchase_number ?? $p->public_id),
                 'supplier_id' => $p->vendor ? (string) $p->vendor->public_id : null,
                 'supplier_name' => $p->vendor ? (string) $p->vendor->displayName() : 'مورد عام',
                 'date' => $p->purchase_date->format('Y-m-d'),
+                'total' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
                 'total_ils' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
+                'paid' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
                 'paid_ils' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
                 'remaining_payable_ils' => (string) $remaining->toScale(2, RoundingMode::HALF_UP),
                 'status' => (string) $p->status,
                 'is_received' => $isReceived,
+                'items_summary' => $itemsSummary,
                 'lines_count' => $p->lines->count(),
             ];
         })->values()->all();
@@ -153,6 +144,7 @@ final class PurchaseController extends Controller
             'company_id' => $company->public_id,
             'count' => count($bills),
             'has_more' => $hasMore,
+            'data' => $bills,
             'purchases' => $bills,
         ], 200, [
             'Content-Type' => 'application/json',
@@ -305,10 +297,7 @@ final class PurchaseController extends Controller
     public function store(
         Request $request,
         string $companyId,
-        CreatePurchaseDraftAction $createDraftAction,
-        PostPurchaseAction $postPurchaseAction,
-        PostVendorPaymentAction $postPaymentAction,
-        EnsureCompanyInTransitWarehouseAction $ensureTransitAction
+        RecordStagedPurchaseBillAction $recordStagedBillAction
     ): JsonResponse {
         $idempotencyKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
         if (! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
@@ -336,31 +325,11 @@ final class PurchaseController extends Controller
         /** @var MobileDevice|null $device */
         $device = $request->attributes->get('mobile_device');
 
-        if (! $user->hasPermissionTo('purchasing.purchase.create') || ! $user->hasPermissionTo('purchasing.purchase.post')) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'FORBIDDEN',
-                message: 'Action is unauthorized. Missing required purchase permissions.',
-                status: 403
-            );
-        }
-
         $supplierPublicId = $request->input('supplier_id');
         if (! is_string($supplierPublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $supplierPublicId) !== 1) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
                 message: 'Valid supplier ULID is required.',
-                status: 422
-            );
-        }
-
-        $vendor = Vendor::where('company_id', $company->id)
-            ->where('public_id', $supplierPublicId)
-            ->first();
-
-        if ($vendor === null) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Valid supplier is required.',
                 status: 422
             );
         }
@@ -375,216 +344,28 @@ final class PurchaseController extends Controller
         }
 
         $billNumber = $request->input('bill_number');
-        $resolvedBillNumber = is_string($billNumber) && trim($billNumber) !== ''
-            ? trim($billNumber)
-            : 'BILL-'.substr(sha1($idempotencyKey), 0, 10);
-
-        $normalizedPayload = [
-            'supplier_id' => $supplierPublicId,
-            'bill_number' => $billNumber,
-            'paid_now' => $request->input('paid_now'),
-            'lines' => $linesInput,
-        ];
-        $requestHash = hash('sha256', json_encode($normalizedPayload, JSON_THROW_ON_ERROR));
+        $paidNow = $request->input('paid_now');
+        $explicitAccountId = $request->input('account_id') ?? $request->input('money_account_id');
 
         try {
-            $result = DB::transaction(function () use (
-                $company,
-                $user,
-                $token,
-                $vendor,
-                $linesInput,
-                $resolvedBillNumber,
-                $idempotencyKey,
-                $requestHash,
-                $request,
-                $createDraftAction,
-                $postPurchaseAction,
-                $postPaymentAction,
-                $ensureTransitAction
-            ): array {
-                // Inside-transaction credentials revalidation
-                if ($token !== null) {
-                    $lockedToken = MobileAccessToken::where('id', $token->id)->lockForUpdate()->first();
-                    if ($lockedToken === null || ! $lockedToken->isValid()) {
-                        throw new AuthenticationException('The Bearer token has been revoked or expired.');
-                    }
-
-                    $lockedDevice = MobileDevice::where('device_id', $lockedToken->device_id)->lockForUpdate()->first();
-                    if ($lockedDevice === null || $lockedDevice->isRevoked() || (int) $lockedDevice->user_id !== (int) $lockedToken->user_id) {
-                        throw new AuthenticationException('The mobile device has been revoked or unlinked.');
-                    }
-
-                    $lockedUser = User::where('id', $lockedToken->user_id)->lockForUpdate()->first();
-                    if ($lockedUser === null) {
-                        throw new AuthenticationException('Authenticated user not found.');
-                    }
-
-                    $currentEpoch = 'epoch-'.substr(hash('sha256', (string) $lockedUser->password), 0, 16);
-                    if (! hash_equals($currentEpoch, (string) $lockedToken->password_epoch)) {
-                        $lockedToken->update(['revoked_at' => now()]);
-                        throw new AuthenticationException('Password was revised; token expired.');
-                    }
-
-                    if (! $lockedUser->activeCompanies()->where('companies.id', $company->id)->exists()) {
-                        throw new AuthorizationException('User does not possess active authorized membership in company.');
-                    }
-
-                    if (! $lockedUser->hasPermissionTo('purchasing.purchase.create') || ! $lockedUser->hasPermissionTo('purchasing.purchase.post')) {
-                        throw new AuthorizationException('Missing required purchase permissions.');
-                    }
-                }
-
-                // Check existing idempotency
-                $existing = Purchase::where('company_id', $company->id)
-                    ->where('idempotency_key', $idempotencyKey)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($existing !== null) {
-                    if (hash_equals((string) $existing->request_hash, $requestHash)) {
-                        return [
-                            'is_replay' => true,
-                            'snapshot' => $existing->response_snapshot ?? [
-                                'id' => (string) $existing->public_id,
-                                'bill_number' => (string) ($existing->vendor_invoice_number ?? $existing->public_id),
-                                'status' => (string) $existing->status,
-                                'total_ils' => (string) BigDecimal::of((string) $existing->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
-                                'posted_at' => $existing->posted_at ? $existing->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
-                            ],
-                        ];
-                    }
-
-                    throw new IdempotencyConflictException("Idempotency key [{$idempotencyKey}] was previously committed with different purchase bill parameters.");
-                }
-
-                app(CompanyContext::class)->setCompany($company, $user);
-
-                // Ensure company In-Transit Warehouse
-                $transitWarehouse = $ensureTransitAction->execute($company, $user);
-
-                $draftLines = [];
-                foreach ($linesInput as $l) {
-                    $prodId = $l['product_id'] ?? null;
-                    if (! is_string($prodId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $prodId) !== 1) {
-                        continue;
-                    }
-
-                    $prod = Product::where('company_id', $company->id)
-                        ->where('public_id', $prodId)
-                        ->first();
-
-                    if ($prod !== null) {
-                        $prodUnit = ProductUnit::where('company_id', $company->id)
-                            ->where('product_id', $prod->id)
-                            ->where('active', true)
-                            ->where('is_default_purchase', true)
-                            ->first() ?? ProductUnit::where('company_id', $company->id)
-                            ->where('product_id', $prod->id)
-                            ->where('active', true)
-                            ->where('is_base', true)
-                            ->first();
-
-                        $lineDraft = [
-                            'product_id' => $prod->id,
-                            'product_unit_id' => $prodUnit?->id,
-                            'quantity' => (string) ($l['quantity'] ?? '1'),
-                            'unit_cost' => (string) ($l['unit_cost_ils'] ?? $prod->default_purchase_cost_base ?? '0'),
-                        ];
-
-                        if (! empty($l['lots']) && is_array($l['lots'])) {
-                            $lotsDraft = [];
-                            foreach ($l['lots'] as $lotItem) {
-                                $lotsDraft[] = [
-                                    'product_unit_id' => $prodUnit?->id,
-                                    'lot_number' => $lotItem['lot_number'] ?? null,
-                                    'expiry_date' => $lotItem['expiry_date'] ?? null,
-                                    'quantity' => (string) ($lotItem['quantity'] ?? $l['quantity'] ?? '1'),
-                                ];
-                            }
-                            $lineDraft['lots'] = $lotsDraft;
-                        }
-
-                        $draftLines[] = $lineDraft;
-                    }
-                }
-
-                if (empty($draftLines)) {
-                    throw new InvalidArgumentException('No valid product lines found in purchase request.');
-                }
-
-                $draftData = [
-                    'vendor_id' => $vendor->id,
-                    'warehouse_id' => $transitWarehouse->id,
-                    'currency_code' => $company->base_currency_code,
-                    'exchange_rate' => '1.0000000000',
-                    'purchase_date' => now()->format('Y-m-d'),
-                    'vendor_invoice_number' => $resolvedBillNumber,
-                    'lines' => $draftLines,
-                ];
-
-                $draft = $createDraftAction->execute($company, $user, $draftData);
-                $draft->is_staged = true;
-                $draft->idempotency_key = $idempotencyKey;
-                $draft->request_hash = $requestHash;
-                $draft->save();
-
-                $postedPurchase = $postPurchaseAction->execute($draft, $user);
-
-                // Atomically disburse payment if paid_now is provided and positive
-                $paidNow = $request->input('paid_now');
-                if ($paidNow !== null && BigDecimal::of((string) $paidNow)->isPositive()) {
-                    $cashAccount = MoneyAccount::where('company_id', $company->id)
-                        ->where('account_type', MoneyAccount::TYPE_CASH)
-                        ->where('is_active', true)
-                        ->first();
-
-                    if ($cashAccount !== null) {
-                        $paymentData = [
-                            'vendor_id' => $vendor->id,
-                            'money_account_id' => $cashAccount->id,
-                            'currency_code' => $postedPurchase->currency_code,
-                            'exchange_rate' => '1.0000000000',
-                            'amount' => (string) BigDecimal::of((string) $paidNow),
-                            'payment_date' => now()->format('Y-m-d'),
-                            'payment_method' => 'cash',
-                            'notes' => 'سداد نقدي عند شراء فاتورة #'.$postedPurchase->vendor_invoice_number,
-                            'idempotency_key' => $idempotencyKey.'-pay',
-                            'allocations' => [
-                                [
-                                    'purchase_id' => $postedPurchase->id,
-                                    'allocated_amount' => (string) BigDecimal::of((string) $paidNow),
-                                ],
-                            ],
-                        ];
-                        $postPaymentAction->execute($company, $user, $paymentData);
-                    }
-                }
-
-                $snapshot = [
-                    'id' => (string) $postedPurchase->public_id,
-                    'bill_number' => (string) ($postedPurchase->vendor_invoice_number ?? $postedPurchase->public_id),
-                    'status' => (string) $postedPurchase->status,
-                    'total_ils' => (string) BigDecimal::of((string) $postedPurchase->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
-                    'posted_at' => $postedPurchase->posted_at ? $postedPurchase->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
-                ];
-
-                DB::table('purchases')->where('id', $postedPurchase->id)->update([
-                    'response_snapshot' => json_encode($snapshot, JSON_THROW_ON_ERROR),
-                    'updated_at' => now(),
-                ]);
-
-                return [
-                    'is_replay' => false,
-                    'snapshot' => $snapshot,
-                ];
-            });
+            $result = $recordStagedBillAction->execute(
+                company: $company,
+                actor: $user,
+                supplierPublicId: $supplierPublicId,
+                billNumber: is_string($billNumber) ? $billNumber : null,
+                linesInput: $linesInput,
+                idempotencyKey: trim($idempotencyKey),
+                paidNow: is_numeric((string) $paidNow) ? (string) $paidNow : null,
+                explicitAccountId: is_string($explicitAccountId) ? $explicitAccountId : null,
+                mobileToken: $token,
+                mobileDevice: $device
+            );
 
             $status = $result['is_replay'] ? 200 : 201;
             $headers = [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-                'Idempotency-Key' => $idempotencyKey,
+                'Idempotency-Key' => trim($idempotencyKey),
             ];
             if ($result['is_replay']) {
                 $headers['X-Idempotent-Replay'] = 'true';
@@ -724,7 +505,7 @@ final class PurchaseController extends Controller
             }
         }
 
-        $linesInput = $request->input('lines');
+        $linesInput = $request->input('received_lines') ?? $request->input('lines');
         if (! is_array($linesInput) || empty($linesInput)) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -942,8 +723,7 @@ final class PurchaseController extends Controller
     public function storeReturn(
         Request $request,
         string $companyId,
-        CreatePurchaseReturnDraftAction $createReturnDraftAction,
-        PostPurchaseReturnAction $postReturnAction
+        ExecutePhysicalPurchaseReturnAction $executeReturnAction
     ): JsonResponse {
         $idempotencyKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
         if (! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
@@ -968,14 +748,8 @@ final class PurchaseController extends Controller
         $user = $request->attributes->get('mobile_user');
         /** @var MobileAccessToken|null $token */
         $token = $request->attributes->get('mobile_token');
-
-        if (! $user->hasPermissionTo('purchasing.return.manage') || ! $user->hasPermissionTo('purchasing.cost.view')) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'FORBIDDEN',
-                message: 'Action is unauthorized. Missing required purchasing.return.manage permission.',
-                status: 403
-            );
-        }
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
 
         $purchasePublicId = $request->input('purchase_id');
         if (! is_string($purchasePublicId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $purchasePublicId) !== 1) {
@@ -1015,151 +789,32 @@ final class PurchaseController extends Controller
             $reqWarehouse = Warehouse::where('company_id', $company->id)->where('public_id', $specifiedWarehousePublicId)->first();
         }
 
-        $isPhysicalReturn = false;
-        if ($purchase->is_staged) {
-            if ($specifiedGrnPublicId !== null || ($reqWarehouse !== null && ! $reqWarehouse->is_transit)) {
-                $isPhysicalReturn = true;
-            }
-        }
+        $reason = $request->input('reason');
 
         try {
-            $posted = DB::transaction(function () use (
-                $company,
-                $user,
-                $token,
-                $purchase,
-                $lines,
-                $idempotencyKey,
-                $createReturnDraftAction,
-                $postReturnAction,
-                $isPhysicalReturn,
-                $reqWarehouse,
-                $specifiedGrnPublicId
-            ) {
-                // Inside-transaction credential revalidation
-                if ($token !== null) {
-                    $lockedToken = MobileAccessToken::where('id', $token->id)->lockForUpdate()->first();
-                    if ($lockedToken === null || ! $lockedToken->isValid()) {
-                        throw new AuthenticationException('The Bearer token has been revoked or expired.');
-                    }
-                }
+            $posted = $executeReturnAction->execute(
+                company: $company,
+                actor: $user,
+                purchase: $purchase,
+                lines: $lines,
+                idempotencyKey: trim($idempotencyKey),
+                reqWarehouse: $reqWarehouse,
+                specifiedGrnPublicId: is_string($specifiedGrnPublicId) ? $specifiedGrnPublicId : null,
+                token: $token,
+                device: $device,
+                reason: is_string($reason) ? $reason : null
+            );
 
-                app(CompanyContext::class)->setCompany($company, $user);
-
-                $draftLines = [];
-                $transferBackPlan = [];
-
-                foreach ($lines as $lineData) {
-                    $productId = $lineData['product_id'] ?? null;
-                    $purchaseLinePublicId = $lineData['purchase_line_id'] ?? null;
-                    $origLine = $purchase->lines->first(function ($l) use ($productId, $purchaseLinePublicId) {
-                        if ($purchaseLinePublicId !== null && (string) $l->public_id === (string) $purchaseLinePublicId) {
-                            return true;
-                        }
-
-                        return $productId !== null && $l->product && (string) $l->product->public_id === (string) $productId;
-                    });
-
-                    if ($origLine !== null) {
-                        $qty = (string) ($lineData['quantity'] ?? '1');
-                        $draftLines[] = [
-                            'purchase_line_id' => (int) $origLine->id,
-                            'quantity' => $qty,
-                        ];
-
-                        if ($isPhysicalReturn) {
-                            // Find physical warehouse and lot from specified GRN or latest GRN for this line
-                            $grnLineQuery = GoodsReceiptNoteLine::where('company_id', $company->id)
-                                ->where('purchase_line_id', $origLine->id)
-                                ->with(['goodsReceiptNote.warehouse']);
-                            if ($specifiedGrnPublicId !== null) {
-                                $grnLineQuery->whereHas('goodsReceiptNote', fn ($q) => $q->where('public_id', $specifiedGrnPublicId));
-                            }
-                            /** @var GoodsReceiptNoteLine|null $grnLine */
-                            $grnLine = $grnLineQuery->orderByDesc('id')->first();
-
-                            $physicalWh = $reqWarehouse ?? $grnLine?->goodsReceiptNote?->warehouse;
-                            if ($physicalWh !== null && ! $physicalWh->is_transit) {
-                                $transferBackPlan[] = [
-                                    'origLine' => $origLine,
-                                    'quantity' => $qty,
-                                    'physicalWarehouse' => $physicalWh,
-                                    'lotId' => $grnLine?->lot_id,
-                                    'grnId' => $grnLine?->goods_receipt_note_id,
-                                ];
-                            }
-                        }
-                    }
-                }
-
-                if (empty($draftLines)) {
-                    throw new InvalidArgumentException('No valid purchase lines matched for return.');
-                }
-
-                // If staged bill and goods were physically received, perform coordinated transfer-back to transit
-                $originWarehouseId = null;
-                $originGrnId = null;
-
-                if (! empty($transferBackPlan)) {
-                    $transitWh = $purchase->warehouse;
-                    $firstPlan = $transferBackPlan[0];
-                    $sourcePhysicalWh = $firstPlan['physicalWarehouse'];
-                    $originWarehouseId = $sourcePhysicalWh->id;
-                    $originGrnId = $firstPlan['grnId'];
-
-                    $transferLines = [];
-                    foreach ($transferBackPlan as $plan) {
-                        $transferLines[] = new StockTransferLineCommand(
-                            productId: (int) $plan['origLine']->product_id,
-                            quantity: Quantity::of($plan['quantity']),
-                            unitId: (int) $plan['origLine']->productUnit->unit_id,
-                            lotId: $plan['lotId']
-                        );
-                    }
-
-                    $returnScope = app(GoodsReceiptScope::class);
-                    $returnScope->withinReturnTransfer(
-                        $this,
-                        (int) $company->id,
-                        $sourcePhysicalWh,
-                        $transitWh,
-                        $user,
-                        function (GoodsReceiptCapability $cap) use ($company, $sourcePhysicalWh, $transitWh, $transferLines, $idempotencyKey, $user): void {
-                            $cmd = new StockTransferCommand(
-                                companyId: (int) $company->id,
-                                sourceWarehouseId: (int) $sourcePhysicalWh->id,
-                                destinationWarehouseId: (int) $transitWh->id,
-                                movementDate: now()->format('Y-m-d'),
-                                lines: $transferLines,
-                                idempotencyKey: 'return_transfer_'.$idempotencyKey,
-                                createdBy: (int) $user->id,
-                                sourceType: 'goods_receipt',
-                                sourceId: 1,
-                                reason: 'Physical stock return transfer to transit',
-                                capability: $cap
-                            );
-                            app(InventoryMovementService::class)->transfer($cmd);
-                        }
-                    );
-                }
-
-                $draftData = [
-                    'purchase_id' => (int) $purchase->id,
-                    'return_date' => now()->format('Y-m-d'),
-                    'reason' => 'مرتجع مشتريات عبر تطبيق الجوال',
-                    'lines' => $draftLines,
-                ];
-
-                $draft = $createReturnDraftAction->execute($company, $user, $draftData);
-
-                if ($originWarehouseId !== null) {
-                    $draft->origin_warehouse_id = $originWarehouseId;
-                    $draft->origin_goods_receipt_note_id = $originGrnId;
-                    $draft->save();
-                }
-
-                return $postReturnAction->execute($draft, $user);
-            });
+            return response()->json([
+                'id' => (string) $posted->public_id,
+                'status' => (string) $posted->status,
+                'total_amount' => (string) BigDecimal::of((string) $posted->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
+                'currency' => (string) $posted->currency_code,
+                'posted_at' => $posted->posted_at ? $posted->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
+            ], 201, [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+            ]);
         } catch (AuthenticationException $e) {
             return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
         } catch (AuthorizationException $e) {
@@ -1171,16 +826,5 @@ final class PurchaseController extends Controller
                 status: 422
             );
         }
-
-        return response()->json([
-            'id' => (string) $posted->public_id,
-            'status' => (string) $posted->status,
-            'total_amount' => (string) BigDecimal::of((string) $posted->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
-            'currency' => (string) $posted->currency_code,
-            'posted_at' => $posted->posted_at ? $posted->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
-        ], 201, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 }

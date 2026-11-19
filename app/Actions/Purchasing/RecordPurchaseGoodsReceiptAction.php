@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Purchasing;
 
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\DTO\StockTransferCommand;
 use App\Domain\Inventory\DTO\StockTransferLineCommand;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
@@ -28,14 +29,15 @@ use App\Services\Inventory\InventoryMovementService;
 use App\Services\Purchasing\GoodsReceiptCapability;
 use App\Services\Purchasing\GoodsReceiptScope;
 use App\Services\Sales\DocumentSequenceService;
-use App\Services\Sales\SalesActorGuard;
+use App\Support\Mobile\NativeAdmissionGuard;
+use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Auth\AuthenticationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use LogicException;
 
 final class RecordPurchaseGoodsReceiptAction
 {
@@ -60,61 +62,37 @@ final class RecordPurchaseGoodsReceiptAction
         ?MobileDevice $mobileDevice = null
     ): GoodsReceiptNote {
         if ($this->activeGoodsReceiptScope !== null) {
-            throw new InvalidArgumentException('Goods receipt action cannot be reentered.');
+            throw new LogicException('Goods receipt action cannot be reentered.');
         }
 
-        return DB::transaction(function () use ($company, $purchase, $actor, $command, $mobileToken): GoodsReceiptNote {
-            // 1. Fresh native token/device/password/membership/permission revalidation INSIDE the same transaction
-            if ($mobileToken !== null) {
-                /** @var MobileAccessToken|null $lockedToken */
-                $lockedToken = MobileAccessToken::where('id', $mobileToken->id)->lockForUpdate()->first();
-                if ($lockedToken === null || ! $lockedToken->isValid()) {
-                    throw new AuthenticationException('The Bearer token has been revoked or expired.');
-                }
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use (
+            $company,
+            $purchase,
+            $actor,
+            $command,
+            $mobileToken,
+            $mobileDevice
+        ): GoodsReceiptNote {
+            // 1. Enforce strict lock order and native admission: Company -> Membership -> User -> Device -> Token
+            $admission = app(NativeAdmissionGuard::class)->lockAndAuthorize(
+                (int) $company->id,
+                $actor,
+                $mobileToken,
+                $mobileDevice,
+                ['inventory.stock.transfer', 'purchasing.purchase.view']
+            );
 
-                /** @var MobileDevice|null $lockedDevice */
-                $lockedDevice = MobileDevice::where('device_id', $lockedToken->device_id)->lockForUpdate()->first();
-                if ($lockedDevice === null || $lockedDevice->isRevoked() || (int) $lockedDevice->user_id !== (int) $lockedToken->user_id) {
-                    throw new AuthenticationException('The mobile device has been revoked or unlinked.');
-                }
+            $lockedCompany = $admission['company'];
+            $lockedActor = $admission['user'];
+            $lockedDevice = $admission['device'];
 
-                /** @var User|null $lockedUser */
-                $lockedUser = User::where('id', $lockedToken->user_id)->lockForUpdate()->first();
-                if ($lockedUser === null) {
-                    throw new AuthenticationException('Authenticated user not found.');
-                }
+            app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
 
-                $currentEpoch = 'epoch-'.substr(hash('sha256', (string) $lockedUser->password), 0, 16);
-                if (! hash_equals($currentEpoch, (string) $lockedToken->password_epoch)) {
-                    $lockedToken->update(['revoked_at' => now()]);
-                    throw new AuthenticationException('Password was revised; token expired.');
-                }
-
-                if (! $lockedUser->activeCompanies()->where('companies.id', $company->id)->exists()) {
-                    throw new AuthorizationException('User does not possess active authorized membership in the requested company.');
-                }
-
-                if ($lockedToken->company_id !== null && (int) $lockedToken->company_id !== (int) $company->id) {
-                    throw new AuthorizationException('Token is bound to another company.');
-                }
-
-                if (! $lockedUser->hasPermissionTo('inventory.stock.transfer') || ! $lockedUser->hasPermissionTo('purchasing.purchase.view')) {
-                    throw new AuthorizationException('Missing required permissions for goods receipt.');
-                }
-            }
-
-            // 2. Pessimistic lock Company and authorize Actor
-            $guard = app(SalesActorGuard::class);
-            $guard->lockAndAuthorize((int) $company->id, $actor, 'inventory.stock.transfer');
-            $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.purchase.view');
-
-            /** @var Company $lockedCompany */
-            $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
-
-            // 3. Pessimistic lock Purchase
+            // 2. Pessimistic lock Purchase FOR UPDATE
             /** @var Purchase $lockedPurchase */
             $lockedPurchase = Purchase::where('company_id', $lockedCompany->id)
                 ->where('id', $purchase->id)
+                ->with(['vendor'])
                 ->lockForUpdate()
                 ->firstOrFail();
 
@@ -130,8 +108,25 @@ final class RecordPurchaseGoodsReceiptAction
                 throw new InvalidArgumentException('Cannot create a Goods Receipt Note for a direct-receipt purchase bill.');
             }
 
-            // 4. Idempotency Check
-            $requestHash = hash('sha256', json_encode($command->toPayloadArray(), JSON_THROW_ON_ERROR));
+            // 3. Strict canonical date validation
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $command->receiptDate) !== 1) {
+                throw new InvalidArgumentException("Receipt date [{$command->receiptDate}] must be in canonical YYYY-MM-DD format.");
+            }
+            try {
+                Carbon::createFromFormat('!Y-m-d', $command->receiptDate);
+            } catch (\Throwable) {
+                throw new InvalidArgumentException("Receipt date [{$command->receiptDate}] is not a valid calendar date.");
+            }
+
+            // 4. Request Hash & Strict Scoped Replay Lookup
+            $normalizedPayload = [
+                'source_purchase_id' => (string) $lockedPurchase->public_id,
+                'actor_id' => (int) $lockedActor->id,
+                'device_id' => (string) $lockedDevice->device_id,
+                'command' => $command->toPayloadArray(),
+            ];
+            $requestHash = hash('sha256', json_encode($normalizedPayload, JSON_THROW_ON_ERROR));
+
             /** @var GoodsReceiptNote|null $existingGrn */
             $existingGrn = GoodsReceiptNote::where('company_id', $lockedCompany->id)
                 ->where('idempotency_key', $command->idempotencyKey)
@@ -139,6 +134,17 @@ final class RecordPurchaseGoodsReceiptAction
                 ->first();
 
             if ($existingGrn !== null) {
+                // Same key, different purchase => 409 Conflict
+                if ((int) $existingGrn->purchase_id !== (int) $lockedPurchase->id) {
+                    throw new IdempotencyConflictException("Idempotency key [{$command->idempotencyKey}] was previously committed for a different purchase bill.");
+                }
+
+                // Cross-actor replay => 403 Forbidden
+                if ((int) $existingGrn->created_by !== (int) $lockedActor->id) {
+                    throw new AuthorizationException('Idempotency key replay across different actors is forbidden.');
+                }
+
+                // Replay check
                 if (hash_equals($existingGrn->request_hash, $requestHash)) {
                     return $existingGrn;
                 }
@@ -184,10 +190,10 @@ final class RecordPurchaseGoodsReceiptAction
                 throw new InvalidArgumentException('Destination warehouse must be an active non-transit warehouse.');
             }
 
-            // 7. Validate Quantities and Over-Receipt Protection
+            // 7. Aggregate requested base quantities per line and validate over-receipt
             $unitConversionService = app(UnitConversionService::class);
-            $stockTransferLines = [];
-            $lineExecutionPlan = [];
+            $requestedBasePerLine = [];
+            $parsedLines = [];
 
             foreach ($command->lines as $lineCmd) {
                 /** @var PurchaseLine|null $purchaseLine */
@@ -196,48 +202,30 @@ final class RecordPurchaseGoodsReceiptAction
                     throw new InvalidArgumentException("Purchase line [{$lineCmd->purchaseLineId}] does not belong to purchase bill [{$lockedPurchase->id}].");
                 }
 
-                // Ordered base quantity
-                $orderedBase = BigDecimal::of((string) $purchaseLine->quantity_base);
-
-                // Cumulative previously received base quantity from immutable GRN lines
-                $previouslyReceivedRaw = GoodsReceiptNoteLine::where('company_id', $lockedCompany->id)
-                    ->where('purchase_line_id', $purchaseLine->id)
-                    ->sum('quantity_base');
-                $prevReceivedBase = BigDecimal::of((string) $previouslyReceivedRaw);
-
-                // Pre-receipt returns from transit (returns where goods were NOT transferred back from physical)
-                $preReceiptReturnedRaw = PurchaseReturnAllocation::where('company_id', $lockedCompany->id)
-                    ->whereHas('purchaseReturnLine', fn ($q) => $q->where('purchase_line_id', $purchaseLine->id))
-                    ->whereHas('purchaseReturn', fn ($q) => $q->where('warehouse_id', $sourceWarehouse->id)
-                        ->where('status', PurchaseReturn::STATUS_POSTED)
-                        ->where(fn ($wq) => $wq->whereNull('origin_warehouse_id')->orWhere('origin_warehouse_id', $sourceWarehouse->id))
-                    )
-                    ->sum('quantity_base');
-                $preReceiptReturnedBase = BigDecimal::of((string) $preReceiptReturnedRaw);
-
-                // Remaining receivable quantity without double-subtracting physical returns
-                $remainingBase = $orderedBase->minus($prevReceivedBase)->minus($preReceiptReturnedBase);
-                if ($remainingBase->isNegative()) {
-                    $remainingBase = BigDecimal::zero();
+                $quantityObj = Quantity::of((string) $lineCmd->quantity);
+                if (! $quantityObj->isPositive()) {
+                    throw new InvalidArgumentException("Receipt quantity for line [{$purchaseLine->public_id}] must be strictly positive.");
                 }
 
-                // Convert requested quantity to base units
-                $productUnit = $purchaseLine->productUnit;
-                $quantityObj = Quantity::of((string) $lineCmd->quantity);
-                $quantityBaseObj = $unitConversionService->toBase($quantityObj, $productUnit);
+                $quantityBaseObj = $unitConversionService->toBase($quantityObj, $purchaseLine->productUnit);
                 $quantityBase = $quantityBaseObj->toBigDecimal();
 
-                if ($quantityBase->isGreaterThan($remainingBase)) {
-                    throw OverReceiptLimitException::forLine(
-                        $purchaseLine->public_id,
-                        (string) $quantityBase->toScale(6, RoundingMode::HALF_UP),
-                        (string) $remainingBase->toScale(6, RoundingMode::HALF_UP)
-                    );
+                $lineId = (int) $purchaseLine->id;
+                if (! isset($requestedBasePerLine[$lineId])) {
+                    $requestedBasePerLine[$lineId] = BigDecimal::zero();
                 }
+                $requestedBasePerLine[$lineId] = $requestedBasePerLine[$lineId]->plus($quantityBase);
 
-                // Expiry and lot resolution
+                // Lot and expiry resolution per entry
                 $lotId = null;
                 if ($purchaseLine->product->track_expiry) {
+                    if ($lineCmd->expiryDate !== null && trim($lineCmd->expiryDate) !== '') {
+                        $expCandidate = trim($lineCmd->expiryDate);
+                        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $expCandidate) !== 1) {
+                            throw new InvalidArgumentException("Expiry date [{$expCandidate}] must be in canonical YYYY-MM-DD format.");
+                        }
+                    }
+
                     $matchedLotId = null;
                     if ($lineCmd->lotNumber !== null && trim($lineCmd->lotNumber) !== '') {
                         $needle = trim($lineCmd->lotNumber);
@@ -266,25 +254,59 @@ final class RecordPurchaseGoodsReceiptAction
                     $lotId = (int) $matchedLotId;
                 }
 
-                $stockTransferLines[] = new StockTransferLineCommand(
-                    productId: (int) $purchaseLine->product_id,
-                    quantity: $quantityObj,
-                    unitId: (int) $purchaseLine->productUnit->unit_id,
-                    lotId: $lotId
-                );
-
-                $lineExecutionPlan[] = [
+                $parsedLines[] = [
                     'lineCmd' => $lineCmd,
                     'purchaseLine' => $purchaseLine,
+                    'quantityObj' => $quantityObj,
                     'quantityBase' => $quantityBase,
-                    'prevReceivedBase' => $prevReceivedBase,
-                    'preReceiptReturnedBase' => $preReceiptReturnedBase,
-                    'orderedBase' => $orderedBase,
                     'lotId' => $lotId,
                 ];
             }
 
-            // 8. Execute Paired Stock Transfer within GoodsReceiptScope
+            // Compute remaining receivable per line and validate aggregate requested quantity
+            $lineRemainingMap = [];
+            foreach ($purchaseLines as $pl) {
+                $orderedBase = BigDecimal::of((string) $pl->quantity_base);
+                $previouslyReceivedRaw = GoodsReceiptNoteLine::where('company_id', $lockedCompany->id)
+                    ->where('purchase_line_id', $pl->id)
+                    ->whereHas('goodsReceiptNote', fn ($q) => $q->where('status', GoodsReceiptNote::STATUS_POSTED))
+                    ->sum('quantity_base');
+                $prevReceivedBase = BigDecimal::of((string) $previouslyReceivedRaw);
+
+                $preReceiptReturnedRaw = PurchaseReturnAllocation::where('company_id', $lockedCompany->id)
+                    ->whereHas('purchaseReturnLine', fn ($q) => $q->where('purchase_line_id', $pl->id))
+                    ->whereHas('purchaseReturn', fn ($q) => $q->where('warehouse_id', $sourceWarehouse->id)
+                        ->where('status', PurchaseReturn::STATUS_POSTED)
+                        ->where(fn ($wq) => $wq->whereNull('origin_warehouse_id')->orWhere('origin_warehouse_id', $sourceWarehouse->id))
+                    )
+                    ->sum('quantity_base');
+                $preReceiptReturnedBase = BigDecimal::of((string) $preReceiptReturnedRaw);
+
+                $remainingBase = $orderedBase->minus($prevReceivedBase)->minus($preReceiptReturnedBase);
+                if ($remainingBase->isNegative()) {
+                    $remainingBase = BigDecimal::zero();
+                }
+
+                $lineRemainingMap[$pl->id] = [
+                    'orderedBase' => $orderedBase,
+                    'prevReceivedBase' => $prevReceivedBase,
+                    'preReceiptReturnedBase' => $preReceiptReturnedBase,
+                    'remainingBase' => $remainingBase,
+                ];
+
+                if (isset($requestedBasePerLine[$pl->id])) {
+                    $totalRequestedForLine = $requestedBasePerLine[$pl->id];
+                    if ($totalRequestedForLine->isGreaterThan($remainingBase)) {
+                        throw OverReceiptLimitException::forLine(
+                            $pl->public_id,
+                            (string) $totalRequestedForLine->toScale(6, RoundingMode::HALF_UP),
+                            (string) $remainingBase->toScale(6, RoundingMode::HALF_UP)
+                        );
+                    }
+                }
+            }
+
+            // 8. Persist Canonical Draft Header and Lines before Transfer
             $scope = app(GoodsReceiptScope::class);
             $this->activeGoodsReceiptScope = $scope;
 
@@ -294,18 +316,19 @@ final class RecordPurchaseGoodsReceiptAction
                     $lockedPurchase,
                     $sourceWarehouse,
                     $destWarehouse,
-                    $actor,
+                    $lockedActor,
                     function (GoodsReceiptCapability $capability) use (
                         $lockedCompany,
                         $lockedPurchase,
                         $sourceWarehouse,
                         $destWarehouse,
-                        $actor,
+                        $lockedActor,
                         $command,
                         $requestHash,
-                        $stockTransferLines,
-                        $lineExecutionPlan,
+                        $parsedLines,
                         $purchaseLines,
+                        $lineRemainingMap,
+                        $requestedBasePerLine,
                         $scope
                     ): GoodsReceiptNote {
                         $year = (int) substr($command->receiptDate, 0, 4);
@@ -316,24 +339,7 @@ final class RecordPurchaseGoodsReceiptAction
                         );
                         $scope->recordAllocatedNumber($this, $number);
 
-                        $transferCmd = new StockTransferCommand(
-                            companyId: (int) $lockedCompany->id,
-                            sourceWarehouseId: (int) $sourceWarehouse->id,
-                            destinationWarehouseId: (int) $destWarehouse->id,
-                            movementDate: $command->receiptDate,
-                            lines: $stockTransferLines,
-                            idempotencyKey: 'grn_transfer_'.$command->idempotencyKey,
-                            createdBy: (int) $actor->id,
-                            sourceType: 'goods_receipt',
-                            sourceId: 1, // temporary until GRN created
-                            reason: "Goods Receipt Note {$number}",
-                            capability: $capability
-                        );
-
-                        $movements = app(InventoryMovementService::class)->transfer($transferCmd);
-                        $operationId = (int) $movements[0]->inventory_operation_id;
-
-                        // Create GRN document header
+                        // A. Persist real canonical GRN header in draft status
                         $grn = GoodsReceiptNote::create([
                             'public_id' => (string) Str::ulid(),
                             'company_id' => $lockedCompany->id,
@@ -341,32 +347,26 @@ final class RecordPurchaseGoodsReceiptAction
                             'grn_number' => $number,
                             'warehouse_id' => $destWarehouse->id,
                             'receipt_date' => $command->receiptDate,
-                            'status' => GoodsReceiptNote::STATUS_POSTED,
-                            'inventory_operation_id' => $operationId,
+                            'status' => GoodsReceiptNote::STATUS_DRAFT,
+                            'inventory_operation_id' => null,
                             'notes' => $command->notes,
                             'idempotency_key' => $command->idempotencyKey,
                             'request_hash' => $requestHash,
-                            'response_snapshot' => [],
-                            'created_by' => $actor->id,
+                            'response_snapshot' => null,
+                            'created_by' => $lockedActor->id,
                         ]);
 
-                        // Update transfer movements source_id to GRN ID via DB builder (StockMovement model is immutable)
-                        DB::table('stock_movements')
-                            ->whereIn('id', collect($movements)->pluck('id'))
-                            ->update(['source_id' => $grn->id]);
+                        // B. Persist real canonical GRN lines in draft status
+                        $draftGrnLines = [];
+                        $stockTransferLines = [];
 
-                        $responseLines = [];
-                        foreach ($lineExecutionPlan as $idx => $plan) {
-                            $lineCmd = $plan['lineCmd'];
+                        foreach ($parsedLines as $item) {
+                            $lineCmd = $item['lineCmd'];
                             /** @var PurchaseLine $purchaseLine */
-                            $purchaseLine = $plan['purchaseLine'];
-                            $quantityBase = $plan['quantityBase'];
-                            $prevReceivedBase = $plan['prevReceivedBase'];
-                            $preReceiptReturnedBase = $plan['preReceiptReturnedBase'];
-                            $orderedBase = $plan['orderedBase'];
-
-                            $outMov = $movements[$idx * 2];
-                            $inMov = $movements[$idx * 2 + 1];
+                            $purchaseLine = $item['purchaseLine'];
+                            $quantityObj = $item['quantityObj'];
+                            $quantityBase = $item['quantityBase'];
+                            $lotId = $item['lotId'];
 
                             $grnLine = GoodsReceiptNoteLine::create([
                                 'public_id' => (string) Str::ulid(),
@@ -375,82 +375,113 @@ final class RecordPurchaseGoodsReceiptAction
                                 'purchase_line_id' => $purchaseLine->id,
                                 'product_id' => $purchaseLine->product_id,
                                 'product_unit_id' => $purchaseLine->product_unit_id,
-                                'lot_id' => $plan['lotId'],
+                                'lot_id' => $lotId,
                                 'quantity' => (string) $lineCmd->quantity->toScale(6, RoundingMode::HALF_UP),
                                 'quantity_base' => (string) $quantityBase->toScale(6, RoundingMode::HALF_UP),
-                                'transfer_out_movement_id' => $outMov->id,
-                                'transfer_in_movement_id' => $inMov->id,
+                                'transfer_out_movement_id' => null,
+                                'transfer_in_movement_id' => null,
                             ]);
 
-                            DB::table('stock_movements')
-                                ->where('id', $outMov->id)
-                                ->update(['source_line_id' => $grnLine->id]);
-                            DB::table('stock_movements')
-                                ->where('id', $inMov->id)
-                                ->update(['source_line_id' => $grnLine->id]);
+                            $draftGrnLines[] = [
+                                'grnLine' => $grnLine,
+                                'purchaseLine' => $purchaseLine,
+                                'quantityBase' => $quantityBase,
+                            ];
 
-                            // New cumulative received after this GRN
-                            $newCumulativeReceived = $prevReceivedBase->plus($quantityBase);
-                            $newRemaining = $orderedBase->minus($newCumulativeReceived)->minus($preReceiptReturnedBase);
+                            $stockTransferLines[] = new StockTransferLineCommand(
+                                productId: (int) $purchaseLine->product_id,
+                                quantity: $quantityObj,
+                                unitId: (int) $purchaseLine->productUnit->unit_id,
+                                lotId: $lotId,
+                                sourceLineId: (int) $grnLine->id
+                            );
+                        }
+
+                        // C. Execute Paired Stock Transfer with REAL GRN & line provenance
+                        $transferCmd = new StockTransferCommand(
+                            companyId: (int) $lockedCompany->id,
+                            sourceWarehouseId: (int) $sourceWarehouse->id,
+                            destinationWarehouseId: (int) $destWarehouse->id,
+                            movementDate: $command->receiptDate,
+                            lines: $stockTransferLines,
+                            idempotencyKey: 'grn_transfer_'.$command->idempotencyKey,
+                            createdBy: (int) $lockedActor->id,
+                            sourceType: 'goods_receipt',
+                            sourceId: (int) $grn->id,
+                            reason: "Goods Receipt Note {$number}",
+                            capability: $capability
+                        );
+
+                        $movements = app(InventoryMovementService::class)->transfer($transferCmd);
+                        $operationId = (int) $movements[0]->inventory_operation_id;
+
+                        // D. Link movements to draft lines without raw SQL bypasses
+                        $responseLines = [];
+                        foreach ($draftGrnLines as $idx => $draftItem) {
+                            /** @var GoodsReceiptNoteLine $grnLine */
+                            $grnLine = $draftItem['grnLine'];
+                            /** @var PurchaseLine $purchaseLine */
+                            $purchaseLine = $draftItem['purchaseLine'];
+                            $quantityBase = $draftItem['quantityBase'];
+
+                            $outMov = $movements[$idx * 2];
+                            $inMov = $movements[$idx * 2 + 1];
+
+                            $grnLine->transfer_out_movement_id = $outMov->id;
+                            $grnLine->transfer_in_movement_id = $inMov->id;
+                            $grnLine->save();
+
+                            $remData = $lineRemainingMap[$purchaseLine->id];
+                            $newCumulativeReceived = $remData['prevReceivedBase']->plus($requestedBasePerLine[$purchaseLine->id]);
+                            $newRemaining = $remData['orderedBase']->minus($newCumulativeReceived)->minus($remData['preReceiptReturnedBase']);
                             if ($newRemaining->isNegative()) {
                                 $newRemaining = BigDecimal::zero();
                             }
-
-                            $isLineComplete = $newRemaining->isZero();
 
                             $responseLines[] = [
                                 'line_id' => (string) $purchaseLine->public_id,
                                 'product_id' => (string) $purchaseLine->product->public_id,
                                 'product_name' => (string) ($purchaseLine->product_name_ar ?? $purchaseLine->product->displayName()),
-                                'ordered_quantity' => (string) $orderedBase->toScale(6, RoundingMode::HALF_UP),
-                                'previously_received_quantity' => (string) $prevReceivedBase->toScale(6, RoundingMode::HALF_UP),
+                                'ordered_quantity' => (string) $remData['orderedBase']->toScale(6, RoundingMode::HALF_UP),
+                                'previously_received_quantity' => (string) $remData['prevReceivedBase']->toScale(6, RoundingMode::HALF_UP),
                                 'received_now' => (string) $quantityBase->toScale(6, RoundingMode::HALF_UP),
                                 'remaining_quantity' => (string) $newRemaining->toScale(6, RoundingMode::HALF_UP),
-                                'is_line_complete' => $isLineComplete,
+                                'is_line_complete' => $newRemaining->isZero(),
                                 'unit_name' => (string) ($purchaseLine->productUnit?->unit?->displayName() ?? 'وحدة'),
                             ];
                         }
 
-                        // Determine overall receiving status across all lines of the purchase bill
+                        // E. Determine overall receiving status across all bill lines
                         $allComplete = true;
                         foreach ($purchaseLines as $pl) {
-                            $totReceived = GoodsReceiptNoteLine::where('company_id', $lockedCompany->id)
-                                ->where('purchase_line_id', $pl->id)
-                                ->sum('quantity_base');
-                            $totPreReturn = PurchaseReturnAllocation::where('company_id', $lockedCompany->id)
-                                ->whereHas('purchaseReturnLine', fn ($q) => $q->where('purchase_line_id', $pl->id))
-                                ->whereHas('purchaseReturn', fn ($q) => $q->where('warehouse_id', $sourceWarehouse->id)
-                                    ->where('status', PurchaseReturn::STATUS_POSTED)
-                                    ->where(fn ($wq) => $wq->whereNull('origin_warehouse_id')->orWhere('origin_warehouse_id', $sourceWarehouse->id))
-                                )
-                                ->sum('quantity_base');
-
-                            $plRemaining = BigDecimal::of((string) $pl->quantity_base)
-                                ->minus(BigDecimal::of((string) $totReceived))
-                                ->minus(BigDecimal::of((string) $totPreReturn));
-
+                            $remData = $lineRemainingMap[$pl->id];
+                            $reqForLine = $requestedBasePerLine[$pl->id] ?? BigDecimal::zero();
+                            $plRemaining = $remData['remainingBase']->minus($reqForLine);
                             if ($plRemaining->isPositive()) {
                                 $allComplete = false;
                                 break;
                             }
                         }
 
-                        $overallReceivingStatus = $allComplete ? 'received' : 'partial';
+                        $overallStatus = $allComplete ? 'received' : 'partial';
 
-                        $snapshot = [
+                        $responseSnapshot = [
                             'id' => (string) $grn->public_id,
-                            'grn_number' => (string) $grn->grn_number,
+                            'grn_number' => (string) $number,
                             'purchase_id' => (string) $lockedPurchase->public_id,
-                            'bill_number' => (string) ($lockedPurchase->vendor_invoice_number ?? $lockedPurchase->purchase_number ?? $lockedPurchase->public_id),
-                            'supplier_name' => (string) ($lockedPurchase->vendor ? $lockedPurchase->vendor->displayName() : 'مورد عام'),
-                            'receipt_date' => (string) $grn->receipt_date->format('Y-m-d'),
+                            'bill_number' => (string) ($lockedPurchase->vendor_invoice_number ?? $lockedPurchase->public_id),
+                            'supplier_name' => (string) ($lockedPurchase->vendor?->displayName() ?? 'مورد عام'),
+                            'receipt_date' => $command->receiptDate,
                             'destination_warehouse' => (string) $destWarehouse->displayName(),
-                            'overall_receiving_status' => $overallReceivingStatus,
+                            'overall_receiving_status' => $overallStatus,
                             'lines' => $responseLines,
                             'posted_at' => now()->format('Y-m-d\TH:i:s\Z'),
                         ];
 
-                        $grn->response_snapshot = $snapshot;
+                        // F. Transition GRN to posted and freeze final metadata
+                        $grn->inventory_operation_id = $operationId;
+                        $grn->status = GoodsReceiptNote::STATUS_POSTED;
+                        $grn->response_snapshot = $responseSnapshot;
                         $grn->save();
 
                         return $grn;

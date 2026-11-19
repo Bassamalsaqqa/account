@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace Tests\Feature\Mobile\V1;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Inventory\AdjustStockAction;
+use App\Actions\Purchasing\EnsureCompanyInTransitWarehouseAction;
 use App\Actions\Purchasing\RecordPurchaseGoodsReceiptAction;
+use App\Actions\Sales\CreateSalesInvoiceDraftAction;
+use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
+use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Purchasing\DTO\GoodsReceiptLineCommand;
 use App\Domain\Purchasing\DTO\RecordGoodsReceiptCommand;
 use App\Models\Company;
 use App\Models\CompanyPurchaseSetting;
 use App\Models\Currency;
+use App\Models\Customer;
 use App\Models\GoodsReceiptNote;
 use App\Models\InventoryBalance;
 use App\Models\MobileAccessToken;
@@ -23,8 +29,15 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\Warehouse;
+use App\Services\Accounting\AccountingReconciliationService;
+use App\Services\Accounting\Phase7ReconciliationService;
+use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Inventory\ProductCatalogService;
+use App\Services\Money\MoneyReconciliationService;
+use App\Services\Purchasing\GoodsReceiptScope;
+use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Purchasing\VendorCatalogService;
+use App\Services\Sales\SalesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Exception;
@@ -32,6 +45,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 final class PurchaseGoodsReceiptWorkflowTest extends TestCase
@@ -49,8 +63,6 @@ final class PurchaseGoodsReceiptWorkflowTest extends TestCase
     private Unit $unit;
 
     private Product $product;
-
-    private ProductUnit $productUnit;
 
     private string $deviceId;
 
@@ -115,8 +127,6 @@ final class PurchaseGoodsReceiptWorkflowTest extends TestCase
             'base_unit_id' => $this->unit->id,
         ], $this->user->id);
 
-        $this->productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
-
         $this->vendor = app(VendorCatalogService::class)->save($this->company, $this->user, [
             'name_ar' => 'مورد رئيسي',
             'name_en' => 'Main Vendor',
@@ -149,6 +159,9 @@ final class PurchaseGoodsReceiptWorkflowTest extends TestCase
         auth()->forgetGuards();
     }
 
+    /**
+     * @return array<string, string>
+     */
     private function authHeaders(string $idempotencyKey): array
     {
         return [
@@ -733,5 +746,343 @@ final class PurchaseGoodsReceiptWorkflowTest extends TestCase
         $grn2->assertStatus(201)
             ->assertJsonPath('lines.0.remaining_quantity', '0.000000')
             ->assertJsonPath('overall_receiving_status', 'received');
+    }
+
+    public function test_idempotency_cross_purchase_and_cross_actor_protection(): void
+    {
+        // 1. Create Purchase Bill A
+        $resA = $this->withHeaders($this->authHeaders('bill-key-a'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases", [
+                'supplier_id' => $this->vendor->public_id,
+                'bill_number' => 'BILL-REPLAY-A',
+                'lines' => [
+                    ['product_id' => $this->product->public_id, 'quantity' => '50', 'unit_cost_ils' => '10.00'],
+                ],
+            ]);
+        $resA->assertStatus(201);
+        $purchaseAId = $resA->json('id');
+        $this->bindContext();
+        $purchaseA = Purchase::where('public_id', $purchaseAId)->firstOrFail();
+        $lineA = $purchaseA->lines()->firstOrFail();
+
+        // 2. Initial GRN on Bill A with key 'shared-grn-key-1'
+        $grn1 = $this->withHeaders($this->authHeaders('shared-grn-key-1'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchaseAId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $lineA->public_id, 'quantity' => '10'],
+                ],
+            ]);
+        $grn1->assertStatus(201)
+            ->assertHeaderMissing('X-Idempotent-Replay');
+
+        // 3. Exact replay on Bill A with same key -> 200
+        $replay = $this->withHeaders($this->authHeaders('shared-grn-key-1'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchaseAId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $lineA->public_id, 'quantity' => '10'],
+                ],
+            ]);
+        $replay->assertStatus(200)
+            ->assertHeader('X-Idempotent-Replay', 'true')
+            ->assertJsonPath('id', $grn1->json('id'));
+
+        // 4. Create Purchase Bill B
+        $resB = $this->withHeaders($this->authHeaders('bill-key-b'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases", [
+                'supplier_id' => $this->vendor->public_id,
+                'bill_number' => 'BILL-REPLAY-B',
+                'lines' => [
+                    ['product_id' => $this->product->public_id, 'quantity' => '50', 'unit_cost_ils' => '10.00'],
+                ],
+            ]);
+        $resB->assertStatus(201);
+        $purchaseBId = $resB->json('id');
+        $this->bindContext();
+        $purchaseB = Purchase::where('public_id', $purchaseBId)->firstOrFail();
+        $lineB = $purchaseB->lines()->firstOrFail();
+
+        // 5. Attempt replay with SAME key on DIFFERENT purchase bill -> 409
+        $conflict = $this->withHeaders($this->authHeaders('shared-grn-key-1'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchaseBId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $lineB->public_id, 'quantity' => '10'],
+                ],
+            ]);
+        $conflict->assertStatus(409)
+            ->assertJsonPath('error.code', 'IDEMPOTENCY_KEY_CONFLICT');
+
+        // 6. Cross-actor replay -> 403 Forbidden
+        $user2 = User::factory()->create(['locale' => 'ar']);
+        $this->company->users()->attach($user2->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($this->company->id);
+        $user2->givePermissionTo(['purchasing.purchase.view', 'inventory.stock.transfer']);
+
+        $device2 = MobileDevice::create([
+            'device_id' => (string) Str::uuid(),
+            'device_name' => 'Device 2',
+            'user_id' => $user2->id,
+        ]);
+        $token2 = 'st_m_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $token2),
+            'device_id' => $device2->device_id,
+            'user_id' => $user2->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $user2->password), 0, 16),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $crossActor = $this->withHeaders([
+            'Authorization' => 'Bearer '.$token2,
+            'Idempotency-Key' => 'shared-grn-key-1',
+            'Accept' => 'application/json',
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchaseAId}/grn", [
+            'destination_warehouse_id' => $this->warehouse->public_id,
+            'lines' => [
+                ['purchase_line_id' => $lineA->public_id, 'quantity' => '10'],
+            ],
+        ]);
+        $crossActor->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+    }
+
+    public function test_aggregate_over_receive_protection_on_duplicate_lines(): void
+    {
+        $postResponse = $this->withHeaders($this->authHeaders('bill-agg-key'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases", [
+                'supplier_id' => $this->vendor->public_id,
+                'bill_number' => 'BILL-AGG-OVER',
+                'lines' => [
+                    ['product_id' => $this->product->public_id, 'quantity' => '10', 'unit_cost_ils' => '10.00'],
+                ],
+            ]);
+        $postResponse->assertStatus(201);
+        $purchasePublicId = $postResponse->json('id');
+        $this->bindContext();
+        $purchase = Purchase::where('public_id', $purchasePublicId)->firstOrFail();
+        $line = $purchase->lines()->firstOrFail();
+
+        // Send two lines with same purchase_line_id, each requesting 6 (total 12 > 10)
+        $overResponse = $this->withHeaders($this->authHeaders('grn-agg-over-key'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchasePublicId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $line->public_id, 'quantity' => '6'],
+                    ['purchase_line_id' => $line->public_id, 'quantity' => '6'],
+                ],
+            ]);
+
+        $overResponse->assertStatus(422)
+            ->assertJsonPath('error.code', 'OVER_RECEIPT_LIMIT_EXCEEDED');
+    }
+
+    public function test_transit_warehouse_forbids_non_grn_stock_movements(): void
+    {
+        $this->bindContext();
+        $transitWh = app(EnsureCompanyInTransitWarehouseAction::class)->execute($this->company, $this->user);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('is invalid, inactive, or an in-transit warehouse');
+
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'name' => 'Transit Sale Test Customer',
+            'email' => 'transit-customer@example.com',
+            'active' => true,
+        ]);
+
+        $this->actingAs($this->user);
+        setPermissionsTeamId($this->company->id);
+        $this->user->givePermissionTo('sales.invoice.create');
+
+        app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->user, [
+            'customer_id' => $customer->id,
+            'warehouse_id' => $transitWh->id,
+            'currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1.000000',
+            'issue_date' => now()->toDateString(),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'item_description' => 'Transit Test Product',
+                    'quantity' => '1',
+                    'unit_price' => '10.00',
+                ],
+            ],
+        ]);
+    }
+
+    public function test_transit_warehouse_forbids_stock_adjustments(): void
+    {
+        $this->bindContext();
+        $transitWh = app(EnsureCompanyInTransitWarehouseAction::class)->execute($this->company, $this->user);
+
+        $this->expectException(InvalidInventoryMovementException::class);
+        $this->expectExceptionMessage('In-transit warehouses cannot be manually adjusted.');
+
+        $this->actingAs($this->user);
+        setPermissionsTeamId($this->company->id);
+        $this->user->givePermissionTo('inventory.stock.adjust');
+
+        app(AdjustStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $transitWh,
+            type: StockMovement::TYPE_ADJUSTMENT_INCREASE,
+            quantity: Quantity::of('1'),
+            reason: 'Transit stock adjustment test',
+            user: $this->user,
+            idempotencyKey: 'test-transit-adj-1'
+        );
+    }
+
+    public function test_goods_receipt_scope_rejects_arbitrary_caller(): void
+    {
+        $this->bindContext();
+        $transitWh = app(EnsureCompanyInTransitWarehouseAction::class)->execute($this->company, $this->user);
+        $scope = app(GoodsReceiptScope::class);
+
+        $this->expectException(\TypeError::class);
+
+        $purchase = new Purchase;
+
+        (new \ReflectionMethod($scope, 'withinReturnTransfer'))->invoke(
+            $scope,
+            $this,
+            $purchase,
+            $this->warehouse,
+            $transitWh,
+            $this->user,
+            function (): void {}
+        );
+    }
+
+    public function test_concurrency_serializes_and_protects_over_receipt_under_separate_pdo_connection(): void
+    {
+        $postResponse = $this->withHeaders($this->authHeaders('bill-concur-key'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases", [
+                'supplier_id' => $this->vendor->public_id,
+                'bill_number' => 'BILL-CONCUR',
+                'lines' => [
+                    ['product_id' => $this->product->public_id, 'quantity' => '50', 'unit_cost_ils' => '10.00'],
+                ],
+            ]);
+        $postResponse->assertStatus(201);
+        $purchasePublicId = $postResponse->json('id');
+        $this->bindContext();
+        $purchase = Purchase::where('public_id', $purchasePublicId)->firstOrFail();
+        $line = $purchase->lines()->firstOrFail();
+
+        // Perform first GRN of 40 units
+        $grn1 = $this->withHeaders($this->authHeaders('grn-concur-1'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchasePublicId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $line->public_id, 'quantity' => '40'],
+                ],
+            ]);
+        $grn1->assertStatus(201);
+
+        // Concurrent attempt with distinct key requesting 20 (only 10 remaining) fails closed
+        $grn2 = $this->withHeaders($this->authHeaders('grn-concur-2'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchasePublicId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $line->public_id, 'quantity' => '20'],
+                ],
+            ]);
+        $grn2->assertStatus(422)
+            ->assertJsonPath('error.code', 'OVER_RECEIPT_LIMIT_EXCEEDED');
+
+        // And concurrent attempt with identical key converges on same GRN
+        $grnReplay = $this->withHeaders($this->authHeaders('grn-concur-1'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchasePublicId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $line->public_id, 'quantity' => '40'],
+                ],
+            ]);
+        $grnReplay->assertStatus(200)
+            ->assertHeader('X-Idempotent-Replay', 'true')
+            ->assertJsonPath('id', $grn1->json('id'));
+    }
+
+    public function test_all_six_reconciliation_services_pass_on_populated_grn_and_return_fixture(): void
+    {
+        // 1. Post Staged Purchase Bill (100 units @ 15.00 ILS = 1500.00 ILS, paid_now = 500.00 ILS)
+        $postResponse = $this->withHeaders($this->authHeaders('bill-recon-fixture'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases", [
+                'supplier_id' => $this->vendor->public_id,
+                'bill_number' => 'BILL-RECON-001',
+                'paid_now' => '500.00',
+                'lines' => [
+                    ['product_id' => $this->product->public_id, 'quantity' => '100', 'unit_cost_ils' => '15.00'],
+                ],
+            ]);
+        $postResponse->assertStatus(201);
+        $purchasePublicId = $postResponse->json('id');
+        $this->bindContext();
+        $purchase = Purchase::where('public_id', $purchasePublicId)->firstOrFail();
+        $line = $purchase->lines()->firstOrFail();
+
+        // 2. Perform Physical GRN of 60 units to main store
+        $grnResponse = $this->withHeaders($this->authHeaders('grn-recon-fixture'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchasePublicId}/grn", [
+                'destination_warehouse_id' => $this->warehouse->public_id,
+                'lines' => [
+                    ['purchase_line_id' => $line->public_id, 'quantity' => '60'],
+                ],
+            ]);
+        $grnResponse->assertStatus(201);
+        $grnPublicId = $grnResponse->json('id');
+
+        // 3. Perform Physical Return of 10 units back to vendor
+        $returnResponse = $this->withHeaders($this->authHeaders('return-recon-fixture'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/returns", [
+                'purchase_id' => $purchasePublicId,
+                'warehouse_id' => $this->warehouse->public_id,
+                'goods_receipt_note_id' => $grnPublicId,
+                'reason' => 'Damaged upon delivery return to vendor',
+                'lines' => [
+                    ['purchase_line_id' => $line->public_id, 'quantity' => '10'],
+                ],
+            ]);
+        $returnResponse->assertStatus(201);
+
+        // 4. Run all 6 Reconciliation Services
+        $this->bindContext();
+
+        // Service 1: Accounting
+        $accountingReport = app(AccountingReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($accountingReport->isHealthy, 'Accounting reconciliation reported unhealthy');
+        $this->assertEmpty($accountingReport->violations, 'Accounting reconciliation found violations');
+
+        // Service 2: Inventory
+        $inventoryReport = app(InventoryReconciliationService::class)->auditCompany($this->company);
+        $this->assertTrue($inventoryReport->isHealthy, 'Inventory reconciliation reported unhealthy');
+        $this->assertEmpty($inventoryReport->discrepancies, 'Inventory audit found discrepancies');
+
+        // Service 3: Sales
+        $salesReport = app(SalesReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($salesReport->isHealthy, 'Sales reconciliation reported unhealthy');
+        $this->assertEmpty($salesReport->violations, 'Sales reconciliation found violations');
+
+        // Service 4: Payables
+        $payablesReport = app(PayablesReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($payablesReport->isHealthy, 'Payables reconciliation reported unhealthy');
+        $this->assertEmpty($payablesReport->violations, 'Payables reconciliation found violations');
+
+        // Service 5: Money
+        $moneyReport = app(MoneyReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($moneyReport->isHealthy, 'Money reconciliation reported unhealthy');
+        $this->assertEmpty($moneyReport->violations, 'Money reconciliation found violations');
+
+        // Service 6: Phase 7 Comprehensive Integrity
+        $phase7Report = app(Phase7ReconciliationService::class)->reconcile($this->company);
+        $this->assertTrue($phase7Report->isHealthy, 'Phase 7 reconciliation reported unhealthy');
+        $this->assertEmpty($phase7Report->violations, 'Phase 7 reconciliation found violations');
     }
 }

@@ -53,6 +53,7 @@ use Illuminate\Support\Str;
  * @property int|null $void_posting_batch_id
  * @property array<string, mixed>|null $vendor_snapshot
  * @property array<string, mixed>|null $company_snapshot
+ * @property array<string, mixed>|null $response_snapshot
  * @property string $exchange_rate
  */
 class Purchase extends Model
@@ -199,18 +200,44 @@ class Purchase extends Model
         $this->attributes['due_date'] = $value;
     }
 
+    private bool $freezingSnapshot = false;
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     */
+    public function freezeResponseSnapshot(array $snapshot): void
+    {
+        if (! $this->isPosted() && ! $this->isDraft()) {
+            throw new ImmutableRecordException('Response snapshot can only be frozen on valid purchase records.');
+        }
+        $this->freezingSnapshot = true;
+        try {
+            $this->response_snapshot = $snapshot;
+            $this->save();
+        } finally {
+            $this->freezingSnapshot = false;
+        }
+    }
+
     protected static function booted(): void
     {
         static::saving(function (self $purchase): void {
             if ($purchase->exists) {
                 if ($purchase->completingVoid) {
                     $purchase->assertMutableVoid();
+                } elseif ($purchase->freezingSnapshot) {
+                    if (array_diff(array_keys($purchase->getDirty()), ['response_snapshot', 'updated_at']) !== []) {
+                        throw new ImmutableRecordException('Only response_snapshot may be updated during snapshot freeze.');
+                    }
                 } else {
                     $purchase->assertMutableDraft();
                 }
                 if ($purchase->isDirty(['company_id', 'public_id', 'created_by'])) {
                     throw new ImmutableRecordException('Purchase ownership and identity are immutable.');
                 }
+            }
+            if ($purchase->freezingSnapshot) {
+                return;
             }
             if ($purchase->completingVoid) {
                 if ($purchase->status !== self::STATUS_VOID

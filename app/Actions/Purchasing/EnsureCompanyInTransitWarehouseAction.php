@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\CompanyPurchaseSetting;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Audit\AuditService;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -38,31 +39,38 @@ final class EnsureCompanyInTransitWarehouseAction
                 ->lockForUpdate()
                 ->first();
 
-            if ($existing !== null) {
-                if (! $existing->is_transit) {
-                    throw new InvalidArgumentException("Configured in-transit warehouse [{$existing->id}] is not marked as transit.");
-                }
-                if (! $existing->active) {
-                    $existing->active = true;
-                    $existing->save();
-                }
-
-                return $existing;
+            if ($existing === null) {
+                throw new InvalidArgumentException("Configured in-transit warehouse [{$settings->in_transit_warehouse_id}] was not found for company [{$company->id}].");
             }
+
+            if (! $existing->is_transit) {
+                throw new InvalidArgumentException("Configured in-transit warehouse [{$existing->id}] is not marked as transit.");
+            }
+
+            if (! $existing->active) {
+                throw new InvalidArgumentException("Configured in-transit warehouse [{$existing->id}] is inactive.");
+            }
+
+            return $existing;
         }
 
-        // 2. Check if another warehouse in the company already has is_transit = true
-        /** @var Warehouse|null $existingTransit */
-        $existingTransit = Warehouse::where('company_id', $company->id)
+        // 2. Check warehouses in the company with is_transit = true
+        $transitWarehouses = Warehouse::where('company_id', $company->id)
             ->where('is_transit', true)
             ->lockForUpdate()
-            ->first();
+            ->get();
 
-        if ($existingTransit !== null) {
+        if ($transitWarehouses->count() > 1) {
+            throw new InvalidArgumentException("Ambiguous in-transit warehouse mapping: company [{$company->id}] has multiple transit warehouses.");
+        }
+
+        if ($transitWarehouses->count() === 1) {
+            /** @var Warehouse $existingTransit */
+            $existingTransit = $transitWarehouses->first();
             if (! $existingTransit->active) {
-                $existingTransit->active = true;
-                $existingTransit->save();
+                throw new InvalidArgumentException("Company in-transit warehouse [{$existingTransit->id}] is inactive.");
             }
+
             $settings->in_transit_warehouse_id = $existingTransit->id;
             $settings->save();
 
@@ -90,6 +98,14 @@ final class EnsureCompanyInTransitWarehouseAction
             'active' => true,
             'created_by' => $actor->id,
         ]);
+
+        app(AuditService::class)->log(
+            (int) $company->id,
+            'purchasing.in_transit_warehouse.provisioned',
+            'Dedicated company in-transit warehouse provisioned',
+            (int) $actor->id,
+            $warehouse
+        );
 
         $settings->in_transit_warehouse_id = $warehouse->id;
         $settings->save();

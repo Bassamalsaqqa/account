@@ -40,7 +40,7 @@ final class PurchaseDocumentRules
         $inventory = CompanyInventorySettings::where('company_id', $company->id)->first();
         foreach ([$settings?->default_receiving_warehouse_id, $inventory?->default_warehouse_id] as $default) {
             if ($default !== null) {
-                $warehouse = Warehouse::where('company_id', $company->id)->where('active', true)->find($default);
+                $warehouse = Warehouse::where('company_id', $company->id)->where('active', true)->where('is_transit', false)->find($default);
                 if ($warehouse !== null) {
                     return $warehouse;
                 }

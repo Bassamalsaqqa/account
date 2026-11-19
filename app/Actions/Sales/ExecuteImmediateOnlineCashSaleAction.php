@@ -247,6 +247,10 @@ final class ExecuteImmediateOnlineCashSaleAction
             ? Warehouse::where('company_id', $company->id)->where('id', (int) $warehouseId)->lockForUpdate()->firstOrFail()
             : Warehouse::where('company_id', $company->id)->where('public_id', (string) $warehouseId)->lockForUpdate()->firstOrFail();
 
+        if (! $warehouse->active || $warehouse->is_transit) {
+            throw new InvalidArgumentException("In-transit warehouse [{$warehouse->id}] cannot be used for cash sales.");
+        }
+
         $customerId = $payload['customer_id'] ?? null;
         /** @var Customer $customer */
         $customer = is_numeric($customerId)

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PurchaseReturnResponse",
+  "type": "object",
+  "required": [
+    "id",
+    "status",
+    "total_amount",
+    "currency",
+    "posted_at"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "status": { "type": "string" },
+    "total_amount": { "type": "string" },
+    "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+    "posted_at": { "type": "string", "format": "iso8601" }
+  }
+}

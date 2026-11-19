@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Actions\Purchasing\ExecutePhysicalPurchaseReturnAction;
 use App\Actions\Purchasing\RecordPurchaseGoodsReceiptAction;
 use App\Models\Purchase;
 use App\Models\User;
@@ -149,15 +150,19 @@ final class GoodsReceiptScope
      * @return T
      */
     public function withinReturnTransfer(
-        object $owner,
-        int $companyId,
+        ExecutePhysicalPurchaseReturnAction $owner,
+        Purchase $purchase,
         Warehouse $sourcePhysicalWarehouse,
         Warehouse $destTransitWarehouse,
         User $actor,
         Closure $callback
     ): mixed {
-        if ($this->active !== null) {
-            throw new InvalidArgumentException('Return transfer scope cannot be reentered.');
+        if ($this->active !== null || ! $owner->ownsGoodsReceiptScope($this)) {
+            throw new InvalidArgumentException('Only the executing canonical physical return action may activate a non-reentrant return transfer scope.');
+        }
+
+        if (! $actor->exists || $actor->id <= 0) {
+            throw new InvalidArgumentException('Return transfer scope requires a valid persisted actor.');
         }
 
         $connection = DB::connection();
@@ -166,7 +171,7 @@ final class GoodsReceiptScope
                 && $record->level === $connection->transactionLevel()
         );
 
-        if ($connection->transactionLevel() === 0 || $transaction === null) {
+        if ($connection->transactionLevel() === 0 || $transaction === null || ! $purchase->exists) {
             throw new InvalidArgumentException('Return transfer scope requires its active canonical database transaction.');
         }
 
@@ -176,8 +181,8 @@ final class GoodsReceiptScope
         $this->connection = $connection;
         $this->pdo = $connection->getPdo();
         $this->transaction = $transaction;
-        $this->companyId = $companyId;
-        $this->purchaseId = 0;
+        $this->companyId = (int) $purchase->company_id;
+        $this->purchaseId = (int) $purchase->id;
         $this->sourceWarehouseId = (int) $sourcePhysicalWarehouse->id;
         $this->destinationWarehouseId = (int) $destTransitWarehouse->id;
         $this->actorId = (int) $actor->id;

@@ -33,6 +33,8 @@ class GoodsReceiptNote extends Model
 {
     use BelongsToCompany;
 
+    public const string STATUS_DRAFT = 'draft';
+
     public const string STATUS_POSTED = 'posted';
 
     /**
@@ -66,23 +68,26 @@ class GoodsReceiptNote extends Model
     }
 
     /**
-     * Immutability enforcement: Goods Receipt Notes are immutable financial/inventory receipts.
+     * Immutability enforcement: Goods Receipt Notes are immutable financial/inventory receipts once posted.
      */
     public static function boot(): void
     {
         parent::boot();
 
         static::updating(function (GoodsReceiptNote $grn): void {
+            if ($grn->getOriginal('status') === self::STATUS_POSTED) {
+                throw new ImmutableRecordException('Goods Receipt Notes are strictly immutable once posted.');
+            }
+
             if ($grn->isDirty([
                 'company_id',
                 'purchase_id',
                 'grn_number',
                 'warehouse_id',
-                'inventory_operation_id',
                 'idempotency_key',
                 'request_hash',
             ])) {
-                throw new ImmutableRecordException('Goods Receipt Notes are strictly immutable once created.');
+                throw new ImmutableRecordException('Goods Receipt Notes core identity cannot be modified.');
             }
         });
 
