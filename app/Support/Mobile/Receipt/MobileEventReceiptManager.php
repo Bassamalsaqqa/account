@@ -303,6 +303,16 @@ final class MobileEventReceiptManager
                             ? $decodedPayload['currency_minor_units']
                             : 2;
 
+                        $payment = is_array($decodedPayload['payment'] ?? null) ? $decodedPayload['payment'] : [];
+                        $settlementMode = (string) ($payment['settlement_mode'] ?? 'full');
+                        $admittedPaymentAmount = isset($payment['amount']) ? (string) $payment['amount'] : null;
+
+                        $expectedLegs = match ($settlementMode) {
+                            'unpaid' => ['invoice'],
+                            'partial', 'full' => ['invoice', 'payment'],
+                            default => throw new SecurityException("Unsupported settlement mode [{$settlementMode}]."),
+                        };
+
                         $capability = (Closure::bind(
                             fn () => new NativeFinancialExecutionCapability(
                                 companyId: (int) $company->id,
@@ -316,7 +326,10 @@ final class MobileEventReceiptManager
                                 currencyMinorUnits: $cmu,
                                 connectionName: DB::connection()->getName(),
                                 rootTransactionLevel: 1,
-                                invocationScopeId: $invocationScopeId
+                                invocationScopeId: $invocationScopeId,
+                                settlementMode: $settlementMode,
+                                expectedLegs: $expectedLegs,
+                                admittedPaymentAmount: $admittedPaymentAmount
                             ),
                             null,
                             NativeFinancialExecutionCapability::class
@@ -333,6 +346,9 @@ final class MobileEventReceiptManager
                             'connection_name' => DB::connection()->getName(),
                             'root_transaction_level' => 1,
                             'invocation_scope_id' => $invocationScopeId,
+                            'settlement_mode' => $settlementMode,
+                            'expected_legs' => $expectedLegs,
+                            'admitted_payment_amount' => $admittedPaymentAmount,
                             'active' => true,
                             'consumed' => false,
                             'composite_completed' => false,
@@ -355,14 +371,17 @@ final class MobileEventReceiptManager
                         $capRec = self::getCapabilityRecord($capability);
                         $invId = $financialResult['sales_invoice_id'] ?? null;
                         $payId = $financialResult['customer_payment_id'] ?? null;
+                        $mode = $capRec['settlement_mode'] ?? 'full';
 
-                        if ($invId !== null || $payId !== null) {
-                            if ($representation !== 'v2_online_sale_intent') {
-                                throw new SecurityException("Unsupported financial representation [{$representation}] produced financial entities.");
-                            }
-
-                            if ($invId === null || $payId === null) {
-                                throw new SecurityException('Partial financial execution (invoice-only or payment-only) is prohibited.');
+                        if ($representation === 'v2_online_sale_intent') {
+                            if ($mode === 'unpaid') {
+                                if ($invId === null || $payId !== null) {
+                                    throw new SecurityException('Unpaid sale execution requires canonical sales invoice and explicit null payment.');
+                                }
+                            } else {
+                                if ($invId === null || $payId === null) {
+                                    throw new SecurityException('Partial financial execution (invoice-only or payment-only) is prohibited.');
+                                }
                             }
 
                             if (! ($capRec['consumed'] ?? false)) {
@@ -373,12 +392,13 @@ final class MobileEventReceiptManager
                                 throw new SecurityException('Financial execution failed to achieve verified closed composite completion.');
                             }
 
+                            $expectedPayId = $capRec['completed_payment_id'] ?? null;
                             if ((int) $invId !== (int) ($capRec['completed_invoice_id'] ?? 0) ||
-                                (int) $payId !== (int) ($capRec['completed_payment_id'] ?? 0)) {
+                                ($payId !== null ? (int) $payId !== (int) ($expectedPayId ?? 0) : ($expectedPayId !== null))) {
                                 throw new SecurityException('Financial entity IDs do not match closed composite completion.');
                             }
-                        } elseif ($representation === 'v2_online_sale_intent') {
-                            throw new SecurityException('Online cash sale execution failed to produce required financial composite.');
+                        } elseif ($invId !== null || $payId !== null) {
+                            throw new SecurityException("Unsupported financial representation [{$representation}] produced financial entities.");
                         }
 
                         // 10. Strict entity ownership & public ID derivation from locked canonical entities
@@ -422,7 +442,6 @@ final class MobileEventReceiptManager
                         }
 
                         // Relationship verification between invoice and customer payment
-                        /** @phpstan-ignore notIdentical.alwaysTrue */
                         if ($invRow !== null && $payRow !== null) {
                             if ((int) $invRow->customer_id !== (int) $payRow->customer_id) {
                                 throw new RuntimeException('Customer mismatch between sales invoice and customer payment.');
@@ -894,6 +913,22 @@ final class MobileEventReceiptManager
             if (isset($rawTerminal['payment_id']) && ! hash_equals($canonicalPayPublicId, (string) $rawTerminal['payment_id'])) {
                 throw new RuntimeException('Terminal canonical result payment ID mismatch.');
             }
+        } else {
+            if (($rawTerminal['customer_payment_public_id'] ?? null) !== null) {
+                throw new RuntimeException('Terminal canonical result customer payment public ID must be null when payment is null.');
+            }
+            if (($rawTerminal['payment_public_id'] ?? null) !== null) {
+                throw new RuntimeException('Terminal canonical result payment public ID must be null when payment is null.');
+            }
+            if (($rawTerminal['payment_id'] ?? null) !== null) {
+                throw new RuntimeException('Terminal canonical result payment ID must be null when payment is null.');
+            }
+            if (($rawTerminal['customer_payment_id'] ?? null) !== null) {
+                throw new RuntimeException('Terminal canonical result customer payment ID must be null when payment is null.');
+            }
+            if (($rawTerminal['payment_receipt_number'] ?? null) !== null) {
+                throw new RuntimeException('Terminal canonical result payment receipt number must be null when payment is null.');
+            }
         }
 
         if ($invId !== null && isset($rawTerminal['sales_invoice_id']) && (int) $rawTerminal['sales_invoice_id'] !== $invId) {
@@ -1024,6 +1059,10 @@ final class MobileEventReceiptManager
             throw new SecurityException('Capability invocation scope mismatch.');
         }
 
+        if ($capability->settlementMode !== ($record['settlement_mode'] ?? 'full')) {
+            throw new SecurityException('Capability settlement mode mismatch.');
+        }
+
         $record['consumed'] = true;
         $record['active'] = false;
         self::$capabilityRegistry[$capability] = $record;
@@ -1040,7 +1079,7 @@ final class MobileEventReceiptManager
         int $companyId,
         int $actorId,
         int $invoiceId,
-        int $paymentId
+        ?int $paymentId
     ): void {
         self::assertClosedActionCaller();
 
@@ -1066,6 +1105,17 @@ final class MobileEventReceiptManager
             throw new SecurityException('Scope mismatch on composite completion registration.');
         }
 
+        $settlementMode = $capability->settlementMode;
+        if ($settlementMode === 'unpaid') {
+            if ($paymentId !== null) {
+                throw new SecurityException('Unpaid settlement mode requires explicit null payment ID.');
+            }
+        } else {
+            if ($paymentId === null) {
+                throw new SecurityException("Settlement mode [{$settlementMode}] requires customer payment ID.");
+            }
+        }
+
         // Freshness & tenant isolation validation: entities must not have pre-existing receipts
         $existingInvoiceReceipt = DB::table('mobile_event_receipts')
             ->where('company_id', $companyId)
@@ -1075,12 +1125,14 @@ final class MobileEventReceiptManager
             throw new SecurityException("Sales invoice [{$invoiceId}] is already associated with an existing event receipt.");
         }
 
-        $existingPaymentReceipt = DB::table('mobile_event_receipts')
-            ->where('company_id', $companyId)
-            ->where('customer_payment_id', $paymentId)
-            ->exists();
-        if ($existingPaymentReceipt) {
-            throw new SecurityException("Customer payment [{$paymentId}] is already associated with an existing event receipt.");
+        if ($paymentId !== null) {
+            $existingPaymentReceipt = DB::table('mobile_event_receipts')
+                ->where('company_id', $companyId)
+                ->where('customer_payment_id', $paymentId)
+                ->exists();
+            if ($existingPaymentReceipt) {
+                throw new SecurityException("Customer payment [{$paymentId}] is already associated with an existing event receipt.");
+            }
         }
 
         // Entity tenant verification
@@ -1092,12 +1144,14 @@ final class MobileEventReceiptManager
             throw new SecurityException("Sales invoice [{$invoiceId}] does not belong to company [{$companyId}].");
         }
 
-        $paymentValid = DB::table('customer_payments')
-            ->where('id', $paymentId)
-            ->where('company_id', $companyId)
-            ->exists();
-        if (! $paymentValid) {
-            throw new SecurityException("Customer payment [{$paymentId}] does not belong to company [{$companyId}].");
+        if ($paymentId !== null) {
+            $paymentValid = DB::table('customer_payments')
+                ->where('id', $paymentId)
+                ->where('company_id', $companyId)
+                ->exists();
+            if (! $paymentValid) {
+                throw new SecurityException("Customer payment [{$paymentId}] does not belong to company [{$companyId}].");
+            }
         }
 
         $record['composite_completed'] = true;

@@ -466,11 +466,37 @@
       "path": "/api/mobile/v2/companies/{companyId}/sales/online-cash",
       "route_name": "mobile.v2.sales.online-cash",
       "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V2\\OnlineCashSaleController::store",
-      "permissions_required": ["sales.invoice.create", "sales.invoice.post", "money.receipt.create"],
-      "tested_in": "Tests\\Unit\\Mobile\\Contract\\Revision3\\PaymentSettlementValidatorTest",
+      "permissions_required": [
+        "sales.invoice.create",
+        "sales.invoice.post"
+      ],
+      "conditional_permissions": {
+        "money.receipt.create": "Required when settlement_mode is 'full' or 'partial'; not required for 'unpaid'.",
+        "money.receipt.allocate": "Required when settlement_mode is 'full' or 'partial'; not required for 'unpaid'."
+      },
+      "compatibility_instructions": "Root exact wire confirmation: Android client still issues non-null payment cash-only transactions ('full' 100% cash). Backend now natively admits and executes bounded typed 'full', 'partial', and 'unpaid' modes in a single atomic transaction. Android clients sending full cash with non-null payment receive backward-compatible posted commit DTOs. Android clients adopting partial or unpaid must observe: unpaid requires explicit null payment_id and amount_paid '0.00' (no cash account locked or fake cash record); partial requires 0 < amount < grand_total fully allocated to the invoice.",
+      "tested_in": "Tests\\Feature\\Mobile\\V2\\OnlineCashSaleQualificationTest",
       "request_schema": {
         "client_event_id": { "type": "string", "format": "uuid", "required": true },
-        "intent_profile": { "type": "object", "required": true }
+        "intent_profile": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "company_id": { "type": "string" },
+            "currency": { "type": "string" },
+            "payment": {
+              "type": "object",
+              "required": true,
+              "properties": {
+                "settlement_mode": { "type": "string", "enum": ["full", "partial", "unpaid"] },
+                "payment_method": { "type": "string", "enum": ["cash"] },
+                "cash_account_id": { "type": ["string", "null"] },
+                "amount": { "type": "string" }
+              }
+            },
+            "lines": { "type": "array" }
+          }
+        }
       },
       "request_example": {
         "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -495,10 +521,12 @@
         }
       },
       "response_schema": {
-        "client_event_id": { "type": "string" },
-        "status": { "type": "string", "enum": ["completed", "rejected"] },
+        "client_event_id": { "type": "string", "format": "uuid" },
+        "status": { "type": "string", "enum": ["posted"] },
         "invoice_id": { "type": "string" },
         "invoice_number": { "type": "string" },
+        "payment_id": { "type": ["string", "null"] },
+        "payment_receipt_number": { "type": ["string", "null"] },
         "grand_total": { "type": "string" },
         "amount_paid": { "type": "string" },
         "change_returned": { "type": "string" },
@@ -506,7 +534,7 @@
       },
       "response_example": {
         "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-        "status": "completed",
+        "status": "posted",
         "invoice_id": "01JCV8X9ME7890123456789ABC",
         "invoice_number": "INV-2026-00042",
         "payment_id": "01JCV8X9MPAY123456789ABCD",

@@ -24,6 +24,7 @@ use App\Support\Mobile\Receipt\Exceptions\SecurityException;
 use App\Support\Mobile\Receipt\MobileEventReceiptManager;
 use App\Support\Mobile\Receipt\NativeFinancialExecutionCapability;
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
@@ -117,7 +118,7 @@ final class ExecuteImmediateOnlineCashSaleAction
         int $companyId,
         int $actorId,
         int $invoiceId,
-        int $paymentId
+        ?int $paymentId
     ): void {
         (Closure::bind(
             static fn () => MobileEventReceiptManager::markCompositeCompletedPrivately(
@@ -137,8 +138,8 @@ final class ExecuteImmediateOnlineCashSaleAction
      * @return array{
      *     sales_invoice_id: int,
      *     sales_invoice_public_id: string,
-     *     customer_payment_id: int,
-     *     customer_payment_public_id: string,
+     *     customer_payment_id: int|null,
+     *     customer_payment_public_id: string|null,
      *     command_receipt_id: null,
      *     terminal_canonical_result: array<string, mixed>
      * }
@@ -204,12 +205,15 @@ final class ExecuteImmediateOnlineCashSaleAction
         app(PermissionRegistrar::class)->setPermissionsTeamId($company->id);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
+        $settlementMode = $capability->settlementMode;
         $requiredPermissions = [
             'sales.invoice.create',
             'sales.invoice.post',
-            'money.receipt.create',
-            'money.receipt.allocate',
         ];
+        if ($settlementMode !== 'unpaid') {
+            $requiredPermissions[] = 'money.receipt.create';
+            $requiredPermissions[] = 'money.receipt.allocate';
+        }
         foreach ($requiredPermissions as $perm) {
             if (! $actor->hasPermissionTo($perm)) {
                 throw new AuthorizationException("Actor missing required permission [{$perm}] for immediate cash sale.");
@@ -279,11 +283,15 @@ final class ExecuteImmediateOnlineCashSaleAction
 
         // Payment intent pre-validation
         $paymentIntent = (array) ($payload['payment'] ?? []);
-        if (($paymentIntent['payment_method'] ?? null) !== 'cash') {
-            throw new InvalidArgumentException("Payment method must be 'cash'.");
+        $intentSettlementMode = (string) ($paymentIntent['settlement_mode'] ?? '');
+        if ($intentSettlementMode !== $settlementMode) {
+            throw new InvalidArgumentException("Payment settlement mode [{$intentSettlementMode}] does not match admitted capability mode [{$settlementMode}].");
         }
-        if (($paymentIntent['settlement_mode'] ?? null) !== 'full') {
-            throw new InvalidArgumentException("Settlement mode must be 'full'.");
+        if (! in_array($settlementMode, ['full', 'partial', 'unpaid'], true)) {
+            throw new InvalidArgumentException("Unsupported settlement mode [{$settlementMode}].");
+        }
+        if ($settlementMode !== 'unpaid' && ($paymentIntent['payment_method'] ?? null) !== 'cash') {
+            throw new InvalidArgumentException("Payment method must be 'cash'.");
         }
 
         // 6. Strict stock check and draft lines preparation
@@ -386,17 +394,20 @@ final class ExecuteImmediateOnlineCashSaleAction
         }
 
         // 7. Canonical cash money account locking (strictly after Products, Units, and Tax Rates)
-        $cashAccountId = $paymentIntent['cash_account_id'] ?? null;
-        /** @var MoneyAccount $cashAccount */
-        $cashAccount = is_numeric($cashAccountId)
-            ? MoneyAccount::where('company_id', $company->id)->where('id', (int) $cashAccountId)->lockForUpdate()->firstOrFail()
-            : MoneyAccount::where('company_id', $company->id)->where('public_id', (string) $cashAccountId)->lockForUpdate()->firstOrFail();
+        /** @var MoneyAccount|null $cashAccount */
+        $cashAccount = null;
+        if ($settlementMode !== 'unpaid') {
+            $cashAccountId = $paymentIntent['cash_account_id'] ?? null;
+            $cashAccount = is_numeric($cashAccountId)
+                ? MoneyAccount::where('company_id', $company->id)->where('id', (int) $cashAccountId)->lockForUpdate()->firstOrFail()
+                : MoneyAccount::where('company_id', $company->id)->where('public_id', (string) $cashAccountId)->lockForUpdate()->firstOrFail();
 
-        if (! $cashAccount->is_active) {
-            throw new InvalidArgumentException("Cash account [{$cashAccount->id}] is inactive.");
-        }
-        if ($cashAccount->currency_code !== $currency) {
-            throw new InvalidArgumentException("Cash account currency [{$cashAccount->currency_code}] must match sale currency [{$currency}].");
+            if (! $cashAccount->is_active) {
+                throw new InvalidArgumentException("Cash account [{$cashAccount->id}] is inactive.");
+            }
+            if ($cashAccount->currency_code !== $currency) {
+                throw new InvalidArgumentException("Cash account currency [{$cashAccount->currency_code}] must match sale currency [{$currency}].");
+            }
         }
 
         // 8. Execute all financial legs under closed composite-scope permit
@@ -421,43 +432,59 @@ final class ExecuteImmediateOnlineCashSaleAction
             $postedInvoice = $this->postInvoiceAction->execute($draft, $actor);
             $this->triggerStageFault('after_posting');
 
-            // Verify payment amount matches posted grand total exactly
+            // Verify payment amount matches posted grand total according to settlement mode
             $expectedGrandTotal = (string) $postedInvoice->grand_total_currency;
-            $paymentAmountStr = (string) ($paymentIntent['amount'] ?? '');
-            if (! BigDecimal::of($paymentAmountStr)->isEqualTo($expectedGrandTotal)) {
-                throw new InvalidArgumentException("Payment amount [{$paymentAmountStr}] does not match invoice grand total [{$expectedGrandTotal}].");
+            $paymentAmountStr = (string) ($paymentIntent['amount'] ?? '0');
+            $paymentBigDecimal = BigDecimal::of($paymentAmountStr);
+
+            if ($settlementMode === 'full') {
+                if (! $paymentBigDecimal->isEqualTo($expectedGrandTotal)) {
+                    throw new InvalidArgumentException("Payment amount [{$paymentAmountStr}] does not match invoice grand total [{$expectedGrandTotal}].");
+                }
+            } elseif ($settlementMode === 'partial') {
+                if (! $paymentBigDecimal->isPositive() || ! $paymentBigDecimal->isLessThan($expectedGrandTotal)) {
+                    throw new InvalidArgumentException("Partial payment amount [{$paymentAmountStr}] must be strictly positive and less than invoice grand total [{$expectedGrandTotal}].");
+                }
+            } elseif ($settlementMode === 'unpaid') {
+                if (! $paymentBigDecimal->isZero()) {
+                    throw new InvalidArgumentException("Unpaid sale requires zero payment amount, got [{$paymentAmountStr}].");
+                }
             }
 
             if (! PaymentSettlementValidator::verifyPaymentDecimalConsistency($paymentIntent, $expectedGrandTotal, $minorUnits)) {
                 throw new InvalidArgumentException('Payment intent violates decimal consistency with grand total.');
             }
 
-            // Leg 3: Post customer payment with 100% allocation to posted sales invoice
-            $paymentData = [
-                'customer_id' => (int) $customer->id,
-                'money_account_id' => (int) $cashAccount->id,
-                'payment_date' => $draftData['issue_date'],
-                'payment_method' => 'cash',
-                'document_locale' => $postedInvoice->document_locale ?? 'ar',
-                'amount' => $expectedGrandTotal,
-                'exchange_rate' => '1.0000000000',
-                'reference_number' => null,
-                'notes' => 'Mobile online cash sale settlement',
-                'idempotency_key' => 'fin1-payment:'.$idempotencySuffix,
-                'allocations' => [
-                    [
-                        'sales_invoice_id' => (int) $postedInvoice->id,
-                        'allocated_amount' => $expectedGrandTotal,
+            // Leg 3: Post customer payment with allocation to posted sales invoice (if not unpaid)
+            $customerPayment = null;
+            if ($settlementMode !== 'unpaid') {
+                $effectivePaymentAmount = $paymentBigDecimal->toScale($minorUnits, RoundingMode::UNNECESSARY)->__toString();
+                $paymentData = [
+                    'customer_id' => (int) $customer->id,
+                    'money_account_id' => (int) $cashAccount->id,
+                    'payment_date' => $draftData['issue_date'],
+                    'payment_method' => 'cash',
+                    'document_locale' => $postedInvoice->document_locale ?? 'ar',
+                    'amount' => $effectivePaymentAmount,
+                    'exchange_rate' => '1.0000000000',
+                    'reference_number' => null,
+                    'notes' => 'Mobile online cash sale settlement',
+                    'idempotency_key' => 'fin1-payment:'.$idempotencySuffix,
+                    'allocations' => [
+                        [
+                            'sales_invoice_id' => (int) $postedInvoice->id,
+                            'allocated_amount' => $effectivePaymentAmount,
+                        ],
                     ],
-                ],
-            ];
+                ];
 
-            $customerPayment = $this->postPaymentAction->execute(
-                $company,
-                $actor,
-                $paymentData
-            );
-            $this->triggerStageFault('after_payment');
+                $customerPayment = $this->postPaymentAction->execute(
+                    $company,
+                    $actor,
+                    $paymentData
+                );
+                $this->triggerStageFault('after_payment');
+            }
 
             // Mark closed composite completion in MobileEventReceiptManager registry
             $this->recordClosedCompositeCompletion(
@@ -465,13 +492,17 @@ final class ExecuteImmediateOnlineCashSaleAction
                 (int) $company->id,
                 (int) $actor->id,
                 (int) $postedInvoice->id,
-                (int) $customerPayment->id
+                $customerPayment !== null ? (int) $customerPayment->id : null
             );
 
             $this->triggerStageFault('after_composite_completion');
 
             $postedAt = $postedInvoice->created_at?->toIso8601ZuluString() ?? now()->toIso8601ZuluString();
-            $paymentReceiptNumber = ! empty($customerPayment->payment_number) ? (string) $customerPayment->payment_number : null;
+            $paymentReceiptNumber = $customerPayment !== null && ! empty($customerPayment->payment_number) ? (string) $customerPayment->payment_number : null;
+
+            $amountPaidStr = $customerPayment !== null
+                ? (string) $customerPayment->amount
+                : BigDecimal::zero()->toScale($minorUnits, RoundingMode::UNNECESSARY)->__toString();
 
             // Assemble and return terminal canonical result
             $terminalResult = [
@@ -481,10 +512,10 @@ final class ExecuteImmediateOnlineCashSaleAction
                 'invoice_id' => (string) $postedInvoice->public_id,
                 'invoice_public_id' => (string) $postedInvoice->public_id,
                 'invoice_number' => (string) $postedInvoice->invoice_number,
-                'customer_payment_id' => (int) $customerPayment->id,
-                'customer_payment_public_id' => (string) $customerPayment->public_id,
-                'payment_id' => (string) $customerPayment->public_id,
-                'payment_public_id' => (string) $customerPayment->public_id,
+                'customer_payment_id' => $customerPayment !== null ? (int) $customerPayment->id : null,
+                'customer_payment_public_id' => $customerPayment !== null ? (string) $customerPayment->public_id : null,
+                'payment_id' => $customerPayment !== null ? (string) $customerPayment->public_id : null,
+                'payment_public_id' => $customerPayment !== null ? (string) $customerPayment->public_id : null,
                 'payment_receipt_number' => $paymentReceiptNumber,
                 'command_receipt_id' => null,
                 'customer_id' => (int) $postedInvoice->customer_id,
@@ -492,9 +523,9 @@ final class ExecuteImmediateOnlineCashSaleAction
                 'currency' => (string) $postedInvoice->currency_code,
                 'total_amount' => (string) $postedInvoice->grand_total_currency,
                 'grand_total' => (string) $postedInvoice->grand_total_currency,
-                'paid_amount' => (string) $customerPayment->amount,
-                'amount' => (string) $customerPayment->amount,
-                'amount_paid' => (string) $customerPayment->amount,
+                'paid_amount' => $amountPaidStr,
+                'amount' => $amountPaidStr,
+                'amount_paid' => $amountPaidStr,
                 'change_returned' => '0.000000',
                 'posted_at' => $postedAt,
                 'lines_count' => count($postedInvoice->lines),
@@ -503,8 +534,8 @@ final class ExecuteImmediateOnlineCashSaleAction
             return [
                 'sales_invoice_id' => (int) $postedInvoice->id,
                 'sales_invoice_public_id' => (string) $postedInvoice->public_id,
-                'customer_payment_id' => (int) $customerPayment->id,
-                'customer_payment_public_id' => (string) $customerPayment->public_id,
+                'customer_payment_id' => $customerPayment !== null ? (int) $customerPayment->id : null,
+                'customer_payment_public_id' => $customerPayment !== null ? (string) $customerPayment->public_id : null,
                 'command_receipt_id' => null,
                 'terminal_canonical_result' => $terminalResult,
             ];

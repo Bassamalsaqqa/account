@@ -40,13 +40,19 @@ final class QualifiedCashFinancialExecutionAdapter implements FinancialExecution
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         $actor->unsetRelation('roles')->unsetRelation('permissions');
 
+        $settlementMode = is_array($payload)
+            ? ($payload['payment']['settlement_mode'] ?? $payload['settlement_mode'] ?? null)
+            : null;
+
         if ($operation === 'execute') {
             $requiredPermissions = [
                 'sales.invoice.create',
                 'sales.invoice.post',
-                'money.receipt.create',
-                'money.receipt.allocate',
             ];
+            if ($settlementMode !== 'unpaid') {
+                $requiredPermissions[] = 'money.receipt.create';
+                $requiredPermissions[] = 'money.receipt.allocate';
+            }
             foreach ($requiredPermissions as $perm) {
                 if (! $actor->hasPermissionTo($perm)) {
                     throw new AuthorizationException("Actor missing required permission [{$perm}] for immediate cash sale execution.");
@@ -55,8 +61,10 @@ final class QualifiedCashFinancialExecutionAdapter implements FinancialExecution
         } elseif (in_array($operation, ['replay', 'lookup'], true)) {
             $requiredViewPermissions = [
                 'sales.invoice.view',
-                'money.receipt.view',
             ];
+            if ($settlementMode !== 'unpaid') {
+                $requiredViewPermissions[] = 'money.receipt.view';
+            }
             foreach ($requiredViewPermissions as $perm) {
                 if (! $actor->hasPermissionTo($perm)) {
                     throw new AuthorizationException("Actor missing required permission [{$perm}] for {$operation}.");

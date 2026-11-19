@@ -36,7 +36,11 @@ final class NativeFinancialExecutionCapability
         public readonly int $currencyMinorUnits,
         public readonly string $connectionName,
         public readonly int $rootTransactionLevel,
-        public readonly string $invocationScopeId
+        public readonly string $invocationScopeId,
+        public readonly string $settlementMode = 'full',
+        /** @var list<string> */
+        public readonly array $expectedLegs = ['invoice', 'payment'],
+        public readonly ?string $admittedPaymentAmount = null
     ) {}
 
     /**

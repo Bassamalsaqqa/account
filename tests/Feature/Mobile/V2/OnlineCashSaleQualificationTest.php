@@ -299,8 +299,25 @@ final class OnlineCashSaleQualificationTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function validSalePayload(string $eventId, string $amount = '58.000000', string $unitPrice = '50.000000'): array
-    {
+    private function validSalePayload(
+        string $eventId,
+        string $amount = '58.000000',
+        string $unitPrice = '50.000000',
+        string $settlementMode = 'full',
+        ?string $cashAccountId = null
+    ): array {
+        $payment = [
+            'settlement_mode' => $settlementMode,
+            'amount' => $amount,
+        ];
+        if ($settlementMode === 'unpaid') {
+            $payment['payment_method'] = null;
+            $payment['cash_account_id'] = null;
+        } else {
+            $payment['payment_method'] = 'cash';
+            $payment['cash_account_id'] = $cashAccountId ?? $this->cashAccount->public_id;
+        }
+
         return [
             'client_event_id' => $eventId,
             'device_id' => $this->device->device_id,
@@ -319,12 +336,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
                     'tax_inclusive' => false,
                 ],
             ],
-            'payment' => [
-                'settlement_mode' => 'full',
-                'payment_method' => 'cash',
-                'cash_account_id' => $this->cashAccount->public_id,
-                'amount' => $amount,
-            ],
+            'payment' => $payment,
         ];
     }
 
@@ -1990,6 +2002,571 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'code' => 'VALIDATION_FAILED',
             ],
         ]);
+    }
+
+    /**
+     * T-37: Genuine unpaid execution: canonical invoice draft + post with explicit null payment,
+     * zero money account interaction, amount_paid 0.000000, 201 fresh / 200 replay / status 200,
+     * permission boundary (only sales.invoice.create and sales.invoice.post needed), and 6 reconciliations.
+     */
+    public function test_fresh_creation_unpaid_commits_invoice_with_null_payment_and_reconciles_cleanly(): void
+    {
+        // Verify permission boundary: staff with ONLY sales.invoice.create and sales.invoice.post can execute unpaid
+        setPermissionsTeamId($this->company->id);
+        $this->staff->revokePermissionTo('money.receipt.create');
+        $this->staff->revokePermissionTo('money.receipt.allocate');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        try {
+            $eventId = (string) Str::uuid();
+            $payload = $this->validSalePayload(
+                eventId: $eventId,
+                amount: '0.000000',
+                settlementMode: 'unpaid'
+            );
+
+            $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+            $response->assertStatus(201);
+            $response->assertJson([
+                'client_event_id' => $eventId,
+                'status' => 'posted',
+                'payment_id' => null,
+                'payment_receipt_number' => null,
+                'grand_total' => '58.000000',
+                'amount_paid' => '0.00',
+                'change_returned' => '0.000000',
+            ]);
+
+            $data = $response->json();
+            $this->assertNull($data['payment_id']);
+            $this->assertNull($data['payment_receipt_number']);
+            $this->assertSame('0.00', $data['amount_paid']);
+            $this->assertSame('58.000000', $data['grand_total']);
+            $this->assertTrue(WireResponse::accepts(json_decode((string) $response->getContent()), 'sale-commit-response'));
+
+            $invoicePublicId = $data['invoice_id'];
+            $this->assertNotNull($invoicePublicId);
+
+            // Database assertions: invoice posted, zero customer payments created, zero allocations
+            $invoice = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->where('public_id', $invoicePublicId)->first();
+            $this->assertNotNull($invoice);
+            $this->assertSame('posted', $invoice->status);
+            $this->assertSame('58.000000', (string) $invoice->grand_total_currency);
+
+            $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame(0, DB::table('customer_payment_allocations')->where('sales_invoice_id', $invoice->id)->count());
+
+            // Event receipt has null customer_payment_id
+            $receipt = MobileEventReceipt::withoutGlobalScopes()->where('client_event_id', $eventId)->first();
+            $this->assertNotNull($receipt);
+            $this->assertSame('completed', $receipt->status);
+            $this->assertNull($receipt->customer_payment_id);
+            $this->assertSame((int) $invoice->id, (int) $receipt->sales_invoice_id);
+
+            // Replay returns HTTP 200 with identical payload and no duplicate records
+            $replay = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+            $replay->assertStatus(200);
+            $this->assertSame($data, $replay->json());
+            $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+
+            // Status endpoint returns 200 with identical immutable canonical result
+            $statusRes = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->withHeader('Accept', 'application/json')
+                ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+            $statusRes->assertStatus(200);
+            $statusData = $statusRes->json();
+            $this->assertSame('posted', $statusData['status']);
+            $official = $statusData['official_invoice'];
+            $this->assertNotNull($official);
+            $this->assertSame($invoicePublicId, $official['invoice_id']);
+            $this->assertNull($official['payment_id']);
+            $this->assertSame('58.000000', $official['grand_total']);
+
+            // All 6 accounting reconciliations pass cleanly
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+            $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+            $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+            $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+            $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase 7 reconciliation must pass');
+            $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+        } finally {
+            setPermissionsTeamId($this->company->id);
+            $this->staff->givePermissionTo('money.receipt.create');
+            $this->staff->givePermissionTo('money.receipt.allocate');
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+        }
+    }
+
+    /**
+     * T-38: Genuine partial execution: canonical invoice draft + post with positive partial payment
+     * allocated strictly to the paid portion, 201 fresh / 200 replay / status 200, and 6 reconciliations.
+     */
+    public function test_fresh_creation_partial_commits_invoice_and_partial_payment_and_reconciles_cleanly(): void
+    {
+        $eventId = (string) Str::uuid();
+        $partialAmount = '20.000000';
+        $payload = $this->validSalePayload(
+            eventId: $eventId,
+            amount: $partialAmount,
+            settlementMode: 'partial'
+        );
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+
+        $response->assertStatus(201);
+        $response->assertJson([
+            'client_event_id' => $eventId,
+            'status' => 'posted',
+            'grand_total' => '58.000000',
+            'amount_paid' => $partialAmount,
+            'change_returned' => '0.000000',
+        ]);
+
+        $data = $response->json();
+        $this->assertNotNull($data['invoice_id']);
+        $this->assertNotNull($data['payment_id']);
+        $this->assertNotNull($data['payment_receipt_number']);
+        $this->assertSame($partialAmount, $data['amount_paid']);
+        $this->assertSame('58.000000', $data['grand_total']);
+        $this->assertTrue(WireResponse::accepts(json_decode((string) $response->getContent()), 'sale-commit-response'));
+
+        // Database assertions: invoice posted, payment posted for exact partial amount, allocated exactly to partial amount
+        $invoice = SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->where('public_id', $data['invoice_id'])->first();
+        $this->assertNotNull($invoice);
+        $this->assertSame('posted', $invoice->status);
+        $this->assertSame('58.000000', (string) $invoice->grand_total_currency);
+
+        $payment = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->where('public_id', $data['payment_id'])->first();
+        $this->assertNotNull($payment);
+        $this->assertFalse($payment->is_reversed);
+        $this->assertSame($partialAmount, (string) $payment->amount);
+
+        $allocation = DB::table('customer_payment_allocations')
+            ->where('customer_payment_id', $payment->id)
+            ->where('sales_invoice_id', $invoice->id)
+            ->first();
+        $this->assertNotNull($allocation);
+        $this->assertSame($partialAmount, (string) $allocation->allocated_amount);
+
+        // Event receipt has matching payment ID
+        $receipt = MobileEventReceipt::withoutGlobalScopes()->where('client_event_id', $eventId)->first();
+        $this->assertNotNull($receipt);
+        $this->assertSame((int) $payment->id, (int) $receipt->customer_payment_id);
+        $this->assertSame((int) $invoice->id, (int) $receipt->sales_invoice_id);
+
+        // Replay returns HTTP 200 with identical response and zero duplicate records
+        $replay = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload);
+        $replay->assertStatus(200);
+        $this->assertSame($data, $replay->json());
+        $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+
+        // Status endpoint returns 200 with identical immutable canonical result
+        $statusRes = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Accept', 'application/json')
+            ->get("/api/mobile/v2/companies/{$this->company->public_id}/offline-events/{$eventId}/status");
+        $statusRes->assertStatus(200);
+        $statusData = $statusRes->json();
+        $this->assertSame('posted', $statusData['status']);
+        $official = $statusData['official_invoice'];
+        $this->assertNotNull($official);
+        $this->assertSame($data['invoice_id'], $official['invoice_id']);
+        $this->assertSame($data['payment_id'], $official['payment_id']);
+        $this->assertSame('58.000000', $official['grand_total']);
+
+        // All 6 accounting reconciliations pass cleanly
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase 7 reconciliation must pass');
+        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+    }
+
+    /**
+     * T-39: Changed mode or changed payload under the same client_event_id returns HTTP 409 Conflict.
+     */
+    public function test_changed_mode_and_changed_payload_returns_409_conflict(): void
+    {
+        // 1. Submit unpaid sale
+        $eventId1 = (string) Str::uuid();
+        $unpaidPayload = $this->validSalePayload(
+            eventId: $eventId1,
+            amount: '0.000000',
+            settlementMode: 'unpaid'
+        );
+
+        $res1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $unpaidPayload);
+        $res1->assertStatus(201);
+
+        // Attempt replay with changed mode (full instead of unpaid) under same eventId1 -> 409
+        $tamperedModePayload = $this->validSalePayload(
+            eventId: $eventId1,
+            amount: '58.000000',
+            settlementMode: 'full'
+        );
+        $conflict1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $tamperedModePayload);
+        $conflict1->assertStatus(409);
+
+        // Attempt replay with changed amount under same eventId1 -> 409
+        $tamperedAmountPayload = $this->validSalePayload(
+            eventId: $eventId1,
+            amount: '20.000000',
+            settlementMode: 'partial'
+        );
+        $conflict2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $tamperedAmountPayload);
+        $conflict2->assertStatus(409);
+
+        // 2. Submit full cash sale
+        $eventId2 = (string) Str::uuid();
+        $fullPayload = $this->validSalePayload(
+            eventId: $eventId2,
+            amount: '58.000000',
+            settlementMode: 'full'
+        );
+        $res2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $fullPayload);
+        $res2->assertStatus(201);
+
+        // Attempt replay with unpaid mode under same eventId2 -> 409
+        $tamperedUnpaidPayload = $this->validSalePayload(
+            eventId: $eventId2,
+            amount: '0.000000',
+            settlementMode: 'unpaid'
+        );
+        $conflict3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $tamperedUnpaidPayload);
+        $conflict3->assertStatus(409);
+
+        // Exactly 2 sales invoices and 1 customer payment exist in the company
+        $this->assertSame(2, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+    }
+
+    /**
+     * T-40: Simulated faults after invoice posting and after customer payment roll back all legs with zero leakage.
+     */
+    public function test_simulated_fault_rollback_after_posting_and_after_payment(): void
+    {
+        $movementsBefore = StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count();
+
+        // 1. Fault after invoice posting
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_posting';
+
+        $eventId1 = (string) Str::uuid();
+        $payload1 = $this->validSalePayload(
+            eventId: $eventId1,
+            amount: '0.000000',
+            settlementMode: 'unpaid'
+        );
+
+        $response1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload1);
+        $this->assertTrue($response1->status() >= 400);
+
+        // Entire transaction rolled back
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame($movementsBefore, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->where('source_type', 'sales_invoice')->count());
+
+        // 2. Fault after customer payment
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_payment';
+
+        $eventId2 = (string) Str::uuid();
+        $payload2 = $this->validSalePayload(
+            eventId: $eventId2,
+            amount: '20.000000',
+            settlementMode: 'partial'
+        );
+
+        $response2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $payload2);
+        $this->assertTrue($response2->status() >= 400);
+
+        // Entire transaction rolled back
+        $this->assertSame(0, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame($movementsBefore, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->where('source_type', 'sales_invoice')->count());
+
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
+
+        // Reconciliations pass cleanly with zero phantom records
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase 7 reconciliation must pass');
+        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+    }
+
+    /**
+     * T-41: Real two-process MariaDB contention test for unpaid sales:
+     * concurrent workers converge to single created (201) and replay (200), null payment, and 6 reconciliations.
+     */
+    public function test_two_process_concurrent_unpaid_sale_converges_to_single_sale(): void
+    {
+        $schema = DisposableMariaDbSchema::create();
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $this->setupQualificationFixture();
+
+            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+            mkdir($directory, 0700);
+
+            $eventId = (string) Str::uuid();
+            $payload = $this->validSalePayload(
+                eventId: $eventId,
+                amount: '0.000000',
+                settlementMode: 'unpaid'
+            );
+            $serverContext = [
+                'actor_id' => (string) $this->staff->public_id,
+                'company_id' => (string) $this->company->public_id,
+                'currency_minor_units' => 2,
+            ];
+            $profile = OnlineSaleIntentProfile::construct($serverContext, $payload);
+            $canonicalBytes = OnlineSaleIntentProfile::serialize($profile);
+
+            $inputHolder = [
+                'company_id' => $this->company->id,
+                'client_event_id' => $eventId,
+                'token_hash' => $this->token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_online_sale_intent',
+                'canonical_bytes' => $canonicalBytes,
+                'executor_mode' => 'production_cash',
+                'hold_lock_table' => 'companies',
+                'wait_for_file' => 'release-holder',
+            ];
+
+            $inputContender = [
+                'company_id' => $this->company->id,
+                'client_event_id' => $eventId,
+                'token_hash' => $this->token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_online_sale_intent',
+                'canonical_bytes' => $canonicalBytes,
+                'executor_mode' => 'production_cash',
+            ];
+
+            $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $inputHolder);
+            touch($directory.'/go-worker-a');
+
+            // Wait until worker A acquires the lock
+            StrictBarrier::await(
+                fn (): bool => is_file($directory.'/worker-a.locked'),
+                fn (): bool => $workerA->isRunning()
+            );
+
+            $workerB = $this->startWorkerProcess($schema, $directory, 'worker-b', $inputContender);
+            touch($directory.'/go-worker-b');
+
+            // Wait until worker B's exact CID is pending on the lock in MariaDB processlist
+            StrictBarrier::await(function () use ($directory, $schema): bool {
+                $connectionPath = $directory.'/worker-b.connection';
+                if (! is_file($connectionPath)) {
+                    return false;
+                }
+                $id = trim((string) file_get_contents($connectionPath));
+                if (! ctype_digit($id)) {
+                    return false;
+                }
+                foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+                    $sql = strtolower((string) ($row->Info ?? ''));
+                    if ((string) $row->Id === $id && $row->db === $schema->schemaName()
+                        && str_contains($sql, 'from `companies`') && str_contains($sql, 'for update')) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }, fn (): bool => $workerA->isRunning() && $workerB->isRunning());
+
+            // Release the lock holder
+            touch($directory.'/release-holder');
+
+            $this->assertSame(0, $workerA->wait(), 'Worker A failed: '.$workerA->getErrorOutput());
+            $this->assertSame(0, $workerB->wait(), 'Worker B failed: '.$workerB->getErrorOutput());
+
+            $outA = json_decode($workerA->getOutput(), true);
+            $outB = json_decode($workerB->getOutput(), true);
+
+            $this->assertIsArray($outA, 'Worker A output must be valid JSON: '.$workerA->getOutput().' err: '.$workerA->getErrorOutput());
+            $this->assertIsArray($outB, 'Worker B output must be valid JSON: '.$workerB->getOutput().' err: '.$workerB->getErrorOutput());
+
+            $outcomes = [$outA['outcome'], $outB['outcome']];
+            sort($outcomes);
+            $this->assertSame(['created', 'replay'], $outcomes, 'Concurrent workers must converge to one created and one replay.');
+
+            // Both workers returned identical invoice identifiers and null payment IDs
+            $this->assertSame($outA['sales_invoice_id'], $outB['sales_invoice_id']);
+            $this->assertNull($outA['customer_payment_id']);
+            $this->assertNull($outB['customer_payment_id']);
+
+            // Database has exactly 1 invoice, 0 payments, 1 receipt
+            $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame(0, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame(1, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->where('client_event_id', $eventId)->count());
+
+            // All 6 reconciliations pass cleanly
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+            $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+            $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+            $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+            $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+            $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
+        } finally {
+            if (isset($directory) && is_dir($directory)) {
+                @array_map('unlink', glob($directory.'/*') ?: []);
+                @rmdir($directory);
+            }
+            $schema->drop();
+        }
+    }
+
+    /**
+     * T-42: Real two-process MariaDB contention test for partial sales:
+     * concurrent workers converge to single created (201) and replay (200), exact partial payment, and 6 reconciliations.
+     */
+    public function test_two_process_concurrent_partial_sale_converges_to_single_sale(): void
+    {
+        $schema = DisposableMariaDbSchema::create();
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $this->setupQualificationFixture();
+
+            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+            mkdir($directory, 0700);
+
+            $eventId = (string) Str::uuid();
+            $partialAmount = '20.000000';
+            $payload = $this->validSalePayload(
+                eventId: $eventId,
+                amount: $partialAmount,
+                settlementMode: 'partial'
+            );
+            $serverContext = [
+                'actor_id' => (string) $this->staff->public_id,
+                'company_id' => (string) $this->company->public_id,
+                'currency_minor_units' => 2,
+            ];
+            $profile = OnlineSaleIntentProfile::construct($serverContext, $payload);
+            $canonicalBytes = OnlineSaleIntentProfile::serialize($profile);
+
+            $inputHolder = [
+                'company_id' => $this->company->id,
+                'client_event_id' => $eventId,
+                'token_hash' => $this->token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_online_sale_intent',
+                'canonical_bytes' => $canonicalBytes,
+                'executor_mode' => 'production_cash',
+                'hold_lock_table' => 'companies',
+                'wait_for_file' => 'release-holder',
+            ];
+
+            $inputContender = [
+                'company_id' => $this->company->id,
+                'client_event_id' => $eventId,
+                'token_hash' => $this->token->token_hash,
+                'event_version' => 2,
+                'representation' => 'v2_online_sale_intent',
+                'canonical_bytes' => $canonicalBytes,
+                'executor_mode' => 'production_cash',
+            ];
+
+            $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $inputHolder);
+            touch($directory.'/go-worker-a');
+
+            // Wait until worker A acquires the lock
+            StrictBarrier::await(
+                fn (): bool => is_file($directory.'/worker-a.locked'),
+                fn (): bool => $workerA->isRunning()
+            );
+
+            $workerB = $this->startWorkerProcess($schema, $directory, 'worker-b', $inputContender);
+            touch($directory.'/go-worker-b');
+
+            // Wait until worker B's exact CID is pending on the lock in MariaDB processlist
+            StrictBarrier::await(function () use ($directory, $schema): bool {
+                $connectionPath = $directory.'/worker-b.connection';
+                if (! is_file($connectionPath)) {
+                    return false;
+                }
+                $id = trim((string) file_get_contents($connectionPath));
+                if (! ctype_digit($id)) {
+                    return false;
+                }
+                foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+                    $sql = strtolower((string) ($row->Info ?? ''));
+                    if ((string) $row->Id === $id && $row->db === $schema->schemaName()
+                        && str_contains($sql, 'from `companies`') && str_contains($sql, 'for update')) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }, fn (): bool => $workerA->isRunning() && $workerB->isRunning());
+
+            // Release the lock holder
+            touch($directory.'/release-holder');
+
+            $this->assertSame(0, $workerA->wait(), 'Worker A failed: '.$workerA->getErrorOutput());
+            $this->assertSame(0, $workerB->wait(), 'Worker B failed: '.$workerB->getErrorOutput());
+
+            $outA = json_decode($workerA->getOutput(), true);
+            $outB = json_decode($workerB->getOutput(), true);
+
+            $this->assertIsArray($outA, 'Worker A output must be valid JSON: '.$workerA->getOutput().' err: '.$workerA->getErrorOutput());
+            $this->assertIsArray($outB, 'Worker B output must be valid JSON: '.$workerB->getOutput().' err: '.$workerB->getErrorOutput());
+
+            $outcomes = [$outA['outcome'], $outB['outcome']];
+            sort($outcomes);
+            $this->assertSame(['created', 'replay'], $outcomes, 'Concurrent workers must converge to one created and one replay.');
+
+            // Both workers returned identical invoice and payment identifiers
+            $this->assertSame($outA['sales_invoice_id'], $outB['sales_invoice_id']);
+            $this->assertSame($outA['customer_payment_id'], $outB['customer_payment_id']);
+
+            // Database has exactly 1 invoice, 1 payment, 1 receipt
+            $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+            $this->assertSame(1, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->where('client_event_id', $eventId)->count());
+
+            // All 6 reconciliations pass cleanly
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy, 'Accounting reconciliation must pass');
+            $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy, 'Inventory reconciliation must pass');
+            $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Sales reconciliation must pass');
+            $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy, 'Payables reconciliation must pass');
+            $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
+            $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
+        } finally {
+            if (isset($directory) && is_dir($directory)) {
+                @array_map('unlink', glob($directory.'/*') ?: []);
+                @rmdir($directory);
+            }
+            $schema->drop();
+        }
     }
 
     /**
