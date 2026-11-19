@@ -19,6 +19,7 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Support\Mobile\SalesInvoiceCursorCodec;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
@@ -50,36 +51,215 @@ final class SalesInvoiceController extends Controller
             );
         }
 
-        $limit = min((int) ($request->query('limit', 30)), 100);
-        if ($limit < 1) {
+        if ($request->has('limit')) {
+            $rawLimit = $request->query('limit');
+            if (is_array($rawLimit) || ! is_scalar($rawLimit) || preg_match('/\A(?:0|[1-9][0-9]*)\z/', (string) $rawLimit) !== 1) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Limit must be a valid integer.',
+                    status: 422
+                );
+            }
+            $intLimit = (int) $rawLimit;
+            if ($intLimit < 1 || $intLimit > 100) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Limit must be an integer between 1 and 100.',
+                    status: 422
+                );
+            }
+            $limit = min($intLimit, 100);
+        } else {
             $limit = 30;
+        }
+
+        $rawCursor = null;
+        if ($request->has('cursor')) {
+            /** @var mixed $paramCursor */
+            $paramCursor = $request->query('cursor');
+            if ($paramCursor !== null) {
+                if (is_array($paramCursor) || ! is_string($paramCursor)) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Cursor must be a valid string.',
+                        status: 422
+                    );
+                }
+                if (strlen($paramCursor) > 255) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Cursor exceeds maximum length of 255 characters.',
+                        status: 422
+                    );
+                }
+                $trimmedCursor = trim($paramCursor);
+                if ($trimmedCursor !== '') {
+                    $rawCursor = $trimmedCursor;
+                }
+            }
+        }
+
+        $statusFilter = null;
+        if ($request->has('status')) {
+            /** @var mixed $rawStatus */
+            $rawStatus = $request->query('status');
+            if ($rawStatus !== null) {
+                if (is_array($rawStatus) || ! is_string($rawStatus)) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Status parameter must be a string.',
+                        status: 422
+                    );
+                }
+                $trimmedStatus = trim($rawStatus);
+                if ($trimmedStatus !== '') {
+                    $statusUpper = strtoupper($trimmedStatus);
+                    if (! in_array($statusUpper, ['DRAFT', 'POSTED', 'VOID', 'PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'Status parameter must be one of: DRAFT, POSTED, VOID, PAID_CASH, PAID, PARTIAL, ON_CREDIT.',
+                            status: 422
+                        );
+                    }
+                    $statusFilter = $statusUpper;
+                }
+            }
+        }
+
+        $search = null;
+        if ($request->has('search')) {
+            /** @var mixed $rawSearch */
+            $rawSearch = $request->query('search');
+            if ($rawSearch !== null) {
+                if (is_array($rawSearch) || ! is_string($rawSearch)) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Search query must be a valid string.',
+                        status: 422
+                    );
+                }
+                if (mb_strlen($rawSearch) > 100) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Search parameter cannot exceed 100 characters.',
+                        status: 422
+                    );
+                }
+                $trimmedSearch = trim($rawSearch);
+                $search = $trimmedSearch !== '' ? $trimmedSearch : null;
+            }
+        }
+
+        $customerPublicId = null;
+        if ($request->has('customer_id')) {
+            /** @var mixed $rawCustomer */
+            $rawCustomer = $request->query('customer_id');
+            if ($rawCustomer !== null) {
+                if (is_array($rawCustomer) || ! is_string($rawCustomer)) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'customer_id parameter must be a valid string.',
+                        status: 422
+                    );
+                }
+                $trimmedCustomer = trim($rawCustomer);
+                $customerPublicId = $trimmedCustomer !== '' ? $trimmedCustomer : null;
+            }
+        }
+
+        $dateFrom = null;
+        if ($request->has('date_from')) {
+            /** @var mixed $rawDateFrom */
+            $rawDateFrom = $request->query('date_from');
+            if ($rawDateFrom !== null) {
+                if (is_array($rawDateFrom) || ! is_string($rawDateFrom)) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'date_from parameter must be a string.',
+                        status: 422
+                    );
+                }
+                $trimmedDateFrom = trim($rawDateFrom);
+                if ($trimmedDateFrom !== '') {
+                    if (preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $trimmedDateFrom) !== 1 || ! strtotime($trimmedDateFrom)) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'date_from must be a valid date in YYYY-MM-DD format.',
+                            status: 422
+                        );
+                    }
+                    $dateFrom = $trimmedDateFrom;
+                }
+            }
+        }
+
+        $dateTo = null;
+        if ($request->has('date_to')) {
+            /** @var mixed $rawDateTo */
+            $rawDateTo = $request->query('date_to');
+            if ($rawDateTo !== null) {
+                if (is_array($rawDateTo) || ! is_string($rawDateTo)) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'date_to parameter must be a string.',
+                        status: 422
+                    );
+                }
+                $trimmedDateTo = trim($rawDateTo);
+                if ($trimmedDateTo !== '') {
+                    if (preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $trimmedDateTo) !== 1 || ! strtotime($trimmedDateTo)) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'date_to must be a valid date in YYYY-MM-DD format.',
+                            status: 422
+                        );
+                    }
+                    $dateTo = $trimmedDateTo;
+                }
+            }
+        }
+
+        $filters = [
+            'status' => $statusFilter,
+            'search' => $search,
+            'customer_id' => $customerPublicId,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+        ];
+
+        try {
+            $cursorPosition = SalesInvoiceCursorCodec::decode($rawCursor, (string) $company->public_id, $filters);
+        } catch (InvalidArgumentException $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: $e->getMessage(),
+                status: 422
+            );
         }
 
         $query = SalesInvoice::where('company_id', $company->id)
             ->with(['customer' => fn ($q) => $q->where('company_id', $company->id)]);
 
         // Filter by invoice status or payment status
-        $statusFilter = $request->query('status');
-        if ($statusFilter !== null && is_string($statusFilter) && trim($statusFilter) !== '') {
-            $statusUpper = strtoupper(trim($statusFilter));
-            if (in_array($statusUpper, ['DRAFT', 'POSTED', 'VOID'], true)) {
-                $query->where('status', strtolower($statusUpper));
-            } elseif (in_array($statusUpper, ['PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
+        if ($statusFilter !== null) {
+            if (in_array($statusFilter, ['DRAFT', 'POSTED', 'VOID'], true)) {
+                $query->where('status', strtolower($statusFilter));
+            } elseif (in_array($statusFilter, ['PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
                 $allocatedSql = '(SELECT COALESCE(SUM(cpa.allocated_amount), 0) FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
                 $returnedSql = '(SELECT COALESCE(SUM(sr.grand_total_currency), 0) FROM sales_returns sr WHERE sr.sales_invoice_id = sales_invoices.id AND sr.status = "posted")';
                 $hasCashSql = 'EXISTS (SELECT 1 FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND cp.payment_method = "cash" AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
 
                 $query->where('status', SalesInvoice::STATUS_POSTED);
 
-                if ($statusUpper === 'PAID_CASH') {
+                if ($statusFilter === 'PAID_CASH') {
                     $query->whereRaw("({$allocatedSql} + {$returnedSql}) >= sales_invoices.grand_total_currency")
                         ->whereRaw($hasCashSql);
-                } elseif ($statusUpper === 'PAID') {
+                } elseif ($statusFilter === 'PAID') {
                     $query->whereRaw("({$allocatedSql} + {$returnedSql}) >= sales_invoices.grand_total_currency");
-                } elseif ($statusUpper === 'PARTIAL') {
+                } elseif ($statusFilter === 'PARTIAL') {
                     $query->whereRaw("{$allocatedSql} > 0")
                         ->whereRaw("({$allocatedSql} + {$returnedSql}) < sales_invoices.grand_total_currency");
-                } elseif ($statusUpper === 'ON_CREDIT') {
+                } elseif ($statusFilter === 'ON_CREDIT') {
                     $query->whereRaw("{$allocatedSql} = 0")
                         ->whereRaw("{$returnedSql} < sales_invoices.grand_total_currency");
                 }
@@ -87,27 +267,24 @@ final class SalesInvoiceController extends Controller
         }
 
         // Search
-        $search = $request->query('search');
-        if ($search !== null && is_string($search) && trim($search) !== '') {
-            $term = trim($search);
-            $query->where(function ($q) use ($term): void {
-                $q->where('invoice_number', 'like', "%{$term}%")
-                    ->orWhere('public_id', 'like', "%{$term}%")
-                    ->orWhereHas('customer', function ($cq) use ($term): void {
-                        $cq->where('name_ar', 'like', "%{$term}%")
-                            ->orWhere('name_en', 'like', "%{$term}%")
-                            ->orWhere('phone', 'like', "%{$term}%");
+        if ($search !== null) {
+            $escapedSearch = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+            $query->where(function ($q) use ($escapedSearch): void {
+                $q->where('invoice_number', 'like', "%{$escapedSearch}%")
+                    ->orWhere('public_id', 'like', "%{$escapedSearch}%")
+                    ->orWhereHas('customer', function ($cq) use ($escapedSearch): void {
+                        $cq->where('name_ar', 'like', "%{$escapedSearch}%")
+                            ->orWhere('name_en', 'like', "%{$escapedSearch}%")
+                            ->orWhere('phone', 'like', "%{$escapedSearch}%");
                     });
             });
         }
 
         // Customer filter
-        $customerPublicId = $request->query('customer_id');
-        if ($customerPublicId !== null && is_string($customerPublicId) && trim($customerPublicId) !== '') {
-            $trimmedCustomerPublicId = trim($customerPublicId);
-            if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $trimmedCustomerPublicId) === 1) {
+        if ($customerPublicId !== null) {
+            if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $customerPublicId) === 1) {
                 $customer = Customer::where('company_id', $company->id)
-                    ->where('public_id', $trimmedCustomerPublicId)
+                    ->where('public_id', $customerPublicId)
                     ->first();
                 if ($customer !== null) {
                     $query->where('customer_id', $customer->id);
@@ -120,22 +297,27 @@ final class SalesInvoiceController extends Controller
         }
 
         // Date range filters
-        $dateFrom = $request->query('date_from');
-        if ($dateFrom !== null && is_string($dateFrom) && trim($dateFrom) !== '') {
-            $query->whereDate('issue_date', '>=', trim($dateFrom));
+        if ($dateFrom !== null) {
+            $query->whereDate('issue_date', '>=', $dateFrom);
         }
-        $dateTo = $request->query('date_to');
-        if ($dateTo !== null && is_string($dateTo) && trim($dateTo) !== '') {
-            $query->whereDate('issue_date', '<=', trim($dateTo));
+        if ($dateTo !== null) {
+            $query->whereDate('issue_date', '<=', $dateTo);
         }
 
-        $records = $query->orderBy('id', 'desc')
+        if ($cursorPosition !== null) {
+            $query->where('public_id', '<', $cursorPosition);
+        }
+
+        $records = $query->orderBy('public_id', 'desc')
             ->limit($limit + 1)
             ->get();
 
         $hasMore = $records->count() > $limit;
         if ($hasMore) {
             $records = $records->slice(0, $limit);
+            $nextCursor = SalesInvoiceCursorCodec::encode((string) $company->public_id, $filters, (string) $records->last()->public_id);
+        } else {
+            $nextCursor = null;
         }
 
         $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver): array {
@@ -176,6 +358,7 @@ final class SalesInvoiceController extends Controller
             'company_id' => $company->public_id,
             'count' => count($invoices),
             'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
             'invoices' => $invoices,
         ], 200, [
             'Content-Type' => 'application/json',

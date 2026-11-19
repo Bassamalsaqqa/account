@@ -515,4 +515,346 @@ final class SalesInvoiceReadRegressionTest extends TestCase
             ->assertOk()
             ->assertJsonPath('count', 0);
     }
+
+    public function test_invoice_cursor_pagination_first_page_subsequent_pages_and_exhaustion(): void
+    {
+        // Seed 75 invoices for pagination test (with limit=30, page 1: 30, page 2: 30, page 3: 15)
+        $invoiceIds = [];
+        for ($i = 1; $i <= 75; $i++) {
+            $inv = $this->createAndPostInvoice(
+                currency: 'ILS',
+                exchangeRate: '1.0000000000',
+                amount: (string) ($i * 10).'.000000',
+                quantity: '1.000000'
+            );
+            $invoiceIds[] = $inv->public_id;
+        }
+
+        // Invoices are created in ascending order; descending order means newest first
+        $expectedOrder = array_reverse($invoiceIds);
+
+        // 1. First page: limit=30
+        $res1 = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30")
+            ->assertOk()
+            ->assertJsonPath('count', 30)
+            ->assertJsonPath('has_more', true);
+
+        $data1 = $res1->json();
+        $this->assertNotNull($data1['next_cursor']);
+        $this->assertLessThanOrEqual(255, strlen((string) $data1['next_cursor']));
+        $page1Ids = array_column($data1['invoices'], 'id');
+        $this->assertCount(30, $page1Ids);
+        $this->assertSame(array_slice($expectedOrder, 0, 30), $page1Ids);
+
+        // 2. Subsequent page (page 2): using next_cursor
+        $res2 = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&cursor=".urlencode((string) $data1['next_cursor']))
+            ->assertOk()
+            ->assertJsonPath('count', 30)
+            ->assertJsonPath('has_more', true);
+
+        $data2 = $res2->json();
+        $this->assertNotNull($data2['next_cursor']);
+        $page2Ids = array_column($data2['invoices'], 'id');
+        $this->assertCount(30, $page2Ids);
+        $this->assertSame(array_slice($expectedOrder, 30, 30), $page2Ids);
+
+        // 3. Exhaustion (page 3): final 15 items
+        $res3 = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&cursor=".urlencode((string) $data2['next_cursor']))
+            ->assertOk()
+            ->assertJsonPath('count', 15)
+            ->assertJsonPath('has_more', false)
+            ->assertJsonPath('next_cursor', null);
+
+        $data3 = $res3->json();
+        $page3Ids = array_column($data3['invoices'], 'id');
+        $this->assertCount(15, $page3Ids);
+        $this->assertSame(array_slice($expectedOrder, 60, 15), $page3Ids);
+
+        // Total check: exactly 75 records, zero duplicates, zero skips
+        $allRetrieved = array_merge($page1Ids, $page2Ids, $page3Ids);
+        $this->assertCount(75, array_unique($allRetrieved));
+        $this->assertSame($expectedOrder, $allRetrieved);
+
+        // Missing cursor request returns first page
+        $resMissing = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30")
+            ->assertOk();
+        $this->assertSame($page1Ids, array_column($resMissing->json('invoices'), 'id'));
+
+        // Empty cursor request returns first page
+        $resEmpty = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&cursor=")
+            ->assertOk();
+        $this->assertSame($page1Ids, array_column($resEmpty->json('invoices'), 'id'));
+    }
+
+    public function test_cursor_tamper_signature_payload_and_malformed_rejection(): void
+    {
+        for ($i = 1; $i <= 35; $i++) {
+            $this->createAndPostInvoice('ILS', '1.0000000000', '10.000000', '1.000000');
+        }
+
+        $res = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30")
+            ->assertOk();
+        $cursor = (string) $res->json('next_cursor');
+        $this->assertNotEmpty($cursor);
+
+        // 1. Tamper payload JSON
+        $decoded = base64_decode(strtr($cursor, '-_', '+/'), true);
+        $this->assertIsString($decoded);
+        $lastDot = strrpos($decoded, '.');
+        $this->assertIsInt($lastDot);
+        $json = substr($decoded, 0, $lastDot);
+        $sig = substr($decoded, $lastDot + 1);
+
+        /** @var array<string, mixed> $payload */
+        $payload = json_decode($json, true);
+        $payload['p'] = '01JCV8X9MDPTRSVWXYZ0000000'; // modified position
+        $tamperedJson = json_encode($payload);
+        $tamperedCursor = rtrim(strtr(base64_encode($tamperedJson.'.'.$sig), '+/', '-_'), '=');
+
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?cursor=".urlencode($tamperedCursor))
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Tampered pagination cursor signature.');
+
+        // 2. Tamper signature
+        $corruptSig = str_repeat('0', 64);
+        $tamperedSigCursor = rtrim(strtr(base64_encode($json.'.'.$corruptSig), '+/', '-_'), '=');
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?cursor=".urlencode($tamperedSigCursor))
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Tampered pagination cursor signature.');
+
+        // 3. Malformed base64
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?cursor=not_valid_base64!!!")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 4. Missing dot/signature
+        $noDotCursor = rtrim(strtr(base64_encode('{"v":1}'), '+/', '-_'), '=');
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?cursor=".urlencode($noDotCursor))
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Missing cursor integrity signature.');
+    }
+
+    public function test_cursor_cross_tenant_and_cross_filter_rejection(): void
+    {
+        for ($i = 1; $i <= 35; $i++) {
+            $this->createAndPostInvoice('ILS', '1.0000000000', '10.000000', '1.000000');
+        }
+
+        $res = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&status=POSTED")
+            ->assertOk();
+        $cursorPosted = (string) $res->json('next_cursor');
+        $this->assertNotEmpty($cursorPosted);
+
+        // 1. Cross-filter: Change status from POSTED to DRAFT
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&status=DRAFT&cursor=".urlencode($cursorPosted))
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Cross-filter pagination cursor reuse is rejected.');
+
+        // 2. Cross-filter: Remove status filter completely
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&cursor=".urlencode($cursorPosted))
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Cross-filter pagination cursor reuse is rejected.');
+
+        // 3. Cross-filter: Change search query
+        $resSearch = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&search=Original")
+            ->assertOk();
+        if ($resSearch->json('next_cursor')) {
+            $cursorSearch = (string) $resSearch->json('next_cursor');
+            $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit=30&search=Changed&cursor=".urlencode($cursorSearch))
+                ->assertStatus(422)
+                ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+                ->assertJsonPath('error.message', 'Cross-filter pagination cursor reuse is rejected.');
+        }
+
+        // 4. Cross-tenant: Reuse Company A's cursor on Company B
+        $otherUser = User::factory()->create();
+        $otherCompany = app(CreateCompanyAction::class)->execute($otherUser, [
+            'name_ar' => 'شركة أخرى لعزل المؤشر',
+            'base_currency_code' => 'ILS',
+        ]);
+        $otherCompany->users()->attach($this->owner->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($otherCompany->id);
+        $this->owner->givePermissionTo('sales.invoice.view');
+
+        $otherDevice = (string) Str::uuid();
+        MobileDevice::create(['device_id' => $otherDevice, 'device_name' => 'Other Device', 'user_id' => $this->owner->id]);
+        $otherToken = 'st_m_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $otherToken),
+            'device_id' => $otherDevice,
+            'user_id' => $this->owner->id,
+            'company_id' => $otherCompany->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', $this->owner->password), 0, 16),
+            'expires_at' => now()->addHour(),
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$otherToken)
+            ->getJson("/api/mobile/v1/companies/{$otherCompany->public_id}/sales/invoices?status=POSTED&cursor=".urlencode($cursorPosted))
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Cross-tenant pagination cursor reuse is rejected.');
+
+        $this->withHeader('Authorization', 'Bearer '.$this->token);
+    }
+
+    public function test_cursor_bounded_length_and_format_validation(): void
+    {
+        // Cursor exceeding 255 characters
+        $longCursor = str_repeat('A', 256);
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?cursor=".urlencode($longCursor))
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Cursor exceeds maximum length of 255 characters.');
+
+        // Cursor parameter as array
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?cursor[]=test")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.message', 'Cursor must be a valid string.');
+    }
+
+    public function test_identical_dates_ordering_and_page_boundaries_and_date_status_input_validation(): void
+    {
+        $sameDate = '2026-11-19';
+        $invoices = [];
+        for ($i = 1; $i <= 10; $i++) {
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $this->actingAs($this->owner);
+            setPermissionsTeamId($this->company->id);
+
+            $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+                'customer_id' => $this->customer->id,
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1.0000000000',
+                'issue_date' => $sameDate,
+                'due_date' => Carbon::now()->addDays(30)->toDateString(),
+                'lines' => [
+                    [
+                        'item_description' => "خدمة في نفس التاريخ {$i}",
+                        'quantity' => '1.000000',
+                        'unit_price' => '10.000000',
+                        'discount_type' => 'none',
+                        'discount_value' => '0.000000',
+                        'tax_rate_id' => null,
+                    ],
+                ],
+            ]);
+            $inv = app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+            $invoices[] = $inv->public_id;
+        }
+
+        $expectedOrder = array_reverse($invoices);
+
+        // Fetch page 1 (limit 4)
+        $res1 = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?date_from={$sameDate}&date_to={$sameDate}&limit=4")
+            ->assertOk()
+            ->assertJsonPath('count', 4)
+            ->assertJsonPath('has_more', true);
+        $data1 = $res1->json();
+        $this->assertSame(array_slice($expectedOrder, 0, 4), array_column($data1['invoices'], 'id'));
+
+        // Fetch page 2 (limit 4)
+        $res2 = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?date_from={$sameDate}&date_to={$sameDate}&limit=4&cursor=".urlencode((string) $data1['next_cursor']))
+            ->assertOk()
+            ->assertJsonPath('count', 4)
+            ->assertJsonPath('has_more', true);
+        $data2 = $res2->json();
+        $this->assertSame(array_slice($expectedOrder, 4, 4), array_column($data2['invoices'], 'id'));
+
+        // Fetch page 3 (remaining 2)
+        $res3 = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?date_from={$sameDate}&date_to={$sameDate}&limit=4&cursor=".urlencode((string) $data2['next_cursor']))
+            ->assertOk()
+            ->assertJsonPath('count', 2)
+            ->assertJsonPath('has_more', false)
+            ->assertJsonPath('next_cursor', null);
+        $data3 = $res3->json();
+        $this->assertSame(array_slice($expectedOrder, 8, 2), array_column($data3['invoices'], 'id'));
+
+        // All 10 items fetched with 0 duplicates and 0 skips
+        $combined = array_merge(
+            array_column($data1['invoices'], 'id'),
+            array_column($data2['invoices'], 'id'),
+            array_column($data3['invoices'], 'id')
+        );
+        $this->assertCount(10, array_unique($combined));
+        $this->assertSame($expectedOrder, $combined);
+
+        // Invalid date_from
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?date_from=not-a-date")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Invalid date_to
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?date_to=2026-13-45")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Invalid date array
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?date_from[]=2026-11-19")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Invalid status
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?status=UNKNOWN_STATUS")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Invalid status array
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?status[]=POSTED")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_bounded_query_limits_and_permissions(): void
+    {
+        // 1. Invalid limits rejected with 422
+        foreach (['0', '-1', '101', 'abc', '10 5'] as $badLimit) {
+            $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit={$badLimit}")
+                ->assertStatus(422)
+                ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        }
+
+        // Limit as array
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?limit[]=10")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 2. Search exceeding 100 characters rejected with 422
+        $longSearch = str_repeat('s', 101);
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?search={$longSearch}")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // Search as array rejected with 422
+        $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?search[]=foo")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 3. User without sales.invoice.view permission is rejected with 403 FORBIDDEN
+        $unauthorizedUser = User::factory()->create();
+        $this->company->users()->attach($unauthorizedUser->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($this->company->id);
+
+        $device = (string) Str::uuid();
+        MobileDevice::create(['device_id' => $device, 'device_name' => 'Restricted Device', 'user_id' => $unauthorizedUser->id]);
+        $unauthRawToken = 'st_m_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $unauthRawToken),
+            'device_id' => $device,
+            'user_id' => $unauthorizedUser->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', $unauthorizedUser->password), 0, 16),
+            'expires_at' => now()->addHour(),
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$unauthRawToken)
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices")
+            ->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+    }
 }

@@ -6,12 +6,20 @@
     "company_id",
     "count",
     "has_more",
+    "next_cursor",
     "invoices"
   ],
   "properties": {
     "company_id": { "type": "string" },
     "count": { "type": "integer" },
     "has_more": { "type": "boolean" },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 255
+    },
     "invoices": {
       "type": "array",
       "items": { "$ref": "#/$defs/salesInvoiceListItem" }

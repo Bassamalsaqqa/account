@@ -330,7 +330,25 @@
       "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::index",
       "permissions_required": ["sales.invoice.view"],
       "tested_in": "Tests\\Feature\\Mobile\\V1\\SalesInvoiceReadRegressionTest",
-      "response_schema_ref": "docs/integration/mobile-merchant/schemas/sales-invoice-index-response.json"
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/sales-invoice-index-response.json",
+      "pagination": {
+        "style": "opaque_keyset_cursor",
+        "cursor_param": "cursor",
+        "next_cursor_field": "next_cursor",
+        "has_more_field": "has_more",
+        "ordering": "public_id desc",
+        "bounded_limit_range": [1, 100],
+        "default_limit": 30
+      },
+      "query_parameters": {
+        "limit": { "type": "integer", "required": false, "minimum": 1, "maximum": 100, "default": 30 },
+        "cursor": { "type": "string", "required": false, "maxLength": 255, "description": "Opaque tenant- and filter-bound HMAC signed pagination cursor. Omit for first page." },
+        "status": { "type": "string", "required": false, "enum": ["DRAFT", "POSTED", "VOID", "PAID_CASH", "PAID", "PARTIAL", "ON_CREDIT"] },
+        "search": { "type": "string", "required": false, "maxLength": 100 },
+        "customer_id": { "type": "string", "required": false, "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "date_from": { "type": "string", "required": false, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "date_to": { "type": "string", "required": false, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+      }
     },
     {
       "id": "sales.invoices.show",
