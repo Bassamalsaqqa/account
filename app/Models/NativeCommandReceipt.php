@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,6 +30,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 final class NativeCommandReceipt extends Model
 {
+    protected static function booted(): void
+    {
+        self::updating(function (): void {
+            throw new ImmutableRecordException('Native command receipts are immutable.');
+        });
+        self::deleting(function (): void {
+            throw new ImmutableRecordException('Native command receipts cannot be deleted.');
+        });
+    }
+
     protected $fillable = [
         'company_id',
         'command_type',

@@ -15,7 +15,6 @@ use App\Support\Mobile\NativeAdmissionGuard;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
-use Illuminate\Database\QueryException;
 use InvalidArgumentException;
 
 final class NativeCommandReceiptManager
@@ -99,47 +98,31 @@ final class NativeCommandReceiptManager
             }
 
             // 3. Fresh execution: invoke domain executor closure under active lock and transaction
-            try {
-                $executionResult = $executor($lockedCompany, $lockedActor, $lockedDevice, $lockedToken);
+            $executionResult = $executor($lockedCompany, $lockedActor, $lockedDevice, $lockedToken);
 
-                // 4. Persist durable receipt
-                $receipt = NativeCommandReceipt::create([
-                    'company_id' => $lockedCompany->id,
-                    'command_type' => $commandType,
-                    'idempotency_key' => $trimmedKey,
-                    'actor_id' => $lockedActor->id,
-                    'device_id' => $lockedDevice->device_id,
-                    'request_hash' => $requestHash,
-                    'payload' => $canonicalPayload,
-                    'response_snapshot' => $executionResult['snapshot'],
-                    'entity_type' => $executionResult['entity_type'] ?? null,
-                    'entity_id' => $executionResult['entity_id'] ?? null,
-                    'entity_public_id' => $executionResult['entity_public_id'] ?? null,
-                    'status' => 'completed',
-                ]);
+            // 4. Persist durable receipt
+            $receipt = NativeCommandReceipt::create([
+                'company_id' => $lockedCompany->id,
+                'command_type' => $commandType,
+                'idempotency_key' => $trimmedKey,
+                'actor_id' => $lockedActor->id,
+                'device_id' => $lockedDevice->device_id,
+                'request_hash' => $requestHash,
+                'payload' => $canonicalPayload,
+                'response_snapshot' => $executionResult['snapshot'],
+                'entity_type' => $executionResult['entity_type'] ?? null,
+                'entity_id' => $executionResult['entity_id'] ?? null,
+                'entity_public_id' => $executionResult['entity_public_id'] ?? null,
+                'status' => 'completed',
+            ]);
 
-                return [
-                    'outcome' => 'created',
-                    'status' => 201,
-                    'snapshot' => $executionResult['snapshot'],
-                    'receipt' => $receipt,
-                ];
-            } catch (QueryException $qe) {
-                // Handle concurrent insert race on unique constraint (company_id, idempotency_key)
-                if ($qe->getCode() === '23000' || str_contains($qe->getMessage(), 'Duplicate entry')) {
-                    /** @var NativeCommandReceipt|null $winnerReceipt */
-                    $winnerReceipt = NativeCommandReceipt::where('company_id', $lockedCompany->id)
-                        ->where('idempotency_key', $trimmedKey)
-                        ->lockForUpdate()
-                        ->first();
+            return [
+                'outcome' => 'created',
+                'status' => 201,
+                'snapshot' => $executionResult['snapshot'],
+                'receipt' => $receipt,
+            ];
 
-                    if ($winnerReceipt !== null) {
-                        return $this->handleExistingReceipt($winnerReceipt, $commandType, $lockedActor, $lockedDevice, $requestHash, $trimmedKey);
-                    }
-                }
-
-                throw $qe;
-            }
         });
     }
 
@@ -200,6 +183,21 @@ final class NativeCommandReceiptManager
 
         if ((int) $receipt->actor_id !== (int) $actor->id || (string) $receipt->device_id !== (string) $device->device_id) {
             throw new AuthorizationException('Event scope does not match authorized actor and device context.');
+        }
+
+        setPermissionsTeamId($company->id);
+        $actor->unsetRelation('roles')->unsetRelation('permissions');
+        $permissions = match ($receipt->command_type) {
+            'customer_payment' => ['money.receipt.view'],
+            'supplier_payment' => ['purchasing.purchase.view', 'purchasing.cost.view'],
+            'expense' => ['money.expense.view'],
+            'inventory.adjustment' => ['inventory.stock.view'],
+            default => throw new AuthorizationException('Receipt command is not available for status lookup.'),
+        };
+        foreach ($permissions as $permission) {
+            if (! $actor->hasPermissionTo($permission)) {
+                throw new AuthorizationException('Current permission does not allow this receipt to be read.');
+            }
         }
 
         return [

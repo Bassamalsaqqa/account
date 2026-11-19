@@ -7,6 +7,7 @@ namespace Tests\Feature\Mobile\V1;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Models\Company;
 use App\Models\CompanyMobileSetting;
 use App\Models\Currency;
@@ -35,6 +36,7 @@ use App\Support\Tenancy\CompanyContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 final class NativeEconomicWritesQualificationTest extends TestCase
@@ -283,6 +285,42 @@ final class NativeEconomicWritesQualificationTest extends TestCase
         $responseConflict = $this->withHeaders($this->authHeaders($key))->postJson($url, $conflictingPayload);
         $responseConflict->assertStatus(409);
         $responseConflict->assertJsonPath('error.code', 'IDEMPOTENCY_KEY_CONFLICT');
+    }
+
+    public function test_receipt_status_denies_original_actor_after_read_permission_revocation(): void
+    {
+        $key = 'status-revoked-'.(string) Str::uuid();
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+        $this->withHeaders($this->authHeaders($key))->postJson($url, ['amount' => '10.000000'])->assertStatus(201);
+        $this->rebindContext();
+        $this->user->syncRoles([]);
+        $this->user->syncPermissions([]);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->withHeaders($this->authHeaders('lookup'))
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/receipts/{$key}/status")
+            ->assertForbidden();
+    }
+
+    public function test_completed_native_receipt_cannot_be_rewritten_or_deleted(): void
+    {
+        $key = 'immutable-receipt-'.(string) Str::uuid();
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+        $this->withHeaders($this->authHeaders($key))->postJson($url, ['amount' => '10.000000'])->assertStatus(201);
+        $this->rebindContext();
+        $receipt = NativeCommandReceipt::where('company_id', $this->company->id)->where('idempotency_key', $key)->firstOrFail();
+        foreach (['update', 'delete'] as $operation) {
+            try {
+                if ($operation === 'update') {
+                    $receipt->response_snapshot = ['id' => 'forged'];
+                    $receipt->save();
+                } else {
+                    $receipt->delete();
+                }
+                $this->fail('A completed receipt must remain immutable.');
+            } catch (ImmutableRecordException) {
+                $this->assertTrue(true);
+            }
+        }
     }
 
     public function test_customer_payment_with_invoice_allocation_and_bounds(): void
@@ -584,7 +622,7 @@ final class NativeEconomicWritesQualificationTest extends TestCase
         $resEpoch->assertStatus(401);
     }
 
-    public function test_concurrency_race_recovery_via_existing_receipt(): void
+    public function test_existing_frozen_receipt_replay_does_not_execute_again(): void
     {
         $this->rebindContext();
 
@@ -596,7 +634,7 @@ final class NativeEconomicWritesQualificationTest extends TestCase
             'notes' => 'اختبار سباق التزامن',
         ];
 
-        // Simulate winner receipt inserted concurrently
+        // Seed a pre-existing receipt to test replay only; this is not a concurrent race.
         $canonicalPayload = [
             'actor_id' => (int) $this->user->id,
             'device_id' => (string) $this->device->device_id,
