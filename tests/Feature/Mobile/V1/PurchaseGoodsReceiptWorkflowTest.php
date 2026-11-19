@@ -1085,4 +1085,19 @@ final class PurchaseGoodsReceiptWorkflowTest extends TestCase
         $this->assertTrue($phase7Report->isHealthy, 'Phase 7 reconciliation reported unhealthy');
         $this->assertEmpty($phase7Report->violations, 'Phase 7 reconciliation found violations');
     }
+
+    public function test_missing_purchase_cost_fails_without_invented_value_or_posting(): void
+    {
+        $response = $this->withHeaders($this->authHeaders('missing-cost-no-fallback'))
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases", [
+                'supplier_id' => $this->vendor->public_id,
+                'bill_number' => 'NO-INVENTED-COST',
+                'lines' => [
+                    ['product_id' => $this->product->public_id, 'quantity' => '2'],
+                ],
+            ]);
+        $response->assertStatus(422);
+        $this->bindContext();
+        $this->assertFalse(Purchase::where('vendor_invoice_number', 'NO-INVENTED-COST')->exists());
+    }
 }

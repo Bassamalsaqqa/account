@@ -137,7 +137,7 @@ final class RecordStagedPurchaseBillAction
             foreach ($linesInput as $l) {
                 $prodId = $l['product_id'] ?? null;
                 if (! is_string($prodId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $prodId) !== 1) {
-                    continue;
+                    throw new InvalidArgumentException('Every purchase line requires a valid same-company product and base unit.');
                 }
 
                 /** @var Product|null $prod */
@@ -146,56 +146,53 @@ final class RecordStagedPurchaseBillAction
                     ->lockForUpdate()
                     ->first();
 
-                if ($prod !== null) {
-                    /** @var ProductUnit|null $prodUnit */
-                    $prodUnit = ProductUnit::where('company_id', $lockedCompany->id)
-                        ->where('product_id', $prod->id)
-                        ->where('active', true)
-                        ->where('is_base', true)
-                        ->first();
-
-                    if ($prodUnit === null) {
-                        $prodUnit = ProductUnit::where('company_id', $lockedCompany->id)
-                            ->where('product_id', $prod->id)
-                            ->where('active', true)
-                            ->first();
-                    }
-
-                    if ($prodUnit === null) {
-                        continue;
-                    }
-
-                    $unitCost = (string) ($l['unit_cost_ils'] ?? $l['unit_cost'] ?? $prod->default_purchase_cost_base ?? '10.00');
-                    $qty = (string) ($l['quantity'] ?? '1');
-
-                    $lineDraft = [
-                        'product_id' => $prod->id,
-                        'product_unit_id' => $prodUnit->id,
-                        'quantity' => $qty,
-                        'unit_cost' => $unitCost,
-                        'discount_type' => 'fixed',
-                        'discount_value' => '0',
-                    ];
-
-                    if ($prod->track_expiry && ! empty($l['lots']) && is_array($l['lots'])) {
-                        $lotsDraft = [];
-                        foreach ($l['lots'] as $lotItem) {
-                            $lotsDraft[] = [
-                                'product_unit_id' => $prodUnit->id,
-                                'lot_number' => $lotItem['lot_number'] ?? null,
-                                'expiry_date' => $lotItem['expiry_date'] ?? null,
-                                'quantity' => (string) ($lotItem['quantity'] ?? $l['quantity'] ?? '1'),
-                            ];
-                        }
-                        $lineDraft['lots'] = $lotsDraft;
-                    }
-
-                    $draftLines[] = $lineDraft;
+                if ($prod === null) {
+                    throw new InvalidArgumentException('Purchase product does not belong to the active company.');
                 }
-            }
 
-            if (empty($draftLines)) {
-                throw new InvalidArgumentException('No valid product lines found in purchase request.');
+                /** @var ProductUnit|null $prodUnit */
+                $prodUnit = ProductUnit::where('company_id', $lockedCompany->id)
+                    ->where('product_id', $prod->id)
+                    ->where('active', true)
+                    ->where('is_base', true)
+                    ->first();
+
+                if ($prodUnit === null) {
+                    throw new InvalidArgumentException('Product requires an active canonical base unit.');
+                }
+
+                $unitCost = $l['unit_cost_ils'] ?? $l['unit_cost'] ?? null;
+                $qty = $l['quantity'] ?? null;
+                if (! is_string($unitCost) || ! is_string($qty)
+                    || preg_match('/\A(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,6})?\z/', $unitCost) !== 1
+                    || preg_match('/\A(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,6})?\z/', $qty) !== 1
+                    || BigDecimal::of($qty)->isLessThanOrEqualTo(0)) {
+                    throw new InvalidArgumentException('Explicit exact cost and positive quantity decimal strings are required for every purchase line.');
+                }
+
+                $lineDraft = [
+                    'product_id' => $prod->id,
+                    'product_unit_id' => $prodUnit->id,
+                    'quantity' => $qty,
+                    'unit_cost' => $unitCost,
+                    'discount_type' => 'fixed',
+                    'discount_value' => '0',
+                ];
+
+                if ($prod->track_expiry && ! empty($l['lots']) && is_array($l['lots'])) {
+                    $lotsDraft = [];
+                    foreach ($l['lots'] as $lotItem) {
+                        $lotsDraft[] = [
+                            'product_unit_id' => $prodUnit->id,
+                            'lot_number' => $lotItem['lot_number'] ?? null,
+                            'expiry_date' => $lotItem['expiry_date'] ?? null,
+                            'quantity' => (string) ($lotItem['quantity'] ?? $l['quantity'] ?? '1'),
+                        ];
+                    }
+                    $lineDraft['lots'] = $lotsDraft;
+                }
+
+                $draftLines[] = $lineDraft;
             }
 
             // 6. Create Draft and Post Purchase Bill
