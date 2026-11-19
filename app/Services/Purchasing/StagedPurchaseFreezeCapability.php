@@ -23,7 +23,9 @@ final class StagedPurchaseFreezeCapability
 
     private readonly Connection $connection;
 
-    private readonly ?DatabaseTransactionRecord $transaction;
+    private readonly DatabaseTransactionRecord $transaction;
+
+    private readonly \PDO $pdo;
 
     private readonly int $transactionLevel;
 
@@ -34,6 +36,7 @@ final class StagedPurchaseFreezeCapability
         private readonly int $purchaseId
     ) {
         $this->connection = DB::connection();
+        $this->pdo = $this->connection->getPdo();
         $this->transactionLevel = $this->connection->transactionLevel();
         if ($this->transactionLevel === 0) {
             throw new ImmutableRecordException('Staged purchase snapshot freeze requires an active transaction.');
@@ -41,10 +44,14 @@ final class StagedPurchaseFreezeCapability
 
         /** @var DatabaseTransactionsManager $transactions */
         $transactions = app('db.transactions');
-        $this->transaction = $transactions->getPendingTransactions()->last(
+        $transaction = $transactions->getPendingTransactions()->last(
             fn (DatabaseTransactionRecord $record) => $record->connection === $this->connection->getName()
                 && $record->level === $this->transactionLevel
         );
+        if ($transaction === null) {
+            throw new ImmutableRecordException('Snapshot freeze requires an active tracked transaction.');
+        }
+        $this->transaction = $transaction;
     }
 
     private function __clone() {}
@@ -88,7 +95,9 @@ final class StagedPurchaseFreezeCapability
         if ($this->connection->transactionLevel() === 0
             || $this->connection->transactionLevel() !== $this->transactionLevel
             || $this->connection !== DB::connection()
-            || ($this->transaction !== null && ! app('db.transactions')->getPendingTransactions()->contains($this->transaction))) {
+            || $this->pdo !== $this->connection->getPdo()
+            || ! $this->pdo->inTransaction()
+            || ! app('db.transactions')->getPendingTransactions()->contains($this->transaction)) {
             throw new ImmutableRecordException('Purchase snapshot freeze must occur within its original active transaction.');
         }
 

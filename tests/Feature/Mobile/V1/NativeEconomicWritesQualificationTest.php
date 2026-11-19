@@ -1009,16 +1009,14 @@ final class NativeEconomicWritesQualificationTest extends TestCase
             'notes' => 'دفعة سيتم محاكاة عطل بعدها قبل حفظ الإيصال',
         ];
 
-        // 1. Inject fault callback after domain action before receipt insert
-        NativeCommandReceiptManager::$onBeforeReceiptInsert = function (): void {
-            throw new \RuntimeException('SIMULATED CRASH: Power loss after customer payment posting before receipt persistence.');
-        };
+        // 1. Inject a fail-only stage after posting, without executing a caller callback.
+        NativeCommandReceiptManager::$failBeforeReceiptInsertForTesting = true;
 
         try {
             $res = $this->withHeaders($this->authHeaders($key))->postJson($url, $payload);
             $this->assertContains($res->status(), [422, 500]);
         } finally {
-            NativeCommandReceiptManager::$onBeforeReceiptInsert = null;
+            NativeCommandReceiptManager::$failBeforeReceiptInsertForTesting = false;
         }
 
         // 2. Verify complete transaction rollback: no receipt, no customer payment, no posting batches
@@ -1030,5 +1028,20 @@ final class NativeEconomicWritesQualificationTest extends TestCase
         $resClean->assertStatus(201);
         $this->assertSame(1, NativeCommandReceipt::withoutGlobalScopes()->where('idempotency_key', $key)->count());
         $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+    }
+
+    public function test_fail_only_selector_is_inert_outside_testing_environment(): void
+    {
+        $priorEnvironment = app()->environment();
+        NativeCommandReceiptManager::$failBeforeReceiptInsertForTesting = true;
+        app()->instance('env', 'production');
+        try {
+            $response = $this->withServerVariables(['HTTPS' => 'on'])->withHeaders($this->authHeaders('production-fault-selector'))
+                ->postJson("https://localhost/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments", ['amount' => '10.000000']);
+            $this->assertSame(201, $response->status(), $response->getContent());
+        } finally {
+            app()->instance('env', $priorEnvironment);
+            NativeCommandReceiptManager::$failBeforeReceiptInsertForTesting = false;
+        }
     }
 }
