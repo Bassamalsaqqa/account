@@ -31,6 +31,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Throwable;
 
 final class PurchaseController extends Controller
@@ -677,19 +678,33 @@ final class PurchaseController extends Controller
 
         if (is_array($lines)) {
             foreach ($lines as $lineData) {
-                $productId = $lineData['product_id'] ?? null;
-                $purchaseLinePublicId = $lineData['purchase_line_id'] ?? null;
-                $quantity = BigDecimal::of((string) ($lineData['quantity'] ?? '1'));
+                if (! is_array($lineData)) {
+                    continue;
+                }
+                $productId = isset($lineData['product_id']) && is_string($lineData['product_id']) ? trim($lineData['product_id']) : null;
+                $purchaseLinePublicId = isset($lineData['purchase_line_id']) && is_string($lineData['purchase_line_id']) ? trim($lineData['purchase_line_id']) : null;
 
-                $origLine = $purchase->lines->first(function ($l) use ($productId, $purchaseLinePublicId) {
-                    if ($purchaseLinePublicId !== null && (string) $l->public_id === (string) $purchaseLinePublicId) {
-                        return true;
+                if ($purchaseLinePublicId === null && $productId === null) {
+                    continue;
+                }
+
+                $origLine = null;
+                if ($purchaseLinePublicId !== null) {
+                    $matched = $purchase->lines->firstWhere('public_id', $purchaseLinePublicId);
+                    if ($matched !== null) {
+                        if ($productId === null || ($matched->product !== null && (string) $matched->product->public_id === $productId)) {
+                            $origLine = $matched;
+                        }
                     }
-
-                    return $productId !== null && $l->product && (string) $l->product->public_id === (string) $productId;
-                });
+                } else {
+                    $matches = $purchase->lines->filter(fn ($l) => $l->product !== null && (string) $l->product->public_id === $productId);
+                    if ($matches->count() === 1) {
+                        $origLine = $matches->first();
+                    }
+                }
 
                 if ($origLine !== null) {
+                    $quantity = BigDecimal::of((string) ($lineData['quantity'] ?? '1'));
                     $unitCost = BigDecimal::of((string) $origLine->unit_cost);
                     $lineTotal = $quantity->multipliedBy($unitCost);
                     $totalReturnCost = $totalReturnCost->plus($lineTotal);
@@ -785,14 +800,24 @@ final class PurchaseController extends Controller
         $specifiedWarehousePublicId = $request->input('warehouse_id');
         $specifiedGrnPublicId = $request->input('goods_receipt_note_id');
         $reqWarehouse = null;
-        if (is_string($specifiedWarehousePublicId) && preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $specifiedWarehousePublicId) === 1) {
-            $reqWarehouse = Warehouse::where('company_id', $company->id)->where('public_id', $specifiedWarehousePublicId)->first();
-        }
-
         $reason = $request->input('reason');
-
         try {
-            $posted = $executeReturnAction->execute(
+            if ($specifiedWarehousePublicId !== null) {
+                if (! is_string($specifiedWarehousePublicId) || ! Str::isUlid($specifiedWarehousePublicId)) {
+                    throw new \InvalidArgumentException('Invalid warehouse identifier.');
+                }
+                $reqWarehouse = Warehouse::where('company_id', $company->id)->where('public_id', $specifiedWarehousePublicId)->first();
+                if ($reqWarehouse === null) {
+                    throw new \InvalidArgumentException('Unknown warehouse.');
+                }
+            }
+            if ($specifiedGrnPublicId !== null && (! is_string($specifiedGrnPublicId) || ! Str::isUlid($specifiedGrnPublicId))) {
+                throw new \InvalidArgumentException('Invalid goods receipt identifier.');
+            }
+            if ($reason !== null && ! is_string($reason)) {
+                throw new \InvalidArgumentException('Invalid return reason.');
+            }
+            $result = $executeReturnAction->execute(
                 company: $company,
                 actor: $user,
                 purchase: $purchase,
@@ -805,20 +830,26 @@ final class PurchaseController extends Controller
                 reason: is_string($reason) ? $reason : null
             );
 
-            return response()->json([
-                'id' => (string) $posted->public_id,
-                'status' => (string) $posted->status,
-                'total_amount' => (string) BigDecimal::of((string) $posted->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
-                'currency' => (string) $posted->currency_code,
-                'posted_at' => $posted->posted_at ? $posted->posted_at->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
-            ], 201, [
+            $headers = [
                 'Content-Type' => 'application/json',
                 'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-            ]);
+                'Idempotency-Key' => trim($idempotencyKey),
+            ];
+            if ($result['outcome'] === 'replay') {
+                $headers['X-Idempotent-Replay'] = 'true';
+            }
+
+            return response()->json($result['snapshot'], $result['status'], $headers);
         } catch (AuthenticationException $e) {
             return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
         } catch (AuthorizationException $e) {
             return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'IDEMPOTENCY_KEY_CONFLICT',
+                message: $e->getMessage(),
+                status: 409
+            );
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',

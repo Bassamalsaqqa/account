@@ -45,28 +45,40 @@ class CommandMigrationPreservationTest extends TestCase
         $posted = $this->invoice('100.125', '3.5000000000');
         $this->assertTrue($posted->isPosted());
         $before = $this->businessFingerprint();
+        $dependentMigration = '2026_11_18_000001_create_mobile_event_receipts_table';
         $migration = '2026_10_11_100000_create_command_receipts_table';
+        $this->assertTrue(DB::table('migrations')->where('migration', $dependentMigration)->exists());
         $this->assertTrue(DB::table('migrations')->where('migration', $migration)->exists());
         $migrationCount = DB::table('migrations')->count();
         $tableCount = count(Schema::getTables(DB::connection()->getDatabaseName()));
 
         $this->assertSame(0, Artisan::call('migrate:rollback', [
             '--database' => DB::getDefaultConnection(), '--step' => $migrationCount, '--force' => true,
+            '--path' => 'database/migrations/'.$dependentMigration.'.php',
+        ]), Artisan::output());
+        $this->assertSame(0, Artisan::call('migrate:rollback', [
+            '--database' => DB::getDefaultConnection(), '--step' => $migrationCount, '--force' => true,
             '--path' => 'database/migrations/'.$migration.'.php',
         ]), Artisan::output());
+        $this->assertFalse(Schema::hasTable('mobile_event_receipts'));
         $this->assertFalse(Schema::hasTable('command_receipts'));
-        $this->assertSame($migrationCount - 1, DB::table('migrations')->count());
-        $this->assertSame($tableCount - 1, count(Schema::getTables(DB::connection()->getDatabaseName())));
+        $this->assertSame($migrationCount - 2, DB::table('migrations')->count());
+        $this->assertSame($tableCount - 2, count(Schema::getTables(DB::connection()->getDatabaseName())));
         $this->assertSame($before, $this->businessFingerprint());
 
         $this->assertSame(0, Artisan::call('migrate', [
             '--database' => DB::getDefaultConnection(), '--force' => true,
-            '--path' => 'database/migrations/'.$migration.'.php',
+            '--path' => [
+                'database/migrations/'.$migration.'.php',
+                'database/migrations/'.$dependentMigration.'.php',
+            ],
         ]), Artisan::output());
         $this->assertTrue(Schema::hasTable('command_receipts'));
+        $this->assertTrue(Schema::hasTable('mobile_event_receipts'));
         $this->assertSame($migrationCount, DB::table('migrations')->count());
         $this->assertSame($tableCount, count(Schema::getTables(DB::connection()->getDatabaseName())));
         $this->assertSame(0, DB::table('command_receipts')->count());
+        $this->assertSame(0, DB::table('mobile_event_receipts')->count());
         $this->assertSame($before, $this->businessFingerprint());
 
         foreach (['accounting:reconcile', 'inventory:reconcile', 'sales:reconcile', 'money:reconcile', 'phase7:reconcile'] as $command) {

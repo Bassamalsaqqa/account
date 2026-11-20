@@ -437,7 +437,8 @@ final class VoidPurchaseReturnTest extends Phase5DTestCase
         $this->assertTrue(Schema::hasColumn('purchase_returns', 'voided_by'));
         $this->assertTrue(Schema::hasColumn('purchase_returns', 'void_posting_batch_id'));
 
-        $this->artisan('migrate:rollback', ['--step' => 5])->assertExitCode(0);
+        $step = DB::table('migrations')->where('migration', '>=', '2026_11_07_000001_add_void_columns_to_purchase_returns_and_permissions')->count();
+        $this->artisan('migrate:rollback', ['--step' => $step])->assertExitCode(0);
 
         $this->assertFalse(Schema::hasColumn('purchase_returns', 'voided_at'));
         $this->assertFalse(Schema::hasColumn('purchase_returns', 'void_reason'));

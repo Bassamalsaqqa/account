@@ -199,6 +199,7 @@ final class NativeCommandReceiptManager
             'supplier_payment' => ['purchasing.purchase.view', 'purchasing.cost.view'],
             'expense' => ['money.expense.view'],
             'inventory.adjustment' => ['inventory.stock.view'],
+            'purchase_return' => ['purchasing.return.view', 'purchasing.cost.view'],
             default => throw new AuthorizationException('Receipt command is not available for status lookup.'),
         };
         foreach ($permissions as $permission) {
