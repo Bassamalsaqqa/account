@@ -5,10 +5,16 @@ declare(strict_types=1);
 namespace Tests\Feature\Accounting;
 
 use App\Actions\Accounting\PostOpeningTradeItemAction;
+use App\Actions\Accounting\ReverseOpeningTradeItemAction;
+use App\Actions\Money\IssueCheckAction;
+use App\Actions\Money\ReceiveCheckAction;
+use App\Actions\Money\TransitionCheckAction;
 use App\Actions\Purchasing\ApplyVendorPaymentCreditAction;
 use App\Actions\Purchasing\PostVendorPaymentAction;
+use App\Actions\Purchasing\ReverseVendorPaymentAction;
 use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Actions\Sales\ReverseCustomerPaymentAction;
 use App\Application\Reporting\Queries\CustomerReceivablesAgingReportQuery;
 use App\Domain\Purchasing\Queries\VendorStatementQuery;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
@@ -20,6 +26,7 @@ use App\Models\PostingBatch;
 use App\Models\Vendor;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentAllocation;
+use App\Services\Money\CustomerApplicationHistory;
 use Brick\Math\BigDecimal;
 use Tests\Feature\Phase8\TradeTestCase;
 
@@ -461,5 +468,97 @@ final class OpeningTradeSettlementTest extends TradeTestCase
         $this->assertNotNull($customerRow);
         $this->assertTrue(BigDecimal::of($customerRow['unspecified'])->isEqualTo(350));
         $this->assertTrue(BigDecimal::of($customerRow['total_outstanding'])->isEqualTo(350));
+    }
+
+    public function test_statements_replay_openings_by_financial_reversal_date_on_both_sides(): void
+    {
+        foreach ([OpeningTradeItem::SIDE_CUSTOMER, OpeningTradeItem::SIDE_VENDOR] as $side) {
+            $party = $side === OpeningTradeItem::SIDE_CUSTOMER ? $this->customer : $this->testVendor;
+            $query = app($side === OpeningTradeItem::SIDE_CUSTOMER ? CustomerStatementQuery::class : VendorStatementQuery::class);
+            $item = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $party->id,
+                openingDate: '2026-01-01', amount: '123.45', currencyCode: 'ILS',
+                exchangeRate: '1', actor: $this->owner, idempotencyKey: 'dated-opening-'.$side,
+            );
+            app(ReverseOpeningTradeItemAction::class)->execute($item, $this->owner, 'Correct opening', '2026-03-01');
+            $before = $query->execute($party, '2026-01-01', '2026-02-28')['currencies']['ILS'];
+            $after = $query->execute($party, '2026-01-01', '2026-03-01')['currencies']['ILS'];
+            $this->assertTrue(BigDecimal::of($before['closing_balance'])->isEqualTo('123.45'));
+            $this->assertTrue(BigDecimal::of($after['closing_balance'])->isZero());
+            $this->assertCount(1, collect($after['entries'])->where('type', 'reversal'));
+            $this->assertSame('2026-03-01', collect($after['entries'])->firstWhere('type', 'reversal')['date']);
+        }
+    }
+
+    public function test_partial_and_final_fx_credit_applications_replay_and_reverse_on_both_sides(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            $customerSide = $side === 'customer';
+            $party = $customerSide ? $this->customer : $this->testVendor;
+            $post = app($customerSide ? PostCustomerPaymentAction::class : PostVendorPaymentAction::class);
+            $apply = app($customerSide ? ApplyCustomerPaymentCreditAction::class : ApplyVendorPaymentCreditAction::class);
+            $item = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $party->id, openingDate: '2026-01-01',
+                amount: '100.00', currencyCode: 'USD', exchangeRate: '3.3333333333',
+                actor: $this->owner, idempotencyKey: 'fx-credit-opening-'.$side,
+            );
+            $payment = $post->execute($this->company, $this->owner, [
+                $customerSide ? 'customer_id' : 'vendor_id' => $party->id,
+                'money_account_id' => $this->usdBankAccount->id, 'payment_date' => '2026-01-05',
+                'payment_method' => CustomerPayment::METHOD_BANK, 'currency_code' => 'USD', 'exchange_rate' => '3.7',
+                'amount' => '100.00', 'document_locale' => 'ar', 'idempotency_key' => 'fx-credit-payment-'.$side,
+                'allocations' => [],
+            ]);
+            foreach (['33.33', '66.67'] as $index => $amount) {
+                $data = [
+                    'application_date' => '2026-01-10', 'idempotency_key' => 'fx-credit-apply-'.$side.'-'.$index,
+                    'allocations' => [['opening_trade_item_id' => $item->id, 'allocated_amount' => $amount]],
+                ];
+                $event = $apply->execute($payment->fresh(), $this->owner, $data);
+                $this->assertSame($event->id, $apply->execute($payment->fresh(), $this->owner, $data)->id);
+            }
+            $this->assertTrue($item->calculateOutstanding()->isZero());
+            $bookColumn = $customerSide ? 'base_amount_applied_to_receivable' : 'base_amount_applied_to_payable';
+            $book = BigDecimal::zero();
+            foreach ($payment->allocations()->get() as $allocation) {
+                $book = $book->plus($allocation->$bookColumn);
+            }
+            $this->assertTrue($book->isEqualTo($item->carrying_value_base));
+            if ($customerSide) {
+                app(CustomerApplicationHistory::class)->validate($event->fresh());
+            }
+            app($customerSide ? ReverseCustomerPaymentAction::class : ReverseVendorPaymentAction::class)
+                ->execute($payment->fresh(), $this->owner, 'Reverse credit', '2026-02-01');
+            $this->assertTrue($item->calculateOutstanding()->isEqualTo('100'));
+            $this->assertTrue($item->calculateOutstanding('2026-01-31')->isZero());
+        }
+    }
+
+    public function test_opening_allocations_survive_check_history_and_return_on_both_sides(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            $incoming = $side === 'customer';
+            $party = $incoming ? $this->customer : $this->testVendor;
+            $item = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $party->id, openingDate: '2026-01-01',
+                amount: '100', currencyCode: 'USD', exchangeRate: '3.5',
+                actor: $this->owner, idempotencyKey: 'check-opening-'.$side,
+            );
+            $check = app($incoming ? ReceiveCheckAction::class : IssueCheckAction::class)
+                ->execute($this->company, $this->owner, [
+                    'party_id' => $party->id, 'money_account_id' => $this->usdBankAccount->id,
+                    'check_number' => 'OPEN-'.$side, 'bank_name' => 'Test bank',
+                    'date' => '2026-01-02', 'due_date' => '2026-01-03', 'currency_code' => 'USD',
+                    'amount' => '100', 'exchange_rate' => '3.6', 'idempotency_key' => 'check-opening-payment-'.$side,
+                    'allocations' => [['opening_trade_item_id' => $item->id, 'allocated_amount' => '100']],
+                ]);
+            $this->assertTrue($item->calculateOutstanding()->isZero());
+            app(TransitionCheckAction::class)->execute($check, $this->owner, [
+                'event_type' => $incoming ? 'return' : 'cancel', 'event_date' => '2026-01-04',
+                'notes' => 'Opening check correction', 'idempotency_key' => 'check-opening-return-'.$side,
+            ]);
+            $this->assertTrue($item->calculateOutstanding()->isEqualTo('100'));
+            $this->assertTrue($item->calculateOutstanding('2026-01-03')->isZero());
+        }
     }
 }

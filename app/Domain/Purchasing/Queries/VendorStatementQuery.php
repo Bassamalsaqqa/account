@@ -132,7 +132,8 @@ class VendorStatementQuery
             ->where('company_id', $companyId)
             ->where('vendor_id', $vendor->id)
             ->where('side', OpeningTradeItem::SIDE_VENDOR)
-            ->where('status', OpeningTradeItem::STATUS_POSTED)
+            ->whereNotNull('posting_batch_id')
+            ->with('reversalPostingBatch')
             ->when($toDate !== null, fn ($q) => $q->where('opening_date', '<=', $toDate))
             ->get();
 
@@ -156,8 +157,8 @@ class VendorStatementQuery
                 'created_at' => $item->created_at,
             ];
 
-            if ($item->reversed_at !== null) {
-                $revDate = Carbon::parse($item->reversed_at)->toDateString();
+            if ($item->reversalPostingBatch !== null) {
+                $revDate = $item->reversalPostingBatch->posting_date->toDateString();
                 if ($toDate === null || $revDate <= $toDate) {
                     $rawRows[] = [
                         'id' => (int) $item->id,
@@ -430,12 +431,9 @@ class VendorStatementQuery
             ->where('vendor_id', $vendor->id)
             ->where('side', OpeningTradeItem::SIDE_VENDOR)
             ->where('currency_code', $currency)
-            ->where('status', OpeningTradeItem::STATUS_POSTED)
+            ->whereNotNull('posting_batch_id')
+            ->with('reversalPostingBatch')
             ->where('opening_date', '<=', $asOf->toDateString())
-            ->where(function ($q) use ($asOf): void {
-                $q->whereNull('reversed_at')
-                    ->orWhere('reversed_at', '>', $asOf->copy()->endOfDay());
-            })
             ->get();
 
         foreach ($openingItems as $item) {

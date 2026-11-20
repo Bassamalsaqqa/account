@@ -467,7 +467,7 @@ final class OpeningTradeItemsTest extends TradeTestCase
         );
 
         $auditService = app(OpeningTradeCutoverAuditService::class);
-        $audit = $auditService->audit($this->company);
+        $audit = $auditService->audit($this->company, $this->owner);
 
         $this->assertSame(1, $audit['customer_items_count']);
         $this->assertTrue(BigDecimal::of($audit['customer_items_total_base'])->isEqualTo('1200.000000'));
@@ -496,7 +496,7 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $response->assertStatus(200);
         $response->assertJsonStructure([
             'data' => [
-                '*' => ['id', 'public_id', 'name_ar', 'name_en', 'phone', 'currency_code'],
+                '*' => ['id', 'public_id', 'name_ar', 'name_en', 'phone', 'default_currency_code'],
             ],
         ]);
         $this->assertNotEmpty($response->json('data'));

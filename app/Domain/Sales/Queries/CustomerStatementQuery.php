@@ -102,7 +102,8 @@ class CustomerStatementQuery
             ->where('company_id', $companyId)
             ->where('customer_id', $customer->id)
             ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
-            ->where('status', OpeningTradeItem::STATUS_POSTED)
+            ->whereNotNull('posting_batch_id')
+            ->with('reversalPostingBatch')
             ->when($toDate !== null, fn ($q) => $q->where('opening_date', '<=', $toDate))
             ->get();
 
@@ -129,8 +130,8 @@ class CustomerStatementQuery
                 'invoice' => null,
             ];
 
-            if ($item->reversed_at !== null) {
-                $revDate = Carbon::parse($item->reversed_at)->toDateString();
+            if ($item->reversalPostingBatch !== null) {
+                $revDate = $item->reversalPostingBatch->posting_date->toDateString();
                 if ($toDate === null || $revDate <= $toDate) {
                     $rawRows[] = [
                         'date' => $revDate,
@@ -374,13 +375,10 @@ class CustomerStatementQuery
             ->where('company_id', $customer->company_id)
             ->where('customer_id', $customer->id)
             ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
-            ->where('status', OpeningTradeItem::STATUS_POSTED)
+            ->whereNotNull('posting_batch_id')
+            ->with('reversalPostingBatch')
             ->where('currency_code', $currency)
             ->where('opening_date', '<=', $today->toDateString())
-            ->where(function ($q) use ($today): void {
-                $q->whereNull('reversed_at')
-                    ->orWhere('reversed_at', '>', $today->copy()->endOfDay());
-            })
             ->get();
 
         foreach ($openingItems as $item) {
