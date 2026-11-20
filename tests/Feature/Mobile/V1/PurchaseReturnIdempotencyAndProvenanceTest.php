@@ -724,6 +724,8 @@ final class PurchaseReturnIdempotencyAndProvenanceTest extends TestCase
         $resMismatch->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
 
+        $effectsBefore = [StockMovement::count(), NativeCommandReceipt::count(), PurchaseReturn::count()];
+
         // 2. previewReturn with mismatched IDs does not accept wrong line when product matches
         $previewMismatch = $this->withHeaders($this->authHeaders('ret-mismatch-prev'))
             ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/returns/preview", [
@@ -732,8 +734,20 @@ final class PurchaseReturnIdempotencyAndProvenanceTest extends TestCase
                     ['purchase_line_id' => $line1->public_id, 'product_id' => $this->product2->public_id, 'quantity' => '2'],
                 ],
             ]);
-        $previewMismatch->assertStatus(200);
-        $this->assertEmpty($previewMismatch->json('lines'));
+        $previewMismatch->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        foreach ([
+            [['purchase_line_id' => $line1->public_id, 'quantity' => '1'], ['purchase_line_id' => $line1->public_id, 'product_id' => $this->product2->public_id, 'quantity' => '1']],
+            [['purchase_line_id' => $line1->public_id, 'quantity' => '1'], ['product_id' => $this->product->public_id, 'quantity' => '1']],
+            [['purchase_line_id' => $line1->public_id, 'quantity' => 1.2]],
+            [['purchase_line_id' => $line1->public_id, 'quantity' => '0']],
+            [['purchase_line_id' => (string) Str::ulid(), 'quantity' => '1']],
+        ] as $invalidLines) {
+            $this->withHeaders($this->authHeaders('invalid-preview'))->postJson(
+                "/api/mobile/v1/companies/{$this->company->public_id}/purchases/returns/preview",
+                ['purchase_id' => $purchasePublicId, 'lines' => $invalidLines]
+            )->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        }
 
         // 3. previewReturn with matched IDs succeeds
         $previewMatched = $this->withHeaders($this->authHeaders('ret-matched-prev'))
@@ -746,5 +760,6 @@ final class PurchaseReturnIdempotencyAndProvenanceTest extends TestCase
         $previewMatched->assertStatus(200);
         $this->assertCount(1, $previewMatched->json('lines'));
         $this->assertSame($line1->public_id, $previewMatched->json('lines.0.purchase_line_id'));
+        $this->assertSame($effectsBefore, [StockMovement::count(), NativeCommandReceipt::count(), PurchaseReturn::count()]);
     }
 }

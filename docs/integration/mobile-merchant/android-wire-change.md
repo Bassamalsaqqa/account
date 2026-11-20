@@ -152,3 +152,12 @@ data class SalesInvoiceListItemDto(
    ```
    If a cursor is passed across companies, the backend rejects with HTTP 422 (`Cross-tenant pagination cursor reuse is rejected.`).
    If a cursor is tampered with, the backend rejects with HTTP 422 (`Tampered pagination cursor signature.`).
+
+
+### Read-ready business settings compatibility
+
+`GET /api/mobile/v1/companies/{companyId}/settings/business` retains the master mobile gate, bearer/device validation and active same-company membership. With the merchant gate OFF, `sales.invoice.create` (the existing bootstrap permission) grants only company ID, Arabic/English name/address, phone, tax number, base currency and authoritative `default_currency_minor_units` from `CurrencyMinorUnitsResolver`. No currency precision default is invented. Operational warehouse, cash-account, walk-in, taxes and currency-list fields are absent. Cross-company requests return 404; expired/revoked credentials return 401; missing bootstrap permission returns 403. Responses are private/no-store.
+
+With the merchant gate ON the existing full settings wire projection and permission behavior remain intact. No write gate changes. Android `ProductionTraderRepository.fromReadReady` consumes the precision and optional profile fields from this endpoint; its operational mappings continue to come from bootstrap. The endpoint must be released on the backend before using clients that require this precision; older servers without this route still fail closed.
+
+Purchase-return preview and execution share identifier and exact positive quantity validation. Every submitted line must resolve to this purchase; both supplied identifiers must agree, and duplicate original lines fail with 422. Preview never commits canonical effects.

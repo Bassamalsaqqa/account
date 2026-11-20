@@ -14,7 +14,6 @@ use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\NativeCommandReceipt;
 use App\Models\Purchase;
-use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnLine;
 use App\Models\User;
@@ -23,11 +22,9 @@ use App\Services\Inventory\InventoryMovementService;
 use App\Services\Purchasing\GoodsReceiptCapability;
 use App\Services\Purchasing\GoodsReceiptScope;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
-use App\Support\Mobile\Receipt\NativeWriteContextResolver;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
-use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
 
@@ -68,39 +65,7 @@ final class ExecutePhysicalPurchaseReturnAction
             throw new LogicException('Canonical purchase return orchestration cannot be reentered.');
         }
 
-        if ($lines === [] || ! array_is_list($lines)) {
-            throw new InvalidArgumentException('Purchase return requires at least one line item.');
-        }
-
-        // Canonical payload construction for deterministic request hashing
-        $normalizedLines = [];
-        foreach ($lines as $idx => $lineData) {
-            if (! is_array($lineData)) {
-                throw new InvalidArgumentException("Line [{$idx}] must be an array.");
-            }
-            $pLineId = $lineData['purchase_line_id'] ?? null;
-            $prodId = $lineData['product_id'] ?? null;
-            if ($pLineId === null && $prodId === null) {
-                throw new InvalidArgumentException("Line [{$idx}] must specify purchase_line_id or product_id.");
-            }
-            foreach ([$pLineId, $prodId] as $publicId) {
-                if ($publicId !== null && (! is_string($publicId) || ! Str::isUlid($publicId))) {
-                    throw new InvalidArgumentException("Line [{$idx}] contains an invalid identifier.");
-                }
-            }
-            $rawQty = $lineData['quantity'] ?? null;
-            $qtyStr = NativeWriteContextResolver::validateDecimalString(
-                $rawQty,
-                "line [{$idx}] quantity",
-                6,
-                true
-            );
-            $normalizedLines[] = [
-                'purchase_line_id' => is_string($pLineId) ? trim($pLineId) : null,
-                'product_id' => is_string($prodId) ? trim($prodId) : null,
-                'quantity' => is_string($rawQty) ? trim($rawQty) : $qtyStr,
-            ];
-        }
+        $normalizedLines = PurchaseReturnInput::normalize($lines);
 
         // Sort lines by purchase_line_id / product_id for order invariance
         usort($normalizedLines, function (array $a, array $b): int {
@@ -179,29 +144,7 @@ final class ExecutePhysicalPurchaseReturnAction
                 $resolvedOriginGrn = null;
 
                 foreach ($normalizedLines as $lineData) {
-                    $pLineId = $lineData['purchase_line_id'];
-                    $prodId = $lineData['product_id'];
-
-                    if ($pLineId !== null) {
-                        /** @var PurchaseLine|null $origLine */
-                        $origLine = $lockedPurchase->lines->firstWhere('public_id', $pLineId);
-                        if ($origLine === null) {
-                            throw new InvalidArgumentException("Purchase line [{$pLineId}] does not belong to this purchase bill.");
-                        }
-                        if ($prodId !== null && ($origLine->product === null || (string) $origLine->product->public_id !== $prodId)) {
-                            throw new InvalidArgumentException("Supplied product [{$prodId}] does not match purchase line [{$pLineId}].");
-                        }
-                    } else {
-                        $matches = $lockedPurchase->lines->filter(fn (PurchaseLine $line): bool => $line->product !== null && (string) $line->product->public_id === $prodId);
-                        if ($matches->isEmpty()) {
-                            throw new InvalidArgumentException("Product [{$prodId}] does not belong to this purchase bill.");
-                        }
-                        if ($matches->count() > 1) {
-                            throw new InvalidArgumentException("Ambiguous return line for product [{$prodId}]. Multiple purchase lines exist; specify purchase_line_id.");
-                        }
-                        $origLine = $matches->first();
-                    }
-
+                    $origLine = PurchaseReturnInput::resolveLine($lockedPurchase, $lineData);
                     if (isset($draftLines[$origLine->id])) {
                         throw new InvalidArgumentException('Repeated original purchase line.');
                     }

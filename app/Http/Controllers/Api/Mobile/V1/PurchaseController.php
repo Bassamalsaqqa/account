@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Mobile\V1;
 
 use App\Actions\Purchasing\ExecutePhysicalPurchaseReturnAction;
+use App\Actions\Purchasing\PurchaseReturnInput;
 use App\Actions\Purchasing\RecordPurchaseGoodsReceiptAction;
 use App\Actions\Purchasing\RecordStagedPurchaseBillAction;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
@@ -672,53 +673,33 @@ final class PurchaseController extends Controller
             );
         }
 
-        $lines = $request->input('lines', []);
         $previewLines = [];
         $totalReturnCost = BigDecimal::zero();
-
-        if (is_array($lines)) {
+        $seen = [];
+        try {
+            $lines = PurchaseReturnInput::normalize($request->input('lines'));
             foreach ($lines as $lineData) {
-                if (! is_array($lineData)) {
-                    continue;
+                $origLine = PurchaseReturnInput::resolveLine($purchase, $lineData);
+                if (isset($seen[$origLine->id])) {
+                    throw new \InvalidArgumentException('Repeated original purchase line.');
                 }
-                $productId = isset($lineData['product_id']) && is_string($lineData['product_id']) ? trim($lineData['product_id']) : null;
-                $purchaseLinePublicId = isset($lineData['purchase_line_id']) && is_string($lineData['purchase_line_id']) ? trim($lineData['purchase_line_id']) : null;
+                $seen[$origLine->id] = true;
+                $quantity = BigDecimal::of($lineData['quantity']);
+                $unitCost = BigDecimal::of((string) $origLine->unit_cost);
+                $lineTotal = $quantity->multipliedBy($unitCost);
+                $totalReturnCost = $totalReturnCost->plus($lineTotal);
 
-                if ($purchaseLinePublicId === null && $productId === null) {
-                    continue;
-                }
-
-                $origLine = null;
-                if ($purchaseLinePublicId !== null) {
-                    $matched = $purchase->lines->firstWhere('public_id', $purchaseLinePublicId);
-                    if ($matched !== null) {
-                        if ($productId === null || ($matched->product !== null && (string) $matched->product->public_id === $productId)) {
-                            $origLine = $matched;
-                        }
-                    }
-                } else {
-                    $matches = $purchase->lines->filter(fn ($l) => $l->product !== null && (string) $l->product->public_id === $productId);
-                    if ($matches->count() === 1) {
-                        $origLine = $matches->first();
-                    }
-                }
-
-                if ($origLine !== null) {
-                    $quantity = BigDecimal::of((string) ($lineData['quantity'] ?? '1'));
-                    $unitCost = BigDecimal::of((string) $origLine->unit_cost);
-                    $lineTotal = $quantity->multipliedBy($unitCost);
-                    $totalReturnCost = $totalReturnCost->plus($lineTotal);
-
-                    $previewLines[] = [
-                        'purchase_line_id' => (string) $origLine->public_id,
-                        'product_id' => $origLine->product ? (string) $origLine->product->public_id : (string) $productId,
-                        'product_name' => $origLine->product ? (string) $origLine->product->displayName() : 'بند مشتريات',
-                        'quantity' => (string) $quantity,
-                        'unit_cost_ils' => (string) $unitCost->toScale(2, RoundingMode::HALF_UP),
-                        'line_total_ils' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
-                    ];
-                }
+                $previewLines[] = [
+                    'purchase_line_id' => (string) $origLine->public_id,
+                    'product_id' => $origLine->product ? (string) $origLine->product->public_id : (string) $lineData['product_id'],
+                    'product_name' => $origLine->product ? (string) $origLine->product->displayName() : 'بند مشتريات',
+                    'quantity' => (string) $quantity,
+                    'unit_cost_ils' => (string) $unitCost->toScale(2, RoundingMode::HALF_UP),
+                    'line_total_ils' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
+                ];
             }
+        } catch (\InvalidArgumentException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
         }
 
         return response()->json([
