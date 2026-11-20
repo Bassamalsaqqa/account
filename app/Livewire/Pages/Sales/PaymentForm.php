@@ -10,6 +10,7 @@ use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\Customer;
+use App\Models\OpeningTradeItem;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\Money\EligibleMoneyAccounts;
@@ -53,7 +54,9 @@ class PaymentForm extends Component
 
     /**
      * @var list<array{
-     *     sales_invoice_id: int,
+     *     sales_invoice_id: ?int,
+     *     opening_trade_item_id?: ?int,
+     *     is_opening?: bool,
      *     invoice_number: string,
      *     invoice_date: string,
      *     grand_total: string,
@@ -245,6 +248,8 @@ class PaymentForm extends Component
             if ($outstanding->isPositive()) {
                 $this->allocations[] = [
                     'sales_invoice_id' => $inv->id,
+                    'opening_trade_item_id' => null,
+                    'is_opening' => false,
                     'invoice_number' => $inv->invoice_number,
                     'invoice_date' => $inv->issue_date->toDateString(),
                     'grand_total' => (string) $inv->grand_total,
@@ -252,6 +257,33 @@ class PaymentForm extends Component
                     'allocated_amount' => '0.00',
                     'document_currency_code' => $inv->currency_code,
                     'invoice_exchange_rate' => (string) $inv->exchange_rate,
+                    'preview_fx' => '0.00',
+                ];
+            }
+        }
+
+        $openingItems = OpeningTradeItem::where('company_id', $company->id)
+            ->where('party_type', 'customer')
+            ->where('party_id', $this->customer_id)
+            ->whereIn('currency_code', CompanyCurrency::where('company_id', $company->id)->where('enabled', true)->select('currency_code'))
+            ->where('status', OpeningTradeItem::STATUS_POSTED)
+            ->orderBy('opening_date')
+            ->get();
+
+        foreach ($openingItems as $item) {
+            $outstanding = $item->calculateOutstanding();
+            if ($outstanding->isPositive()) {
+                $this->allocations[] = [
+                    'sales_invoice_id' => null,
+                    'opening_trade_item_id' => $item->id,
+                    'is_opening' => true,
+                    'invoice_number' => $item->reference_number ?: ('OPENING-'.$item->public_id),
+                    'invoice_date' => $item->opening_date->toDateString(),
+                    'grand_total' => (string) $item->amount,
+                    'outstanding' => (string) $outstanding,
+                    'allocated_amount' => '0.00',
+                    'document_currency_code' => $item->currency_code,
+                    'invoice_exchange_rate' => (string) $item->exchange_rate,
                     'preview_fx' => '0.00',
                 ];
             }
@@ -320,6 +352,43 @@ class PaymentForm extends Component
         if (! isset($this->allocations[$index])) {
             return;
         }
+        $alloc = $this->allocations[$index];
+        if (! empty($alloc['is_opening'])) {
+            $openingItem = OpeningTradeItem::where('company_id', $this->pageCompanyId)
+                ->where('party_type', 'customer')
+                ->where('party_id', $this->customer_id)
+                ->where('status', OpeningTradeItem::STATUS_POSTED)
+                ->find($alloc['opening_trade_item_id']);
+            if ($openingItem === null) {
+                $this->addError('allocations', __('refinement.source_line_not_found'));
+
+                return;
+            }
+            if ($this->currency_code === $company->base_currency_code) {
+                $this->exchange_rate = '1.0000000000';
+            }
+
+            $this->validate(['amount' => ['required', 'string', 'regex:/^\d{1,12}(?:\.\d{1,6})?$/D'],
+                'exchange_rate' => ['nullable', 'string', 'regex:/^(?:\s*|\d{1,12}(?:\.\d{1,10})?)$/D'], ...$this->allocationRules()]);
+            $remaining = $openingItem->calculateOutstanding();
+            if (! $remaining->isPositive()) {
+                $this->addError('allocations', __('refinement.source_line_not_found'));
+
+                return;
+            }
+            $this->allocations[$index]['outstanding'] = (string) $remaining;
+            $this->allocations[$index]['allocated_amount'] = (string) $remaining;
+            $this->allocations[$index]['document_currency_code'] = $openingItem->currency_code;
+            $this->recalculateAllocations();
+            if (preg_match('/^\d+(?:\.\d+)?$/D', $this->amount) === 1
+                && BigDecimal::of($this->amount)->isLessThan(BigDecimal::of($this->allocatedTotal))) {
+                $this->amount = $this->allocatedTotal;
+                $this->recalculateAllocations();
+            }
+
+            return;
+        }
+
         $document = $this->quickBalanceDocuments()->whereKey((int) $this->allocations[$index]['sales_invoice_id'])->first();
         if ($document === null) {
             $this->addError('allocations', __('refinement.source_line_not_found'));
@@ -383,6 +452,18 @@ class PaymentForm extends Component
         $total = BigDecimal::zero();
         foreach ($this->quickBalanceDocuments()->get() as $document) {
             $remaining = $document->calculateOutstanding();
+            if ($remaining->isPositive()) {
+                $total = $total->plus($remaining);
+            }
+        }
+        $openingItems = OpeningTradeItem::where('company_id', $this->pageCompanyId)
+            ->where('party_type', 'customer')
+            ->where('party_id', $this->customer_id)
+            ->where('currency_code', $this->currency_code)
+            ->where('status', OpeningTradeItem::STATUS_POSTED)
+            ->get();
+        foreach ($openingItems as $item) {
+            $remaining = $item->calculateOutstanding();
             if ($remaining->isPositive()) {
                 $total = $total->plus($remaining);
             }
@@ -476,11 +557,21 @@ class PaymentForm extends Component
                     return null;
                 }
                 $allocatedSum = $allocatedSum->plus($paymentAmount);
-                $allocList[] = [
-                    'sales_invoice_id' => (int) $alloc['sales_invoice_id'],
-                    'allocated_amount' => (string) $amt,
-                    ...($alloc['document_currency_code'] !== $this->currency_code ? ['payment_currency_amount' => (string) $paymentAmount] : []),
-                ];
+                if (! empty($alloc['is_opening'])) {
+                    $allocList[] = [
+                        'kind' => 'opening_trade_item',
+                        'opening_trade_item_id' => (int) $alloc['opening_trade_item_id'],
+                        'allocated_amount' => (string) $amt,
+                        ...($alloc['document_currency_code'] !== $this->currency_code ? ['payment_currency_amount' => (string) $paymentAmount] : []),
+                    ];
+                } else {
+                    $allocList[] = [
+                        'kind' => 'sales_invoice',
+                        'sales_invoice_id' => (int) $alloc['sales_invoice_id'],
+                        'allocated_amount' => (string) $amt,
+                        ...($alloc['document_currency_code'] !== $this->currency_code ? ['payment_currency_amount' => (string) $paymentAmount] : []),
+                    ];
+                }
             }
         }
 

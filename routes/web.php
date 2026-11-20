@@ -13,6 +13,7 @@ use App\Http\Controllers\PurchasingDocumentController;
 use App\Http\Controllers\ReportCsvController;
 use App\Http\Middleware\PrivateDocumentResponse;
 use App\Http\Middleware\RequirePlatformBillingPassword;
+use App\Livewire\Pages\Accounting\OpeningTradeBalanceEntry;
 use App\Livewire\Pages\Catalog\BrandIndex;
 use App\Livewire\Pages\Catalog\CategoryIndex;
 use App\Livewire\Pages\Catalog\UnitIndex;
@@ -190,6 +191,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('inventory', InventoryOverview::class)->name('inventory.overview');
         Route::get('inventory/movements', StockMovementIndex::class)->name('inventory.movements');
         Route::get('inventory/opening-stock/create', OpeningStockForm::class)->name('inventory.opening-stock.create');
+        Route::get('accounting/opening-balances/trade', OpeningTradeBalanceEntry::class)->name('accounting.opening-balances.trade');
         Route::get('inventory/adjustments/create', StockAdjustmentForm::class)->name('inventory.adjustments.create');
         Route::get('inventory/transfers/create', StockTransferForm::class)->name('inventory.transfers.create');
         Route::get('inventory/expiry', ExpiryCenter::class)->name('inventory.expiry');

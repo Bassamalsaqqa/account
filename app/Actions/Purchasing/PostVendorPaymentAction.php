@@ -13,6 +13,7 @@ use App\Models\CompanyLanguage;
 use App\Models\DocumentSequence;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\Purchase;
 use App\Models\User;
 use App\Models\Vendor;
@@ -38,6 +39,7 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\RoundingNecessaryException;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -306,79 +308,159 @@ class PostVendorPaymentAction
             $totalRealizedFxLossBase = BigDecimal::zero();
 
             $remainingOutstandingByPurchase = [];
+            $remainingOutstandingByOpeningItem = [];
 
             foreach ($allocationsInput as $allocInput) {
-                /** @var Purchase $purchase */
-                $purchase = Purchase::where('company_id', $lockedCompany->id)
-                    ->where('id', $allocInput['purchase_id'])
-                    ->lockForUpdate()
-                    ->firstOrFail();
+                $isOpening = (array_key_exists('opening_trade_item_id', $allocInput) && $allocInput['opening_trade_item_id'] !== null)
+                    || (($allocInput['kind'] ?? null) === 'opening_trade_item');
 
-                app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
+                if ($isOpening) {
+                    $itemId = (int) ($allocInput['opening_trade_item_id'] ?? $allocInput['id']);
+                    /** @var OpeningTradeItem $openingItem */
+                    $openingItem = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                        ->where('id', $itemId)
+                        ->lockForUpdate()
+                        ->firstOrFail();
 
-                if (! $purchase->isPosted()) {
-                    throw new InvalidArgumentException("Cannot allocate payment to non-posted purchase [{$purchase->id}].");
+                    if (! $openingItem->isPosted() || $openingItem->isReversed()) {
+                        throw new InvalidArgumentException("Cannot allocate payment to non-posted or reversed opening trade item [{$openingItem->public_id}].");
+                    }
+
+                    if ((int) $openingItem->vendor_id !== (int) $vendor->id || $openingItem->side !== OpeningTradeItem::SIDE_VENDOR) {
+                        throw new InvalidArgumentException("Cannot allocate payment to opening trade item [{$openingItem->public_id}] belonging to another vendor.");
+                    }
+
+                    if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $openingItem->currency_code)->where('enabled', true)->exists()) {
+                        throw new InvalidArgumentException('Document currency is not enabled.');
+                    }
+
+                    if ($paymentDate < Carbon::parse($openingItem->opening_date)->toDateString()) {
+                        throw new InvalidArgumentException('Direct payment allocation cannot precede its document date.');
+                    }
+
+                    $amounts = PaymentAllocationIntent::amounts($allocInput, $openingItem->currency_code, $currency);
+                    $allocAmt = $amounts['document'];
+                    $paymentConsumed = $amounts['payment'];
+
+                    if (! isset($remainingOutstandingByOpeningItem[$itemId])) {
+                        $remainingOutstandingByOpeningItem[$itemId] = $openingItem->calculateOutstanding();
+                    }
+
+                    if ($allocAmt->isGreaterThan($remainingOutstandingByOpeningItem[$itemId])) {
+                        throw new InvalidArgumentException("Allocated amount [{$allocAmt}] exceeds opening item [{$openingItem->public_id}] outstanding balance [{$remainingOutstandingByOpeningItem[$itemId]}].");
+                    }
+
+                    $remainingOutstandingByOpeningItem[$itemId] = $remainingOutstandingByOpeningItem[$itemId]->minus($allocAmt);
+                    $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
+
+                    $itemFx = BigDecimal::of((string) $openingItem->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
+                    $apReliefBase = app(PayableBookValue::class)->reliefOpeningItem($openingItem, $allocAmt);
+
+                    $targetSettlement = $allocatedTotal->multipliedBy($paymentFx)->toScale(6, RoundingMode::HALF_UP);
+                    $settlementBase = $targetSettlement->minus($totalAllocSettlementBase);
+
+                    if ($allocAmt->isPositive() && ($apReliefBase->isZero() || $settlementBase->isZero())) {
+                        throw new InvalidArgumentException('Positive allocation currency amount cannot produce zero base value.');
+                    }
+
+                    // In AP: delta = S - B
+                    // delta > 0 is FX LOSS; delta < 0 is FX GAIN
+                    $delta = $settlementBase->minus($apReliefBase);
+
+                    if ($delta->isPositive()) {
+                        $totalRealizedFxLossBase = $totalRealizedFxLossBase->plus($delta);
+                    } elseif ($delta->isNegative()) {
+                        $totalRealizedFxGainBase = $totalRealizedFxGainBase->plus($delta->abs());
+                    }
+
+                    $totalApReliefBase = $totalApReliefBase->plus($apReliefBase);
+                    $totalAllocSettlementBase = $totalAllocSettlementBase->plus($settlementBase);
+
+                    $preparedAllocations[] = [
+                        'purchase_id' => null,
+                        'opening_trade_item_id' => $openingItem->id,
+                        'allocated_amount' => (string) $allocAmt->toScale(6),
+                        'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
+                        'purchase_exchange_rate' => (string) $itemFx->toScale(10),
+                        'payment_exchange_rate' => (string) $paymentFx->toScale(10),
+                        'base_amount_applied_to_payable' => (string) $apReliefBase->toScale(6),
+                        'settlement_base_value' => (string) $settlementBase->toScale(6),
+                        'realized_fx_gain_loss_base' => (string) $delta->toScale(6),
+                    ];
+                } else {
+                    /** @var Purchase $purchase */
+                    $purchase = Purchase::where('company_id', $lockedCompany->id)
+                        ->where('id', $allocInput['purchase_id'] ?? $allocInput['id'])
+                        ->lockForUpdate()
+                        ->firstOrFail();
+
+                    app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
+
+                    if (! $purchase->isPosted()) {
+                        throw new InvalidArgumentException("Cannot allocate payment to non-posted purchase [{$purchase->id}].");
+                    }
+
+                    if ((int) $purchase->vendor_id !== (int) $vendor->id) {
+                        throw new InvalidArgumentException("Cannot allocate payment to purchase [{$purchase->id}] belonging to another vendor.");
+                    }
+
+                    if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $purchase->currency_code)->where('enabled', true)->exists()) {
+                        throw new InvalidArgumentException('Document currency is not enabled.');
+                    }
+                    if ($paymentDate < $purchase->purchase_date->format('Y-m-d')) {
+                        throw new InvalidArgumentException('Direct payment allocation cannot precede purchase date.');
+                    }
+                    $amounts = PaymentAllocationIntent::amounts($allocInput, $purchase->currency_code, $currency);
+                    $allocAmt = $amounts['document'];
+                    $paymentConsumed = $amounts['payment'];
+
+                    $purId = (int) $purchase->id;
+                    if (! isset($remainingOutstandingByPurchase[$purId])) {
+                        $remainingOutstandingByPurchase[$purId] = $purchase->calculateOutstanding();
+                    }
+
+                    if ($allocAmt->isGreaterThan($remainingOutstandingByPurchase[$purId])) {
+                        throw new InvalidArgumentException("Allocated amount [{$allocAmt}] exceeds purchase [{$purchase->id}] outstanding balance [{$remainingOutstandingByPurchase[$purId]}].");
+                    }
+
+                    $remainingOutstandingByPurchase[$purId] = $remainingOutstandingByPurchase[$purId]->minus($allocAmt);
+                    $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
+
+                    $purFx = BigDecimal::of((string) $purchase->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
+                    $apReliefBase = app(PayableBookValue::class)->relief($purchase, $allocAmt);
+
+                    $targetSettlement = $allocatedTotal->multipliedBy($paymentFx)->toScale(6, RoundingMode::HALF_UP);
+                    $settlementBase = $targetSettlement->minus($totalAllocSettlementBase);
+
+                    if ($allocAmt->isPositive() && ($apReliefBase->isZero() || $settlementBase->isZero())) {
+                        throw new InvalidArgumentException('Positive allocation currency amount cannot produce zero base value.');
+                    }
+
+                    // In AP: delta = S - B
+                    // delta > 0 is FX LOSS; delta < 0 is FX GAIN
+                    $delta = $settlementBase->minus($apReliefBase);
+
+                    if ($delta->isPositive()) {
+                        $totalRealizedFxLossBase = $totalRealizedFxLossBase->plus($delta);
+                    } elseif ($delta->isNegative()) {
+                        $totalRealizedFxGainBase = $totalRealizedFxGainBase->plus($delta->abs());
+                    }
+
+                    $totalApReliefBase = $totalApReliefBase->plus($apReliefBase);
+                    $totalAllocSettlementBase = $totalAllocSettlementBase->plus($settlementBase);
+
+                    $preparedAllocations[] = [
+                        'purchase_id' => $purchase->id,
+                        'opening_trade_item_id' => null,
+                        'allocated_amount' => (string) $allocAmt->toScale(6),
+                        'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
+                        'purchase_exchange_rate' => (string) $purFx->toScale(10),
+                        'payment_exchange_rate' => (string) $paymentFx->toScale(10),
+                        'base_amount_applied_to_payable' => (string) $apReliefBase->toScale(6),
+                        'settlement_base_value' => (string) $settlementBase->toScale(6),
+                        'realized_fx_gain_loss_base' => (string) $delta->toScale(6),
+                    ];
                 }
-
-                if ((int) $purchase->vendor_id !== (int) $vendor->id) {
-                    throw new InvalidArgumentException("Cannot allocate payment to purchase [{$purchase->id}] belonging to another vendor.");
-                }
-
-                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $purchase->currency_code)->where('enabled', true)->exists()) {
-                    throw new InvalidArgumentException('Document currency is not enabled.');
-                }
-                if ($paymentDate < $purchase->purchase_date->format('Y-m-d')) {
-                    throw new InvalidArgumentException('Direct payment allocation cannot precede purchase date.');
-                }
-                $amounts = PaymentAllocationIntent::amounts($allocInput, $purchase->currency_code, $currency);
-                $allocAmt = $amounts['document'];
-                $paymentConsumed = $amounts['payment'];
-
-                $purId = (int) $purchase->id;
-                if (! isset($remainingOutstandingByPurchase[$purId])) {
-                    $remainingOutstandingByPurchase[$purId] = $purchase->calculateOutstanding();
-                }
-
-                if ($allocAmt->isGreaterThan($remainingOutstandingByPurchase[$purId])) {
-                    throw new InvalidArgumentException("Allocated amount [{$allocAmt}] exceeds purchase [{$purchase->id}] outstanding balance [{$remainingOutstandingByPurchase[$purId]}].");
-                }
-
-                $remainingOutstandingByPurchase[$purId] = $remainingOutstandingByPurchase[$purId]->minus($allocAmt);
-                $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
-
-                $purFx = BigDecimal::of((string) $purchase->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
-                $apReliefBase = app(PayableBookValue::class)->relief($purchase, $allocAmt);
-
-                $targetSettlement = $allocatedTotal->multipliedBy($paymentFx)->toScale(6, RoundingMode::HALF_UP);
-                $settlementBase = $targetSettlement->minus($totalAllocSettlementBase);
-
-                if ($allocAmt->isPositive() && ($apReliefBase->isZero() || $settlementBase->isZero())) {
-                    throw new InvalidArgumentException('Positive allocation currency amount cannot produce zero base value.');
-                }
-
-                // In AP: delta = S - B
-                // delta > 0 is FX LOSS; delta < 0 is FX GAIN
-                $delta = $settlementBase->minus($apReliefBase);
-
-                if ($delta->isPositive()) {
-                    $totalRealizedFxLossBase = $totalRealizedFxLossBase->plus($delta);
-                } elseif ($delta->isNegative()) {
-                    $totalRealizedFxGainBase = $totalRealizedFxGainBase->plus($delta->abs());
-                }
-
-                $totalApReliefBase = $totalApReliefBase->plus($apReliefBase);
-                $totalAllocSettlementBase = $totalAllocSettlementBase->plus($settlementBase);
-
-                $preparedAllocations[] = [
-                    'purchase_id' => $purchase->id,
-                    'allocated_amount' => (string) $allocAmt->toScale(6),
-                    'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
-                    'purchase_exchange_rate' => (string) $purFx->toScale(10),
-                    'payment_exchange_rate' => (string) $paymentFx->toScale(10),
-                    'base_amount_applied_to_payable' => (string) $apReliefBase->toScale(6),
-                    'settlement_base_value' => (string) $settlementBase->toScale(6),
-                    'realized_fx_gain_loss_base' => (string) $delta->toScale(6),
-                ];
             }
 
             if ($allocatedTotal->isGreaterThan($totalAmount)) {

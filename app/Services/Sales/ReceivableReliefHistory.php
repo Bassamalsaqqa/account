@@ -36,4 +36,25 @@ final class ReceivableReliefHistory
 
         return ['amount' => $amount, 'base' => $base];
     }
+
+    /** @return array{amount: BigDecimal, base: BigDecimal} */
+    public function beforeOpeningItem(int $companyId, int $openingItemId, int $priorBatchId, int $allocationId): array
+    {
+        $amount = BigDecimal::zero();
+        $base = BigDecimal::zero();
+        $rows = DB::table('customer_payment_allocations as a')->join('customer_payments as p', 'p.id', '=', 'a.customer_payment_id')
+            ->leftJoin('customer_payment_application_events as e', 'e.id', '=', 'a.application_event_id')
+            ->where('a.company_id', $companyId)->where('a.opening_trade_item_id', $openingItemId)->where('a.id', '<', $allocationId)
+            ->where('p.posting_batch_id', '<=', $priorBatchId)
+            ->where(fn ($q) => $q->whereNull('p.reversal_posting_batch_id')->orWhere('p.reversal_posting_batch_id', '>', $priorBatchId))
+            ->where(fn ($q) => $q->whereNull('a.application_event_id')->orWhereNotNull('e.applied_at'))
+            ->where(fn ($q) => $q->whereNull('e.reversal_posting_batch_id')->orWhere('e.reversal_posting_batch_id', '>', $priorBatchId))
+            ->get(['a.allocated_amount', 'a.base_amount_applied_to_receivable']);
+        foreach ($rows as $row) {
+            $amount = $amount->plus(BigDecimal::of((string) $row->allocated_amount));
+            $base = $base->plus(BigDecimal::of((string) $row->base_amount_applied_to_receivable));
+        }
+
+        return ['amount' => $amount, 'base' => $base];
+    }
 }

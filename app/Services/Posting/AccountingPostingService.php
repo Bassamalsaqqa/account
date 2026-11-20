@@ -25,6 +25,7 @@ use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
+use App\Services\Accounting\OpeningTradeEventScope;
 use App\Services\Inventory\StockEventScope;
 use App\Services\Money\MoneyAccountLedger;
 use App\Services\Money\MoneyEventScope;
@@ -53,6 +54,9 @@ class AccountingPostingService
         }
         if ($command->sourceType === 'purchase_return') {
             PurchaseReturnPostingScope::assertPosting($command);
+        }
+        if ($command->sourceType === 'opening_trade_item') {
+            app(OpeningTradeEventScope::class)->assertPosting($command);
         }
         if (in_array($command->sourceType, ['opening_stock', 'stock_adjustment', 'expiry_disposal', 'sales_invoice', 'sales_return'], true)) {
             app(StockEventScope::class)->assertPosting($command);
@@ -388,6 +392,8 @@ class AccountingPostingService
             app(PurchaseReturnVoidScope::class)->assertReversal($stockOriginal, $actingUser);
         } elseif ($stockOriginal !== null && in_array($stockOriginal->source_type, ['opening_stock', 'stock_adjustment', 'expiry_disposal', 'sales_invoice', 'sales_return'], true)) {
             app(StockEventScope::class)->assertReversal($stockOriginal, $actingUser);
+        } elseif ($stockOriginal !== null && $stockOriginal->source_type === 'opening_trade_item') {
+            app(OpeningTradeEventScope::class)->assertReversal($stockOriginal, $actingUser, $postingDate);
         }
         if (in_array($original->source_type, ['expense', 'employee_advance', 'salary_entry', 'salary_payment'], true)) {
             app(Phase7EventScope::class)->assertReversal($original, $actingUser, $postingDate);

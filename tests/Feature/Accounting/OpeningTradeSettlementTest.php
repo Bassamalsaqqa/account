@@ -1,0 +1,465 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\Accounting;
+
+use App\Actions\Accounting\PostOpeningTradeItemAction;
+use App\Actions\Purchasing\ApplyVendorPaymentCreditAction;
+use App\Actions\Purchasing\PostVendorPaymentAction;
+use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
+use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Application\Reporting\Queries\CustomerReceivablesAgingReportQuery;
+use App\Domain\Purchasing\Queries\VendorStatementQuery;
+use App\Domain\Sales\Queries\CustomerStatementQuery;
+use App\Models\Customer;
+use App\Models\CustomerPayment;
+use App\Models\CustomerPaymentAllocation;
+use App\Models\OpeningTradeItem;
+use App\Models\PostingBatch;
+use App\Models\Vendor;
+use App\Models\VendorPayment;
+use App\Models\VendorPaymentAllocation;
+use Brick\Math\BigDecimal;
+use Tests\Feature\Phase8\TradeTestCase;
+
+final class OpeningTradeSettlementTest extends TradeTestCase
+{
+    private Customer $customer;
+
+    private Vendor $testVendor;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->activateUser($this->owner);
+        $this->customer = $this->defaultCustomer;
+        $this->testVendor = $this->vendor;
+    }
+
+    public function test_customer_payment_can_allocate_to_opening_trade_item(): void
+    {
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '1000.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-cust-open-settle',
+        );
+
+        $this->assertTrue(BigDecimal::of('1000.00')->isEqualTo($item->calculateOutstanding()));
+
+        $postPaymentAction = app(PostCustomerPaymentAction::class);
+        $payment = $postPaymentAction->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-10',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '400.00',
+            'idempotency_key' => 'pmt-cust-open-settle',
+            'allocations' => [
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $item->id,
+                    'allocated_amount' => '400.00',
+                ],
+            ],
+        ]);
+
+        $this->assertInstanceOf(CustomerPayment::class, $payment);
+        $this->assertCount(1, $payment->allocations);
+
+        /** @var CustomerPaymentAllocation $alloc */
+        $alloc = $payment->allocations->first();
+        $this->assertSame($item->id, $alloc->opening_trade_item_id);
+        $this->assertNull($alloc->sales_invoice_id);
+        $this->assertTrue(BigDecimal::of($alloc->allocated_amount)->isEqualTo('400.00'));
+        $this->assertSame('400.000000', (string) $alloc->base_amount_applied_to_receivable);
+
+        // Check outstanding after payment
+        $this->assertTrue(BigDecimal::of('600.00')->isEqualTo($item->calculateOutstanding()));
+
+        // Check GL entries: Dr Cash 400 / Cr AR 400
+        $batch = PostingBatch::with('lines.account')->findOrFail($payment->posting_batch_id);
+        $cashLine = $batch->lines->firstWhere('account.id', $this->ilsCashAccount->ledger_account_id);
+        $arLine = $batch->lines->firstWhere('account.system_key', 'accounts_receivable');
+
+        $this->assertTrue(BigDecimal::of($cashLine->debit_base)->isEqualTo(400));
+        $this->assertTrue(BigDecimal::of($arLine->credit_base)->isEqualTo(400));
+    }
+
+    public function test_vendor_payment_can_allocate_to_opening_trade_item(): void
+    {
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_VENDOR,
+            partyId: $this->testVendor->id,
+            openingDate: '2026-01-01',
+            amount: '800.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-vend-open-settle',
+        );
+
+        $this->assertTrue(BigDecimal::of('800.00')->isEqualTo($item->calculateOutstanding()));
+
+        $postPaymentAction = app(PostVendorPaymentAction::class);
+        $payment = $postPaymentAction->execute($this->company, $this->owner, [
+            'vendor_id' => $this->testVendor->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-12',
+            'payment_method' => VendorPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '500.00',
+            'document_locale' => 'ar',
+            'idempotency_key' => 'pmt-vend-open-settle',
+            'allocations' => [
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $item->id,
+                    'allocated_amount' => '500.00',
+                ],
+            ],
+        ]);
+
+        $this->assertInstanceOf(VendorPayment::class, $payment);
+        $this->assertCount(1, $payment->allocations);
+
+        /** @var VendorPaymentAllocation $alloc */
+        $alloc = $payment->allocations->first();
+        $this->assertSame($item->id, $alloc->opening_trade_item_id);
+        $this->assertNull($alloc->purchase_id);
+        $this->assertTrue(BigDecimal::of($alloc->allocated_amount)->isEqualTo('500.00'));
+        $this->assertSame('500.000000', (string) $alloc->base_amount_applied_to_payable);
+
+        // Check outstanding after payment
+        $this->assertTrue(BigDecimal::of('300.00')->isEqualTo($item->calculateOutstanding()));
+
+        // Check GL entries: Dr AP 500 / Cr Cash 500
+        $batch = PostingBatch::with('lines.account')->findOrFail($payment->posting_batch_id);
+        $cashLine = $batch->lines->firstWhere('account.id', $this->ilsCashAccount->ledger_account_id);
+        $apLine = $batch->lines->firstWhere('account.system_key', 'accounts_payable');
+
+        $this->assertTrue(BigDecimal::of($apLine->debit_base)->isEqualTo(500));
+        $this->assertTrue(BigDecimal::of($cashLine->credit_base)->isEqualTo(500));
+    }
+
+    public function test_multi_target_settlement_handles_invoice_and_opening_item_without_collision(): void
+    {
+        // 1. Post a normal sales invoice
+        $invoice = $this->createAndPostSalesInvoice([
+            'lines' => [
+                [
+                    'product_id' => null,
+                    'item_description' => 'Normal line',
+                    'quantity' => '1.000000',
+                    'unit_price' => '100.000000',
+                ],
+            ],
+        ]);
+
+        // 2. Post an opening trade item
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $openingItem = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '200.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-multi-target-open',
+        );
+
+        // 3. Post customer payment allocating 50 to invoice and 100 to opening item
+        $postPaymentAction = app(PostCustomerPaymentAction::class);
+        $payment = $postPaymentAction->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-10-15',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '150.00',
+            'idempotency_key' => 'pmt-multi-target',
+            'allocations' => [
+                [
+                    'kind' => 'sales_invoice',
+                    'sales_invoice_id' => $invoice->id,
+                    'allocated_amount' => '50.00',
+                ],
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $openingItem->id,
+                    'allocated_amount' => '100.00',
+                ],
+            ],
+        ]);
+
+        $this->assertCount(2, $payment->allocations);
+
+        $invAlloc = $payment->allocations->firstWhere('sales_invoice_id', $invoice->id);
+        $openAlloc = $payment->allocations->firstWhere('opening_trade_item_id', $openingItem->id);
+
+        $this->assertNotNull($invAlloc);
+        $this->assertNotNull($openAlloc);
+        $this->assertTrue(BigDecimal::of($invAlloc->allocated_amount)->isEqualTo('50.00'));
+        $this->assertTrue(BigDecimal::of($openAlloc->allocated_amount)->isEqualTo('100.00'));
+
+        // Verify remaining balances
+        $this->assertTrue(BigDecimal::of('50.00')->isEqualTo($invoice->calculateOutstanding()));
+        $this->assertTrue(BigDecimal::of('100.00')->isEqualTo($openingItem->calculateOutstanding()));
+    }
+
+    public function test_cross_currency_settlement_and_relief_under_adr_0006(): void
+    {
+        // Opening USD receivable: 100 USD at rate 3.50 -> book value 350.00 ILS
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '100.00',
+            currencyCode: 'USD',
+            exchangeRate: '3.5000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-fx-open-adr0006',
+        );
+
+        // Payment in USD bank account: 100 USD at spot rate 3.70
+        // Settlement: 100 USD * 3.70 = 370.00 ILS
+        // Book value relief: 100 USD * 3.50 = 350.00 ILS
+        // Realized FX Gain: 370 - 350 = 20.00 ILS
+        $postPaymentAction = app(PostCustomerPaymentAction::class);
+        $payment = $postPaymentAction->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->usdBankAccount->id,
+            'payment_date' => '2026-01-20',
+            'payment_method' => CustomerPayment::METHOD_BANK,
+            'currency_code' => 'USD',
+            'exchange_rate' => '3.7000000000',
+            'amount' => '100.00',
+            'idempotency_key' => 'pmt-fx-open-adr0006',
+            'allocations' => [
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $item->id,
+                    'allocated_amount' => '100.00',
+                ],
+            ],
+        ]);
+
+        /** @var CustomerPaymentAllocation $alloc */
+        $alloc = $payment->allocations->first();
+        $this->assertSame('350.000000', (string) $alloc->base_amount_applied_to_receivable);
+        $this->assertSame('370.000000', (string) $alloc->settlement_base_value);
+
+        // Check GL batch for realized FX gain
+        $batch = PostingBatch::with('lines.account')->findOrFail($payment->posting_batch_id);
+        $fxGainLine = $batch->lines->firstWhere('account.system_key', 'fx_gain');
+
+        $this->assertNotNull($fxGainLine, 'Realized FX gain line must exist');
+        $this->assertTrue(BigDecimal::of($fxGainLine->credit_base)->isEqualTo(20));
+
+        $this->assertTrue(BigDecimal::of('0.00')->isEqualTo($item->calculateOutstanding()));
+    }
+
+    public function test_customer_credit_advance_application_to_opening_trade_item(): void
+    {
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '500.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-credit-app-target',
+        );
+
+        // Unallocated advance receipt of 300 ILS
+        $postPaymentAction = app(PostCustomerPaymentAction::class);
+        $payment = $postPaymentAction->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-05',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '300.00',
+            'idempotency_key' => 'pmt-advance-receipt',
+            'allocations' => [],
+        ]);
+
+        $this->assertTrue(BigDecimal::of($payment->unallocated_amount)->isEqualTo('300.00'));
+
+        // Apply credit to opening trade item
+        $applyCreditAction = app(ApplyCustomerPaymentCreditAction::class);
+        $applyCreditAction->execute($payment, $this->owner, [
+            'application_date' => '2026-01-10',
+            'idempotency_key' => 'credit-app-key-1',
+            'allocations' => [
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $item->id,
+                    'allocated_amount' => '300.00',
+                ],
+            ],
+        ]);
+
+        $payment->refresh();
+        $this->assertTrue(BigDecimal::of($payment->unallocated_amount)->isEqualTo('0.00'));
+        $this->assertTrue(BigDecimal::of('200.00')->isEqualTo($item->calculateOutstanding()));
+    }
+
+    public function test_vendor_credit_advance_application_to_opening_trade_item(): void
+    {
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_VENDOR,
+            partyId: $this->testVendor->id,
+            openingDate: '2026-01-01',
+            amount: '400.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-vend-credit-target',
+        );
+
+        // Unallocated advance payment of 250 ILS
+        $postPaymentAction = app(PostVendorPaymentAction::class);
+        $payment = $postPaymentAction->execute($this->company, $this->owner, [
+            'vendor_id' => $this->testVendor->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-05',
+            'payment_method' => VendorPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '250.00',
+            'document_locale' => 'ar',
+            'idempotency_key' => 'pmt-vend-advance',
+            'allocations' => [],
+        ]);
+
+        $this->assertTrue(BigDecimal::of($payment->unallocated_amount)->isEqualTo('250.00'));
+
+        // Apply credit to opening trade item
+        $applyCreditAction = app(ApplyVendorPaymentCreditAction::class);
+        $applyCreditAction->execute($payment, $this->owner, [
+            'application_date' => '2026-01-10',
+            'idempotency_key' => 'vend-credit-app-key-1',
+            'allocations' => [
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $item->id,
+                    'allocated_amount' => '250.00',
+                ],
+            ],
+        ]);
+
+        $payment->refresh();
+        $this->assertTrue(BigDecimal::of($payment->unallocated_amount)->isEqualTo('0.00'));
+        $this->assertTrue(BigDecimal::of('150.00')->isEqualTo($item->calculateOutstanding()));
+    }
+
+    public function test_customer_statement_includes_opening_trade_item_for_opening_only_customer(): void
+    {
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '1500.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-statement-cust',
+        );
+
+        $query = app(CustomerStatementQuery::class);
+        $statement = $query->execute($this->customer, '2026-01-01', '2026-12-31');
+
+        $this->assertNotEmpty($statement['currencies']);
+        $ilsData = $statement['currencies']['ILS'] ?? null;
+        $this->assertNotNull($ilsData);
+
+        // Find the opening trade item in entries
+        $openingLine = collect($ilsData['entries'])->firstWhere('type', 'opening_balance');
+        $this->assertNotNull($openingLine);
+        $this->assertTrue(BigDecimal::of('1500.00')->isEqualTo($openingLine['debit']));
+        $this->assertTrue(BigDecimal::of('1500.00')->isEqualTo($ilsData['closing_balance']));
+    }
+
+    public function test_vendor_statement_includes_opening_trade_item_for_opening_only_vendor(): void
+    {
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_VENDOR,
+            partyId: $this->testVendor->id,
+            openingDate: '2026-01-01',
+            amount: '900.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-statement-vend',
+        );
+
+        $query = app(VendorStatementQuery::class);
+        $statement = $query->execute($this->testVendor, '2026-01-01', '2026-12-31');
+
+        $this->assertNotEmpty($statement['currencies']);
+        $ilsData = $statement['currencies']['ILS'] ?? null;
+        $this->assertNotNull($ilsData);
+
+        $openingLine = collect($ilsData['entries'])->firstWhere('type', 'opening_balance');
+        $this->assertNotNull($openingLine);
+        $this->assertTrue(BigDecimal::of('900.00')->isEqualTo($openingLine['credit']));
+        $this->assertTrue(BigDecimal::of('900.00')->isEqualTo($ilsData['closing_balance']));
+    }
+
+    public function test_trade_open_positions_maps_null_due_date_to_unspecified_bucket(): void
+    {
+        $openingAction = app(PostOpeningTradeItemAction::class);
+        $item = $openingAction->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '350.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'idem-unspecified-bucket',
+            dueDate: null,
+        );
+
+        $reportQuery = app(CustomerReceivablesAgingReportQuery::class);
+        $result = $reportQuery->execute($this->company, [
+            'period' => ['start_date' => '2026-01-01', 'end_date' => '2026-01-15'],
+        ], $this->owner);
+
+        $this->assertNotEmpty($result->rows);
+        $customerRow = collect($result->rows)->firstWhere('customer_id', $this->customer->id);
+        $this->assertNotNull($customerRow);
+        $this->assertTrue(BigDecimal::of($customerRow['unspecified'])->isEqualTo(350));
+        $this->assertTrue(BigDecimal::of($customerRow['total_outstanding'])->isEqualTo(350));
+    }
+}

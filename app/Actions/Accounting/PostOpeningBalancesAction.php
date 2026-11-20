@@ -12,12 +12,14 @@ use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\LedgerAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\User;
 use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class PostOpeningBalancesAction
@@ -138,6 +140,33 @@ class PostOpeningBalancesAction
             }
             if ($account->account_type !== LedgerAccount::TYPE_EQUITY) {
                 throw new InvalidArgumentException("Account [{$accId}] has account type [{$account->account_type}], expected [equity].");
+            }
+        }
+
+        // Prevent future duplicate GL opening AR/AP when new workflow enabled, while preserving generic posted history/retries
+        $effectiveIdempotencyKey = $idempotencyKey ?? "opening-balance-{$company->id}-{$date->format('Y-m-d')}";
+        $isExistingBatchReplay = DB::table('posting_batches')
+            ->where('company_id', $company->id)
+            ->where('idempotency_key', $effectiveIdempotencyKey)
+            ->exists();
+
+        if (! $isExistingBatchReplay) {
+            foreach ($assetAccountIds as $accId) {
+                $account = $accounts->get($accId);
+                if ($account !== null && $account->system_key === 'accounts_receivable') {
+                    if (OpeningTradeItem::where('company_id', $company->id)->where('side', OpeningTradeItem::SIDE_CUSTOMER)->exists()) {
+                        throw new InvalidArgumentException("Cannot post generic opening balance to accounts_receivable when customer opening trade items exist for company [{$company->id}]. Use Opening Trade Items.");
+                    }
+                }
+            }
+
+            foreach ($liabilityAccountIds as $accId) {
+                $account = $accounts->get($accId);
+                if ($account !== null && $account->system_key === 'accounts_payable') {
+                    if (OpeningTradeItem::where('company_id', $company->id)->where('side', OpeningTradeItem::SIDE_VENDOR)->exists()) {
+                        throw new InvalidArgumentException("Cannot post generic opening balance to accounts_payable when vendor opening trade items exist for company [{$company->id}]. Use Opening Trade Items.");
+                    }
+                }
             }
         }
 

@@ -6,6 +6,7 @@ namespace App\Application\Reporting\Support;
 
 use App\Application\Reporting\DTO\ReportFilters;
 use App\Models\Company;
+use App\Models\OpeningTradeItem;
 use App\Models\Purchase;
 use App\Models\SalesInvoice;
 use App\Services\Money\ReceivablePositionAsOf;
@@ -62,22 +63,15 @@ final class TradeOpenPositions
                 default => BigDecimal::of($b['outstanding_currency'])->compareTo(BigDecimal::of($a['outstanding_currency'])),
             };
 
-            return $primary !== 0 ? $primary : ($a[$vendor ? 'purchase_id' : 'invoice_id'] <=> $b[$vendor ? 'purchase_id' : 'invoice_id']);
+            return $primary !== 0 ? $primary : (($a[$vendor ? 'purchase_id' : 'invoice_id'] ?? $a['opening_trade_item_id'] ?? 0) <=> ($b[$vendor ? 'purchase_id' : 'invoice_id'] ?? $b['opening_trade_item_id'] ?? 0));
         });
         $totals = [];
-        $group = null;
-        $groupKey = null;
-        /** @param array<string,mixed>|null $row */
-        $emit = static function (?array $row) use ($pager): void {
-            if ($row !== null) {
-                $pager->add($row);
-            }
-        };
-        $distinctPartyCount = 0;
-        $lastPartyIdWithOpenBalance = null;
-        // Group order permits an aging accumulator for just one party/currency at a time.
+        $agingGroups = [];
+        $partiesWithBalance = [];
+
+        // 1. Process standard trade documents (Invoices or Purchases)
         $query->orderBy($party.'_id')->orderBy('currency_code')->orderBy('id')->chunk(200,
-            function (Collection $documents) use ($vendor, $aging, $party, $dateField, $cutoff, $asOf, $company, $pager, &$totals, &$group, &$groupKey, $emit, &$distinctPartyCount, &$lastPartyIdWithOpenBalance): void {
+            function (Collection $documents) use ($vendor, $aging, $party, $dateField, $cutoff, $asOf, $company, $pager, &$totals, &$agingGroups, &$partiesWithBalance): void {
                 $positions = $vendor ? app(PurchasePayableAsOf::class)->forHistory($documents, $asOf) : app(ReceivablePositionAsOf::class)->forInvoices($documents, $cutoff);
                 foreach ($documents as $document) {
                     $value = $positions[(int) $document->id] ?? BigDecimal::zero();
@@ -85,10 +79,7 @@ final class TradeOpenPositions
                         continue;
                     }
                     $partyIdVal = (int) $document->getAttribute($party.'_id');
-                    if ($partyIdVal !== $lastPartyIdWithOpenBalance) {
-                        $distinctPartyCount++;
-                        $lastPartyIdWithOpenBalance = $partyIdVal;
-                    }
+                    $partiesWithBalance[$partyIdVal] = true;
                     $currency = (string) $document->currency_code;
                     $due = $document->due_date ? Carbon::parse($document->due_date, (string) $company->timezone)->toDateString() : null;
                     $days = $due === null ? 0 : max(0, (int) Carbon::parse($due, (string) $company->timezone)->diffInDays($asOf, false));
@@ -100,6 +91,7 @@ final class TradeOpenPositions
                         $totals[$currency] = ($totals[$currency] ?? BigDecimal::zero())->plus($value);
                         $pager->add($identity + [
                             ($vendor ? 'purchase_id' : 'invoice_id') => (int) $document->id,
+                            'opening_trade_item_id' => null,
                             ($vendor ? 'purchase_number' : 'invoice_number') => (string) $document->getAttribute($vendor ? 'purchase_number' : 'invoice_number'),
                             $dateField => Carbon::parse($document->getAttribute($dateField))->toDateString(),
                             'due_date' => $due, 'days_overdue' => $days, 'grand_total_currency' => (string) BigDecimal::of($document->grand_total_currency)->toScale(6),
@@ -109,26 +101,103 @@ final class TradeOpenPositions
                     }
                     $key = $identity[$party.'_id'].'/'.$currency;
                     $totalKey = $vendor ? 'gross_open' : 'total_outstanding';
-                    if ($key !== $groupKey) {
-                        $emit($group);
-                        $groupKey = $key;
-                        $group = $identity + array_fill_keys(['unspecified', 'current', 'days_1_30', 'days_31_60', 'days_61_90', 'days_90_plus', $totalKey], '0.000000');
+                    if (! isset($agingGroups[$key])) {
+                        $agingGroups[$key] = $identity + array_fill_keys(['unspecified', 'current', 'days_1_30', 'days_31_60', 'days_61_90', 'days_90_plus', $totalKey], '0.000000');
                     }
                     $bucket = $due === null ? 'unspecified' : ($due >= $cutoff ? 'current' : ($days <= 30 ? 'days_1_30' : ($days <= 60 ? 'days_31_60' : ($days <= 90 ? 'days_61_90' : 'days_90_plus'))));
                     // Document identity remains a persisted snapshot. Latest date/id wins within each group.
                     $stamp = Carbon::parse($document->getAttribute($dateField))->toDateString().'/'.str_pad((string) $document->id, 20, '0', STR_PAD_LEFT);
-                    if (! isset($group['_identity_stamp']) || $stamp > $group['_identity_stamp']) {
-                        $group[$party.'_name_ar'] = $identity[$party.'_name_ar'];
-                        $group[$party.'_name_en'] = $identity[$party.'_name_en'];
-                        $group['_identity_stamp'] = $stamp;
+                    if (! isset($agingGroups[$key]['_identity_stamp']) || $stamp > $agingGroups[$key]['_identity_stamp']) {
+                        $agingGroups[$key][$party.'_name_ar'] = $identity[$party.'_name_ar'];
+                        $agingGroups[$key][$party.'_name_en'] = $identity[$party.'_name_en'];
+                        $agingGroups[$key]['_identity_stamp'] = $stamp;
                     }
                     foreach ([$bucket, $totalKey] as $field) {
-                        $group[$field] = (string) BigDecimal::of($group[$field])->plus($value)->toScale(6);
+                        $agingGroups[$key][$field] = (string) BigDecimal::of($agingGroups[$key][$field])->plus($value)->toScale(6);
                         $totals[$currency][$field] = ($totals[$currency][$field] ?? BigDecimal::zero())->plus($value);
                     }
                 }
             });
-        $emit($group);
+
+        // 2. Process OpeningTradeItems
+        $side = $vendor ? OpeningTradeItem::SIDE_VENDOR : OpeningTradeItem::SIDE_CUSTOMER;
+        $openingQuery = OpeningTradeItem::query()
+            ->where('company_id', $company->id)
+            ->where('side', $side)
+            ->where('opening_date', '<=', $cutoff)
+            ->where(fn ($q) => $q->whereNull('reversal_posting_batch_id')
+                ->orWhereHas('reversalPostingBatch', fn ($b) => $b->where('posting_date', '>', $cutoff)));
+
+        if ($partyId !== null) {
+            $openingQuery->where($party.'_id', $partyId);
+        }
+        if ($filters->currencyCode !== null) {
+            $openingQuery->where('currency_code', $filters->currencyCode);
+        }
+        if ($overdue) {
+            $openingQuery->whereNotNull('due_date')->where('due_date', '<', $cutoff);
+        }
+
+        $openingItems = $openingQuery->orderBy($party.'_id')->orderBy('currency_code')->orderBy('id')->get();
+        foreach ($openingItems as $item) {
+            $value = $item->calculateOutstanding($cutoff);
+            if (! $value->isPositive()) {
+                continue;
+            }
+            $partyIdVal = (int) $item->getAttribute($party.'_id');
+            $partiesWithBalance[$partyIdVal] = true;
+            $currency = (string) $item->currency_code;
+            $due = $item->due_date ? Carbon::parse($item->due_date, (string) $company->timezone)->toDateString() : null;
+            $days = $due === null ? 0 : max(0, (int) Carbon::parse($due, (string) $company->timezone)->diffInDays($asOf, false));
+            $snapshot = $item->party_snapshot ?? [];
+            $identity = [
+                $party.'_id' => $partyIdVal,
+                $party.'_name_ar' => (string) ($snapshot['name_ar'] ?? $snapshot['name_en'] ?? ''),
+                $party.'_name_en' => (string) ($snapshot['name_en'] ?? $snapshot['name_ar'] ?? ''),
+                'currency_code' => $currency,
+            ];
+
+            if (! $aging) {
+                $totals[$currency] = ($totals[$currency] ?? BigDecimal::zero())->plus($value);
+                $pager->add($identity + [
+                    ($vendor ? 'purchase_id' : 'invoice_id') => null,
+                    'opening_trade_item_id' => (int) $item->id,
+                    ($vendor ? 'purchase_number' : 'invoice_number') => $item->reference_number ?: ('OPEN-'.$item->public_id),
+                    $dateField => Carbon::parse($item->opening_date)->toDateString(),
+                    'due_date' => $due,
+                    'days_overdue' => $days,
+                    'grand_total_currency' => (string) BigDecimal::of($item->amount)->toScale(6),
+                    'outstanding_currency' => (string) $value->toScale(6),
+                ]);
+
+                continue;
+            }
+
+            $key = $identity[$party.'_id'].'/'.$currency;
+            $totalKey = $vendor ? 'gross_open' : 'total_outstanding';
+            if (! isset($agingGroups[$key])) {
+                $agingGroups[$key] = $identity + array_fill_keys(['unspecified', 'current', 'days_1_30', 'days_31_60', 'days_61_90', 'days_90_plus', $totalKey], '0.000000');
+            }
+            $bucket = $due === null ? 'unspecified' : ($due >= $cutoff ? 'current' : ($days <= 30 ? 'days_1_30' : ($days <= 60 ? 'days_31_60' : ($days <= 90 ? 'days_61_90' : 'days_90_plus'))));
+            $stamp = Carbon::parse($item->opening_date)->toDateString().'/'.str_pad((string) $item->id, 20, '0', STR_PAD_LEFT);
+            if (! isset($agingGroups[$key]['_identity_stamp']) || $stamp > $agingGroups[$key]['_identity_stamp']) {
+                $agingGroups[$key][$party.'_name_ar'] = $identity[$party.'_name_ar'];
+                $agingGroups[$key][$party.'_name_en'] = $identity[$party.'_name_en'];
+                $agingGroups[$key]['_identity_stamp'] = $stamp;
+            }
+            foreach ([$bucket, $totalKey] as $field) {
+                $agingGroups[$key][$field] = (string) BigDecimal::of($agingGroups[$key][$field])->plus($value)->toScale(6);
+                $totals[$currency][$field] = ($totals[$currency][$field] ?? BigDecimal::zero())->plus($value);
+            }
+        }
+
+        if ($aging) {
+            foreach ($agingGroups as $grp) {
+                $pager->add($grp);
+            }
+        }
+
+        $distinctPartyCount = count($partiesWithBalance);
         $formatted = [];
         foreach ($totals as $currency => $values) {
             if (! $aging) {

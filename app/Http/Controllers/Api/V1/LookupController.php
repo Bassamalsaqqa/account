@@ -9,6 +9,7 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\TaxRate;
 use App\Models\User;
+use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Security\CommandSessionGuard;
@@ -79,6 +80,67 @@ final class LookupController extends ApiController
             Log::error(get_class($e), ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during customer lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
+        }
+
+        return response()->json(['data' => $data], 200, $this->securityHeaders($traceId));
+    }
+
+    /**
+     * GET /api/v1/companies/{companyId}/lookups/vendors
+     * Scoped, bounded lookup of active vendors inside a single Company-first transaction.
+     */
+    public function vendors(Request $request, string $companyId): JsonResponse
+    {
+        $traceId = $this->resolveTraceId($request);
+        $context = app(CompanyContext::class);
+        $company = $context->company();
+        /** @var User $actor */
+        $actor = auth()->user();
+
+        $limit = $this->resolveLimit($request);
+        $search = $this->resolveSearch($request);
+
+        try {
+            $data = DB::transaction(function () use ($company, $actor, $limit, $search) {
+                app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $actor, 'purchasing.purchase.view');
+                app(CommandSessionGuard::class)->authorize($actor);
+
+                $query = Vendor::where('company_id', $company->id)
+                    ->where('status', 'active');
+
+                if ($search !== null) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('name_ar', 'like', "%{$search}%")
+                            ->orWhere('name_en', 'like', "%{$search}%")
+                            ->orWhere('code', 'like', "%{$search}%")
+                            ->orWhere('tax_number', 'like', "%{$search}%")
+                            ->orWhere('phone', 'like', "%{$search}%");
+                    });
+                }
+
+                $records = $query->orderBy('name_ar')
+                    ->limit($limit)
+                    ->get(['id', 'public_id', 'code', 'name_ar', 'name_en', 'tax_number', 'phone', 'default_currency_code']);
+
+                return $records->map(fn ($v) => [
+                    'id' => (int) $v->id,
+                    'public_id' => $v->public_id,
+                    'code' => $v->code,
+                    'name_ar' => $v->name_ar,
+                    'name_en' => $v->name_en,
+                    'tax_number' => $v->tax_number,
+                    'phone' => $v->phone,
+                    'default_currency_code' => $v->default_currency_code,
+                ])->values()->all();
+            });
+        } catch (AuthorizationException) {
+            return $this->problem('Forbidden', 403, 'Actor does not possess permission to view vendors.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.5.3');
+        } catch (AuthenticationException) {
+            return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
+        } catch (Throwable $e) {
+            Log::error(get_class($e), ['trace_id' => $traceId]);
+
+            return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during vendor lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
 
         return response()->json(['data' => $data], 200, $this->securityHeaders($traceId));

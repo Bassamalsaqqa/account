@@ -11,6 +11,7 @@ use App\Models\CompanyUser;
 use App\Policies\CompanyPolicy;
 use App\Policies\CompanyUserPolicy;
 use App\Policies\RolePolicy;
+use App\Services\Accounting\OpeningTradeEventScope;
 use App\Services\Audit\AuditService;
 use App\Services\Inventory\StockEventScope;
 use App\Services\Money\CurrencyMinorUnitsResolver;
@@ -60,6 +61,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(StockEventScope::class, fn () => new StockEventScope);
         $this->app->scoped(MoneyEventScope::class, fn () => new MoneyEventScope);
         $this->app->scoped(Phase7EventScope::class, fn () => new Phase7EventScope);
+        $this->app->scoped(OpeningTradeEventScope::class, fn () => new OpeningTradeEventScope);
         $this->app->scoped(CurrencyMinorUnitsResolver::class);
         $this->app->bind(
             FinancialExecutionAdapterInterface::class,
