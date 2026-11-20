@@ -22,9 +22,11 @@ use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
+use App\Services\Accounting\GenericOpeningPostingScope;
 use App\Services\Accounting\OpeningTradeEventScope;
 use App\Services\Inventory\StockEventScope;
 use App\Services\Money\MoneyAccountLedger;
@@ -57,6 +59,9 @@ class AccountingPostingService
         }
         if ($command->sourceType === 'opening_trade_item') {
             app(OpeningTradeEventScope::class)->assertPosting($command);
+        }
+        if ($command->sourceType === 'opening_balance') {
+            app(GenericOpeningPostingScope::class)->assertPosting($command);
         }
         if (in_array($command->sourceType, ['opening_stock', 'stock_adjustment', 'expiry_disposal', 'sales_invoice', 'sales_return'], true)) {
             app(StockEventScope::class)->assertPosting($command);
@@ -130,6 +135,29 @@ class AccountingPostingService
                 }
 
                 return $existing;
+            }
+
+            // Guard against generic opening balance overlapping with existing party opening trade items
+            if ($command->sourceType === 'opening_balance') {
+                $lineAccountIds = array_unique(array_map(fn ($l) => $l->ledgerAccountId, $command->lines));
+                $accounts = LedgerAccount::where('company_id', $lockedCompany->id)
+                    ->whereIn('id', $lineAccountIds)
+                    ->get()
+                    ->keyBy('id');
+
+                foreach ($command->lines as $line) {
+                    $acc = $accounts->get($line->ledgerAccountId);
+                    if ($acc !== null && $acc->system_key === 'accounts_receivable') {
+                        if (OpeningTradeItem::where('company_id', $lockedCompany->id)->where('side', OpeningTradeItem::SIDE_CUSTOMER)->exists()) {
+                            throw new InvalidArgumentException("Cannot post generic opening balance to accounts_receivable when customer opening trade items exist for company [{$lockedCompany->id}]. Use Opening Trade Items.");
+                        }
+                    }
+                    if ($acc !== null && $acc->system_key === 'accounts_payable') {
+                        if (OpeningTradeItem::where('company_id', $lockedCompany->id)->where('side', OpeningTradeItem::SIDE_VENDOR)->exists()) {
+                            throw new InvalidArgumentException("Cannot post generic opening balance to accounts_payable when vendor opening trade items exist for company [{$lockedCompany->id}]. Use Opening Trade Items.");
+                        }
+                    }
+                }
             }
 
             // 4. For NEW postings: validate mutable configuration under lock

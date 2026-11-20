@@ -132,7 +132,7 @@ final class CheckHistory
             if ((int) $payment->allocation_version === 3) {
                 $initialIntent = PaymentAllocationIntent::normalize($initialIntent, $documentKey);
             }
-            if ($initialIntent !== PaymentAllocationIntent::normalize($payload['allocations'] ?? [], $documentKey)
+            if ($initialIntent !== PaymentAllocationIntent::forPayment($payload['allocations'] ?? [], $documentKey, (int) $company->id, $check->currency_code)
                 || $payment->idempotency_key !== 'check-payment:'.$check->public_id
                 || $payment->reference_number !== $check->check_number || $payment->notes !== $check->notes) {
                 throw new InvalidArgumentException('Check request does not own its linked Payment initial intent.');

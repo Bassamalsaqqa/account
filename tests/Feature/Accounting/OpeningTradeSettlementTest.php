@@ -27,7 +27,9 @@ use App\Models\Vendor;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentAllocation;
 use App\Services\Money\CustomerApplicationHistory;
+use App\Services\Money\PaymentAllocationIntent;
 use Brick\Math\BigDecimal;
+use InvalidArgumentException;
 use Tests\Feature\Phase8\TradeTestCase;
 
 final class OpeningTradeSettlementTest extends TradeTestCase
@@ -559,6 +561,248 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             ]);
             $this->assertTrue($item->calculateOutstanding()->isEqualTo('100'));
             $this->assertTrue($item->calculateOutstanding('2026-01-03')->isZero());
+        }
+    }
+
+    public function test_zero_fx_credit_applications_dated_as_of_and_reversals_on_both_sides(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            $customerSide = $side === 'customer';
+            $party = $customerSide ? $this->customer : $this->testVendor;
+            $post = app($customerSide ? PostCustomerPaymentAction::class : PostVendorPaymentAction::class);
+            $apply = app($customerSide ? ApplyCustomerPaymentCreditAction::class : ApplyVendorPaymentCreditAction::class);
+            $stmtQuery = app($customerSide ? CustomerStatementQuery::class : VendorStatementQuery::class);
+
+            // 1. Post Opening Trade Item on 2026-01-01
+            $item = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $party->id, openingDate: '2026-01-01',
+                amount: '100.00', currencyCode: 'ILS', exchangeRate: '1.0000000000',
+                actor: $this->owner, idempotencyKey: 'zerofx-open-'.$side,
+            );
+
+            // 2. Post Unapplied Payment on 2026-01-05 (100 ILS cash)
+            $payment = $post->execute($this->company, $this->owner, [
+                $customerSide ? 'customer_id' : 'vendor_id' => $party->id,
+                'money_account_id' => $this->ilsCashAccount->id,
+                'payment_date' => '2026-01-05',
+                'payment_method' => CustomerPayment::METHOD_CASH,
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1.0000000000',
+                'amount' => '100.00',
+                'idempotency_key' => 'zerofx-pmt-'.$side,
+                'allocations' => [],
+            ]);
+
+            // 3. Apply Credit to Opening Item on 2026-01-10 with zero FX (same base currency, no FX journal batch)
+            $event = $apply->execute($payment->fresh(), $this->owner, [
+                'application_date' => '2026-01-10',
+                'idempotency_key' => 'zerofx-apply-'.$side,
+                'allocations' => [
+                    [
+                        'opening_trade_item_id' => $item->id,
+                        'allocated_amount' => '100.00',
+                    ],
+                ],
+            ]);
+
+            // Zero FX means e.posting_batch_id IS NULL
+            $this->assertNull($event->posting_batch_id);
+
+            // As-of 2026-01-08: Application has NOT happened yet -> outstanding MUST be 100.00!
+            $this->assertTrue(BigDecimal::of('100.00')->isEqualTo($item->calculateOutstanding('2026-01-08')));
+
+            // As-of 2026-01-10: Application has taken effect -> outstanding MUST be 0!
+            $this->assertTrue($item->calculateOutstanding('2026-01-10')->isZero());
+
+            // Current outstanding (null cutoff) -> MUST be 0!
+            $this->assertTrue($item->calculateOutstanding()->isZero());
+
+            // Statement aging before and after application date
+            $stmtBefore = $stmtQuery->execute($party, '2026-01-01', '2026-01-08')['currencies']['ILS'];
+            $this->assertTrue(BigDecimal::of($stmtBefore['closing_balance'])->isEqualTo('0.00'));
+            $this->assertTrue(BigDecimal::of($stmtBefore['aging']['unspecified'])->isEqualTo('100.00'));
+
+            $stmtAfter = $stmtQuery->execute($party, '2026-01-01', '2026-01-10')['currencies']['ILS'];
+            $this->assertTrue(BigDecimal::of($stmtAfter['aging']['unspecified'])->isZero());
+
+            // 4. Reverse the payment on 2026-02-01
+            app($customerSide ? ReverseCustomerPaymentAction::class : ReverseVendorPaymentAction::class)
+                ->execute($payment->fresh(), $this->owner, 'Reversing zerofx payment', '2026-02-01');
+
+            // As-of 2026-01-15 (before reversal): outstanding is still 0
+            $this->assertTrue($item->calculateOutstanding('2026-01-15')->isZero());
+
+            // As-of 2026-02-02 (after reversal) and current: outstanding is restored to 100
+            $this->assertTrue(BigDecimal::of('100.00')->isEqualTo($item->calculateOutstanding('2026-02-02')));
+            $this->assertTrue(BigDecimal::of('100.00')->isEqualTo($item->calculateOutstanding()));
+        }
+    }
+
+    public function test_typed_id_42_collision_on_both_sides(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            $customerSide = $side === 'customer';
+            $party = $customerSide ? $this->customer : $this->testVendor;
+            $post = app($customerSide ? PostCustomerPaymentAction::class : PostVendorPaymentAction::class);
+            $account = $this->ilsCashAccount;
+
+            if ($customerSide) {
+                $doc = $this->createAndPostSalesInvoice([
+                    'customer' => $party,
+                    'lines' => [['product_id' => null, 'item_description' => 'Service', 'quantity' => '1', 'unit_price' => '200.00']],
+                ]);
+            } else {
+                $doc = $this->createAndPostPurchase([
+                    'vendor_id' => $party->id,
+                    'lines' => [['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '200.00']],
+                ]);
+            }
+
+            $opening = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $party->id, openingDate: '2026-01-01',
+                amount: '300.00', currencyCode: 'ILS', exchangeRate: '1.0000000000',
+                actor: $this->owner, idempotencyKey: 'typed-open-'.$side,
+            );
+
+            // Test composite key normalization with simulated collision ID 42
+            $testIntent = [
+                ['kind' => $customerSide ? 'invoice' : 'purchase', 'id' => 42, 'allocated_amount' => '50.00'],
+                ['kind' => 'opening_trade_item', 'id' => 42, 'allocated_amount' => '70.00'],
+            ];
+            $normalized = PaymentAllocationIntent::normalize($testIntent, $customerSide ? 'sales_invoice_id' : 'purchase_id');
+            $this->assertCount(2, $normalized);
+
+            // Post payment allocating to BOTH real document and opening item simultaneously
+            $payment = $post->execute($this->company, $this->owner, [
+                $customerSide ? 'customer_id' : 'vendor_id' => $party->id,
+                'money_account_id' => $account->id,
+                'payment_date' => '2026-10-10',
+                'payment_method' => CustomerPayment::METHOD_CASH,
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1.0000000000',
+                'amount' => '150.00',
+                'idempotency_key' => 'typed-alloc-pmt-'.$side,
+                'allocations' => [
+                    [
+                        'kind' => $customerSide ? 'invoice' : 'purchase',
+                        'id' => $doc->id,
+                        'allocated_amount' => '50.00',
+                    ],
+                    [
+                        'kind' => 'opening_trade_item',
+                        'id' => $opening->id,
+                        'allocated_amount' => '100.00',
+                    ],
+                ],
+            ]);
+
+            $allocs = $payment->allocations()->get();
+            $this->assertCount(2, $allocs);
+            $docAlloc = $allocs->firstWhere($customerSide ? 'sales_invoice_id' : 'purchase_id', $doc->id);
+            $openingAlloc = $allocs->firstWhere('opening_trade_item_id', $opening->id);
+
+            $this->assertNotNull($docAlloc);
+            $this->assertNotNull($openingAlloc);
+            $this->assertNull($docAlloc->opening_trade_item_id);
+            $this->assertNull($openingAlloc->{$customerSide ? 'sales_invoice_id' : 'purchase_id'});
+            $this->assertTrue(BigDecimal::of($docAlloc->allocated_amount)->isEqualTo('50.00'));
+            $this->assertTrue(BigDecimal::of($openingAlloc->allocated_amount)->isEqualTo('100.00'));
+        }
+    }
+
+    public function test_cross_currency_omitted_payment_amount_rejected_on_both_sides(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            $customerSide = $side === 'customer';
+            $party = $customerSide ? $this->customer : $this->testVendor;
+            $post = app($customerSide ? PostCustomerPaymentAction::class : PostVendorPaymentAction::class);
+
+            $opening = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $party->id, openingDate: '2026-01-01',
+                amount: '100.00', currencyCode: 'USD', exchangeRate: '3.5000000000',
+                actor: $this->owner, idempotencyKey: 'cross-reject-open-'.$side,
+            );
+
+            try {
+                $post->execute($this->company, $this->owner, [
+                    $customerSide ? 'customer_id' : 'vendor_id' => $party->id,
+                    'money_account_id' => $this->ilsCashAccount->id,
+                    'payment_date' => '2026-01-05',
+                    'payment_method' => CustomerPayment::METHOD_CASH,
+                    'currency_code' => 'ILS',
+                    'exchange_rate' => '1.0000000000',
+                    'amount' => '350.00',
+                    'idempotency_key' => 'cross-reject-pmt-'.$side,
+                    'allocations' => [
+                        [
+                            'kind' => 'opening_trade_item',
+                            'opening_trade_item_id' => $opening->id,
+                            'allocated_amount' => '100.00',
+                        ],
+                    ],
+                ]);
+                $this->fail('Cross-currency allocation with omitted payment amount must be rejected.');
+            } catch (InvalidArgumentException $e) {
+                $this->assertStringContainsString('Cross-currency allocation requires an explicit payment-currency amount.', $e->getMessage());
+            }
+
+            $successPayment = $post->execute($this->company, $this->owner, [
+                $customerSide ? 'customer_id' : 'vendor_id' => $party->id,
+                'money_account_id' => $this->ilsCashAccount->id,
+                'payment_date' => '2026-01-05',
+                'payment_method' => CustomerPayment::METHOD_CASH,
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1.0000000000',
+                'amount' => '350.00',
+                'idempotency_key' => 'cross-success-pmt-'.$side,
+                'allocations' => [
+                    [
+                        'kind' => 'opening_trade_item',
+                        'opening_trade_item_id' => $opening->id,
+                        'allocated_amount' => '100.00',
+                        'payment_currency_amount' => '350.00',
+                    ],
+                ],
+            ]);
+            $this->assertCount(1, $successPayment->allocations);
+            $this->assertTrue(BigDecimal::of($successPayment->allocations->first()->payment_currency_amount)->isEqualTo('350.00'));
+        }
+    }
+
+    public function test_same_currency_omitted_payment_amount_accepted_on_both_sides(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            $customerSide = $side === 'customer';
+            $party = $customerSide ? $this->customer : $this->testVendor;
+            $post = app($customerSide ? PostCustomerPaymentAction::class : PostVendorPaymentAction::class);
+
+            $opening = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $party->id, openingDate: '2026-01-01',
+                amount: '150.00', currencyCode: 'ILS', exchangeRate: '1.0000000000',
+                actor: $this->owner, idempotencyKey: 'same-curr-open-'.$side,
+            );
+
+            $payment = $post->execute($this->company, $this->owner, [
+                $customerSide ? 'customer_id' : 'vendor_id' => $party->id,
+                'money_account_id' => $this->ilsCashAccount->id,
+                'payment_date' => '2026-01-05',
+                'payment_method' => CustomerPayment::METHOD_CASH,
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1.0000000000',
+                'amount' => '150.00',
+                'idempotency_key' => 'same-curr-pmt-'.$side,
+                'allocations' => [
+                    [
+                        'kind' => 'opening_trade_item',
+                        'opening_trade_item_id' => $opening->id,
+                        'allocated_amount' => '150.00',
+                    ],
+                ],
+            ]);
+            $this->assertCount(1, $payment->allocations);
+            $alloc = $payment->allocations->first();
+            $this->assertTrue(BigDecimal::of($alloc->allocated_amount)->isEqualTo('150.00'));
+            $this->assertTrue(BigDecimal::of($alloc->payment_currency_amount)->isEqualTo('150.00'));
         }
     }
 }

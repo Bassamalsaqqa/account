@@ -10,6 +10,7 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Exceptions\IdempotencyConflictException;
 use App\Exceptions\NoActiveCompanyException;
+use App\Models\Check;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyLanguage;
@@ -115,7 +116,10 @@ class PostCustomerPaymentAction
         }
 
         $allocationVersion = PaymentAllocationIntent::version($data['allocations'] ?? []);
-        $allocationsForHash = PaymentAllocationIntent::normalize($data['allocations'] ?? [], 'sales_invoice_id');
+        $paymentCurrency = $method === 'check'
+            ? Check::where('company_id', $company->id)->findOrFail($data['check_id'])->currency_code
+            : MoneyAccount::withTrashed()->where('company_id', $company->id)->findOrFail($data['money_account_id'])->currency_code;
+        $allocationsForHash = PaymentAllocationIntent::forPayment($data['allocations'] ?? [], 'sales_invoice_id', (int) $company->id, $paymentCurrency);
         $data['allocations'] = $allocationsForHash;
 
         $canonicalData = [

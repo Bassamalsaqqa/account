@@ -8,9 +8,14 @@ use App\Actions\Accounting\PostOpeningBalancesAction;
 use App\Actions\Accounting\PostOpeningTradeItemAction;
 use App\Actions\Accounting\ReverseOpeningTradeItemAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
+use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Exceptions\ActiveSettlementBlockedException;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Accounting\Exceptions\LegacyGlOpeningOverlapException;
+use App\Domain\Money\ValueObjects\ExchangeRate;
+use App\Domain\Money\ValueObjects\MoneyAmount;
+use App\Domain\Posting\DTO\PostingCommand;
+use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
 use App\Models\Company;
 use App\Models\Customer;
@@ -21,9 +26,11 @@ use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Services\Accounting\GenericOpeningPostingScope;
 use App\Services\Accounting\OpeningTradeCutoverAuditService;
 use App\Services\Accounting\OpeningTradeEventScope;
 use App\Services\Accounting\OpeningTradePostingCapability;
+use App\Services\Posting\AccountingPostingService;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -576,6 +583,119 @@ final class OpeningTradeItemsTest extends TradeTestCase
             app(PostOpeningTradeItemAction::class),
             new OpeningTradePostingCapability($this->company->id, $this->owner->id, 'customer', $this->customer->id),
             fn () => $this->fail('Forged authority must never execute.'),
+        );
+    }
+
+    public function test_generic_opening_balance_requires_canonical_posting_scope(): void
+    {
+        $arAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'accounts_receivable')->firstOrFail();
+        $obeAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'opening_balance_equity')->firstOrFail();
+
+        $command = new PostingCommand(
+            company: $this->company,
+            postingDate: Carbon::parse('2026-01-01'),
+            sourceType: 'opening_balance',
+            sourceId: $this->company->id,
+            transactionCurrencyCode: 'ILS',
+            baseCurrencyCode: 'ILS',
+            exchangeRate: ExchangeRate::one(),
+            idempotencyKey: 'direct-ob-bypass',
+            postedBy: $this->owner,
+            description: 'Direct opening balance bypass',
+            lines: [
+                PostingLineCommand::debit(1, $arAccount->id, MoneyAmount::from('100.00')),
+                PostingLineCommand::credit(2, $obeAccount->id, MoneyAmount::from('100.00')),
+            ],
+        );
+
+        $this->expectException(ImmutableRecordException::class);
+        $this->expectExceptionMessage('Direct GL posting for opening_balance requires canonical PostOpeningBalancesAction authority.');
+        app(AccountingPostingService::class)->post($command);
+    }
+
+    public function test_generic_opening_balance_guarded_against_existing_customer_and_vendor_opening_items(): void
+    {
+        $arAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'accounts_receivable')->firstOrFail();
+        $apAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'accounts_payable')->firstOrFail();
+        $obeAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'opening_balance_equity')->firstOrFail();
+        $genericAction = app(PostOpeningBalancesAction::class);
+
+        // 1. Post customer opening item
+        app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company, side: 'customer', partyId: $this->customer->id,
+            openingDate: '2026-01-01', amount: '250.00', currencyCode: 'ILS',
+            actor: $this->owner, idempotencyKey: 'generic-guard-cust',
+        );
+
+        // Attempting generic opening balance touching AR must be rejected
+        try {
+            $genericAction->execute(
+                company: $this->company,
+                date: Carbon::parse('2026-01-01'),
+                assetBalances: [['account_id' => $arAccount->id, 'amount' => '1000.00']],
+                postedBy: $this->owner,
+                idempotencyKey: 'generic-ob-ar-attempt',
+            );
+            $this->fail('Generic opening on AR must be rejected when customer opening trade items exist.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Cannot post generic opening balance to accounts_receivable when customer opening trade items exist', $e->getMessage());
+        }
+
+        // 2. Post vendor opening item
+        app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company, side: 'vendor', partyId: $this->testVendor->id,
+            openingDate: '2026-01-01', amount: '350.00', currencyCode: 'ILS',
+            actor: $this->owner, idempotencyKey: 'generic-guard-vend',
+        );
+
+        // Attempting generic opening balance touching AP must be rejected
+        try {
+            $genericAction->execute(
+                company: $this->company,
+                date: Carbon::parse('2026-01-01'),
+                liabilityBalances: [['account_id' => $apAccount->id, 'amount' => '1000.00']],
+                postedBy: $this->owner,
+                idempotencyKey: 'generic-ob-ap-attempt',
+            );
+            $this->fail('Generic opening on AP must be rejected when vendor opening trade items exist.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('Cannot post generic opening balance to accounts_payable when vendor opening trade items exist', $e->getMessage());
+        }
+    }
+
+    public function test_forged_generic_opening_scope_cannot_be_activated_by_an_idle_action(): void
+    {
+        $scope = app(GenericOpeningPostingScope::class);
+        $this->expectException(ImmutableRecordException::class);
+        $scope->withPostingCapability(app(PostOpeningBalancesAction::class), (int) $this->company->id, fn () => null);
+    }
+
+    public function test_generic_opening_rejects_previously_committed_trade_opening(): void
+    {
+        $arAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'accounts_receivable')->firstOrFail();
+        $genericAction = app(PostOpeningBalancesAction::class);
+        $openingAction = app(PostOpeningTradeItemAction::class);
+
+        // Hold company lock in a transaction and post customer opening item
+        app(TenantWriteAccess::class)->transaction((int) $this->company->id, function () use ($openingAction) {
+            Company::where('id', $this->company->id)->lockForUpdate()->firstOrFail();
+
+            $openingAction->execute(
+                company: $this->company, side: 'customer', partyId: $this->customer->id,
+                openingDate: '2026-01-01', amount: '500.00', currencyCode: 'ILS',
+                actor: $this->owner, idempotencyKey: 'race-test-item',
+            );
+        });
+
+        // Now, generic opening balance rechecks under lock and throws
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Cannot post generic opening balance to accounts_receivable when customer opening trade items exist');
+        $genericAction->execute(
+            company: $this->company,
+            date: Carbon::parse('2026-01-01'),
+            assetBalances: [['account_id' => $arAccount->id, 'amount' => '700.00']],
+            postedBy: $this->owner,
+            idempotencyKey: 'race-test-generic',
         );
     }
 }

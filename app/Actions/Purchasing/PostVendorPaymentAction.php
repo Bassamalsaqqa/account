@@ -7,6 +7,7 @@ namespace App\Actions\Purchasing;
 use App\Application\Platform\TenantWriteAccess;
 use App\Exceptions\IdempotencyConflictException;
 use App\Exceptions\NoActiveCompanyException;
+use App\Models\Check;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyLanguage;
@@ -129,7 +130,10 @@ class PostVendorPaymentAction
 
         // Deduplicate and group allocations by purchase_id
         $allocationVersion = PaymentAllocationIntent::version($data['allocations'] ?? []);
-        $allocationsForHash = PaymentAllocationIntent::normalize($data['allocations'] ?? [], 'purchase_id');
+        $paymentCurrency = $method === 'check'
+            ? Check::where('company_id', $company->id)->findOrFail($data['check_id'])->currency_code
+            : MoneyAccount::withTrashed()->where('company_id', $company->id)->findOrFail($data['money_account_id'])->currency_code;
+        $allocationsForHash = PaymentAllocationIntent::forPayment($data['allocations'] ?? [], 'purchase_id', (int) $company->id, $paymentCurrency);
         $data['allocations'] = $allocationsForHash;
         $data['document_locale'] = isset($data['document_locale']) && trim((string) $data['document_locale']) !== ''
             ? $data['document_locale'] : null;

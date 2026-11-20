@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Money;
 
+use App\Models\OpeningTradeItem;
+use App\Models\Purchase;
+use App\Models\SalesInvoice;
 use App\Services\Sales\ReceiptRequestValues;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
@@ -95,22 +98,34 @@ final class PaymentAllocationIntent
 
             $compositeKey = "{$kind}:{$id}";
             $amount = BigDecimal::of(ReceiptRequestValues::decimal($input['allocated_amount'], 6));
-            $paid = array_key_exists('payment_currency_amount', $input)
+            $hasPaymentCurrencyAmount = array_key_exists('payment_currency_amount', $input);
+            $paid = $hasPaymentCurrencyAmount
                 ? BigDecimal::of(ReceiptRequestValues::decimal($input['payment_currency_amount'], 6))
-                : $amount;
+                : null;
 
             $previous = $grouped[$compositeKey] ?? [
                 'kind' => $kind,
                 'id' => $id,
                 'amount' => BigDecimal::zero(),
-                'paid' => BigDecimal::zero(),
+                'paid' => null,
+                'hasPaid' => false,
             ];
+
+            if (isset($grouped[$compositeKey]) && $previous['hasPaid'] !== $hasPaymentCurrencyAmount) {
+                throw new InvalidArgumentException('Cannot mix explicit and omitted payment-currency amounts for the same target.');
+            }
+
+            $newPaid = null;
+            if ($hasPaymentCurrencyAmount) {
+                $newPaid = $previous['paid'] !== null ? $previous['paid']->plus($paid) : $paid;
+            }
 
             $grouped[$compositeKey] = [
                 'kind' => $kind,
                 'id' => $id,
                 'amount' => $previous['amount']->plus($amount),
-                'paid' => $previous['paid']->plus($paid),
+                'paid' => $newPaid,
+                'hasPaid' => $hasPaymentCurrencyAmount,
             ];
         }
 
@@ -121,8 +136,11 @@ final class PaymentAllocationIntent
                 'kind' => $data['kind'],
                 'id' => $data['id'],
                 'allocated_amount' => (string) $data['amount']->toScale(6),
-                'payment_currency_amount' => (string) $data['paid']->toScale(6),
             ];
+
+            if ($data['hasPaid'] && $data['paid'] !== null) {
+                $row['payment_currency_amount'] = (string) $data['paid']->toScale(6);
+            }
 
             if ($data['kind'] === 'opening_trade_item') {
                 $row['opening_trade_item_id'] = $data['id'];
@@ -134,6 +152,37 @@ final class PaymentAllocationIntent
         }
 
         return $intent;
+    }
+
+    /**
+     * Resolve omitted typed amounts only after the target currency is known.
+     *
+     * @param  list<array<string, mixed>>  $inputs
+     * @return list<array<string, mixed>>
+     */
+    public static function forPayment(array $inputs, string $documentKey, int $companyId, string $paymentCurrency): array
+    {
+        $intent = self::normalize($inputs, $documentKey);
+        if (self::version($inputs) !== 3) {
+            return $intent;
+        }
+        foreach ($intent as &$row) {
+            if (array_key_exists('payment_currency_amount', $row)) {
+                continue;
+            }
+            $model = match ($row['kind']) {
+                'opening_trade_item' => OpeningTradeItem::class,
+                'invoice' => SalesInvoice::class,
+                'purchase' => Purchase::class,
+                default => throw new InvalidArgumentException('Unknown allocation target kind.'),
+            };
+            $target = $model::where('company_id', $companyId)->findOrFail($row['id']);
+            self::amounts($row, $target->currency_code, $paymentCurrency);
+            $row['payment_currency_amount'] = $row['allocated_amount'];
+        }
+        unset($row);
+
+        return self::normalize($intent, $documentKey);
     }
 
     /**

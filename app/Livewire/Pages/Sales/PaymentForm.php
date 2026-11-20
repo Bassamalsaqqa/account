@@ -263,8 +263,8 @@ class PaymentForm extends Component
         }
 
         $openingItems = OpeningTradeItem::where('company_id', $company->id)
-            ->where('party_type', 'customer')
-            ->where('party_id', $this->customer_id)
+            ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
+            ->where('customer_id', $this->customer_id)
             ->whereIn('currency_code', CompanyCurrency::where('company_id', $company->id)->where('enabled', true)->select('currency_code'))
             ->where('status', OpeningTradeItem::STATUS_POSTED)
             ->orderBy('opening_date')
@@ -277,9 +277,9 @@ class PaymentForm extends Component
                     'sales_invoice_id' => null,
                     'opening_trade_item_id' => $item->id,
                     'is_opening' => true,
-                    'invoice_number' => $item->reference_number ?: ('OPENING-'.$item->public_id),
+                    'invoice_number' => $item->original_reference ?: ('OPENING-'.$item->public_id),
                     'invoice_date' => $item->opening_date->toDateString(),
-                    'grand_total' => (string) $item->amount,
+                    'grand_total' => (string) $item->amount_currency,
                     'outstanding' => (string) $outstanding,
                     'allocated_amount' => '0.00',
                     'document_currency_code' => $item->currency_code,
@@ -355,8 +355,8 @@ class PaymentForm extends Component
         $alloc = $this->allocations[$index];
         if (! empty($alloc['is_opening'])) {
             $openingItem = OpeningTradeItem::where('company_id', $this->pageCompanyId)
-                ->where('party_type', 'customer')
-                ->where('party_id', $this->customer_id)
+                ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
+                ->where('customer_id', $this->customer_id)
                 ->where('status', OpeningTradeItem::STATUS_POSTED)
                 ->find($alloc['opening_trade_item_id']);
             if ($openingItem === null) {
@@ -457,8 +457,8 @@ class PaymentForm extends Component
             }
         }
         $openingItems = OpeningTradeItem::where('company_id', $this->pageCompanyId)
-            ->where('party_type', 'customer')
-            ->where('party_id', $this->customer_id)
+            ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
+            ->where('customer_id', $this->customer_id)
             ->where('currency_code', $this->currency_code)
             ->where('status', OpeningTradeItem::STATUS_POSTED)
             ->get();

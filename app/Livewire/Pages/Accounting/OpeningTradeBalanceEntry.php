@@ -97,8 +97,8 @@ class OpeningTradeBalanceEntry extends Component
     {
         if (PostOpeningTradeItemAction::hasLegacyOverlap($this->pageCompanyId, $this->side)) {
             $this->glOverlapMessage = $this->side === OpeningTradeItem::SIDE_CUSTOMER
-                ? 'تعذر قيد الرصيد (تداخل مع الأستاذ العام): يوجد رصيد افتتاحي مسجل للأستاذ العام للذمم المدينة بدون تحديد الزبائن. يرجى مراجعة قيود الأستاذ العام أولاً.'
-                : 'تعذر قيد الرصيد (تداخل مع الأستاذ العام): يوجد رصيد افتتاحي مسجل للأستاذ العام للذمم الدائنة بدون تحديد الموردين. يرجى مراجعة قيود الأستاذ العام أولاً.';
+                ? __('accounting.gl_overlap_customer')
+                : __('accounting.gl_overlap_vendor');
         } else {
             $this->glOverlapMessage = null;
         }
@@ -205,8 +205,8 @@ class OpeningTradeBalanceEntry extends Component
 
             $partyName = $this->getPartyName();
             $this->successMessage = $this->side === OpeningTradeItem::SIDE_CUSTOMER
-                ? "تم تأكيد وقيد الرصيد الافتتاحي للزبون [{$partyName}] بنجاح."
-                : "تم تأكيد وقيد الرصيد الافتتاحي للمورد [{$partyName}] بنجاح.";
+                ? __('accounting.success_customer', ['name' => $partyName])
+                : __('accounting.success_vendor', ['name' => $partyName]);
 
             $this->amount = '';
             $this->original_reference = null;
@@ -216,7 +216,9 @@ class OpeningTradeBalanceEntry extends Component
             $this->has_multiple_lines = false;
             $this->formIdempotencyKey = (string) Str::ulid();
         } catch (LegacyGlOpeningOverlapException $e) {
-            $this->glOverlapMessage = $e->getMessage();
+            $this->glOverlapMessage = $this->side === OpeningTradeItem::SIDE_CUSTOMER
+                ? __('accounting.gl_overlap_customer')
+                : __('accounting.gl_overlap_vendor');
         } catch (\Throwable $e) {
             $this->errorMessage = $e->getMessage();
         }
@@ -227,14 +229,21 @@ class OpeningTradeBalanceEntry extends Component
         if (! $this->party_id) {
             return '';
         }
+        $locale = app()->getLocale();
         if ($this->side === OpeningTradeItem::SIDE_CUSTOMER) {
-            $c = Customer::find($this->party_id);
+            $c = Customer::where('company_id', $this->pageCompanyId)->find($this->party_id);
+            if (! $c) {
+                return '';
+            }
 
-            return $c ? ($c->name_ar ?: $c->name_en) : '';
+            return $locale === 'en' ? ($c->name_en ?: $c->name_ar) : ($c->name_ar ?: $c->name_en);
         }
-        $v = Vendor::find($this->party_id);
+        $v = Vendor::where('company_id', $this->pageCompanyId)->find($this->party_id);
+        if (! $v) {
+            return '';
+        }
 
-        return $v ? ($v->name_ar ?: $v->name_en) : '';
+        return $locale === 'en' ? ($v->name_en ?: $v->name_ar) : ($v->name_ar ?: $v->name_en);
     }
 
     protected function authorizeAccess(): void

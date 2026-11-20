@@ -61,7 +61,7 @@ final class ApplyVendorPaymentCreditAction
         app(SalesDocumentRules::class)->date($data['application_date']);
 
         $version = PaymentAllocationIntent::version($data['allocations']);
-        $intent = PaymentAllocationIntent::normalize($data['allocations'], 'purchase_id');
+        $intent = PaymentAllocationIntent::forPayment($data['allocations'], 'purchase_id', (int) $payment->company_id, $payment->currency_code);
         if ($intent === []) {
             throw new \InvalidArgumentException('Application requires a positive allocation.');
         }

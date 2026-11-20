@@ -212,7 +212,7 @@
                             <div class="flex items-center gap-2">
                                 <span dir="ltr" class="font-mono text-sm">{{ $alloc['invoice_number'] }}</span>
                                 @if(!empty($alloc['is_opening']))
-                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
                                         {{ __('accounting.opening_balance') }}
                                     </span>
                                 @endif

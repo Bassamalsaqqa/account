@@ -311,13 +311,16 @@ class OpeningTradeItem extends Model
         if ($asOfDate === null) {
             $rows->where('p.is_reversed', false)
                 ->where(fn ($q) => $q->whereNull('a.application_event_id')
-                    ->orWhere(fn ($e) => $e->whereNotNull('e.applied_at')->whereNull('e.reversal_posting_batch_id')));
+                    ->orWhere(fn ($e) => $e->whereNotNull('e.applied_at')->whereNull('e.reversed_at')->whereNull('e.reversal_posting_batch_id')));
         } else {
             $rows->where('pb.posting_date', '<=', $asOfDate)
                 ->where(fn ($q) => $q->whereNull('pr.id')->orWhere('pr.posting_date', '>', $asOfDate))
                 ->where(fn ($q) => $q->whereNull('a.application_event_id')->orWhere(fn ($e) => $e
-                    ->whereNotNull('e.applied_at')->where('eb.posting_date', '<=', $asOfDate)
-                    ->where(fn ($r) => $r->whereNull('er.id')->orWhere('er.posting_date', '>', $asOfDate))));
+                    ->whereNotNull('e.applied_at')
+                    ->whereRaw('COALESCE(eb.posting_date, e.application_date) <= ?', [$asOfDate])
+                    ->where(fn ($r) => $r
+                        ->where(fn ($notRev) => $notRev->whereNull('er.id')->whereNull('e.reversed_at'))
+                        ->orWhereRaw('COALESCE(er.posting_date, pr.posting_date) > ?', [$asOfDate]))));
         }
         $allocated = BigDecimal::zero();
         foreach ($rows->get(['a.allocated_amount']) as $row) {
