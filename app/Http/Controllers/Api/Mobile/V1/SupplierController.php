@@ -38,6 +38,7 @@ final class SupplierController extends Controller
         'code', 'phone', 'whatsapp', 'email', 'tax_number',
         'address', 'address_ar', 'address_en',
         'city_ar', 'city_en', 'postal_code', 'notes', 'country_code', 'status', 'active',
+        'preferred_locale', 'default_currency_code',
     ];
 
     /**
@@ -294,7 +295,7 @@ final class SupplierController extends Controller
                 );
             }
         }
-        if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name']) && empty($payload['company_name'])) {
+        if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name'])) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
                 message: 'Supplier name is required.',
@@ -302,12 +303,10 @@ final class SupplierController extends Controller
             );
         }
 
+        $hasLegacyCompanyName = array_key_exists('company_name', $payload);
         $normalizedPayload = $payload;
         if (empty($normalizedPayload['name_ar']) && ! empty($normalizedPayload['name'])) {
             $normalizedPayload['name_ar'] = $normalizedPayload['name'];
-        }
-        if (empty($normalizedPayload['name_ar']) && ! empty($normalizedPayload['company_name'])) {
-            $normalizedPayload['name_ar'] = $normalizedPayload['company_name'];
         }
         unset($normalizedPayload['company_name'], $normalizedPayload['address_line_1_ar'], $normalizedPayload['address_line_1_en']);
         if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
@@ -320,7 +319,7 @@ final class SupplierController extends Controller
             'device_id' => (string) $device->device_id,
             'company_id' => (string) $company->public_id,
             'command' => 'supplier_create',
-            'payload' => $normalizedPayload,
+            'payload' => $hasLegacyCompanyName ? $payload : $normalizedPayload,
         ];
 
         $legacyHashes = [];
@@ -495,12 +494,10 @@ final class SupplierController extends Controller
                 );
             }
         }
+        $hasLegacyCompanyName = array_key_exists('company_name', $payload);
         $normalizedPayload = $payload;
         if (array_key_exists('name', $normalizedPayload) && ! array_key_exists('name_ar', $normalizedPayload)) {
             $normalizedPayload['name_ar'] = $normalizedPayload['name'];
-        }
-        if (array_key_exists('company_name', $normalizedPayload) && ! array_key_exists('business_name_ar', $normalizedPayload)) {
-            $normalizedPayload['business_name_ar'] = $normalizedPayload['company_name'];
         }
         unset($normalizedPayload['company_name'], $normalizedPayload['address_line_1_ar'], $normalizedPayload['address_line_1_en']);
         if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
@@ -514,7 +511,7 @@ final class SupplierController extends Controller
             'company_id' => (string) $company->public_id,
             'supplier_id' => $supplierId,
             'command' => 'supplier_update',
-            'payload' => $normalizedPayload,
+            'payload' => $hasLegacyCompanyName ? $payload : $normalizedPayload,
         ];
 
         $legacyHashes = [];

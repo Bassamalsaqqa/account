@@ -381,34 +381,38 @@ class PostSalesReturnAction implements StockEventOwner
                 if ($comp['pos']->isPositive()) {
                     $posAmount = MoneyAmount::from($comp['pos']);
                     $posBase = $fx->toBase($posAmount);
-                    $computedSignedSum = $computedSignedSum->plus($posBase->getAmount());
-                    $postingLines[] = new PostingLineCommand(
-                        lineNumber: count($postingLines) + 1,
-                        ledgerAccountId: $accountId,
-                        debitBase: $posBase,
-                        creditBase: MoneyAmount::zero(),
-                        transactionCurrencyCode: $currency,
-                        transactionAmount: $posAmount,
-                        exchangeRate: $fx,
-                        description: "Sales Return {$returnNumber} Tax Reversal",
-                    );
+                    if ($posBase->isPositive()) {
+                        $computedSignedSum = $computedSignedSum->plus($posBase->getAmount());
+                        $postingLines[] = new PostingLineCommand(
+                            lineNumber: count($postingLines) + 1,
+                            ledgerAccountId: $accountId,
+                            debitBase: $posBase,
+                            creditBase: MoneyAmount::zero(),
+                            transactionCurrencyCode: $currency,
+                            transactionAmount: $posAmount,
+                            exchangeRate: $fx,
+                            description: "Sales Return {$returnNumber} Tax Reversal",
+                        );
+                    }
                 }
 
                 // 1b. Primary transaction currency line for negative tax component (Cr Tax Output)
                 if ($comp['neg']->isNegative()) {
                     $negAmount = MoneyAmount::from($comp['neg']->abs());
                     $negBase = $fx->toBase($negAmount);
-                    $computedSignedSum = $computedSignedSum->minus($negBase->getAmount());
-                    $postingLines[] = new PostingLineCommand(
-                        lineNumber: count($postingLines) + 1,
-                        ledgerAccountId: $accountId,
-                        debitBase: MoneyAmount::zero(),
-                        creditBase: $negBase,
-                        transactionCurrencyCode: $currency,
-                        transactionAmount: $negAmount,
-                        exchangeRate: $fx,
-                        description: "Sales Return {$returnNumber} Tax Reversal Adjustment",
-                    );
+                    if ($negBase->isPositive()) {
+                        $computedSignedSum = $computedSignedSum->minus($negBase->getAmount());
+                        $postingLines[] = new PostingLineCommand(
+                            lineNumber: count($postingLines) + 1,
+                            ledgerAccountId: $accountId,
+                            debitBase: MoneyAmount::zero(),
+                            creditBase: $negBase,
+                            transactionCurrencyCode: $currency,
+                            transactionAmount: $negAmount,
+                            exchangeRate: $fx,
+                            description: "Sales Return {$returnNumber} Tax Reversal Adjustment",
+                        );
+                    }
                 }
 
                 // 2. Base adjustment line represented separately if groupBase differs from computed signed base

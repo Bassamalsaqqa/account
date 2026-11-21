@@ -114,21 +114,125 @@ final class SalesHistoryAudit
                 $this->add($expected, (int) ($accounts['cogs'] ?? 0), $cogs->multipliedBy($sign));
                 $this->add($expected, (int) ($accounts['inventory'] ?? 0), $cogs->multipliedBy(-$sign));
 
-                $expectedCurrency = [];
                 $grandCurr = BigDecimal::of($document->grand_total_currency);
-                $this->add($expectedCurrency, (int) ($accounts['accounts_receivable'] ?? 0), $grandCurr->multipliedBy($sign));
                 $subtotalCurr = $grandCurr->minus(BigDecimal::of($document->tax_total_currency));
-                $this->add($expectedCurrency, (int) ($accounts[$source === 'sales_invoice' ? 'sales_revenue' : 'sales_returns'] ?? 0), $subtotalCurr->multipliedBy(-$sign));
-                foreach ($docLines as $dLine) {
-                    $t = BigDecimal::of($dLine->line_tax);
-                    if (! $t->isZero()) {
-                        $origLine = $source === 'sales_invoice' ? $dLine : DB::table('sales_invoice_lines')->where('company_id', $companyId)->where('id', $dLine->sales_invoice_line_id)->first();
-                        $taxAccId = $origLine?->sales_tax_account_id;
-                        if ($taxAccId !== null) {
-                            $this->add($expectedCurrency, (int) $taxAccId, $t->multipliedBy(-$sign));
+                $curr = (string) $document->currency_code;
+                $rate = (string) $document->exchange_rate;
+
+                $debitComponents = [];
+                $creditComponents = [];
+                $baseAdjustments = [];
+
+                if ($source === 'sales_invoice') {
+                    $arAcc = (int) ($accounts['accounts_receivable'] ?? 0);
+                    $revAcc = (int) ($accounts['sales_revenue'] ?? 0);
+                    if ($grandCurr->isPositive()) {
+                        $debitComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr;
+                    } elseif ($grandCurr->isNegative()) {
+                        $creditComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
+                    }
+                    if ($subtotalCurr->isPositive()) {
+                        $creditComponents["{$revAcc}:{$curr}:{$rate}"] = $subtotalCurr;
+                    } elseif ($subtotalCurr->isNegative()) {
+                        $debitComponents["{$revAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
+                    }
+
+                    $groups = count($taxGroups);
+                    $rem = $tax;
+                    foreach ($taxGroups as $taxAccId => $amount) {
+                        $groups--;
+                        $taxGroupBase = $groups === 0 ? $rem : $amount->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                        $rem = $rem->minus($taxGroupBase);
+                        $computedBase = $amount->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                        if ($computedBase->isPositive()) {
+                            $creditComponents["{$taxAccId}:{$curr}:{$rate}"] = ($creditComponents["{$taxAccId}:{$curr}:{$rate}"] ?? BigDecimal::zero())->plus($amount);
+                        }
+                        $baseDiff = $taxGroupBase->minus($computedBase);
+                        if (! $baseDiff->isZero()) {
+                            $baseAdjustments[(int) $taxAccId] = ($baseAdjustments[(int) $taxAccId] ?? BigDecimal::zero())->minus($baseDiff);
                         }
                     }
+
+                    $cogsAcc = (int) ($accounts['cogs'] ?? 0);
+                    $invAcc = (int) ($accounts['inventory'] ?? 0);
+                    if ($cogs->isPositive()) {
+                        $baseAdjustments[$cogsAcc] = ($baseAdjustments[$cogsAcc] ?? BigDecimal::zero())->plus($cogs);
+                        $baseAdjustments[$invAcc] = ($baseAdjustments[$invAcc] ?? BigDecimal::zero())->minus($cogs);
+                    }
+                } else {
+                    $arAcc = (int) ($accounts['accounts_receivable'] ?? 0);
+                    $retAcc = (int) ($accounts['sales_returns'] ?? 0);
+                    if ($grandCurr->isPositive()) {
+                        $creditComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr;
+                    } elseif ($grandCurr->isNegative()) {
+                        $debitComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
+                    }
+                    if ($subtotalCurr->isPositive()) {
+                        $debitComponents["{$retAcc}:{$curr}:{$rate}"] = $subtotalCurr;
+                    } elseif ($subtotalCurr->isNegative()) {
+                        $creditComponents["{$retAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
+                    }
+
+                    $taxComponents = [];
+                    foreach ($docLines as $dLine) {
+                        $t = BigDecimal::of($dLine->line_tax);
+                        if (! $t->isZero()) {
+                            $origLine = DB::table('sales_invoice_lines')->where('company_id', $companyId)->where('id', $dLine->sales_invoice_line_id)->first();
+                            $taxAccId = $origLine !== null ? (int) $origLine->sales_tax_account_id : 0;
+                            if ($taxAccId > 0) {
+                                $taxComponents[$taxAccId] ??= ['pos' => BigDecimal::zero(), 'neg' => BigDecimal::zero(), 'net' => BigDecimal::zero()];
+                                if ($t->isPositive()) {
+                                    $taxComponents[$taxAccId]['pos'] = $taxComponents[$taxAccId]['pos']->plus($t);
+                                } else {
+                                    $taxComponents[$taxAccId]['neg'] = $taxComponents[$taxAccId]['neg']->plus($t);
+                                }
+                                $taxComponents[$taxAccId]['net'] = $taxComponents[$taxAccId]['net']->plus($t);
+                            }
+                        }
+                    }
+
+                    $taxRemBase = $tax;
+                    $remGroups = count($taxComponents);
+                    foreach ($taxComponents as $tAccId => $tComp) {
+                        $remGroups--;
+                        $gBase = $remGroups === 0 ? $taxRemBase : $tComp['net']->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                        $taxRemBase = $taxRemBase->minus($gBase);
+
+                        $signedBaseSum = BigDecimal::zero();
+                        if ($tComp['pos']->isPositive()) {
+                            $posBase = $tComp['pos']->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                            if ($posBase->isPositive()) {
+                                $debitComponents["{$tAccId}:{$curr}:{$rate}"] = ($debitComponents["{$tAccId}:{$curr}:{$rate}"] ?? BigDecimal::zero())->plus($tComp['pos']);
+                                $signedBaseSum = $signedBaseSum->plus($posBase);
+                            }
+                        }
+                        if ($tComp['neg']->isNegative()) {
+                            $negBase = $tComp['neg']->abs()->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                            if ($negBase->isPositive()) {
+                                $creditComponents["{$tAccId}:{$curr}:{$rate}"] = ($creditComponents["{$tAccId}:{$curr}:{$rate}"] ?? BigDecimal::zero())->plus($tComp['neg']->abs());
+                                $signedBaseSum = $signedBaseSum->minus($negBase);
+                            }
+                        }
+                        $bResidual = $gBase->minus($signedBaseSum);
+                        if (! $bResidual->isZero()) {
+                            $baseAdjustments[$tAccId] = ($baseAdjustments[$tAccId] ?? BigDecimal::zero())->plus($bResidual);
+                        }
+                    }
+
+                    $cogsAcc = (int) ($accounts['cogs'] ?? 0);
+                    $invAcc = (int) ($accounts['inventory'] ?? 0);
+                    if ($cogs->isPositive()) {
+                        $baseAdjustments[$cogsAcc] = ($baseAdjustments[$cogsAcc] ?? BigDecimal::zero())->minus($cogs);
+                        $baseAdjustments[$invAcc] = ($baseAdjustments[$invAcc] ?? BigDecimal::zero())->plus($cogs);
+                    }
                 }
+
+                $expectedCurrency = [
+                    'debit_components' => $debitComponents,
+                    'credit_components' => $creditComponents,
+                    'base_adjustments' => $baseAdjustments,
+                ];
+
                 $errors = array_merge($errors, $this->batch($companyId, (int) $document->posting_batch_id, $source, (int) $document->id, $expected, $expectedCurrency));
                 if ($document->status === 'void') {
                     $errors = array_merge($errors, $this->reversal($companyId, (int) $document->posting_batch_id, (int) $document->void_posting_batch_id));
@@ -208,7 +312,7 @@ final class SalesHistoryAudit
 
     /**
      * @param  array<int, BigDecimal>  $expected
-     * @param  array<int, BigDecimal>  $expectedCurrency
+     * @param  array<string|int, mixed>  $expectedCurrency
      * @return list<string>
      */
     public function batch(int $companyId, int $id, string $source, int $sourceId, array $expected, array $expectedCurrency = []): array
@@ -219,13 +323,18 @@ final class SalesHistoryAudit
             return ["$source [$sourceId] canonical GL provenance mismatch."];
         }
         $actual = [];
-        $actualCurrency = [];
+        $actualDebitComponents = [];
+        $actualCreditComponents = [];
+        $actualBaseAdjustments = [];
+        $actualCurrencyFlat = [];
+
         foreach (DB::table('posting_lines')->where('posting_batch_id', $id)->get() as $line) {
             if ((int) $line->company_id !== $companyId || ! DB::table('ledger_accounts')->where('company_id', $companyId)->where('id', $line->ledger_account_id)->exists()) {
                 $errors[] = "$source [$sourceId] foreign posting line/account.";
             }
             $net = BigDecimal::of($line->debit_base)->minus($line->credit_base);
             $this->add($actual, (int) $line->ledger_account_id, $net);
+
             if ($line->transaction_currency_code !== null) {
                 if ($line->transaction_amount === null || $line->exchange_rate === null) {
                     $errors[] = "$source [$sourceId] posting currency metadata mismatch.";
@@ -235,23 +344,62 @@ final class SalesHistoryAudit
                         $errors[] = "$source [$sourceId] non-positive transaction amount.";
                     }
                     $debit = BigDecimal::of($line->debit_base);
-                    $signedTx = $debit->isPositive() ? $amt : $amt->negated();
-                    $this->add($actualCurrency, (int) $line->ledger_account_id, $signedTx);
+                    $credit = BigDecimal::of($line->credit_base);
+                    $key = ((int) $line->ledger_account_id).':'.$line->transaction_currency_code.':'.$line->exchange_rate;
 
-                    if (! $net->abs()->isEqualTo($amt->multipliedBy($line->exchange_rate)->toScale(6, RoundingMode::HALF_UP))) {
-                        $errors[] = "$source [$sourceId] posting currency metadata mismatch.";
+                    if ($debit->isPositive()) {
+                        $actualDebitComponents[$key] = ($actualDebitComponents[$key] ?? BigDecimal::zero())->plus($amt);
+                        $this->add($actualCurrencyFlat, (int) $line->ledger_account_id, $amt);
+                        if (! $debit->isEqualTo($amt->multipliedBy($line->exchange_rate)->toScale(6, RoundingMode::HALF_UP))) {
+                            $errors[] = "$source [$sourceId] posting currency metadata mismatch.";
+                        }
+                    } elseif ($credit->isPositive()) {
+                        $actualCreditComponents[$key] = ($actualCreditComponents[$key] ?? BigDecimal::zero())->plus($amt);
+                        $this->add($actualCurrencyFlat, (int) $line->ledger_account_id, $amt->negated());
+                        if (! $credit->isEqualTo($amt->multipliedBy($line->exchange_rate)->toScale(6, RoundingMode::HALF_UP))) {
+                            $errors[] = "$source [$sourceId] posting currency metadata mismatch.";
+                        }
+                    } else {
+                        $errors[] = "$source [$sourceId] posting currency line with zero base.";
                     }
                 }
+            } else {
+                $actualBaseAdjustments[(int) $line->ledger_account_id] = ($actualBaseAdjustments[(int) $line->ledger_account_id] ?? BigDecimal::zero())->plus($net);
             }
         }
+
         foreach (array_unique(array_merge(array_keys($expected), array_keys($actual))) as $account) {
             if (! ($expected[$account] ?? BigDecimal::zero())->isEqualTo($actual[$account] ?? BigDecimal::zero())) {
                 $errors[] = "$source [$sourceId] GL account [$account] amount mismatch.";
             }
         }
-        if (! empty($expectedCurrency)) {
-            foreach (array_unique(array_merge(array_keys($expectedCurrency), array_keys($actualCurrency))) as $account) {
-                if (! ($expectedCurrency[$account] ?? BigDecimal::zero())->isEqualTo($actualCurrency[$account] ?? BigDecimal::zero())) {
+
+        if (isset($expectedCurrency['debit_components']) || isset($expectedCurrency['credit_components']) || isset($expectedCurrency['base_adjustments'])) {
+            /** @var array<string, BigDecimal> $expDebits */
+            $expDebits = $expectedCurrency['debit_components'] ?? [];
+            /** @var array<string, BigDecimal> $expCredits */
+            $expCredits = $expectedCurrency['credit_components'] ?? [];
+            /** @var array<int, BigDecimal> $expBaseAdj */
+            $expBaseAdj = $expectedCurrency['base_adjustments'] ?? [];
+
+            foreach (array_unique(array_merge(array_keys($expDebits), array_keys($actualDebitComponents))) as $key) {
+                if (! ($expDebits[$key] ?? BigDecimal::zero())->isEqualTo($actualDebitComponents[$key] ?? BigDecimal::zero())) {
+                    $errors[] = "$source [$sourceId] debit currency component [$key] mismatch.";
+                }
+            }
+            foreach (array_unique(array_merge(array_keys($expCredits), array_keys($actualCreditComponents))) as $key) {
+                if (! ($expCredits[$key] ?? BigDecimal::zero())->isEqualTo($actualCreditComponents[$key] ?? BigDecimal::zero())) {
+                    $errors[] = "$source [$sourceId] credit currency component [$key] mismatch.";
+                }
+            }
+            foreach (array_unique(array_merge(array_keys($expBaseAdj), array_keys($actualBaseAdjustments))) as $account) {
+                if (! ($expBaseAdj[$account] ?? BigDecimal::zero())->isEqualTo($actualBaseAdjustments[$account] ?? BigDecimal::zero())) {
+                    $errors[] = "$source [$sourceId] base adjustment account [$account] mismatch.";
+                }
+            }
+        } elseif (! empty($expectedCurrency)) {
+            foreach (array_unique(array_merge(array_keys($expectedCurrency), array_keys($actualCurrencyFlat))) as $account) {
+                if (! ($expectedCurrency[$account] ?? BigDecimal::zero())->isEqualTo($actualCurrencyFlat[$account] ?? BigDecimal::zero())) {
                     $errors[] = "$source [$sourceId] GL account [$account] transaction currency mismatch.";
                 }
             }
@@ -269,15 +417,34 @@ final class SalesHistoryAudit
             return ['Canonical accounting reversal linkage mismatch.'];
         }
         $expected = [];
-        $expectedCurrency = [];
+        $debitComponents = [];
+        $creditComponents = [];
+        $baseAdjustments = [];
+
         foreach (DB::table('posting_lines')->where('posting_batch_id', $originalId)->get() as $line) {
-            $this->add($expected, (int) $line->ledger_account_id, BigDecimal::of($line->credit_base)->minus($line->debit_base));
-            if ($line->transaction_currency_code !== null && $line->transaction_amount !== null) {
+            $accId = (int) $line->ledger_account_id;
+            $deb = BigDecimal::of($line->debit_base);
+            $cred = BigDecimal::of($line->credit_base);
+            $this->add($expected, $accId, $cred->minus($deb));
+
+            if ($line->transaction_currency_code !== null && $line->transaction_amount !== null && $line->exchange_rate !== null) {
                 $amt = BigDecimal::of($line->transaction_amount);
-                $signedTx = BigDecimal::of($line->debit_base)->isPositive() ? $amt->negated() : $amt;
-                $this->add($expectedCurrency, (int) $line->ledger_account_id, $signedTx);
+                $key = $accId.':'.$line->transaction_currency_code.':'.$line->exchange_rate;
+                if ($deb->isPositive()) {
+                    $creditComponents[$key] = ($creditComponents[$key] ?? BigDecimal::zero())->plus($amt);
+                } elseif ($cred->isPositive()) {
+                    $debitComponents[$key] = ($debitComponents[$key] ?? BigDecimal::zero())->plus($amt);
+                }
+            } else {
+                $baseAdjustments[$accId] = ($baseAdjustments[$accId] ?? BigDecimal::zero())->plus($cred->minus($deb));
             }
         }
+
+        $expectedCurrency = [
+            'debit_components' => $debitComponents,
+            'credit_components' => $creditComponents,
+            'base_adjustments' => $baseAdjustments,
+        ];
 
         return $this->batch($companyId, $reversalId, $reversal->source_type, (int) $reversal->source_id, $expected, $expectedCurrency);
     }

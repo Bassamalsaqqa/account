@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Feature\Mobile\V1;
 
 use App\Actions\Company\CreateCompanyAction;
+use App\Actions\Purchasing\CreatePurchaseDraftAction;
+use App\Actions\Purchasing\PostPurchaseAction;
 use App\Models\Company;
 use App\Models\Currency;
 use App\Models\Customer;
@@ -14,8 +16,6 @@ use App\Models\NativeCommandReceipt;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
-use App\Models\PurchaseLine;
-use App\Models\StockMovement;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
@@ -1096,20 +1096,22 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
 
         // 1. Historical supplier receipt recorded with company_name using ACTUAL pinned 598c handler
         $historicalPayload = [
+            'name' => 'Historical Industrial Supplies',
             'company_name' => 'Historical Industrial Supplies',
             'phone' => '+970599114477',
+            'preferred_locale' => 'ar',
+            'default_currency_code' => 'ILS',
         ];
         // 598c handler: alias-expanded, sorted, includes BOTH company_name AND business_name_ar
-        $h598cPayload = $historicalPayload;
-        if (empty($h598cPayload['name_ar']) && ! empty($h598cPayload['name'])) {
-            $h598cPayload['name_ar'] = $h598cPayload['name'];
-        }
-        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
-            $h598cPayload['address_ar'] = $h598cPayload['address'];
-        }
-        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
-            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
-        }
+        $h598cPayload = [
+            'business_name_ar' => 'Historical Industrial Supplies',
+            'company_name' => 'Historical Industrial Supplies',
+            'default_currency_code' => 'ILS',
+            'name' => 'Historical Industrial Supplies',
+            'name_ar' => 'Historical Industrial Supplies',
+            'phone' => '+970599114477',
+            'preferred_locale' => 'ar',
+        ];
         ksort($h598cPayload);
 
         $canonicalHist = [
@@ -1181,6 +1183,7 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
             'company_id' => $this->company->id,
             'name_ar' => 'مورد التحديث الأصلي',
             'status' => 'active',
+            'created_by' => $this->user->id,
         ]);
 
         $idempotencyKey = 'HIST-SUPP-UPD-'.Str::uuid();
@@ -1192,16 +1195,11 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         ];
 
         // 598c update handler: alias-expanded, sorted, includes both company_name AND business_name_ar
-        $h598cPayload = $updatePayload;
-        if (array_key_exists('name', $h598cPayload) && ! array_key_exists('name_ar', $h598cPayload)) {
-            $h598cPayload['name_ar'] = $h598cPayload['name'];
-        }
-        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
-            $h598cPayload['address_ar'] = $h598cPayload['address'];
-        }
-        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
-            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
-        }
+        $h598cPayload = [
+            'business_name_ar' => 'Updated Historical Supplier',
+            'company_name' => 'Updated Historical Supplier',
+            'phone' => '+970599223344',
+        ];
         ksort($h598cPayload);
 
         $canonicalHist = [
@@ -1253,110 +1251,96 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         $freshResp->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
         $this->assertStringContainsString('company_name', (string) $freshResp->json('error.message'));
+
+        // Modern update with business_name_ar must NOT match or alias when replayed with company_name
+        $modernKey = 'MODERN-UPD-'.Str::uuid();
+        $modernResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $modernKey,
+        ])->putJson($endpoint, [
+            'business_name_ar' => 'شركة تحديث حديثة',
+        ]);
+        $modernResp->assertStatus(200);
+
+        $aliasResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $modernKey,
+        ])->putJson($endpoint, [
+            'company_name' => 'شركة تحديث حديثة',
+        ]);
+        $aliasResp->assertStatus(409);
     }
 
     public function test_valid_100_percent_discount_purchase_canonical_read_and_tampered_negative_rejection(): void
     {
+        $this->actingAs($this->user);
         app(CompanyContext::class)->setCompany($this->company, $this->user);
         $warehouse = Warehouse::create([
             'company_id' => $this->company->id,
             'code' => 'WH-DISC-'.Str::random(4),
             'name' => 'Warehouse Discount',
+            'name_ar' => 'مستودع الخصم',
             'active' => true,
+            'created_by' => $this->user->id,
         ]);
         $unit = Unit::firstOrCreate([
             'company_id' => $this->company->id,
             'code' => 'PCS',
         ], [
-            'name' => 'Piece',
+            'name_ar' => 'قطعة',
+            'name_en' => 'Piece',
             'symbol' => 'pc',
         ]);
         $product = Product::create([
             'company_id' => $this->company->id,
             'name_ar' => 'منتج مجاني بالكامل',
+            'base_unit_id' => $unit->id,
             'item_type' => 'inventory',
             'track_stock' => true,
             'status' => 'active',
+            'created_by' => $this->user->id,
         ]);
         $productUnit = ProductUnit::create([
             'company_id' => $this->company->id,
             'product_id' => $product->id,
             'unit_id' => $unit->id,
-            'conversion_factor' => '1.000000',
+            'conversion_to_base' => '1.000000',
             'is_base' => true,
+            'is_default_purchase' => true,
+            'is_default_sale' => true,
+            'active' => true,
         ]);
         $vendor = Vendor::create([
             'company_id' => $this->company->id,
             'name_ar' => 'مورد العينات المجانية',
             'status' => 'active',
+            'created_by' => $this->user->id,
         ]);
 
         $companyToday = Carbon::now($this->company->timezone ?? 'UTC')->toDateString();
 
-        // 1. Valid 100% discount purchase: subtotal 10.00, discount 10.00, tax 0.00, grand total 0.00 (null journal)
-        $purchase = Purchase::create([
-            'company_id' => $this->company->id,
+        // 1. Valid 100% discount purchase created and posted canonically
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->user, [
             'vendor_id' => $vendor->id,
             'warehouse_id' => $warehouse->id,
-            'purchase_number' => 'PO-DISC-100',
             'purchase_date' => $companyToday,
             'currency_code' => $this->company->base_currency_code,
-            'base_currency_code' => $this->company->base_currency_code,
-            'exchange_rate' => '1.0000000000',
-            'subtotal_currency' => '10.000000',
-            'subtotal_base' => '10.000000',
-            'discount_total_currency' => '10.000000',
-            'discount_total_base' => '10.000000',
-            'tax_total_currency' => '0.000000',
-            'tax_total_base' => '0.000000',
-            'grand_total_currency' => '0.000000',
-            'grand_total_base' => '0.000000',
-            'status' => 'posted',
-            'posted_at' => now(),
-            'posted_by' => $this->user->id,
-            'created_by' => $this->user->id,
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'quantity' => '1',
+                    'unit_cost' => '10',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '10',
+                ],
+            ],
         ]);
+        $purchase = app(PostPurchaseAction::class)->execute($draft, $this->user);
 
-        $line = PurchaseLine::create([
-            'company_id' => $this->company->id,
-            'purchase_id' => $purchase->id,
-            'product_id' => $product->id,
-            'product_unit_id' => $productUnit->id,
-            'item_description' => 'Free Sample Item',
-            'quantity' => '1.000000',
-            'quantity_base' => '1.000000',
-            'unit_cost' => '10.000000',
-            'unit_cost_base' => '10.000000',
-            'discount_type' => 'fixed',
-            'discount_value' => '10.000000',
-            'line_subtotal' => '10.000000',
-            'line_subtotal_base' => '10.000000',
-            'line_discount' => '10.000000',
-            'line_discount_base' => '10.000000',
-            'line_tax' => '0.000000',
-            'line_tax_base' => '0.000000',
-            'line_total' => '0.000000',
-            'line_total_base' => '0.000000',
-            'inventory_unit_cost_base' => '0.000000',
-        ]);
-
-        $movement = StockMovement::create([
-            'company_id' => $this->company->id,
-            'product_id' => $product->id,
-            'warehouse_id' => $warehouse->id,
-            'source_type' => 'purchase',
-            'source_id' => $purchase->id,
-            'source_line_id' => $line->id,
-            'movement_type' => 'purchase',
-            'quantity_delta_base' => '1.000000',
-            'value_delta_base' => '0.000000',
-            'unit_cost_base' => '0.000000',
-            'movement_date' => $purchase->purchase_date,
-            'created_by' => $this->user->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        $line->update(['stock_movement_id' => $movement->id]);
+        $this->assertNull($purchase->posting_batch_id);
+        $this->assertSame('0.000000', (string) $purchase->grand_total_currency);
 
         // PurchasePayableAsOf components evaluates cleanly and yields zero payable
         $asOf = Carbon::now($this->company->timezone ?? 'UTC');
@@ -1378,8 +1362,9 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         $detailResp->assertStatus(200);
         $this->assertSame('0.000000', $detailResp->json('remaining_exact'));
 
-        // 2. Tampered fixture: negative grand total or mismatched header must be rejected
-        $purchase->update(['grand_total_currency' => '-1.000000']);
+        // 2. Tampered fixture: deliberate owned DB corruption bypassing Eloquent immutability guard
+        DB::table('purchases')->where('id', $purchase->id)->update(['grand_total_currency' => '-1.000000']);
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Incoherent historical Purchase posting provenance.');
         app(PurchasePayableAsOf::class)->components([$purchase->fresh()], $asOf);

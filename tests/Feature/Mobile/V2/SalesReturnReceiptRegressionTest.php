@@ -10,8 +10,10 @@ use App\Actions\Purchasing\CreatePurchaseDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\CreateSalesReturnDraftAction;
+use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\PostSalesReturnAction;
+use App\Actions\Sales\ReverseCustomerPaymentAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Models\AuditEvent;
@@ -20,6 +22,7 @@ use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
 use App\Models\Currency;
 use App\Models\Customer;
+use App\Models\CustomerPayment;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MoneyAccount;
@@ -42,6 +45,7 @@ use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Purchasing\PurchasePayableAsOf;
+use App\Services\Sales\SalesHistoryAudit;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
@@ -1525,9 +1529,16 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertSame('JPY', $arLine->transaction_currency_code);
         $this->assertSame('0.400000', (string) $arLine->transaction_amount);
 
-        $taxLine = $batchLines->firstWhere('description', "Sales Return {$return2->return_number} Tax Reversal");
+        $taxLine = $batchLines->firstWhere('description', "Sales Return {$return2->return_number} Tax Reversal Adjustment");
         $this->assertNotNull($taxLine);
         $this->assertSame('0.400000', (string) $taxLine->credit_base);
+
+        // Assert exact preview amounts match posted document totals
+        $this->assertSame($previewResp->json('total_return_amount'), $return2Resp->json('total_amount'));
+        $this->assertSame($previewResp->json('total_return_amount_exact'), $return2Resp->json('total_amount_exact'));
+
+        $audit = app(SalesHistoryAudit::class);
+        $this->assertEmpty($audit->audit((int) $this->company->id));
 
         $this->assertAllSixReconciliationsPass();
     }
@@ -1697,16 +1708,13 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertSame('JPY', $taxCrLine->transaction_currency_code);
         $this->assertSame('0.400000', (string) $taxCrLine->transaction_amount);
 
-        // History audit passes with signed currency verification
+        // Assert exact preview amounts match posted document totals
+        $this->assertSame($previewResp->json('total_return_amount'), $return2Resp->json('total_amount'));
+        $this->assertSame($previewResp->json('total_return_amount_exact'), $return2Resp->json('total_amount_exact'));
+
+        // History audit passes with independent signed currency component verification
         $audit = app(SalesHistoryAudit::class);
-        $this->assertEmpty($audit->batch(
-            (int) $this->company->id,
-            (int) $batch->id,
-            'sales_return',
-            (int) $return2->id,
-            [],
-            []
-        ));
+        $this->assertEmpty($audit->audit((int) $this->company->id));
 
         $this->assertAllSixReconciliationsPass();
     }
@@ -1738,9 +1746,9 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
         $invLine = $invoice->lines->first();
 
-        // 2. Staff user has sales.return.create but lacks sales.return.view
-        $this->staff->revokePermissionTo('sales.return.view');
-        $this->staff->givePermissionTo('sales.return.create');
+        // 2. Staff user has sales.return.create and sales.invoice.view, but strictly lacks sales.return.view
+        $this->staff->removeRole('Sales');
+        $this->staff->syncPermissions(['sales.return.create', 'sales.invoice.view']);
 
         // Fresh preview with NO prior returns: allowed without sales.return.view
         $previewResp1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
@@ -1755,7 +1763,9 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ]);
         $previewResp1->assertStatus(200);
 
-        // 3. Interleaving actor (owner) commits a partial return
+        // 3. Interleaving actor (owner) commits a partial return under company/owner context
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
         $draft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
             'sales_invoice_id' => $invoice->id,
             'issue_date' => now()->format('Y-m-d'),
@@ -1966,18 +1976,32 @@ final class SalesReturnReceiptRegressionTest extends TestCase
 
     public function test_migration_guarded_ascii_empty_roundtrip(): void
     {
+        $existing = DB::table('native_command_receipts')->get();
+        DB::table('native_command_receipts')->delete();
+
         $migration = require database_path('migrations/2026_11_21_100000_update_native_command_receipts_idempotency_key_collation.php');
 
-        // On empty table, down() then up() must succeed cleanly
-        $migration->down();
-        $this->assertTrue(true, 'Empty table collation downgrade succeeded');
+        try {
+            // On empty table, down() then up() must succeed cleanly and alter actual column collation
+            $migration->down();
+            $downCollation = DB::selectOne("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'native_command_receipts' AND COLUMN_NAME = 'idempotency_key'")->COLLATION_NAME;
+            $this->assertSame('ascii_bin', $downCollation);
 
-        $migration->up();
-        $this->assertTrue(true, 'Empty table collation upgrade succeeded');
+            $migration->up();
+            $upCollation = DB::selectOne("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'native_command_receipts' AND COLUMN_NAME = 'idempotency_key'")->COLLATION_NAME;
+            $this->assertSame('utf8mb4_bin', $upCollation);
+        } finally {
+            foreach ($existing as $row) {
+                DB::table('native_command_receipts')->insert((array) $row);
+            }
+        }
     }
 
     public function test_migration_guarded_ascii_populated_roundtrip(): void
     {
+        $existing = DB::table('native_command_receipts')->get();
+        DB::table('native_command_receipts')->delete();
+
         $asciiKey = 'ascii-key-'.Str::random(16);
         $receipt = NativeCommandReceipt::create([
             'company_id' => $this->company->id,
@@ -1995,12 +2019,19 @@ final class SalesReturnReceiptRegressionTest extends TestCase
 
         try {
             $migration->down();
+            $downCollation = DB::selectOne("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'native_command_receipts' AND COLUMN_NAME = 'idempotency_key'")->COLLATION_NAME;
+            $this->assertSame('ascii_bin', $downCollation);
             $this->assertDatabaseHas('native_command_receipts', ['id' => $receipt->id, 'idempotency_key' => $asciiKey]);
 
             $migration->up();
+            $upCollation = DB::selectOne("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'native_command_receipts' AND COLUMN_NAME = 'idempotency_key'")->COLLATION_NAME;
+            $this->assertSame('utf8mb4_bin', $upCollation);
             $this->assertDatabaseHas('native_command_receipts', ['id' => $receipt->id, 'idempotency_key' => $asciiKey]);
         } finally {
             DB::table('native_command_receipts')->where('id', $receipt->id)->delete();
+            foreach ($existing as $row) {
+                DB::table('native_command_receipts')->insert((array) $row);
+            }
         }
     }
 
@@ -2076,64 +2107,29 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertSame('ON_CREDIT', $detail1->json('payment_status'));
 
         // 2. Allocate a future cash payment (dated 2 days ahead)
+        $this->actingAs($this->owner);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->owner->givePermissionTo('money.receipt.create');
         $invoice = SalesInvoice::where('public_id', $invoicePublicId)->firstOrFail();
         $tomorrow = Carbon::now($this->company->timezone ?? 'Asia/Hebron')->addDays(2)->toDateString();
 
-        $batchId = DB::table('posting_batches')->insertGetId([
-            'public_id' => (string) Str::ulid(),
-            'company_id' => $this->company->id,
-            'batch_number' => 'PB-FUTURE-001',
-            'posting_date' => $tomorrow,
-            'status' => 'posted',
-            'source_type' => 'customer_payment',
-            'source_id' => 999999,
-            'transaction_currency_code' => 'ILS',
-            'base_currency_code' => 'ILS',
-            'exchange_rate' => '1.0000000000',
-            'idempotency_key' => 'pb-future-'.Str::random(8),
-            'posted_by' => $this->owner->id,
-            'posted_at' => now(),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        $paymentId = DB::table('customer_payments')->insertGetId([
-            'public_id' => (string) Str::ulid(),
-            'company_id' => $this->company->id,
-            'payment_number' => 'CP-FUTURE-001',
+        $payment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
             'money_account_id' => $this->cashAccount->id,
             'payment_date' => $tomorrow,
-            'payment_method' => 'cash',
-            'currency_code' => 'ILS',
+            'payment_method' => CustomerPayment::METHOD_CASH,
             'amount' => '58.000000',
             'exchange_rate' => '1.0000000000',
-            'amount_base' => '58.000000',
-            'company_snapshot' => json_encode(['id' => $this->company->id, 'name' => 'Company']),
-            'customer_snapshot' => json_encode(['id' => $this->customer->id, 'name' => 'Customer']),
-            'money_account_snapshot' => json_encode(['id' => $this->cashAccount->id, 'name' => 'Cash']),
-            'document_locale' => 'ar',
-            'posting_batch_id' => $batchId,
-            'created_by' => $this->owner->id,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'idempotency_key' => 'cp-future-'.Str::random(8),
+            'allocations' => [
+                [
+                    'sales_invoice_id' => $invoice->id,
+                    'allocated_amount' => '58.000000',
+                ],
+            ],
         ]);
-
-        DB::table('posting_batches')->where('id', $batchId)->update(['source_id' => $paymentId]);
-
-        DB::table('customer_payment_allocations')->insert([
-            'company_id' => $this->company->id,
-            'customer_payment_id' => $paymentId,
-            'sales_invoice_id' => $invoice->id,
-            'allocated_amount' => '58.000000',
-            'invoice_exchange_rate' => '1.0000000000',
-            'payment_exchange_rate' => '1.0000000000',
-            'base_amount_applied_to_receivable' => '58.000000',
-            'settlement_base_value' => '58.000000',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $paymentId = $payment->id;
+        $batchId = $payment->posting_batch_id;
 
         auth()->forgetUser();
         app(CompanyContext::class)->clearSessionless();
@@ -2153,7 +2149,30 @@ final class SalesReturnReceiptRegressionTest extends TestCase
 
         // 3. Settle a payment dated TODAY: invoice becomes PAID_CASH
         $today = Carbon::now($this->company->timezone ?? 'Asia/Hebron')->toDateString();
-        DB::table('customer_payments')->where('id', $paymentId)->update(['payment_date' => $today]);
+        $todayRequestHash = hash('sha256', json_encode([
+            'company_id' => (int) $this->company->id,
+            'actor_id' => (int) $this->owner->id,
+            'customer_id' => (int) $this->customer->id,
+            'money_account_id' => (int) $this->cashAccount->id,
+            'payment_date' => $today,
+            'payment_method' => 'cash',
+            'amount' => '58.000000',
+            'exchange_rate' => '1.0000000000',
+            'reference_number' => null,
+            'notes' => null,
+            'allocations' => [
+                [
+                    'sales_invoice_id' => (int) $invoice->id,
+                    'allocated_amount' => '58.000000',
+                ],
+            ],
+            'document_locale' => null,
+        ], JSON_THROW_ON_ERROR));
+
+        DB::table('customer_payments')->where('id', $paymentId)->update([
+            'payment_date' => $today,
+            'request_hash' => $todayRequestHash,
+        ]);
         DB::table('posting_batches')->where('id', $batchId)->update(['posting_date' => $today]);
 
         $detail3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
@@ -2167,36 +2186,12 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $found2 = collect((array) $listResp2->json('invoices'))->firstWhere('id', $invoicePublicId);
         $this->assertNotNull($found2);
 
-        // 4. Reverse / unallocate canonically using dated reversal posting batch (allocations preserved immutably)
-        $revBatchId = DB::table('posting_batches')->insertGetId([
-            'public_id' => (string) Str::ulid(),
-            'company_id' => $this->company->id,
-            'batch_number' => 'PB-REV-CASH-001',
-            'source_type' => 'customer_payment',
-            'source_id' => $paymentId,
-            'posting_date' => $today,
-            'status' => 'posted',
-            'transaction_currency_code' => 'ILS',
-            'base_currency_code' => 'ILS',
-            'exchange_rate' => '1.0000000000',
-            'idempotency_key' => 'pb-rev-'.Str::random(8),
-            'reverses_batch_id' => $batchId,
-            'posted_by' => $this->owner->id,
-            'posted_at' => now(),
-            'created_by' => $this->owner->id,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-        DB::table('posting_batches')->where('id', $batchId)->update([
-            'reversed_by_batch_id' => $revBatchId,
-        ]);
-        DB::table('customer_payments')->where('id', $paymentId)->update([
-            'is_reversed' => true,
-            'reversed_at' => now(),
-            'reversed_by' => $this->owner->id,
-            'reversal_posting_batch_id' => $revBatchId,
-            'reversal_reason' => 'Canonical dated payment reversal',
-        ]);
+        // 4. Reverse canonically using ReverseCustomerPaymentAction (allocations preserved immutably)
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->owner->givePermissionTo('money.receipt.reverse');
+        $paymentModel = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->where('id', $paymentId)->firstOrFail();
+        app(ReverseCustomerPaymentAction::class)->execute($paymentModel, $this->owner, 'Canonical dated payment reversal', $today);
 
         $detail4 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
