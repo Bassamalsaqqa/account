@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'opening_currency_unavailable' => 'Choose an enabled company currency.',
     'invalid_exact_decimal' => 'Enter a positive decimal with at most :scale decimal places.',
     'opening_post_failed' => 'Unable to post the opening balance. Review the entries and try again.',
     'opening_trade_balances_title' => 'Opening Trade Balances',

@@ -13,6 +13,7 @@ use App\Models\Customer;
 use App\Models\OpeningTradeItem;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Rules\OpeningTradeAmount;
 use App\Rules\PositiveExactDecimal;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -145,7 +146,7 @@ class OpeningTradeBalanceEntry extends Component
         $rules = [
             'side' => 'required|in:customer,vendor',
             'party_id' => 'required|integer|min:1',
-            'amount' => ['required', new PositiveExactDecimal(6)],
+            'amount' => ['required', new OpeningTradeAmount((int) $company->id, $this->currency_code)],
             'currency_code' => 'required|string|size:3',
             'opening_date' => 'required|date_format:Y-m-d',
             'due_date' => 'nullable|date_format:Y-m-d',
@@ -159,7 +160,7 @@ class OpeningTradeBalanceEntry extends Component
 
         foreach ($this->additional_lines as $index => $line) {
             $prefix = 'additional_lines.'.$index.'.';
-            $rules[$prefix.'amount'] = ['required', new PositiveExactDecimal(6)];
+            $rules[$prefix.'amount'] = ['required', new OpeningTradeAmount((int) $company->id, (string) ($line['currency_code'] ?? ''))];
             $rules[$prefix.'currency_code'] = 'required|string|size:3';
             $rules[$prefix.'exchange_rate'] = [($line['currency_code'] ?? '') === $company->base_currency_code ? 'nullable' : 'required', new PositiveExactDecimal(10)];
             $rules[$prefix.'original_reference'] = 'nullable|string|max:100';
@@ -173,7 +174,7 @@ class OpeningTradeBalanceEntry extends Component
         $actor = auth()->user();
 
         try {
-            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($action, $company, $actor): void {
+            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($action, $company, $actor, $isBase): void {
                 // Post main item
                 $action->execute(
                     company: $company,
@@ -182,7 +183,7 @@ class OpeningTradeBalanceEntry extends Component
                     openingDate: $this->opening_date,
                     amount: $this->amount,
                     currencyCode: $this->currency_code,
-                    exchangeRate: $this->exchange_rate,
+                    exchangeRate: $isBase ? null : $this->exchange_rate,
                     actor: $actor,
                     idempotencyKey: $this->formIdempotencyKey,
                     originalReference: $this->original_reference,
@@ -193,6 +194,9 @@ class OpeningTradeBalanceEntry extends Component
 
                 // Post any additional lines
                 foreach ($this->additional_lines as $index => $line) {
+                    $lineCurrency = (string) ($line['currency_code'] ?? '');
+                    $isLineBase = $lineCurrency === $company->base_currency_code;
+                    $lineRate = $isLineBase ? null : (! empty($line['exchange_rate']) ? (string) $line['exchange_rate'] : $this->exchange_rate);
 
                     $action->execute(
                         company: $company,
@@ -200,8 +204,8 @@ class OpeningTradeBalanceEntry extends Component
                         partyId: (int) $this->party_id,
                         openingDate: $this->opening_date,
                         amount: (string) $line['amount'],
-                        currencyCode: (string) $line['currency_code'],
-                        exchangeRate: $line['exchange_rate'] ?? $this->exchange_rate,
+                        currencyCode: $lineCurrency,
+                        exchangeRate: $lineRate,
                         actor: $actor,
                         idempotencyKey: $this->formIdempotencyKey.':line:'.$index,
                         originalReference: ! empty($line['original_reference']) ? (string) $line['original_reference'] : null,
@@ -209,7 +213,6 @@ class OpeningTradeBalanceEntry extends Component
                         notes: ! empty($line['notes']) ? (string) $line['notes'] : null,
                         sourceIdentity: 'manual_web'
                     );
-
                 }
 
             });

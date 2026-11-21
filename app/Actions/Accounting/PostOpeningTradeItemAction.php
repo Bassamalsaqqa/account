@@ -14,7 +14,6 @@ use App\Domain\Posting\Exceptions\IdempotencyConflictException;
 use App\Exceptions\CompanyReassignmentException;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
-use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\LedgerAccount;
@@ -22,12 +21,16 @@ use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Rules\PositiveExactDecimal;
 use App\Services\Accounting\OpeningTradeEventScope;
 use App\Services\Accounting\OpeningTradePostingCapability;
 use App\Services\Audit\AuditService;
+use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Services\Money\MoneyValues;
 use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use DateTimeInterface;
@@ -186,6 +189,7 @@ final class PostOpeningTradeItemAction
             $openingDateStr,
             $dueDateStr,
             $cleanRef,
+            $amount,
             $amountStr,
             $currencyCode,
             $rateStr,
@@ -222,9 +226,14 @@ final class PostOpeningTradeItemAction
                 return $existing;
             }
 
-            // Validate currency is enabled
-            if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $currencyCode)->where('enabled', true)->exists()) {
-                throw new InvalidArgumentException("Currency [{$currencyCode}] is not enabled for company [{$lockedCompany->id}].");
+            // New events use locked, fresh currency policy; identical receipts above
+            // retain their original economics even if that policy has since changed.
+            try {
+                $scale = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($lockedCompany, $currencyCode);
+                PositiveExactDecimal::parse($amount, $scale);
+                MoneyValues::amount($amount, $currencyCode);
+            } catch (MathException $e) {
+                throw new InvalidArgumentException("Amount [{$amount}] exceeds minor unit precision for currency [{$currencyCode}].", 0, $e);
             }
 
             // Validate party and lock

@@ -16,6 +16,8 @@ use App\Actions\Sales\ApplyCustomerPaymentCreditAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\ReverseCustomerPaymentAction;
 use App\Application\Reporting\Queries\CustomerReceivablesAgingReportQuery;
+use App\Domain\Accounting\Exceptions\ActiveSettlementBlockedException;
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Purchasing\Queries\VendorStatementQuery;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Models\Customer;
@@ -32,10 +34,13 @@ use App\Services\Accounting\AccountingReconciliationService;
 use App\Services\Accounting\Phase7ReconciliationService;
 use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Money\CustomerApplicationHistory;
+use App\Services\Money\CustomerPaymentHistory;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
+use App\Services\Purchasing\VendorPaymentHistoryCommands;
 use App\Services\Sales\SalesReconciliationService;
 use Brick\Math\BigDecimal;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Feature\Phase8\TradeTestCase;
@@ -50,9 +55,49 @@ final class OpeningTradeSettlementTest extends TradeTestCase
     {
         parent::setUp();
 
+        config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
         $this->activateUser($this->owner);
         $this->customer = $this->defaultCustomer;
         $this->testVendor = $this->vendor;
+    }
+
+    public function test_active_payments_reject_a_reversed_opening_target_in_history(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            $partyId = $side === 'customer' ? $this->customer->id : $this->testVendor->id;
+            $item = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side, partyId: $partyId,
+                openingDate: '2026-01-01', amount: '100.00', currencyCode: 'ILS',
+                exchangeRate: '1', actor: $this->owner, idempotencyKey: 'history-guard-'.$side,
+            );
+            $data = [
+                $side === 'customer' ? 'customer_id' : 'vendor_id' => $partyId,
+                'money_account_id' => $this->ilsCashAccount->id,
+                'payment_date' => '2026-01-10', 'payment_method' => 'cash',
+                'currency_code' => 'ILS', 'exchange_rate' => '1', 'amount' => '100.00',
+                'idempotency_key' => 'history-payment-'.$side,
+                'allocations' => [['kind' => 'opening_trade_item', 'opening_trade_item_id' => $item->id, 'allocated_amount' => '100.00']],
+            ];
+            $payment = $side === 'customer'
+                ? app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, $data)
+                : app(PostVendorPaymentAction::class)->execute($this->company, $this->owner, $data);
+            $this->assertFalse((bool) $payment->is_reversed);
+
+            // Deliberately corrupt the fixture to prove history validation fails closed.
+            DB::table('opening_trade_items')->where('id', $item->id)->update(['status' => OpeningTradeItem::STATUS_REVERSED]);
+            try {
+                if ($payment instanceof CustomerPayment) {
+                    app(CustomerPaymentHistory::class)->validate($payment->fresh());
+                } else {
+                    app(VendorPaymentHistoryCommands::class)->payment($payment->fresh());
+                }
+                $this->fail('An active payment must reject a reversed opening target.');
+            } catch (InvalidArgumentException|ImmutableRecordException $exception) {
+                $this->assertStringContainsString($side === 'customer' ? 'provenance is incoherent' : 'must be posted', $exception->getMessage());
+            } finally {
+                DB::table('opening_trade_items')->where('id', $item->id)->update(['status' => OpeningTradeItem::STATUS_POSTED]);
+            }
+        }
     }
 
     public function test_new_opening_fixtures_pass_all_six_reconciliations(): void
@@ -65,6 +110,11 @@ final class OpeningTradeSettlementTest extends TradeTestCase
                 actor: $this->owner, idempotencyKey: 'six-reconcile-'.$side,
             );
         }
+        $this->assertAllSixReconciliations();
+    }
+
+    private function assertAllSixReconciliations(): void
+    {
         foreach ([
             AccountingReconciliationService::class,
             SalesReconciliationService::class,
@@ -563,10 +613,22 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             if ($customerSide) {
                 app(CustomerApplicationHistory::class)->validate($event->fresh());
             }
+            try {
+                app(ReverseOpeningTradeItemAction::class)->execute($item->fresh(), $this->owner, 'Blocked while settled', '2026-02-02');
+                $this->fail('Active credit application must block reversal');
+            } catch (ActiveSettlementBlockedException) {
+                $this->assertFalse($item->fresh()->isReversed());
+            }
             app($customerSide ? ReverseCustomerPaymentAction::class : ReverseVendorPaymentAction::class)
                 ->execute($payment->fresh(), $this->owner, 'Reverse credit', '2026-02-01');
             $this->assertTrue($item->calculateOutstanding()->isEqualTo('100'));
             $this->assertTrue($item->calculateOutstanding('2026-01-31')->isZero());
+            $reversed = app(ReverseOpeningTradeItemAction::class)->execute($item->fresh(), $this->owner, 'Correct opening after payment reversal', '2026-02-02');
+            $this->assertTrue($reversed->isReversed());
+            $this->assertTrue($reversed->calculateOutstanding()->isZero());
+            $this->assertTrue($reversed->calculateOutstanding('2026-02-01')->isEqualTo('100'));
+            $this->assertAllSixReconciliations();
+
         }
     }
 
@@ -659,7 +721,15 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             $stmtAfter = $stmtQuery->execute($party, '2026-01-01', '2026-01-10')['currencies']['ILS'];
             $this->assertTrue(BigDecimal::of($stmtAfter['aging']['unspecified'])->isZero());
 
-            // 4. Reverse the payment on 2026-02-01
+            // 4. Reversal of opening item is blocked while active credit application settlement exists
+            try {
+                app(ReverseOpeningTradeItemAction::class)->execute($item->fresh(), $this->owner, 'Blocked while settled', '2026-02-02');
+                $this->fail('Active credit application must block opening item reversal');
+            } catch (ActiveSettlementBlockedException) {
+                $this->assertFalse($item->fresh()->isReversed());
+            }
+
+            // 5. Reverse the canonical PARENT payment on 2026-02-01
             app($customerSide ? ReverseCustomerPaymentAction::class : ReverseVendorPaymentAction::class)
                 ->execute($payment->fresh(), $this->owner, 'Reversing zerofx payment', '2026-02-01');
 
@@ -669,6 +739,13 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             // As-of 2026-02-02 (after reversal) and current: outstanding is restored to 100
             $this->assertTrue(BigDecimal::of('100.00')->isEqualTo($item->calculateOutstanding('2026-02-02')));
             $this->assertTrue(BigDecimal::of('100.00')->isEqualTo($item->calculateOutstanding()));
+
+            // 6. With parent payment reversed, reversing opening trade item is now permitted
+            $reversed = app(ReverseOpeningTradeItemAction::class)->execute($item->fresh(), $this->owner, 'Correct opening after zerofx payment reversal', '2026-02-02');
+            $this->assertTrue($reversed->isReversed());
+            $this->assertTrue($reversed->calculateOutstanding()->isZero());
+            $this->assertTrue($reversed->calculateOutstanding('2026-02-01')->isEqualTo('100'));
+            $this->assertAllSixReconciliations();
         }
     }
 

@@ -84,7 +84,9 @@ final class OpeningTradeNegativeQualificationTest extends TradeTestCase
         foreach (['customer', 'vendor'] as $side) {
             foreach ([
                 ['amount' => '0'], ['amount' => '-1'], ['amount' => 'invalid'],
-                ['amount' => '0.0000001'], ['currencyCode' => 'ZZZ'],
+                ['amount' => '0.0000001'], ['amount' => '1.001', 'currencyCode' => 'ILS'],
+                ['amount' => '1.001', 'currencyCode' => 'USD', 'exchangeRate' => '3.5000000000'],
+                ['currencyCode' => 'ZZZ'],
                 ['currencyCode' => 'USD', 'exchangeRate' => null],
                 ['currencyCode' => 'USD', 'exchangeRate' => '0'],
                 ['currencyCode' => 'USD', 'exchangeRate' => '-1'],

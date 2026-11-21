@@ -27,11 +27,17 @@ use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Services\Accounting\AccountingReconciliationService;
 use App\Services\Accounting\GenericOpeningPostingScope;
 use App\Services\Accounting\OpeningTradeCutoverAuditService;
 use App\Services\Accounting\OpeningTradeEventScope;
 use App\Services\Accounting\OpeningTradePostingCapability;
+use App\Services\Accounting\Phase7ReconciliationService;
+use App\Services\Inventory\InventoryReconciliationService;
+use App\Services\Money\MoneyReconciliationService;
 use App\Services\Posting\AccountingPostingService;
+use App\Services\Purchasing\PayablesReconciliationService;
+use App\Services\Sales\SalesReconciliationService;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -558,6 +564,124 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $revResp->assertJsonPath('data.status', 'reversed');
     }
 
+    public function test_new_amounts_follow_fresh_currency_policy_but_receipts_replay_immutable_economics(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            foreach ([['ILS', 2, '1.001', '1.01'], ['USD', 2, '1.001', '1.01'], ['JOD', 3, '1.0001', '1.001'], ['JPY', 0, '1.1', '1']] as [$code, $scale, $invalid, $valid]) {
+                DB::table('currencies')->updateOrInsert(['code' => $code], ['name' => $code, 'symbol' => $code, 'minor_units' => $scale, 'active' => true]);
+                DB::table('company_currencies')->updateOrInsert(['company_id' => $this->company->id, 'currency_code' => $code], ['enabled' => true]);
+                $args = [
+                    'company' => $this->company,
+                    'side' => $side,
+                    'partyId' => $side === 'customer' ? $this->customer->id : $this->testVendor->id,
+                    'openingDate' => '2026-01-01',
+                    'amount' => $invalid,
+                    'currencyCode' => $code,
+                    'exchangeRate' => '1',
+                    'actor' => $this->owner,
+                    'idempotencyKey' => 'precision-invalid-'.$side.'-'.$code,
+                ];
+                $batchCount = PostingBatch::count();
+                $auditCount = AuditEvent::count();
+                $itemCount = OpeningTradeItem::count();
+
+                // 1. Overprecision rejected before numbering/journals/audit
+                try {
+                    app(PostOpeningTradeItemAction::class)->execute(...$args);
+                    $this->fail('Overprecision accepted for currency '.$code);
+                } catch (\InvalidArgumentException) {
+                    $this->assertSame($batchCount, PostingBatch::count());
+                    $this->assertSame($auditCount, AuditEvent::count());
+                    $this->assertSame($itemCount, OpeningTradeItem::count());
+                }
+
+                // 2. Valid precision accepted and posted
+                $args['amount'] = $valid;
+                $args['idempotencyKey'] = 'precision-valid-'.$side.'-'.$code;
+                $item = app(PostOpeningTradeItemAction::class)->execute(...$args);
+                $this->assertSame($batchCount + 1, PostingBatch::count());
+                $this->assertSame($auditCount + 1, AuditEvent::count());
+                $this->assertSame($itemCount + 1, OpeningTradeItem::count());
+                $snapshot = $item->fresh()->getAttributes();
+
+                // 3. Currency policy retired/disabled
+                DB::table('currencies')->where('code', $code)->update(['active' => false]);
+                DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', $code)->update(['enabled' => false]);
+
+                // 4. Identical idempotency replay returns immutable receipt snapshot
+                $replayed = app(PostOpeningTradeItemAction::class)->execute(...$args);
+                $this->assertSame($item->id, $replayed->id);
+                $this->assertSame($snapshot, $replayed->getAttributes());
+                $this->assertSame($snapshot, $item->fresh()->getAttributes());
+
+                // 5. New item on retired currency rejected without side effects
+                $args['idempotencyKey'] .= '-new';
+                try {
+                    app(PostOpeningTradeItemAction::class)->execute(...$args);
+                    $this->fail('Retired currency accepted for new item '.$code);
+                } catch (\InvalidArgumentException) {
+                    $this->assertSame($batchCount + 1, PostingBatch::count());
+                    $this->assertSame($auditCount + 1, AuditEvent::count());
+                    $this->assertSame($itemCount + 1, OpeningTradeItem::count());
+                }
+
+                // Restore currency policy so subsequent currencies have active base currency
+                DB::table('currencies')->where('code', $code)->update(['active' => true]);
+                DB::table('company_currencies')->where('company_id', $this->company->id)->where('currency_code', $code)->update(['enabled' => true]);
+            }
+
+            // 6. Missing and disabled currency configuration rejected
+            foreach (['MIS', 'DIS'] as $currCode) {
+                if ($currCode === 'DIS') {
+                    DB::table('currencies')->updateOrInsert(['code' => $currCode], ['name' => $currCode, 'symbol' => $currCode, 'minor_units' => 2, 'active' => true]);
+                    DB::table('company_currencies')->updateOrInsert(['company_id' => $this->company->id, 'currency_code' => $currCode], ['enabled' => false]);
+                }
+                $batchCount = PostingBatch::count();
+                $auditCount = AuditEvent::count();
+                $itemCount = OpeningTradeItem::count();
+                try {
+                    app(PostOpeningTradeItemAction::class)->execute(
+                        company: $this->company,
+                        side: $side,
+                        partyId: $side === 'customer' ? $this->customer->id : $this->testVendor->id,
+                        openingDate: '2026-01-01',
+                        amount: '10.00',
+                        currencyCode: $currCode,
+                        exchangeRate: '1',
+                        actor: $this->owner,
+                        idempotencyKey: 'cfg-fail-'.$side.'-'.$currCode,
+                    );
+                    $this->fail('Missing or disabled currency accepted');
+                } catch (\InvalidArgumentException) {
+                    $this->assertSame($batchCount, PostingBatch::count());
+                    $this->assertSame($auditCount, AuditEvent::count());
+                    $this->assertSame($itemCount, OpeningTradeItem::count());
+                }
+            }
+        }
+
+        // Re-enable ILS and USD so reconciliation can inspect clean standard tenant
+        DB::table('currencies')->whereIn('code', ['ILS', 'USD'])->update(['active' => true]);
+        DB::table('company_currencies')->where('company_id', $this->company->id)->whereIn('currency_code', ['ILS', 'USD'])->update(['enabled' => true]);
+        $this->assertAllSixReconciliations();
+    }
+
+    private function assertAllSixReconciliations(): void
+    {
+        foreach ([
+            AccountingReconciliationService::class,
+            SalesReconciliationService::class,
+            PayablesReconciliationService::class,
+            MoneyReconciliationService::class,
+            Phase7ReconciliationService::class,
+        ] as $service) {
+            $report = app($service)->reconcile($this->company);
+            $this->assertTrue($report->isHealthy, $service.': '.json_encode($report));
+        }
+        $report = app(InventoryReconciliationService::class)->auditCompany($this->company);
+        $this->assertTrue($report->isHealthy, json_encode($report));
+    }
+
     public function test_api_preview_is_read_only_and_confirmation_replay_is_payload_bound(): void
     {
         $url = "/api/v1/companies/{$this->company->id}/accounting/opening-trade-items";
@@ -583,7 +707,7 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $this->assertSame($posted, $snapshot());
         $this->postJson($url.'/execute', array_replace($payload, ['amount' => '101']), $headers)->assertStatus(409);
         $this->assertSame($posted, $snapshot());
-        foreach (['invalid', '0', '-1', '0.0000001', 1.25] as $amount) {
+        foreach (['invalid', '0', '-1', '0.0000001', '1.001', 1.25] as $amount) {
             $this->postJson($url.'/preview', array_replace($payload, ['amount' => $amount]), $headers)->assertStatus(422);
             $this->postJson($url.'/execute', array_replace($payload, ['amount' => $amount, 'idempotency_key' => 'invalid-api-'.$amount]), $headers)->assertStatus(422);
             $this->assertSame($posted, $snapshot());

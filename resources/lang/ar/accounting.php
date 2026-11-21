@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'opening_currency_unavailable' => 'اختر عملة مفعّلة للشركة.',
     'invalid_exact_decimal' => 'أدخل مبلغاً موجباً بما لا يتجاوز :scale منازل عشرية.',
     'opening_post_failed' => 'تعذر قيد الرصيد الافتتاحي. راجع البيانات وحاول مجدداً.',
     'opening_trade_balances_title' => 'تسجيل الأرصدة الافتتاحية للذمم',

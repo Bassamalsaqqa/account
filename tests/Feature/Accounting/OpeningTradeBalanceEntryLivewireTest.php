@@ -15,6 +15,7 @@ use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
 use App\Models\Vendor;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\Feature\Phase8\TradeTestCase;
@@ -38,7 +39,7 @@ final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
     public function test_invalid_additional_rows_retain_entries_and_post_no_legs(): void
     {
         foreach (['customer', 'vendor'] as $side) {
-            foreach (['', 'garbage', '0', '-1', '1e2', '0.0000001'] as $amount) {
+            foreach (['', 'garbage', '0', '-1', '1e2', '0.0000001', '1.001'] as $amount) {
                 $beforeItems = OpeningTradeItem::count();
                 $beforeBatches = PostingBatch::count();
                 $beforeLines = PostingLine::count();
@@ -400,5 +401,70 @@ final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
             ->call('save')
             ->assertSee('GL_OVERLAP_REJECTED')
             ->assertSeeHtml('border-danger/30');
+    }
+
+    public function test_currency_minor_unit_precision_and_disabled_currency_validation_on_main_and_additional_rows(): void
+    {
+        // 1. ILS main row rejects overprecision 1.001
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'ILS')
+            ->set('amount', '1.001')
+            ->call('save')
+            ->assertHasErrors(['amount']);
+
+        // 2. Main row accepts valid ILS 1.01
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'ILS')
+            ->set('amount', '1.01')
+            ->call('save')
+            ->assertHasNoErrors(['amount']);
+
+        // 3. JOD enabled: accepts 1.001, rejects 1.0001
+        DB::table('currencies')->updateOrInsert(['code' => 'JOD'], ['name' => 'JOD', 'symbol' => 'JD', 'minor_units' => 3, 'active' => true]);
+        DB::table('company_currencies')->updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'JOD'], ['enabled' => true]);
+
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'vendor')
+            ->set('party_id', $this->testVendor->id)
+            ->set('currency_code', 'JOD')
+            ->set('exchange_rate', '5.0000000000')
+            ->set('amount', '1.0001')
+            ->call('save')
+            ->assertHasErrors(['amount']);
+
+        // 4. Additional row with JOD rejects 1.0001
+        $rows = [
+            ['amount' => '1.0001', 'currency_code' => 'JOD', 'exchange_rate' => '5.0000000000'],
+        ];
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'ILS')
+            ->set('amount', '100.00')
+            ->set('additional_lines', $rows)
+            ->call('save')
+            ->assertHasErrors(['additional_lines.0.amount']);
+
+        // 5. Disabled or missing currency on additional line fails with opening_currency_unavailable
+        $disabledRow = [
+            ['amount' => '10.00', 'currency_code' => 'ZZZ'],
+        ];
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'ILS')
+            ->set('amount', '100.00')
+            ->set('additional_lines', $disabledRow)
+            ->call('save')
+            ->assertHasErrors(['additional_lines.0.amount']);
     }
 }

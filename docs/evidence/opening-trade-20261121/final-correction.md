@@ -1,15 +1,29 @@
 # Opening Trade Balances Qualification and Release Document
 
 Baseline: `dc60da85ac528ff921134779b021ed605cf696bc`, branch `t3/opening-trade-balances`.
+Current Feature Head: `640693a9267e38fcfd55d5d6e5a87a3edbfbaae5`.
 
 ## Implementation Scope and Invariants
 
 1. **Concrete Opening Trade Items**: Dedicated `OpeningTradeItem` model records opening customer (AR) and vendor (AP) balances. Trade balances settle through normal collections and payments (`ApplyCustomerPaymentCreditAction`, `ApplyVendorPaymentCreditAction`, `PostCustomerPaymentAction`, `PostVendorPaymentAction`), allocating against opening items alongside invoices and purchases. No synthetic invoices, fake inventory movements, or artificial tax entries are created.
 2. **Immutable AR/AP Opening Equity**: Opening items post through canonical `AccountingPostingService` with tenant company lock and dedicated action-owned scopes (`OpeningTradePostingCapability`, `OpeningTradeReversalCapability`, `OpeningTradeEventScope`). Double-count legacy overlap guard (`LegacyGlOpeningOverlapException`) enforces mutual exclusion: posting trade openings is refused if generic AR/AP opening balances exist, and vice versa.
-3. **Exact Decimal Primitives**: `PositiveExactDecimal` rule rejects unrepresentable amounts, negative numbers, missing rates, and overprecision FX before API preview/execution and during Livewire row validation. Amounts and rates use exact decimal storage without binary float coercion.
+3. **Exact Decimal Primitives & Currency Minor Precision**: `PositiveExactDecimal` and `OpeningTradeAmount` rules enforce exact decimal representation matching active, enabled company currency minor units (`CurrencyMinorUnitsResolver::resolveFreshForCompany` and `MoneyValues::amount`) under canonical company lock. Unrepresentable amounts, negative numbers, missing rates, and overprecision amounts are rejected before API preview/execution and during Livewire row validation. Amounts and rates use exact decimal storage without binary float coercion.
 4. **Historical FX and Dated Statements**: Statement queries reflect opening items as-of historical business dates even after reversal. Reversal batches use canonical reversal posting dates. Customer and vendor payment application events track typed opening targets (`opening_trade_item`) with authoritative saved book value relief.
 5. **Web Interface**: Single confirmation Livewire form (`OpeningTradeBalanceEntry`) supports English and Arabic (RTL), responsive at 390px mobile and 1440px desktop. Includes focusable localized error summaries, draft row preservation on validation failure, 16px mobile inputs, and 44px mobile touch targets.
 6. **API and Android Contract**: Endpoints `/api/v1/accounting/opening-trade-items/preview` and `/execute` provide typed validation, foreign carrying value preview, exact idempotency replay, and 422 validation error handling. The Android client contract is **PLANNED / NOT IMPLEMENTED** in this change; zero mobile/Android files are modified.
+
+## P1 Minor Precision & Allocation Provenance Correction
+
+1. **Company Currency Scale Under Lock**:
+   - `PostOpeningTradeItemAction` validates amount precision using fresh, active, enabled company currency scale via `CurrencyMinorUnitsResolver::resolveFreshForCompany` and `MoneyValues::amount` under the canonical company lock.
+   - Preserves authorized immutable replay: identical idempotent submissions return existing posted items without being subjected to altered subsequent currency policy.
+   - Shared validation rule `app/Rules/OpeningTradeAmount.php` unifies UI and API validation against active, enabled company currencies with localized error messages in both Arabic and English (`resources/lang/ar/accounting.php`, `resources/lang/en/accounting.php`).
+   - `OpeningTradeItemApiController` preview and execute endpoints reject amount inputs exceeding active enabled currency precision with 422 Problem Details.
+2. **Allocation Provenance Guard Tightening**:
+   - `CustomerPaymentHistory` and `VendorPaymentHistoryCommands` permit reversed opening trade item allocation in payment history if and only if the parent payment is itself reversed (`$payment->is_reversed`).
+   - Active payments referencing reversed opening trade items fail closed.
+   - Added test `test_active_payments_reject_a_reversed_opening_target_in_history` in `OpeningTradeSettlementTest`.
+   - Verified both-side reversal lifecycle: active settlement blocks opening item reversal; reversing parent payment restores open balance; subsequent opening reversal cleanly voids the opening balance and satisfies all six reconciliation services.
 
 ## Stitch Reference Retrieval
 
@@ -31,34 +45,31 @@ Visual review in conversation confirmed Arabic RTL layout alignment and field st
 Verification was conducted on disposable loopback MariaDB (port 3342) using owned isolated schemas:
 
 ```sh
-# Full Accounting test suite (includes 6 reconciliation services on opening fixtures)
-php tests/Support/run-phase8-disposable.php -- --do-not-cache-result tests/Feature/Accounting
-
-# Frontend unit and component tests
-npm test
+# Full Accounting + Regression test suite (includes 6 reconciliation services on opening fixtures)
+php tests/Support/run-phase8-disposable.php -- --do-not-cache-result tests/Feature/Accounting tests/Feature/Phase4/LaterCustomerCreditTest.php tests/Feature/Phase6/CheckLifecycleTest.php tests/Feature/Phase5E/VendorPaymentResidualAndPreservationTest.php
 
 # Static analysis and style verification
 vendor/bin/pint --test
-vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+vendor/bin/phpstan analyse --memory-limit=1G --no-progress app/
 
-# Production build verification (no source maps)
-npm run build
-git diff --check dc60da85..HEAD
+# Whitespace diff check
+git diff --check 640693a9267e38fcfd55d5d6e5a87a3edbfbaae5..HEAD
 ```
 
 ## Exact Test Counts and Evidence
 
-- **Accounting Suite**: **59 tests, 586 assertions**, zero failures/errors, owned schema cleaned. Includes full coverage of:
+- **Complete Extended Test Suite**: **90 tests, 918 assertions**, zero failures/errors, owned schema `accounting_p8_tmp_51f138dbed52` cleaned (3m04.928s, 93MB memory). Includes full coverage of:
   - Opening trade items creation, preview, idempotency, and reversal
+  - Active and enabled company currency minor unit precision under canonical lock
+  - Allocation provenance failure closed when active payments reference reversed opening items
+  - Both-side parent payment reversal followed by opening trade item reversal
   - Two-process AR/AP company lock race condition tests
   - Populated history downgrade refusal and migration round-trip
   - Negative actor/party/tenant/currency/decimal validation matrix
   - All six canonical reconciliation services (Accounting, Inventory, Sales, Payables, Money, Phase 7) on opening fixtures
-- **Frontend Suite**: **140 passed**, zero failures.
 - **Static Analysis & Build**:
-  - PHPStan: 804 files analyzed, 0 errors.
-  - Pint: Passed cleanly.
-  - Production build: Asset manifest verified, 0 source maps generated.
+  - PHPStan: 804 files analyzed in `app/`, 0 errors (Level 6).
+  - Pint: Passed cleanly (`{"tool":"pint","result":"passed"}`).
   - Git whitespace diff: Clean (`git diff --check` passed).
 - **Browser Verification**: Verified via T3 browser on owned fixture schema (MariaDB port 3342) in English and Arabic RTL at 390px and 1440px viewports:
   - Invalid input rejection with draft retention and error summary focus
@@ -70,5 +81,5 @@ git diff --check dc60da85..HEAD
 
 1. **Browser Matrix**: Exhaustive keyboard Tab navigation traversal and all cross-currency browser permutations were not exhaustively exercised.
 2. **Tenant Cutover Audit**: Real tenant data cutover audit has not been run against production data; cutover tooling was qualified on fixture schemas only.
-3. **Release Status**: Production deployment, production migrations, and post-merge execution remain on strict **HOLD** pending Owner approval.
+3. **Release Status**: Production deployment, production migrations, and post-merge execution remain on strict **HOLD** pending Owner approval. No push to remote until independent Huda Codex review completes.
 4. **CI Workflows**: Zero GitHub Actions workflows exist or were triggered; zero Actions minutes consumed.

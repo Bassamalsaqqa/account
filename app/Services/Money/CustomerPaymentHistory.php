@@ -81,7 +81,7 @@ final class CustomerPaymentHistory
                 $boundary = PostingBatch::where('company_id', $company->id)->findOrFail($row->prior_posting_batch_id);
                 $previous = PostingBatch::where('company_id', $company->id)->where('id', '<', $batch->id)->max('id');
                 if ($row->company_id !== $payment->company_id || (int) $openingItem->customer_id !== (int) $payment->customer_id
-                    || ! $openingItem->isPosted() || $boundary->id < $openingItem->posting_batch_id || (int) $previous !== (int) $boundary->id
+                    || (! $openingItem->isPosted() && ! ($openingItem->isReversed() && $payment->is_reversed)) || $boundary->id < $openingItem->posting_batch_id || (int) $previous !== (int) $boundary->id
                     || Carbon::parse($payment->payment_date)->toDateString() < Carbon::parse($openingItem->opening_date)->toDateString()) {
                     throw new InvalidArgumentException('Receipt allocation provenance is incoherent.');
                 }

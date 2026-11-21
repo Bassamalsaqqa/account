@@ -44,6 +44,7 @@ try {
         $node->nodeValue = str_replace('\\', '/', $root).'/'.$node->nodeValue;
     }
     $environment = $schema->environment();
+    $environment['APP_KEY'] = 'base64:'.base64_encode(random_bytes(32));
     foreach (DisposableMariaDbSchema::testSettings() as $key => $value) {
         $environment['PHASE8_TEST_DB_'.$key] = $value;
     }

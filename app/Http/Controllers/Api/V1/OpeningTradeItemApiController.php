@@ -13,6 +13,8 @@ use App\Models\OpeningTradeItem;
 use App\Models\User;
 use App\Rules\PositiveExactDecimal;
 use App\Services\Accounting\OpeningTradeCutoverAuditService;
+use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Services\Money\MoneyValues;
 use App\Services\Security\CommandSessionGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\Exception\MathException;
@@ -72,6 +74,14 @@ final class OpeningTradeItemApiController extends ApiController
         $currencyCode = strtoupper(trim((string) ($payload['currency_code'] ?? '')));
         if ($currencyCode === '') {
             return $this->problem('Unprocessable Content', 422, 'Field [currency_code] is required.', $traceId);
+        }
+
+        try {
+            $scale = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currencyCode, lockForUpdate: false);
+            $amountDec = PositiveExactDecimal::parse($amountRaw, $scale);
+            MoneyValues::amount($amountRaw, $currencyCode);
+        } catch (Throwable) {
+            return $this->problem('Unprocessable Content', 422, 'Field [amount] must match an active, enabled currency and its precision.', $traceId);
         }
 
         $companyBase = strtoupper((string) $company->base_currency_code);

@@ -291,7 +291,7 @@ final class VendorPaymentHistoryCommands
             && (int) $item->vendor_id === (int) $payment->vendor_id
             && $item->side === OpeningTradeItem::SIDE_VENDOR
             && $date >= Carbon::parse($item->opening_date)->toDateString(), 'Allocation source identity/date');
-        $this->require($item->isPosted(), 'Opening trade item must be posted');
+        $this->require($item->isPosted() || ($item->isReversed() && $payment->is_reversed), 'Opening trade item must be posted or belong to a reversed payment');
 
         return $item;
     }
