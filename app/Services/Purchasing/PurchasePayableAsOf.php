@@ -161,6 +161,14 @@ final class PurchasePayableAsOf
                 if (empty($zPurchase->purchase_number) || $zPurchase->posted_at === null || $zPurchase->posted_by === null) {
                     throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
                 }
+                $grandBase = BigDecimal::of((string) $zPurchase->grand_total_base);
+                $grandCurr = BigDecimal::of((string) $zPurchase->grand_total_currency);
+                $taxBase = BigDecimal::of((string) $zPurchase->tax_total_base);
+                $subtotalBase = BigDecimal::of((string) $zPurchase->subtotal_base);
+                if (! $grandBase->isZero() || ! $grandCurr->isZero() || ! $taxBase->isZero() || ! $subtotalBase->isZero()) {
+                    throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                }
+                app(LandedCostIntegrity::class)->validate($zPurchase, true);
                 $actor = $zPurchase->poster ?? User::find($zPurchase->posted_by) ?? new User(['id' => $zPurchase->posted_by]);
                 $cmd = $builder->build($company, $zPurchase, (string) $zPurchase->purchase_number, $actor, requirePosted: true);
                 if ($cmd !== null) {

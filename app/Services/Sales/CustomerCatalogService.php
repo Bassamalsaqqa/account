@@ -10,9 +10,11 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class CustomerCatalogService
 {
@@ -92,19 +94,35 @@ final class CustomerCatalogService
             $payload = $validator->validate();
             if (array_key_exists('credit_limit', $data)) {
                 $rawLimit = $data['credit_limit'];
-                if (is_float($rawLimit)) {
+                if (is_bool($rawLimit) || is_float($rawLimit)) {
                     throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
                 }
-                if (is_string($rawLimit) && trim($rawLimit) === '') {
-                    $rawLimit = null;
-                } elseif (is_numeric($rawLimit)) {
-                    $rawLimit = (string) $rawLimit;
+                if ($rawLimit === null || (is_string($rawLimit) && trim($rawLimit) === '')) {
+                    $payload['credit_limit'] = null;
+                } else {
+                    if (! is_string($rawLimit) && ! is_int($rawLimit)) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
+                    }
+                    $trimmed = trim((string) $rawLimit);
+                    if (! preg_match('/^\d+(\.\d+)?$/', $trimmed)) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
+                    }
+                    try {
+                        $dec = BigDecimal::of($trimmed);
+                        if ($dec->getScale() > 6) {
+                            throw ValidationException::withMessages(['credit_limit' => __('validation.max.numeric', ['attribute' => __('sales.credit_limit'), 'max' => 6])]);
+                        }
+                        $limit = MoneyAmount::from($trimmed);
+                    } catch (ValidationException $ve) {
+                        throw $ve;
+                    } catch (Throwable) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
+                    }
+                    if ($limit->getAmount()->isNegative()) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.min.numeric', ['attribute' => __('sales.credit_limit'), 'min' => 0])]);
+                    }
+                    $payload['credit_limit'] = (string) $limit->getAmount()->toScale(6);
                 }
-                $limit = $rawLimit === null ? null : MoneyAmount::from($rawLimit);
-                if ($limit?->getAmount()->isNegative()) {
-                    throw ValidationException::withMessages(['credit_limit' => __('validation.min.numeric', ['attribute' => __('sales.credit_limit'), 'min' => 0])]);
-                }
-                $payload['credit_limit'] = $limit === null ? null : (string) $limit->getAmount()->toScale(6);
             }
             $before = $customer->exists ? $customer->only(array_keys($payload)) : null;
             $customer->fill($payload);

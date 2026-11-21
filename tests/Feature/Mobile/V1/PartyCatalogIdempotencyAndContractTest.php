@@ -637,7 +637,7 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         ]);
         $floatResp->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
-        $this->assertStringContainsString('Floating point values are not permitted', (string) $floatResp->json('error.message'));
+        $this->assertStringContainsString('Floating point and boolean values are not permitted', (string) $floatResp->json('error.message'));
 
         // Reject negative credit limit
         $negKey = 'CUST-NEG-'.(string) Str::uuid();
@@ -879,11 +879,11 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
-    public function test_both_side_concurrent_create_contract(): void
+    public function test_immediate_retry_with_exact_key_converges_to_replay(): void
     {
-        $key = 'CONCURRENT-CREATE-'.Str::uuid();
+        $key = 'IMMEDIATE-RETRY-'.Str::uuid();
         $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
-        $payload = ['name_ar' => 'عميل تزامن'];
+        $payload = ['name_ar' => 'عميل إعادة المحاولة الفورية'];
 
         $r1 = $this->withHeaders([
             'Authorization' => "Bearer {$this->rawToken}",
@@ -898,47 +898,265 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         ])->postJson($endpoint, $payload);
         $r2->assertStatus(200)->assertHeader('X-Idempotent-Replay', 'true');
         $this->assertSame($r1->json('id'), $r2->json('id'));
-        $this->assertSame(1, Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('name_ar', 'عميل تزامن')->count());
+        $this->assertSame(1, Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('name_ar', 'عميل إعادة المحاولة الفورية')->count());
     }
 
-    public function test_unrecorded_baseline_create_cutover_adopts_party_without_duplicate(): void
+    public function test_new_create_does_not_adopt_existing_unrecorded_party_and_creates_distinct_entity(): void
     {
         app(CompanyContext::class)->setCompany($this->company, $this->user);
-        // Simulate an unrecorded customer created during baseline without NativeCommandReceipt
+        // Existing customer created through web/baseline without a mobile NativeCommandReceipt
         $unrecordedCustomer = Customer::create([
             'company_id' => $this->company->id,
-            'name_ar' => 'عميل مقطوعية قديم',
+            'name_ar' => 'عميل مقطوعية أصلي',
             'phone' => '+970599998877',
             'status' => 'active',
             'created_by' => $this->user->id,
             'updated_by' => $this->user->id,
         ]);
 
-        $key = 'CUTOVER-RETRY-'.Str::uuid();
+        $key = 'NEW-PARTY-CREATE-'.Str::uuid();
         $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
         $payload = [
-            'name_ar' => 'عميل مقطوعية قديم',
+            'name_ar' => 'عميل مقطوعية أصلي',
             'phone' => '+970599998877',
         ];
 
-        // Retry of lost ACK after upgrade must adopt the unrecorded party and record the receipt
+        // Fresh mobile create MUST NOT adopt the existing unrecorded party!
+        // It must create a distinct new entity with its own public_id.
         $resp = $this->withHeaders([
             'Authorization' => "Bearer {$this->rawToken}",
             'Idempotency-Key' => $key,
         ])->postJson($endpoint, $payload);
 
         $resp->assertStatus(201);
-        $this->assertSame($unrecordedCustomer->public_id, $resp->json('id'));
+        $newCustomerId = $resp->json('id');
+        $this->assertNotSame($unrecordedCustomer->public_id, $newCustomerId, 'Legitimate new party must NOT be suppressed or adopted onto existing party.');
 
-        // Crucial invariant: NO duplicate customer was created! Total count is exactly 1!
-        $this->assertSame(1, Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('name_ar', 'عميل مقطوعية قديم')->count());
+        // Total count of customers with this name is now exactly 2
+        $this->assertSame(2, Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('name_ar', 'عميل مقطوعية أصلي')->count());
 
-        // Subsequent retry replays the receipt
+        // Subsequent retry of the exact same key replays the newly created customer
         $replay = $this->withHeaders([
             'Authorization' => "Bearer {$this->rawToken}",
             'Idempotency-Key' => $key,
         ])->postJson($endpoint, $payload);
         $replay->assertStatus(200)->assertHeader('X-Idempotent-Replay', 'true');
-        $this->assertSame($unrecordedCustomer->public_id, $replay->json('id'));
+        $this->assertSame($newCustomerId, $replay->json('id'));
+    }
+
+    public function test_english_only_customer_create_without_code_succeeds_without_undefined_name_ar(): void
+    {
+        $key = 'ENG-CUST-'.Str::uuid();
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
+        $payload = [
+            'name_en' => 'Global Retailers Ltd',
+            'phone' => '+442071234567',
+        ];
+
+        $resp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $key,
+        ])->postJson($endpoint, $payload);
+
+        $resp->assertStatus(201);
+        $data = $resp->json();
+        $this->assertNotNull($data['id']);
+        $this->assertSame('Global Retailers Ltd', $data['name_en']);
+        $this->assertSame('Global Retailers Ltd', $data['name']);
+        $this->assertNull($data['name_ar']);
+        $this->assertNull($data['code']);
+    }
+
+    public function test_credit_limit_validation_scale_and_rejection_of_booleans_and_floats(): void
+    {
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
+
+        // 1. Scale > 6 (e.g. 0.0000001) must fail 422 with VALIDATION_FAILED, NOT 500!
+        $respScale = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'LIM-SCALE-'.Str::uuid(),
+        ])->postJson($endpoint, [
+            'name_ar' => 'عميل دقة زائدة',
+            'credit_limit' => '0.0000001',
+        ]);
+        $respScale->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 2. Boolean true must fail 422, NOT coerce to "1.000000"
+        $respTrue = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'LIM-TRUE-'.Str::uuid(),
+        ])->postJson($endpoint, [
+            'name_ar' => 'عميل منطقي موجب',
+            'credit_limit' => true,
+        ]);
+        $respTrue->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 3. Boolean false must fail 422
+        $respFalse = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'LIM-FALSE-'.Str::uuid(),
+        ])->postJson($endpoint, [
+            'name_ar' => 'عميل منطقي سالب',
+            'credit_limit' => false,
+        ]);
+        $respFalse->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 4. Float 12.34 must fail 422 before string coercion
+        $respFloat = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'LIM-FLOAT-'.Str::uuid(),
+        ])->postJson($endpoint, [
+            'name_ar' => 'عميل رقم عائم',
+            'credit_limit' => 12.34,
+        ]);
+        $respFloat->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 5. Valid string "12.345678" succeeds 201 and preserves 6 decimal storage
+        $respValid = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'LIM-VALID-'.Str::uuid(),
+        ])->postJson($endpoint, [
+            'name_ar' => 'عميل ائتمان صحيح',
+            'credit_limit' => '12.345678',
+        ]);
+        $respValid->assertStatus(201);
+        $customer = Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('public_id', $respValid->json('id'))->firstOrFail();
+        $this->assertSame('12.345678', (string) $customer->credit_limit);
+    }
+
+    public function test_historical_598c_request_replay_with_name_and_unscaled_credit_limit(): void
+    {
+        $idempotencyKey = 'HIST-598C-'.Str::uuid();
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
+
+        // Historical 598c4bf payload: had 'name' (expanded to 'name_ar') and unscaled credit_limit: "12.34"
+        $rawPayload = [
+            'name' => 'Al-Salam Traders',
+            'credit_limit' => '12.34',
+        ];
+        $h598cNormalized = [
+            'credit_limit' => '12.34', // 598c hashed the unscaled limit
+            'name' => 'Al-Salam Traders',
+            'name_ar' => 'Al-Salam Traders',
+        ];
+        ksort($h598cNormalized);
+
+        $h598cCanonical = [
+            'actor_id' => (int) $this->user->id,
+            'device_id' => (string) MobileDevice::where('user_id', $this->user->id)->firstOrFail()->device_id,
+            'company_id' => (string) $this->company->public_id,
+            'command' => 'customer_create',
+            'payload' => $h598cNormalized,
+        ];
+        $storedHash = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+
+        $snapshot = [
+            'id' => (string) Str::ulid(),
+            'name' => 'Al-Salam Traders',
+            'name_ar' => 'Al-Salam Traders',
+            'credit_limit' => '12.34',
+        ];
+
+        NativeCommandReceipt::create([
+            'company_id' => $this->company->id,
+            'command_type' => 'customer_create',
+            'idempotency_key' => $idempotencyKey,
+            'actor_id' => $this->user->id,
+            'device_id' => $h598cCanonical['device_id'],
+            'request_hash' => $storedHash,
+            'payload' => $h598cCanonical,
+            'response_snapshot' => $snapshot,
+            'status' => 'completed',
+        ]);
+
+        // Replay of the exact historical request body recovers the receipt via 598c legacy hash
+        $resp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $idempotencyKey,
+        ])->postJson($endpoint, $rawPayload);
+
+        $resp->assertStatus(200)
+            ->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame($snapshot['id'], $resp->json('id'));
+    }
+
+    public function test_historical_supplier_receipt_replay_with_company_name_and_fresh_request_rejection(): void
+    {
+        $idempotencyKey = 'HIST-SUPP-'.Str::uuid();
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers";
+
+        // 1. Historical supplier receipt recorded with company_name
+        $historicalPayload = [
+            'company_name' => 'Historical Industrial Supplies',
+            'phone' => '+970599114477',
+        ];
+        $normalizedHist = [
+            'name_ar' => 'Historical Industrial Supplies',
+            'phone' => '+970599114477',
+        ];
+        ksort($normalizedHist);
+
+        $canonicalHist = [
+            'actor_id' => (int) $this->user->id,
+            'device_id' => (string) MobileDevice::where('user_id', $this->user->id)->firstOrFail()->device_id,
+            'company_id' => (string) $this->company->public_id,
+            'command' => 'supplier_create',
+            'payload' => $normalizedHist,
+        ];
+        $rawCanonical = $canonicalHist;
+        $rawCanonical['payload'] = $historicalPayload;
+        $storedHash = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
+
+        $snapshot = [
+            'id' => (string) Str::ulid(),
+            'name' => 'Historical Industrial Supplies',
+            'phone' => '+970599114477',
+        ];
+
+        NativeCommandReceipt::create([
+            'company_id' => $this->company->id,
+            'command_type' => 'supplier_create',
+            'idempotency_key' => $idempotencyKey,
+            'actor_id' => $this->user->id,
+            'device_id' => $canonicalHist['device_id'],
+            'request_hash' => $storedHash,
+            'payload' => $canonicalHist,
+            'response_snapshot' => $snapshot,
+            'status' => 'completed',
+        ]);
+
+        // Replaying historical supplier request with company_name must recover receipt before validation rejection!
+        $replayResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $idempotencyKey,
+        ])->postJson($endpoint, $historicalPayload);
+
+        $replayResp->assertStatus(200)
+            ->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame($snapshot['id'], $replayResp->json('id'));
+
+        // 2. Fresh supplier request with company_name (no existing receipt) MUST reject with 422!
+        $freshKey = 'FRESH-SUPP-'.Str::uuid();
+        $freshResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $freshKey,
+        ])->postJson($endpoint, [
+            'company_name' => 'New Unauthorized Supplier',
+        ]);
+        $freshResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('company_name', (string) $freshResp->json('error.message'));
+
+        // 3. Fresh supplier request with address_line_1_ar MUST reject with 422!
+        $freshAddrResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'FRESH-ADDR-'.Str::uuid(),
+        ])->postJson($endpoint, [
+            'name_ar' => 'مورد بعنوان غير مدعوم',
+            'address_line_1_ar' => 'شارع غير مدعوم',
+        ]);
+        $freshAddrResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('address_line_1_ar', (string) $freshAddrResp->json('error.message'));
     }
 }

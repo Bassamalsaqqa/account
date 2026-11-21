@@ -89,9 +89,11 @@ final class PurchaseController extends Controller
         if ($request->filled('supplier_id')) {
             $query->whereHas('vendor', fn ($q) => $q->where('company_id', $company->id)->where('public_id', (string) $request->query('supplier_id')));
         }
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
+        $companyToday = Carbon::now($companyTimezone)->toDateString();
         if ($request->boolean('allocatable')) {
             $query->where('status', Purchase::STATUS_POSTED)->whereNotNull('posting_batch_id')
-                ->where('purchase_date', '<=', now()->toDateString());
+                ->where('purchase_date', '<=', $companyToday);
         }
         if ($request->filled('before_id')) {
             $query->where('public_id', '<', (string) $request->query('before_id'));

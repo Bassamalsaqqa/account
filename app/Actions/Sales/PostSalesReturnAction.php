@@ -10,6 +10,7 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
+use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Customer;
@@ -362,27 +363,36 @@ class PostSalesReturnAction implements StockEventOwner
                 $taxRemainingGroups--;
                 $groupBase = $taxRemainingGroups === 0 ? $taxRemainingBase : $tax->multipliedBy($lockedReturn->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 $taxRemainingBase = $taxRemainingBase->minus($groupBase);
-                if ($groupBase->isPositive()) {
-                    app(SalesPostingLines::class)->append($postingLines,
-                        lineNumber: $lineNum++,
+
+                $taxAmount = MoneyAmount::from($tax->abs());
+                $computedBase = $fx->toBase($taxAmount);
+                $isDebit = $tax->isPositive();
+
+                // 1. Primary transaction currency line in original signed tax direction
+                $postingLines[] = new PostingLineCommand(
+                    lineNumber: count($postingLines) + 1,
+                    ledgerAccountId: $accountId,
+                    debitBase: $isDebit ? $computedBase : MoneyAmount::zero(),
+                    creditBase: $isDebit ? MoneyAmount::zero() : $computedBase,
+                    transactionCurrencyCode: $currency,
+                    transactionAmount: $taxAmount,
+                    exchangeRate: $fx,
+                    description: "Sales Return {$returnNumber} Tax Reversal",
+                );
+
+                // 2. Base adjustment line represented separately if groupBase differs from computedBase
+                $targetSigned = $groupBase;
+                $computedSigned = $isDebit ? BigDecimal::of($computedBase->toDecimalString()) : BigDecimal::of($computedBase->toDecimalString())->negated();
+                $baseResidual = $targetSigned->minus($computedSigned);
+
+                if (! $baseResidual->isZero()) {
+                    $residualDebit = $baseResidual->isPositive();
+                    $postingLines[] = new PostingLineCommand(
+                        lineNumber: count($postingLines) + 1,
                         ledgerAccountId: $accountId,
-                        debitBase: MoneyAmount::from($groupBase),
-                        creditBase: MoneyAmount::zero(),
-                        transactionCurrencyCode: $currency,
-                        transactionAmount: MoneyAmount::from($tax),
-                        exchangeRate: $fx,
-                        description: "Sales Return {$returnNumber} Tax Reversal",
-                    );
-                } elseif ($groupBase->isNegative()) {
-                    app(SalesPostingLines::class)->append($postingLines,
-                        lineNumber: $lineNum++,
-                        ledgerAccountId: $accountId,
-                        debitBase: MoneyAmount::zero(),
-                        creditBase: MoneyAmount::from((string) $groupBase->abs()),
-                        transactionCurrencyCode: $currency,
-                        transactionAmount: MoneyAmount::from((string) $tax->abs()),
-                        exchangeRate: $fx,
-                        description: "Sales Return {$returnNumber} Tax Reversal Adjustment",
+                        debitBase: $residualDebit ? MoneyAmount::from($baseResidual->abs()) : MoneyAmount::zero(),
+                        creditBase: $residualDebit ? MoneyAmount::zero() : MoneyAmount::from($baseResidual->abs()),
+                        description: "Sales Return {$returnNumber} Tax Reversal Base Adjustment",
                     );
                 }
             }

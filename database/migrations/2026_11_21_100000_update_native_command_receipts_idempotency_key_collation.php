@@ -26,11 +26,11 @@ return new class extends Migration
     {
         $unicodeRowsExist = DB::table('native_command_receipts')
             ->whereNotNull('idempotency_key')
-            ->get(['idempotency_key'])
-            ->contains(fn ($row) => preg_match('/[^\x00-\x7F]/', (string) $row->idempotency_key) === 1);
+            ->whereRaw('LENGTH(idempotency_key) != CHAR_LENGTH(idempotency_key)')
+            ->exists();
 
         if ($unicodeRowsExist) {
-            throw new RuntimeException('Cannot downgrade native_command_receipts idempotency_key collation to ascii_bin: table contains non-ASCII Unicode idempotency keys.');
+            throw new RuntimeException('Cannot downgrade native_command_receipts idempotency_key collation to ascii_bin: table contains non-ASCII Unicode idempotency keys. Under the forward-schema rollback policy (docs/CONTROLLED_RELEASE_CHECKLIST.md:36), retain the forward schema on rollback.');
         }
 
         Schema::table('native_command_receipts', function (Blueprint $table): void {

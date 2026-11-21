@@ -23,6 +23,7 @@ use App\Support\Mobile\Receipt\NativeWriteContextResolver;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
@@ -35,8 +36,8 @@ final class SupplierController extends Controller
     public const ALLOWED_SUPPLIER_FIELDS = [
         'name', 'name_ar', 'name_en', 'business_name_ar', 'business_name_en',
         'code', 'phone', 'whatsapp', 'email', 'tax_number',
-        'address', 'address_ar', 'address_en', 'address_line_1_ar', 'address_line_1_en',
-        'city_ar', 'city_en', 'notes', 'country_code', 'status', 'active',
+        'address', 'address_ar', 'address_en',
+        'city_ar', 'city_en', 'postal_code', 'notes', 'country_code', 'status', 'active',
     ];
 
     /**
@@ -277,16 +278,23 @@ final class SupplierController extends Controller
             );
         }
 
+        $existingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+
         $payload = $request->json()->all();
         $unknown = array_diff(array_keys($payload), self::ALLOWED_SUPPLIER_FIELDS);
         if (! empty($unknown)) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
-                status: 422
-            );
+            $isLegacyCompanyNameOnly = count($unknown) === 1 && in_array('company_name', $unknown, true);
+            if (! ($isLegacyCompanyNameOnly && $existingReceipt !== null)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
+                    status: 422
+                );
+            }
         }
-        if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name'])) {
+        if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name']) && empty($payload['company_name'])) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
                 message: 'Supplier name is required.',
@@ -298,6 +306,10 @@ final class SupplierController extends Controller
         if (empty($normalizedPayload['name_ar']) && ! empty($normalizedPayload['name'])) {
             $normalizedPayload['name_ar'] = $normalizedPayload['name'];
         }
+        if (empty($normalizedPayload['name_ar']) && ! empty($normalizedPayload['company_name'])) {
+            $normalizedPayload['name_ar'] = $normalizedPayload['company_name'];
+        }
+        unset($normalizedPayload['company_name'], $normalizedPayload['address_line_1_ar'], $normalizedPayload['address_line_1_en']);
         if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
             $normalizedPayload['address_ar'] = $normalizedPayload['address'];
         }
@@ -335,23 +347,7 @@ final class SupplierController extends Controller
                 ): array {
                     app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
 
-                    // Cutover rule for unrecorded baseline supplier creation
-                    $unrecorded = null;
-                    if (empty($normalizedPayload['code'])) {
-                        $unrecorded = Vendor::where('company_id', $lockedCompany->id)
-                            ->where('created_by', $lockedActor->id)
-                            ->where('name_ar', $normalizedPayload['name_ar'])
-                            ->when(! empty($normalizedPayload['phone']), fn ($q) => $q->where('phone', $normalizedPayload['phone']))
-                            ->whereNotExists(function ($q) use ($lockedCompany): void {
-                                $q->selectRaw('1')->from('native_command_receipts')
-                                    ->whereColumn('entity_id', 'vendors.id')
-                                    ->where('company_id', $lockedCompany->id)
-                                    ->where('command_type', 'supplier_create');
-                            })
-                            ->first();
-                    }
-
-                    $vendor = $unrecorded ?? $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
+                    $vendor = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
 
                     $baseCurr = (string) $lockedCompany->base_currency_code;
                     $cmu = $minorUnitsResolver->resolve($baseCurr, $lockedCompany);
@@ -649,10 +645,19 @@ final class SupplierController extends Controller
             );
         }
 
+        $existingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
         try {
-            $paymentDate = $request->has('payment_date')
-                ? NativeWriteContextResolver::validateDate($request->input('payment_date'), 'payment_date')
-                : now()->format('Y-m-d');
+            if ($request->has('payment_date')) {
+                $paymentDate = NativeWriteContextResolver::validateDate($request->input('payment_date'), 'payment_date');
+            } elseif ($existingReceipt !== null && isset($existingReceipt->payload['payment_date']) && is_string($existingReceipt->payload['payment_date'])) {
+                $paymentDate = $existingReceipt->payload['payment_date'];
+            } else {
+                $paymentDate = Carbon::now($companyTimezone)->toDateString();
+            }
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -665,14 +670,13 @@ final class SupplierController extends Controller
         if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
         }
-        $isExistingReceipt = NativeCommandReceipt::where('company_id', $company->id)
-            ->where('idempotency_key', $idempotencyKey)
-            ->exists();
 
         $rawRate = $request->input('exchange_rate');
         if ($paymentCurrency !== (string) $company->base_currency_code) {
             if (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '') {
-                if (! $isExistingReceipt) {
+                if ($existingReceipt !== null) {
+                    $rawRate = isset($existingReceipt->payload['exchange_rate']) ? (string) $existingReceipt->payload['exchange_rate'] : '1.0000000000';
+                } else {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
                         message: 'Explicit exchange_rate is required for foreign currency payment.',
@@ -688,8 +692,25 @@ final class SupplierController extends Controller
         }
 
         $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
-        $notes = $request->has('notes') && is_string($request->input('notes')) ? trim($request->input('notes')) : 'سند صرف للمورد من تطبيق الجوال';
-        $reference = $request->has('reference') && is_string($request->input('reference')) ? trim($request->input('reference')) : null;
+        if ($rawAccountId === null && $existingReceipt !== null && array_key_exists('cash_account_id', $existingReceipt->payload)) {
+            $rawAccountId = $existingReceipt->payload['cash_account_id'];
+        }
+
+        if ($request->has('notes') && is_string($request->input('notes'))) {
+            $notes = trim($request->input('notes'));
+        } elseif ($existingReceipt !== null && array_key_exists('notes', $existingReceipt->payload)) {
+            $notes = $existingReceipt->payload['notes'];
+        } else {
+            $notes = 'سند صرف للمورد من تطبيق الجوال';
+        }
+
+        if ($request->has('reference') && is_string($request->input('reference'))) {
+            $reference = trim($request->input('reference'));
+        } elseif ($existingReceipt !== null && array_key_exists('reference', $existingReceipt->payload)) {
+            $reference = $existingReceipt->payload['reference'];
+        } else {
+            $reference = null;
+        }
         $allocationsInput = $request->input('allocations');
 
         if ($allocationsInput !== null && ! is_array($allocationsInput)) {
@@ -766,7 +787,7 @@ final class SupplierController extends Controller
             'allocations' => $canonicalAllocations,
         ];
 
-        if ($request->has('exchange_rate') || $request->has('currency') || $isExistingReceipt) {
+        if ($request->has('exchange_rate') || $request->has('currency') || $existingReceipt !== null) {
             $canonicalPayload['exchange_rate'] = (string) BigDecimal::of($paymentRate)->toScale(10);
         }
 
@@ -782,17 +803,10 @@ final class SupplierController extends Controller
                 $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
             }
         }
-        if ($paymentCurrency !== (string) $company->base_currency_code) {
-            if (isset($canonicalPayload['exchange_rate'])) {
-                $legacyPayload = $canonicalPayload;
-                unset($legacyPayload['exchange_rate']);
-                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
-            } else {
-                $legacyPayload = $canonicalPayload;
-                $legacyPayload['exchange_rate'] = '1.0000000000';
-                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
-            }
-        }
+        $aliasPayload = $canonicalPayload;
+        $aliasPayload['vendor_id'] = $aliasPayload['supplier_id'];
+        unset($aliasPayload['supplier_id']);
+        $legacyHashes[] = hash('sha256', json_encode($aliasPayload, JSON_THROW_ON_ERROR));
 
         try {
             $result = $receiptManager->execute(

@@ -26,6 +26,7 @@ use App\Support\Mobile\WireResponse;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -360,12 +361,43 @@ final class CustomerController extends Controller
                 status: 422
             );
         }
-        if (array_key_exists('credit_limit', $payload) && is_float($payload['credit_limit'])) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Floating point values are not permitted for credit_limit. Use exact string or integer representation.',
-                status: 422
-            );
+        if (array_key_exists('credit_limit', $payload)) {
+            $rawLimit = $payload['credit_limit'];
+            if (is_bool($rawLimit) || is_float($rawLimit) || (! is_string($rawLimit) && ! is_int($rawLimit) && $rawLimit !== null)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Floating point and boolean values are not permitted for credit_limit. Use exact string or integer representation.',
+                    status: 422
+                );
+            }
+            if ($rawLimit !== null) {
+                $trimmed = trim((string) $rawLimit);
+                if ($trimmed !== '') {
+                    if (! preg_match('/^\d+(\.\d+)?$/', $trimmed)) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'credit_limit must be a valid non-negative number.',
+                            status: 422
+                        );
+                    }
+                    try {
+                        $dec = BigDecimal::of($trimmed);
+                        if ($dec->getScale() > 6) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: 'credit_limit exceeds maximum precision of 6 decimal places.',
+                                status: 422
+                            );
+                        }
+                    } catch (Throwable $e) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'credit_limit is invalid: '.$e->getMessage(),
+                            status: 422
+                        );
+                    }
+                }
+            }
         }
         if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name'])) {
             return MobileApiBoundary::buildErrorResponse(
@@ -400,6 +432,15 @@ final class CustomerController extends Controller
         ];
 
         $legacyHashes = [];
+        // 598c legacy hash: alias-expanded, sorted, with original unscaled credit_limit
+        if (array_key_exists('credit_limit', $payload) && $payload['credit_limit'] !== null && (string) $payload['credit_limit'] !== ($normalizedPayload['credit_limit'] ?? null)) {
+            $h598cPayload = $normalizedPayload;
+            $h598cPayload['credit_limit'] = $payload['credit_limit'];
+            ksort($h598cPayload);
+            $h598cCanonical = $canonicalPayload;
+            $h598cCanonical['payload'] = $h598cPayload;
+            $legacyHashes[] = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+        }
         if ($normalizedPayload !== $payload) {
             $rawCanonical = $canonicalPayload;
             $rawCanonical['payload'] = $payload;
@@ -423,23 +464,7 @@ final class CustomerController extends Controller
                 ): array {
                     app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
 
-                    // Cutover rule for unrecorded baseline party creation
-                    $unrecorded = null;
-                    if (empty($normalizedPayload['code'])) {
-                        $unrecorded = Customer::where('company_id', $lockedCompany->id)
-                            ->where('created_by', $lockedActor->id)
-                            ->where('name_ar', $normalizedPayload['name_ar'])
-                            ->when(! empty($normalizedPayload['phone']), fn ($q) => $q->where('phone', $normalizedPayload['phone']))
-                            ->whereNotExists(function ($q) use ($lockedCompany): void {
-                                $q->selectRaw('1')->from('native_command_receipts')
-                                    ->whereColumn('entity_id', 'customers.id')
-                                    ->where('company_id', $lockedCompany->id)
-                                    ->where('command_type', 'customer_create');
-                            })
-                            ->first();
-                    }
-
-                    $customer = $unrecorded ?? $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
+                    $customer = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
 
                     $cmu = $minorUnitsResolver->resolve((string) $lockedCompany->base_currency_code, $lockedCompany);
                     $creditLimit = $customer->credit_limit !== null
@@ -561,12 +586,43 @@ final class CustomerController extends Controller
                 status: 422
             );
         }
-        if (array_key_exists('credit_limit', $payload) && is_float($payload['credit_limit'])) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Floating point values are not permitted for credit_limit. Use exact string or integer representation.',
-                status: 422
-            );
+        if (array_key_exists('credit_limit', $payload)) {
+            $rawLimit = $payload['credit_limit'];
+            if (is_bool($rawLimit) || is_float($rawLimit) || (! is_string($rawLimit) && ! is_int($rawLimit) && $rawLimit !== null)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Floating point and boolean values are not permitted for credit_limit. Use exact string or integer representation.',
+                    status: 422
+                );
+            }
+            if ($rawLimit !== null) {
+                $trimmed = trim((string) $rawLimit);
+                if ($trimmed !== '') {
+                    if (! preg_match('/^\d+(\.\d+)?$/', $trimmed)) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'credit_limit must be a valid non-negative number.',
+                            status: 422
+                        );
+                    }
+                    try {
+                        $dec = BigDecimal::of($trimmed);
+                        if ($dec->getScale() > 6) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: 'credit_limit exceeds maximum precision of 6 decimal places.',
+                                status: 422
+                            );
+                        }
+                    } catch (Throwable $e) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'credit_limit is invalid: '.$e->getMessage(),
+                            status: 422
+                        );
+                    }
+                }
+            }
         }
 
         $normalizedPayload = $payload;
@@ -595,6 +651,15 @@ final class CustomerController extends Controller
         ];
 
         $legacyHashes = [];
+        // 598c legacy hash: alias-expanded, sorted, with original unscaled credit_limit
+        if (array_key_exists('credit_limit', $payload) && $payload['credit_limit'] !== null && (string) $payload['credit_limit'] !== ($normalizedPayload['credit_limit'] ?? null)) {
+            $h598cPayload = $normalizedPayload;
+            $h598cPayload['credit_limit'] = $payload['credit_limit'];
+            ksort($h598cPayload);
+            $h598cCanonical = $canonicalPayload;
+            $h598cCanonical['payload'] = $h598cPayload;
+            $legacyHashes[] = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+        }
         if ($normalizedPayload !== $payload) {
             $rawCanonical = $canonicalPayload;
             $rawCanonical['payload'] = $payload;
@@ -816,10 +881,19 @@ final class CustomerController extends Controller
             );
         }
 
+        $existingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
         try {
-            $paymentDate = $request->has('payment_date')
-                ? NativeWriteContextResolver::validateDate($request->input('payment_date'), 'payment_date')
-                : now()->format('Y-m-d');
+            if ($request->has('payment_date')) {
+                $paymentDate = NativeWriteContextResolver::validateDate($request->input('payment_date'), 'payment_date');
+            } elseif ($existingReceipt !== null && isset($existingReceipt->payload['payment_date']) && is_string($existingReceipt->payload['payment_date'])) {
+                $paymentDate = $existingReceipt->payload['payment_date'];
+            } else {
+                $paymentDate = Carbon::now($companyTimezone)->toDateString();
+            }
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -828,10 +902,6 @@ final class CustomerController extends Controller
             );
         }
 
-        $isExistingReceipt = NativeCommandReceipt::where('company_id', $company->id)
-            ->where('idempotency_key', $idempotencyKey)
-            ->exists();
-
         $paymentCurrency = $request->input('currency', (string) $company->base_currency_code);
         if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
@@ -839,7 +909,9 @@ final class CustomerController extends Controller
         $rawRate = $request->input('exchange_rate');
         if ($paymentCurrency !== (string) $company->base_currency_code) {
             if (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '') {
-                if (! $isExistingReceipt) {
+                if ($existingReceipt !== null) {
+                    $rawRate = isset($existingReceipt->payload['exchange_rate']) ? (string) $existingReceipt->payload['exchange_rate'] : '1.0000000000';
+                } else {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
                         message: 'Explicit exchange_rate is required for foreign currency payment.',
@@ -855,8 +927,25 @@ final class CustomerController extends Controller
         }
 
         $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
-        $notes = $request->has('notes') && is_string($request->input('notes')) ? trim($request->input('notes')) : null;
-        $reference = $request->has('reference') && is_string($request->input('reference')) ? trim($request->input('reference')) : null;
+        if ($rawAccountId === null && $existingReceipt !== null && array_key_exists('cash_account_id', $existingReceipt->payload)) {
+            $rawAccountId = $existingReceipt->payload['cash_account_id'];
+        }
+
+        if ($request->has('notes') && is_string($request->input('notes'))) {
+            $notes = trim($request->input('notes'));
+        } elseif ($existingReceipt !== null && array_key_exists('notes', $existingReceipt->payload)) {
+            $notes = $existingReceipt->payload['notes'];
+        } else {
+            $notes = null;
+        }
+
+        if ($request->has('reference') && is_string($request->input('reference'))) {
+            $reference = trim($request->input('reference'));
+        } elseif ($existingReceipt !== null && array_key_exists('reference', $existingReceipt->payload)) {
+            $reference = $existingReceipt->payload['reference'];
+        } else {
+            $reference = null;
+        }
         $allocationsInput = $request->input('allocations');
 
         if ($allocationsInput !== null && ! is_array($allocationsInput)) {
@@ -933,23 +1022,12 @@ final class CustomerController extends Controller
             'allocations' => $canonicalAllocations,
         ];
 
-        if ($request->has('exchange_rate') || $request->has('currency') || $isExistingReceipt) {
+        if ($request->has('exchange_rate') || $request->has('currency') || $existingReceipt !== null) {
             $canonicalPayload['exchange_rate'] = (string) BigDecimal::of($paymentRate)->toScale(10);
         }
 
         $legacyHashes = [];
         if ($paymentCurrency === (string) $company->base_currency_code && BigDecimal::of($paymentRate)->compareTo(1) === 0) {
-            if (isset($canonicalPayload['exchange_rate'])) {
-                $legacyPayload = $canonicalPayload;
-                unset($legacyPayload['exchange_rate']);
-                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
-            } else {
-                $legacyPayload = $canonicalPayload;
-                $legacyPayload['exchange_rate'] = '1.0000000000';
-                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
-            }
-        }
-        if ($paymentCurrency !== (string) $company->base_currency_code) {
             if (isset($canonicalPayload['exchange_rate'])) {
                 $legacyPayload = $canonicalPayload;
                 unset($legacyPayload['exchange_rate']);

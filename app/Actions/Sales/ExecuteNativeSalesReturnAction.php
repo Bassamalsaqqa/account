@@ -11,6 +11,7 @@ use App\Models\MobileDevice;
 use App\Models\NativeCommandReceipt;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Models\SalesReturnLine;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Money\CurrencyMinorUnitsResolver;
@@ -18,6 +19,7 @@ use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Illuminate\Auth\Access\AuthorizationException;
 use InvalidArgumentException;
 
 /** Full native return event: admission, draft, posting and receipt share one transaction. */
@@ -40,6 +42,17 @@ final class ExecuteNativeSalesReturnAction
                 $invoice = SalesInvoice::where('company_id', $company->id)->whereKey($invoice->id)
                     ->with('lines.product')->lockForUpdate()->firstOrFail();
 
+                // Fresh-only return history privacy check inside company lock
+                if (! $actor->hasPermissionTo('sales.return.view')) {
+                    $hasPriorReturns = SalesReturnLine::where('company_id', $company->id)
+                        ->whereIn('sales_invoice_line_id', $invoice->lines->pluck('id'))
+                        ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))
+                        ->exists();
+                    if ($hasPriorReturns) {
+                        throw new AuthorizationException('Action is unauthorized. Missing required sales.return.view permission to inspect return history.');
+                    }
+                }
+
                 // Guard against lost-ACK duplicate posting for unrecorded legacy returns from old 8c1
                 $unrecordedLegacy = SalesReturn::where('company_id', $company->id)
                     ->where('sales_invoice_id', $invoice->id)
@@ -53,7 +66,7 @@ final class ExecuteNativeSalesReturnAction
                     })
                     ->first();
                 if ($unrecordedLegacy !== null) {
-                    throw new IdempotencyConflictException("Sales invoice [{$invoice->public_id}] already has an unrecorded mobile return [{$unrecordedLegacy->public_id}] from a prior version without an idempotency receipt. Use web management or contact support to review return state.");
+                    throw new IdempotencyConflictException("Sales invoice [{$invoice->public_id}] already has an unrecorded mobile return from a prior version without an idempotency receipt. Use web management or contact support to review return state.");
                 }
 
                 $draftLines = [];

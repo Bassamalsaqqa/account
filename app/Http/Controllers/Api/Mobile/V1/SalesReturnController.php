@@ -10,7 +10,6 @@ use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
-use App\Models\NativeCommandReceipt;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturnLine;
 use App\Models\User;
@@ -75,7 +74,7 @@ final class SalesReturnController extends Controller
             );
         }
 
-        if (! $user->hasPermissionTo('sales.return.view') && ! $user->hasPermissionTo('sales.return.create') && ! $user->hasPermissionTo('sales.invoice.view')) {
+        if (! $user->hasPermissionTo('sales.return.view')) {
             $hasPriorReturns = SalesReturnLine::where('company_id', $company->id)
                 ->whereIn('sales_invoice_line_id', $invoice->lines->pluck('id'))
                 ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))
@@ -210,24 +209,6 @@ final class SalesReturnController extends Controller
                 message: 'The original sales invoice was not found.',
                 status: 404
             );
-        }
-
-        $isExistingReceipt = NativeCommandReceipt::where('company_id', $company->id)
-            ->where('idempotency_key', $idempotencyKey)
-            ->exists();
-
-        if (! $isExistingReceipt && ! $user->hasPermissionTo('sales.return.view')) {
-            $hasPriorReturns = SalesReturnLine::where('company_id', $company->id)
-                ->whereIn('sales_invoice_line_id', $invoice->lines->pluck('id'))
-                ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))
-                ->exists();
-            if ($hasPriorReturns) {
-                return MobileApiBoundary::buildErrorResponse(
-                    code: 'FORBIDDEN',
-                    message: 'Action is unauthorized. Missing required sales.return.view permission to inspect return history.',
-                    status: 403
-                );
-            }
         }
 
         $lines = $request->input('lines', []);
