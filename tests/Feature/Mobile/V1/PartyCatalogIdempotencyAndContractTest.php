@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 final class PartyCatalogIdempotencyAndContractTest extends TestCase
@@ -230,6 +231,7 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         // Verify total rollback: zero customers and zero receipts in database
         $this->assertSame(0, Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
         $this->assertSame(0, NativeCommandReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('audit_events')->where('company_id', $this->company->id)->where('event_key', 'like', 'customer%')->count());
     }
 
     public function test_customer_update_preserves_cold_name_edit_and_explicit_clear_and_zero(): void
@@ -351,7 +353,7 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
             'name_en' => 'Al-Amal Supplies Co',
             'phone' => '+970599887766',
             'address' => 'المنطقة الصناعية، نابلس',
-            'company_name' => 'الأمل الدولية',
+            'business_name_ar' => 'الأمل الدولية',
         ];
 
         // 1. First execution: creates supplier and receipt
@@ -605,5 +607,338 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         $this->assertSame(2, NativeCommandReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
         $this->assertTrue(NativeCommandReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->where('idempotency_key', 'pos/1')->exists());
         $this->assertTrue(NativeCommandReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->where('idempotency_key', 'pos%2F1')->exists());
+    }
+
+    public function test_exact_six_credit_limit_storage_and_float_negative_rejection(): void
+    {
+        $custKey = 'CUST-EXACT6-'.(string) Str::uuid();
+        $custResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $custKey,
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers", [
+            'name_ar' => 'عميل ائتمان دقيق',
+            'credit_limit' => '123.456789',
+        ]);
+        $custResp->assertStatus(201);
+        $this->assertSame('123.46', $custResp->json('credit_limit'));
+
+        $custId = $custResp->json('id');
+        $customer = Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('public_id', $custId)->firstOrFail();
+        $this->assertSame('123.456789', (string) $customer->credit_limit);
+
+        // Reject decoded JSON floats before string coercion
+        $floatKey = 'CUST-FLOAT-'.(string) Str::uuid();
+        $floatResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $floatKey,
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers", [
+            'name_ar' => 'عميل رقم عائم',
+            'credit_limit' => 99999999999999.01,
+        ]);
+        $floatResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('Floating point values are not permitted', (string) $floatResp->json('error.message'));
+
+        // Reject negative credit limit
+        $negKey = 'CUST-NEG-'.(string) Str::uuid();
+        $negResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $negKey,
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers", [
+            'name_ar' => 'عميل سالب',
+            'credit_limit' => '-100.00',
+        ]);
+        $negResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_generic_address_clear_on_english_only_party(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'عميل إنجليزي',
+            'name_en' => 'English Customer',
+            'phone' => '+970599123456',
+            'address_ar' => null,
+            'address_en' => '123 Baker Street, London',
+            'address_line_1' => '123 Baker Street',
+            'credit_limit' => '1000.000000',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+            'updated_by' => $this->user->id,
+        ]);
+
+        $clearKey = 'CUST-ADDR-CLEAR-'.(string) Str::uuid();
+        $resp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $clearKey,
+        ])->putJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}", [
+            'address' => null,
+        ]);
+        $resp->assertStatus(200);
+        $this->assertNull($resp->json('address'));
+
+        $customer->refresh();
+        $this->assertNull($customer->address_ar);
+        $this->assertNull($customer->address_en);
+        $this->assertNull($customer->address_line_1_ar);
+        $this->assertNull($customer->address_line_1_en);
+
+        // Same for supplier/vendor
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'مورد إنجليزي',
+            'name_en' => 'English Vendor',
+            'phone' => '+970599654321',
+            'address_ar' => null,
+            'address_en' => '456 Oxford Street, London',
+            'address_line_1_en' => '456 Oxford Street',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+            'updated_by' => $this->user->id,
+        ]);
+
+        $vClearKey = 'SUP-ADDR-CLEAR-'.(string) Str::uuid();
+        $vResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $vClearKey,
+        ])->putJson("/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$vendor->public_id}", [
+            'address' => null,
+        ]);
+        $vResp->assertStatus(200);
+        $this->assertNull($vResp->json('address'));
+
+        $vendor->refresh();
+        $this->assertNull($vendor->address_ar);
+        $this->assertNull($vendor->address_en);
+    }
+
+    public function test_unknown_field_rejection_and_exact_decimal_normalization_bounds(): void
+    {
+        // 1. Unknown field rejection on customer create & update
+        $custCreateResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'CUST-UNK-CREATE-'.Str::uuid(),
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers", [
+            'name_ar' => 'عميل حقل مجهول',
+            'unknown_field' => 'hacked',
+        ]);
+        $custCreateResp->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'عميل اختبار الحقول',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        $custUpdateResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'CUST-UNK-UPDATE-'.Str::uuid(),
+        ])->putJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}", [
+            'unknown_field' => 'hacked',
+        ]);
+        $custUpdateResp->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 2. Unknown field rejection on supplier create & update
+        $suppCreateResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'SUP-UNK-CREATE-'.Str::uuid(),
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/suppliers", [
+            'name_ar' => 'مورد حقل مجهول',
+            'unknown_field' => 'hacked',
+        ]);
+        $suppCreateResp->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'مورد اختبار الحقول',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        $suppUpdateResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => 'SUP-UNK-UPDATE-'.Str::uuid(),
+        ])->putJson("/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$vendor->public_id}", [
+            'unknown_field' => 'hacked',
+        ]);
+        $suppUpdateResp->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 3. Exact decimal normalization: 0 vs 0.00
+        $normKey = 'CUST-NORM-'.Str::uuid();
+        $r1 = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $normKey,
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers", [
+            'name_ar' => 'عميل تطبيع صفري',
+            'credit_limit' => '0',
+        ]);
+        $r1->assertStatus(201);
+
+        $r2 = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $normKey,
+        ])->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers", [
+            'name_ar' => 'عميل تطبيع صفري',
+            'credit_limit' => '0.00',
+        ]);
+        $r2->assertStatus(200)->assertHeader('X-Idempotent-Replay', 'true');
+    }
+
+    public function test_update_after_newer_edit_returns_frozen_replay_without_overwriting(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'الاسم الأصلي',
+            'phone' => '+970599111222',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+            'updated_by' => $this->user->id,
+        ]);
+
+        $updateKey1 = 'CUST-UPDATE-STALE-1-'.Str::uuid();
+        $r1 = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $updateKey1,
+        ])->putJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}", [
+            'name_ar' => 'تعديل أول قديم',
+        ]);
+        $r1->assertStatus(200);
+        $this->assertSame('تعديل أول قديم', $r1->json('name_ar'));
+        $this->assertNull($r1->json('balance'));
+
+        // Direct newer edit
+        $customer->refresh();
+        $customer->update(['name_ar' => 'تعديل ثان أحدث']);
+
+        // Replay of Update 1 with original key and payload
+        $r1Replay = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $updateKey1,
+        ])->putJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}", [
+            'name_ar' => 'تعديل أول قديم',
+        ]);
+        $r1Replay->assertStatus(200)->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame('تعديل أول قديم', $r1Replay->json('name_ar'));
+
+        // Critical: DB customer was NOT overwritten by the replay!
+        $customer->refresh();
+        $this->assertSame('تعديل ثان أحدث', $customer->name_ar);
+
+        // Replay after soft-delete returns 200 replay snapshot, not 404!
+        $customer->delete();
+        $r1AfterDelete = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $updateKey1,
+        ])->putJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}", [
+            'name_ar' => 'تعديل أول قديم',
+        ]);
+        $r1AfterDelete->assertStatus(200)->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame('تعديل أول قديم', $r1AfterDelete->json('name_ar'));
+    }
+
+    public function test_current_permission_revocation_denies_replay(): void
+    {
+        $idempotencyKey = 'CUST-REVOKE-'.Str::uuid();
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
+
+        $r1 = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $idempotencyKey,
+        ])->postJson($endpoint, [
+            'name_ar' => 'عميل قبل سحب الصلاحية',
+        ]);
+        $r1->assertStatus(201);
+
+        // Revoke customers.manage permission and Owner role
+        setPermissionsTeamId($this->company->id);
+        $this->user->removeRole('Owner');
+        $this->user->revokePermissionTo('customers.manage');
+        $this->user->unsetRelation('roles')->unsetRelation('permissions');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        // Replay should now fail with 403 Forbidden!
+        $r2 = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $idempotencyKey,
+        ])->postJson($endpoint, [
+            'name_ar' => 'عميل قبل سحب الصلاحية',
+        ]);
+        $r2->assertStatus(403)->assertJsonPath('error.code', 'FORBIDDEN');
+
+        // Restore permission and role for subsequent tests
+        setPermissionsTeamId($this->company->id);
+        $this->user->assignRole('Owner');
+        $this->user->unsetRelation('roles')->unsetRelation('permissions');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    public function test_both_side_concurrent_create_contract(): void
+    {
+        $key = 'CONCURRENT-CREATE-'.Str::uuid();
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
+        $payload = ['name_ar' => 'عميل تزامن'];
+
+        $r1 = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $key,
+        ])->postJson($endpoint, $payload);
+        $r1->assertStatus(201);
+
+        // Immediate retry with exact key converges to replay
+        $r2 = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $key,
+        ])->postJson($endpoint, $payload);
+        $r2->assertStatus(200)->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame($r1->json('id'), $r2->json('id'));
+        $this->assertSame(1, Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('name_ar', 'عميل تزامن')->count());
+    }
+
+    public function test_unrecorded_baseline_create_cutover_adopts_party_without_duplicate(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        // Simulate an unrecorded customer created during baseline without NativeCommandReceipt
+        $unrecordedCustomer = Customer::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'عميل مقطوعية قديم',
+            'phone' => '+970599998877',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+            'updated_by' => $this->user->id,
+        ]);
+
+        $key = 'CUTOVER-RETRY-'.Str::uuid();
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/customers";
+        $payload = [
+            'name_ar' => 'عميل مقطوعية قديم',
+            'phone' => '+970599998877',
+        ];
+
+        // Retry of lost ACK after upgrade must adopt the unrecorded party and record the receipt
+        $resp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $key,
+        ])->postJson($endpoint, $payload);
+
+        $resp->assertStatus(201);
+        $this->assertSame($unrecordedCustomer->public_id, $resp->json('id'));
+
+        // Crucial invariant: NO duplicate customer was created! Total count is exactly 1!
+        $this->assertSame(1, Customer::withoutGlobalScopes()->where('company_id', $this->company->id)->where('name_ar', 'عميل مقطوعية قديم')->count());
+
+        // Subsequent retry replays the receipt
+        $replay = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $key,
+        ])->postJson($endpoint, $payload);
+        $replay->assertStatus(200)->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame($unrecordedCustomer->public_id, $replay->json('id'));
     }
 }

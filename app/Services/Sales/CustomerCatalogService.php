@@ -10,7 +10,6 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\User;
 use App\Services\Audit\AuditService;
-use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -24,8 +23,25 @@ final class CustomerCatalogService
             $company = app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'customers.manage');
             $customer = $customerId === null ? new Customer : Customer::where('company_id', $company->id)->whereKey($customerId)->lockForUpdate()->firstOrFail();
 
-            if (array_key_exists('address', $data) && ! array_key_exists('address_ar', $data)) {
-                $data['address_ar'] = $data['address'];
+            if (array_key_exists('address', $data)) {
+                if ($data['address'] === null || (is_string($data['address']) && trim($data['address']) === '')) {
+                    if (! array_key_exists('address_ar', $data)) {
+                        $data['address_ar'] = null;
+                    }
+                    if (! array_key_exists('address_en', $data)) {
+                        $data['address_en'] = null;
+                    }
+                    if (! array_key_exists('address_line_1_ar', $data)) {
+                        $data['address_line_1_ar'] = null;
+                    }
+                    if (! array_key_exists('address_line_1_en', $data)) {
+                        $data['address_line_1_en'] = null;
+                    }
+                } else {
+                    if (! array_key_exists('address_ar', $data)) {
+                        $data['address_ar'] = $data['address'];
+                    }
+                }
             }
 
             foreach (['name_ar', 'name_en', 'phone', 'whatsapp', 'email', 'tax_number', 'address_ar', 'address_en', 'address_line_1_ar', 'address_line_1_en', 'city_ar', 'city_en', 'notes'] as $fieldKey) {
@@ -76,6 +92,9 @@ final class CustomerCatalogService
             $payload = $validator->validate();
             if (array_key_exists('credit_limit', $data)) {
                 $rawLimit = $data['credit_limit'];
+                if (is_float($rawLimit)) {
+                    throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
+                }
                 if (is_string($rawLimit) && trim($rawLimit) === '') {
                     $rawLimit = null;
                 } elseif (is_numeric($rawLimit)) {
@@ -85,7 +104,7 @@ final class CustomerCatalogService
                 if ($limit?->getAmount()->isNegative()) {
                     throw ValidationException::withMessages(['credit_limit' => __('validation.min.numeric', ['attribute' => __('sales.credit_limit'), 'min' => 0])]);
                 }
-                $payload['credit_limit'] = $limit === null ? null : (string) $limit->getAmount()->toScale(2, RoundingMode::HALF_UP);
+                $payload['credit_limit'] = $limit === null ? null : (string) $limit->getAmount()->toScale(6);
             }
             $before = $customer->exists ? $customer->only(array_keys($payload)) : null;
             $customer->fill($payload);

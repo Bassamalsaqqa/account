@@ -43,7 +43,7 @@ final class ExecuteNativeSalesReturnAction
                 // Guard against lost-ACK duplicate posting for unrecorded legacy returns from old 8c1
                 $unrecordedLegacy = SalesReturn::where('company_id', $company->id)
                     ->where('sales_invoice_id', $invoice->id)
-                    ->where('status', SalesReturn::STATUS_POSTED)
+                    ->whereIn('status', [SalesReturn::STATUS_POSTED, SalesReturn::STATUS_VOID])
                     ->where('reason', 'مرتجع مبيعات من تطبيق الجوال')
                     ->whereNotExists(function ($q) use ($company): void {
                         $q->selectRaw('1')->from('native_command_receipts')

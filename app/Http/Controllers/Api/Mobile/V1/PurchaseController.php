@@ -29,6 +29,7 @@ use App\Services\Purchasing\PurchasePayableAsOf;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
@@ -109,7 +110,9 @@ final class PurchaseController extends Controller
             ->whereIn('purchase_line_id', $records->flatMap(fn ($p) => $p->lines->pluck('id')))
             ->selectRaw('purchase_line_id, SUM(quantity_base) AS received')
             ->groupBy('purchase_line_id')->pluck('received', 'purchase_line_id');
-        $positions = app(PurchasePayableAsOf::class)->components($records->filter(fn ($p) => $p->isPosted() && $p->purchase_date->format('Y-m-d') <= now()->toDateString()), now());
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
+        $businessDate = Carbon::now($companyTimezone);
+        $positions = app(PurchasePayableAsOf::class)->components($records->filter(fn ($p) => $p->isPosted() && $p->purchase_date->format('Y-m-d') <= $businessDate->toDateString()), $businessDate);
         $bills = $records->map(function (Purchase $p) use ($positions, $receivedByLine): array {
             $grandTotal = BigDecimal::of((string) $p->grand_total_currency);
             $paid = ($positions[(int) $p->id]['paid'] ?? BigDecimal::zero());
@@ -226,7 +229,9 @@ final class PurchaseController extends Controller
             );
         }
 
-        $position = $purchase->isPosted() && $purchase->purchase_date->format('Y-m-d') <= now()->toDateString() ? app(PurchasePayableAsOf::class)->components([$purchase], now())[(int) $purchase->id] : [];
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
+        $businessDate = Carbon::now($companyTimezone);
+        $position = $purchase->isPosted() && $purchase->purchase_date->format('Y-m-d') <= $businessDate->toDateString() ? app(PurchasePayableAsOf::class)->components([$purchase], $businessDate)[(int) $purchase->id] : [];
         $grandTotal = BigDecimal::of((string) $purchase->grand_total_currency);
         $allComplete = true;
         $anyReceived = false;

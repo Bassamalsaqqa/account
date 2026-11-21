@@ -84,7 +84,7 @@ final class SalesHistoryAudit
                     }
                     $cogs = $cogs->plus($lineCost);
                     $tax = BigDecimal::of($line->line_tax);
-                    if ($tax->isPositive()) {
+                    if (! $tax->isZero()) {
                         $original = $source === 'sales_invoice' ? $line : DB::table('sales_invoice_lines')->where('company_id', $companyId)->where('id', $line->sales_invoice_line_id)->first();
                         $accountId = $original?->sales_tax_account_id;
                         if ($accountId === null || ! DB::table('ledger_accounts')->where('company_id', $companyId)->where('id', $accountId)->exists()) {

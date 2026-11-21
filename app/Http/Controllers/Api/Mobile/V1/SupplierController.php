@@ -12,6 +12,7 @@ use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
+use App\Models\NativeCommandReceipt;
 use App\Models\Purchase;
 use App\Models\User;
 use App\Models\Vendor;
@@ -31,6 +32,13 @@ use Throwable;
 
 final class SupplierController extends Controller
 {
+    public const ALLOWED_SUPPLIER_FIELDS = [
+        'name', 'name_ar', 'name_en', 'business_name_ar', 'business_name_en',
+        'code', 'phone', 'whatsapp', 'email', 'tax_number',
+        'address', 'address_ar', 'address_en', 'address_line_1_ar', 'address_line_1_en',
+        'city_ar', 'city_en', 'notes', 'country_code', 'status', 'active',
+    ];
+
     /**
      * GET /api/mobile/v1/companies/{companyId}/suppliers
      */
@@ -270,6 +278,14 @@ final class SupplierController extends Controller
         }
 
         $payload = $request->json()->all();
+        $unknown = array_diff(array_keys($payload), self::ALLOWED_SUPPLIER_FIELDS);
+        if (! empty($unknown)) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'VALIDATION_FAILED',
+                message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
+                status: 422
+            );
+        }
         if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name'])) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -285,9 +301,6 @@ final class SupplierController extends Controller
         if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
             $normalizedPayload['address_ar'] = $normalizedPayload['address'];
         }
-        if (array_key_exists('company_name', $normalizedPayload) && ! array_key_exists('business_name_ar', $normalizedPayload)) {
-            $normalizedPayload['business_name_ar'] = $normalizedPayload['company_name'];
-        }
         ksort($normalizedPayload);
 
         $canonicalPayload = [
@@ -297,6 +310,13 @@ final class SupplierController extends Controller
             'command' => 'supplier_create',
             'payload' => $normalizedPayload,
         ];
+
+        $legacyHashes = [];
+        if ($normalizedPayload !== $payload) {
+            $rawCanonical = $canonicalPayload;
+            $rawCanonical['payload'] = $payload;
+            $legacyHashes[] = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
+        }
 
         try {
             $result = $receiptManager->execute(
@@ -314,7 +334,24 @@ final class SupplierController extends Controller
                     $minorUnitsResolver
                 ): array {
                     app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
-                    $vendor = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
+
+                    // Cutover rule for unrecorded baseline supplier creation
+                    $unrecorded = null;
+                    if (empty($normalizedPayload['code'])) {
+                        $unrecorded = Vendor::where('company_id', $lockedCompany->id)
+                            ->where('created_by', $lockedActor->id)
+                            ->where('name_ar', $normalizedPayload['name_ar'])
+                            ->when(! empty($normalizedPayload['phone']), fn ($q) => $q->where('phone', $normalizedPayload['phone']))
+                            ->whereNotExists(function ($q) use ($lockedCompany): void {
+                                $q->selectRaw('1')->from('native_command_receipts')
+                                    ->whereColumn('entity_id', 'vendors.id')
+                                    ->where('company_id', $lockedCompany->id)
+                                    ->where('command_type', 'supplier_create');
+                            })
+                            ->first();
+                    }
+
+                    $vendor = $unrecorded ?? $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
 
                     $baseCurr = (string) $lockedCompany->base_currency_code;
                     $cmu = $minorUnitsResolver->resolve($baseCurr, $lockedCompany);
@@ -327,6 +364,7 @@ final class SupplierController extends Controller
                         'name_en' => $vendor->name_en,
                         'phone' => $vendor->phone,
                         'address' => $vendor->address_ar ?? $vendor->address_en,
+                        'balance' => null,
                         'balance_owed' => null,
                         'currency' => $baseCurr,
                         'currency_minor_units' => $cmu,
@@ -340,7 +378,8 @@ final class SupplierController extends Controller
                         'entity_id' => (int) $vendor->id,
                         'entity_public_id' => (string) $vendor->public_id,
                     ];
-                }
+                },
+                legacyHashes: $legacyHashes
             );
 
             $headers = [
@@ -423,28 +462,21 @@ final class SupplierController extends Controller
             );
         }
 
-        $vendor = Vendor::where('company_id', $company->id)
-            ->where('public_id', $supplierId)
-            ->first();
-
-        if ($vendor === null) {
+        $payload = $request->json()->all();
+        $unknown = array_diff(array_keys($payload), self::ALLOWED_SUPPLIER_FIELDS);
+        if (! empty($unknown)) {
             return MobileApiBoundary::buildErrorResponse(
-                code: 'NOT_FOUND',
-                message: 'The requested supplier was not found.',
-                status: 404
+                code: 'VALIDATION_FAILED',
+                message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
+                status: 422
             );
         }
-
-        $payload = $request->json()->all();
         $normalizedPayload = $payload;
         if (array_key_exists('name', $normalizedPayload) && ! array_key_exists('name_ar', $normalizedPayload)) {
             $normalizedPayload['name_ar'] = $normalizedPayload['name'];
         }
         if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
             $normalizedPayload['address_ar'] = $normalizedPayload['address'];
-        }
-        if (array_key_exists('company_name', $normalizedPayload) && ! array_key_exists('business_name_ar', $normalizedPayload)) {
-            $normalizedPayload['business_name_ar'] = $normalizedPayload['company_name'];
         }
         ksort($normalizedPayload);
 
@@ -456,6 +488,13 @@ final class SupplierController extends Controller
             'command' => 'supplier_update',
             'payload' => $normalizedPayload,
         ];
+
+        $legacyHashes = [];
+        if ($normalizedPayload !== $payload) {
+            $rawCanonical = $canonicalPayload;
+            $rawCanonical['payload'] = $payload;
+            $legacyHashes[] = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
+        }
 
         try {
             $result = $receiptManager->execute(
@@ -497,6 +536,8 @@ final class SupplierController extends Controller
                         'name_en' => $updated->name_en,
                         'phone' => $updated->phone,
                         'address' => $updated->address_ar ?? $updated->address_en,
+                        'balance' => null,
+                        'balance_owed' => null,
                         'currency' => $baseCurr,
                         'currency_minor_units' => $cmu,
                         'status' => $updated->status === 'active' ? 'active' : 'inactive',
@@ -509,7 +550,8 @@ final class SupplierController extends Controller
                         'entity_id' => (int) $updated->id,
                         'entity_public_id' => (string) $updated->public_id,
                     ];
-                }
+                },
+                legacyHashes: $legacyHashes
             );
 
             $headers = [
@@ -623,14 +665,20 @@ final class SupplierController extends Controller
         if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
         }
+        $isExistingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->exists();
+
         $rawRate = $request->input('exchange_rate');
         if ($paymentCurrency !== (string) $company->base_currency_code) {
             if (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '') {
-                return MobileApiBoundary::buildErrorResponse(
-                    code: 'VALIDATION_FAILED',
-                    message: 'Explicit exchange_rate is required for foreign currency payment.',
-                    status: 422
-                );
+                if (! $isExistingReceipt) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Explicit exchange_rate is required for foreign currency payment.',
+                        status: 422
+                    );
+                }
             }
         }
         try {
@@ -718,7 +766,7 @@ final class SupplierController extends Controller
             'allocations' => $canonicalAllocations,
         ];
 
-        if ($request->has('exchange_rate') || $request->has('currency')) {
+        if ($request->has('exchange_rate') || $request->has('currency') || $isExistingReceipt) {
             $canonicalPayload['exchange_rate'] = (string) BigDecimal::of($paymentRate)->toScale(10);
         }
 
@@ -727,6 +775,21 @@ final class SupplierController extends Controller
             if (isset($canonicalPayload['exchange_rate'])) {
                 $legacyPayload = $canonicalPayload;
                 unset($legacyPayload['exchange_rate']);
+                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+            } else {
+                $legacyPayload = $canonicalPayload;
+                $legacyPayload['exchange_rate'] = '1.0000000000';
+                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+            }
+        }
+        if ($paymentCurrency !== (string) $company->base_currency_code) {
+            if (isset($canonicalPayload['exchange_rate'])) {
+                $legacyPayload = $canonicalPayload;
+                unset($legacyPayload['exchange_rate']);
+                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+            } else {
+                $legacyPayload = $canonicalPayload;
+                $legacyPayload['exchange_rate'] = '1.0000000000';
                 $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
             }
         }
@@ -747,6 +810,8 @@ final class SupplierController extends Controller
                     $paymentDate,
                     $paymentCurrency,
                     $paymentRate,
+                    $rawRate,
+                    $request,
                     $rawAccountId,
                     $notes,
                     $reference,
@@ -755,6 +820,9 @@ final class SupplierController extends Controller
                     $postPaymentAction,
                     $contextResolver
                 ): array {
+                    if ($paymentCurrency !== (string) $lockedCompany->base_currency_code && (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '')) {
+                        throw new InvalidArgumentException('Explicit exchange_rate is required for foreign currency payment.');
+                    }
                     /** @var Vendor|null $vendor */
                     $vendor = Vendor::where('company_id', $lockedCompany->id)
                         ->where('public_id', $supplierId)

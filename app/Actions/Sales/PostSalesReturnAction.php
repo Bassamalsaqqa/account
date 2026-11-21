@@ -349,8 +349,8 @@ class PostSalesReturnAction implements StockEventOwner
 
             $taxes = [];
             foreach ($lines as $returnLine) {
-                $tax = BigDecimal::of($returnLine->line_tax);
-                if ($tax->isPositive()) {
+                $tax = BigDecimal::of((string) $returnLine->line_tax);
+                if (! $tax->isZero()) {
                     $original = SalesInvoiceLine::query()->findOrFail($returnLine->sales_invoice_line_id);
                     $account = LedgerAccount::where('company_id', $company->id)->where('id', $original->sales_tax_account_id)->where('active', true)->where('is_control', false)->firstOrFail();
                     $taxes[$account->id] = ($taxes[$account->id] ?? BigDecimal::zero())->plus($tax);
@@ -362,9 +362,29 @@ class PostSalesReturnAction implements StockEventOwner
                 $taxRemainingGroups--;
                 $groupBase = $taxRemainingGroups === 0 ? $taxRemainingBase : $tax->multipliedBy($lockedReturn->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 $taxRemainingBase = $taxRemainingBase->minus($groupBase);
-                app(SalesPostingLines::class)->append($postingLines, $lineNum++, $accountId,
-                    MoneyAmount::from($groupBase), MoneyAmount::zero(), $currency, MoneyAmount::from($tax), $fx,
-                    "Sales Return {$returnNumber} Tax Reversal");
+                if ($groupBase->isPositive()) {
+                    app(SalesPostingLines::class)->append($postingLines,
+                        lineNumber: $lineNum++,
+                        ledgerAccountId: $accountId,
+                        debitBase: MoneyAmount::from($groupBase),
+                        creditBase: MoneyAmount::zero(),
+                        transactionCurrencyCode: $currency,
+                        transactionAmount: MoneyAmount::from($tax),
+                        exchangeRate: $fx,
+                        description: "Sales Return {$returnNumber} Tax Reversal",
+                    );
+                } elseif ($groupBase->isNegative()) {
+                    app(SalesPostingLines::class)->append($postingLines,
+                        lineNumber: $lineNum++,
+                        ledgerAccountId: $accountId,
+                        debitBase: MoneyAmount::zero(),
+                        creditBase: MoneyAmount::from((string) $groupBase->abs()),
+                        transactionCurrencyCode: $currency,
+                        transactionAmount: MoneyAmount::from((string) $tax->abs()),
+                        exchangeRate: $fx,
+                        description: "Sales Return {$returnNumber} Tax Reversal Adjustment",
+                    );
+                }
             }
 
             // Cr Accounts Receivable (reduces customer AR)
