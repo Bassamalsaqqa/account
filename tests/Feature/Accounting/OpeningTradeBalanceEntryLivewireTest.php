@@ -467,4 +467,188 @@ final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
             ->call('save')
             ->assertHasErrors(['additional_lines.0.amount']);
     }
+
+    public function test_foreign_currency_additional_rows_use_visible_shared_exchange_rate_and_prevent_stale_rate(): void
+    {
+        CompanyCurrency::updateOrCreate([
+            'company_id' => $this->company->id,
+            'currency_code' => 'USD',
+        ], [
+            'enabled' => true,
+        ]);
+
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->assertSet('exchange_rate', '1.0000000000')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '100.00')
+            ->set('amount', '200.00')
+            // Operator changes visible exchange rate to 3.5 after adding row
+            ->set('exchange_rate', '3.5000000000')
+            ->assertViewHas('carryingBasePreview', '1050.00') // (200 + 100) * 3.5
+            ->call('save')
+            ->assertHasNoErrors();
+
+        // Main line posted with rate 3.5 => 200 * 3.5 = 700 ILS
+        $this->assertDatabaseHas('opening_trade_items', [
+            'company_id' => $this->company->id,
+            'side' => OpeningTradeItem::SIDE_CUSTOMER,
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'USD',
+            'amount_currency' => '200.000000',
+            'exchange_rate' => '3.5000000000',
+            'carrying_value_base' => '700.000000',
+            'status' => OpeningTradeItem::STATUS_POSTED,
+        ]);
+
+        // Additional row ALSO posted with rate 3.5 => 100 * 3.5 = 350 ILS (NOT stale rate 1!)
+        $this->assertDatabaseHas('opening_trade_items', [
+            'company_id' => $this->company->id,
+            'side' => OpeningTradeItem::SIDE_CUSTOMER,
+            'customer_id' => $this->customer->id,
+            'currency_code' => 'USD',
+            'amount_currency' => '100.000000',
+            'exchange_rate' => '3.5000000000',
+            'carrying_value_base' => '350.000000',
+            'status' => OpeningTradeItem::STATUS_POSTED,
+        ]);
+    }
+
+    public function test_livewire_lost_ack_replay_succeeds_after_currency_disabled_while_conflict_and_new_events_fail(): void
+    {
+        CompanyCurrency::updateOrCreate([
+            'company_id' => $this->company->id,
+            'currency_code' => 'USD',
+        ], [
+            'enabled' => true,
+        ]);
+
+        $key = 'lost-ack-livewire-key-1';
+
+        // 1. Initial submission succeeds while currency is enabled
+        $component = Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $key)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('successMessage', __('accounting.success_customer', ['name' => $this->customer->name_ar]));
+
+        $this->assertDatabaseHas('opening_trade_items', [
+            'company_id' => $this->company->id,
+            'idempotency_key' => $key,
+            'currency_code' => 'USD',
+            'amount_currency' => '100.000000',
+            'status' => OpeningTradeItem::STATUS_POSTED,
+        ]);
+
+        // 2. Disable USD in company currency settings
+        CompanyCurrency::where('company_id', $this->company->id)
+            ->where('currency_code', 'USD')
+            ->update(['enabled' => false]);
+
+        // 3. Lost-ACK replay: same formIdempotencyKey with original payload succeeds without fresh currency block
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $key)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('successMessage', __('accounting.success_customer', ['name' => $this->customer->name_ar]));
+
+        // 4. Same formIdempotencyKey with CHANGED payload conflicts and fails
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $key)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '200.00') // altered amount
+            ->call('save')
+            ->assertSet('errorMessage', "Opening trade item idempotency key [{$key}] was already used with a different economic payload.");
+
+        // 5. New event with disabled currency fails fresh currency validation
+        $newKey = 'new-event-disabled-usd';
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $newKey)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('save')
+            ->assertHasErrors(['amount']);
+    }
+
+    public function test_livewire_multi_row_lost_ack_replay_and_mixed_partial_conflict(): void
+    {
+        CompanyCurrency::updateOrCreate([
+            'company_id' => $this->company->id,
+            'currency_code' => 'USD',
+        ], [
+            'enabled' => true,
+        ]);
+
+        $multiKey = 'multi-row-lost-ack-key';
+
+        // Initial multi-row submission
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $multiKey)
+            ->set('side', 'vendor')
+            ->set('party_id', $this->testVendor->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '200.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '100.00')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        // Disable USD
+        CompanyCurrency::where('company_id', $this->company->id)
+            ->where('currency_code', 'USD')
+            ->update(['enabled' => false]);
+
+        // Replay identical multi-row submission succeeds
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $multiKey)
+            ->set('side', 'vendor')
+            ->set('party_id', $this->testVendor->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '200.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '100.00')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        // Mixed partial-row / altered line conflict
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $multiKey)
+            ->set('side', 'vendor')
+            ->set('party_id', $this->testVendor->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '200.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '999.00') // altered additional line
+            ->call('save')
+            ->assertSet('errorMessage', "Opening trade item idempotency key [{$multiKey}:line:0] was already used with a different economic payload.");
+    }
 }

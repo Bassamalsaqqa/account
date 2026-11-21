@@ -18,7 +18,6 @@ use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\LedgerAccount;
 use App\Models\OpeningTradeItem;
-use App\Models\PostingBatch;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Rules\PositiveExactDecimal;
@@ -316,34 +315,6 @@ final class PostOpeningTradeItemAction
                 'offset_account_key' => $obeAccount->system_key,
             ];
 
-            $item = new OpeningTradeItem([
-                'company_id' => $lockedCompany->id,
-                'public_id' => $publicId,
-                'side' => $side,
-                'customer_id' => $side === OpeningTradeItem::SIDE_CUSTOMER ? $partyId : null,
-                'vendor_id' => $side === OpeningTradeItem::SIDE_VENDOR ? $partyId : null,
-                'opening_date' => $openingDateStr,
-                'original_reference' => $cleanRef,
-                'due_date' => $dueDateStr,
-                'currency_code' => $currencyCode,
-                'amount_currency' => $amountStr,
-                'exchange_rate' => $rateStr,
-                'carrying_value_base' => $carryingBaseStr,
-                'party_snapshot' => $partySnapshot,
-                'company_snapshot' => $companySnapshot,
-                'control_route' => $controlRoute,
-                'created_by' => $actingUser->id,
-                'source_identity' => $sourceIdentity,
-                'idempotency_key' => $idempotencyKey,
-                'idempotency_payload_hash' => $payloadHash,
-                'status' => OpeningTradeItem::STATUS_POSTED,
-                'notes' => $notes,
-            ]);
-            $item->save();
-
-            // Build double-entry posting lines per Blueprint Section 76
-            // Customer: Dr AR / Cr Opening Balance Equity
-            // Vendor:   Dr Opening Balance Equity / Cr AP
             $lines = [];
             $lineCurrency = $currencyCode;
             $lineAmount = MoneyAmount::from($amountStr);
@@ -390,33 +361,85 @@ final class PostOpeningTradeItemAction
                 );
             }
 
-            $postingCommand = new PostingCommand(
-                company: $lockedCompany,
-                postingDate: Carbon::parse($openingDateStr),
-                sourceType: 'opening_trade_item',
-                sourceId: $item->id,
-                transactionCurrencyCode: $currencyCode,
-                baseCurrencyCode: $lockedCompany->base_currency_code,
-                exchangeRate: $lineFx,
-                idempotencyKey: "oti-gl:{$item->id}",
-                postedBy: $actingUser,
-                description: "Opening {$side} balance: {$partyLabel}",
-                lines: $lines,
-            );
-
             $this->activeEventScope = $this->eventScope;
             try {
-                $batch = $this->eventScope->withPostingCapability(
+                $item = $this->eventScope->withPostingCapability(
                     $this,
                     new OpeningTradePostingCapability($lockedCompany->id, $actingUser->id, $side, $partyId),
-                    fn (): PostingBatch => $this->postingService->post($postingCommand)
+                    function () use (
+                        $lockedCompany,
+                        $publicId,
+                        $side,
+                        $partyId,
+                        $openingDateStr,
+                        $cleanRef,
+                        $dueDateStr,
+                        $currencyCode,
+                        $amountStr,
+                        $rateStr,
+                        $carryingBaseStr,
+                        $partySnapshot,
+                        $companySnapshot,
+                        $controlRoute,
+                        $actingUser,
+                        $sourceIdentity,
+                        $idempotencyKey,
+                        $payloadHash,
+                        $notes,
+                        $lines,
+                        $lineFx,
+                        $partyLabel
+                    ): OpeningTradeItem {
+                        $item = new OpeningTradeItem([
+                            'company_id' => $lockedCompany->id,
+                            'public_id' => $publicId,
+                            'side' => $side,
+                            'customer_id' => $side === OpeningTradeItem::SIDE_CUSTOMER ? $partyId : null,
+                            'vendor_id' => $side === OpeningTradeItem::SIDE_VENDOR ? $partyId : null,
+                            'opening_date' => $openingDateStr,
+                            'original_reference' => $cleanRef,
+                            'due_date' => $dueDateStr,
+                            'currency_code' => $currencyCode,
+                            'amount_currency' => $amountStr,
+                            'exchange_rate' => $rateStr,
+                            'carrying_value_base' => $carryingBaseStr,
+                            'party_snapshot' => $partySnapshot,
+                            'company_snapshot' => $companySnapshot,
+                            'control_route' => $controlRoute,
+                            'created_by' => $actingUser->id,
+                            'source_identity' => $sourceIdentity,
+                            'idempotency_key' => $idempotencyKey,
+                            'idempotency_payload_hash' => $payloadHash,
+                            'status' => OpeningTradeItem::STATUS_POSTED,
+                            'notes' => $notes,
+                        ]);
+                        $item->save();
+
+                        $postingCommand = new PostingCommand(
+                            company: $lockedCompany,
+                            postingDate: Carbon::parse($openingDateStr),
+                            sourceType: 'opening_trade_item',
+                            sourceId: $item->id,
+                            transactionCurrencyCode: $currencyCode,
+                            baseCurrencyCode: $lockedCompany->base_currency_code,
+                            exchangeRate: $lineFx,
+                            idempotencyKey: "oti-gl:{$item->id}",
+                            postedBy: $actingUser,
+                            description: "Opening {$side} balance: {$partyLabel}",
+                            lines: $lines,
+                        );
+
+                        $batch = $this->postingService->post($postingCommand);
+
+                        $item->posting_batch_id = $batch->id;
+                        $item->save();
+
+                        return $item;
+                    }
                 );
             } finally {
                 $this->activeEventScope = null;
             }
-
-            $item->posting_batch_id = $batch->id;
-            $item->save();
 
             $this->auditService->log(
                 companyId: (int) $lockedCompany->id,
@@ -432,7 +455,7 @@ final class PostOpeningTradeItemAction
                     'currency' => $item->currency_code,
                     'exchange_rate' => $item->exchange_rate,
                     'carrying_value_base' => $item->carrying_value_base,
-                    'posting_batch_id' => $batch->id,
+                    'posting_batch_id' => $item->posting_batch_id,
                 ],
             );
 

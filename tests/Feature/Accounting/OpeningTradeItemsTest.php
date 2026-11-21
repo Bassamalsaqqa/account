@@ -19,6 +19,7 @@ use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
 use App\Models\AuditEvent;
 use App\Models\Company;
+use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
 use App\Models\LedgerAccount;
@@ -907,5 +908,214 @@ final class OpeningTradeItemsTest extends TradeTestCase
             postedBy: $this->owner,
             idempotencyKey: 'race-test-generic',
         );
+    }
+
+    public function test_direct_creation_of_posted_opening_trade_item_without_canonical_capability_is_rejected(): void
+    {
+        $this->expectException(ImmutableRecordException::class);
+        $this->expectExceptionMessage('Direct creation of posted opening trade item is prohibited outside canonical posting action.');
+
+        OpeningTradeItem::create([
+            'company_id' => $this->company->id,
+            'public_id' => (string) Str::ulid(),
+            'side' => OpeningTradeItem::SIDE_CUSTOMER,
+            'customer_id' => $this->customer->id,
+            'opening_date' => '2026-01-01',
+            'currency_code' => 'ILS',
+            'amount_currency' => '100.000000',
+            'exchange_rate' => '1.0000000000',
+            'carrying_value_base' => '100.000000',
+            'status' => OpeningTradeItem::STATUS_POSTED,
+            'created_by' => $this->owner->id,
+            'source_identity' => 'direct_bypass',
+            'idempotency_key' => 'direct-bypass-create',
+            'idempotency_payload_hash' => hash('sha256', 'bypass'),
+        ]);
+    }
+
+    public function test_direct_creation_of_reversed_opening_trade_item_is_rejected(): void
+    {
+        $this->expectException(ImmutableRecordException::class);
+        $this->expectExceptionMessage('Direct creation of reversed opening trade item is prohibited.');
+
+        OpeningTradeItem::create([
+            'company_id' => $this->company->id,
+            'public_id' => (string) Str::ulid(),
+            'side' => OpeningTradeItem::SIDE_CUSTOMER,
+            'customer_id' => $this->customer->id,
+            'opening_date' => '2026-01-01',
+            'currency_code' => 'ILS',
+            'amount_currency' => '100.000000',
+            'exchange_rate' => '1.0000000000',
+            'carrying_value_base' => '100.000000',
+            'status' => OpeningTradeItem::STATUS_REVERSED,
+            'created_by' => $this->owner->id,
+            'source_identity' => 'direct_bypass_reversed',
+            'idempotency_key' => 'direct-bypass-create-rev',
+            'idempotency_payload_hash' => hash('sha256', 'bypass-rev'),
+        ]);
+    }
+
+    public function test_direct_status_mutation_from_posted_to_reversed_bypassing_canonical_action_is_rejected(): void
+    {
+        $item = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '150.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'lifecycle-direct-save-bypass',
+        );
+
+        $this->expectException(ImmutableRecordException::class);
+        $this->expectExceptionMessage('Direct status transition to reversed is prohibited outside canonical reversal action.');
+
+        $item->status = OpeningTradeItem::STATUS_REVERSED;
+        $item->save();
+    }
+
+    public function test_direct_status_mutation_with_forged_reversal_metadata_without_reversal_batch_is_rejected(): void
+    {
+        $item = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_VENDOR,
+            partyId: $this->testVendor->id,
+            openingDate: '2026-01-01',
+            amount: '220.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'lifecycle-forged-meta-bypass',
+        );
+
+        // Attempt direct save with status=reversed and dummy metadata
+        $item->status = OpeningTradeItem::STATUS_REVERSED;
+        $item->reversed_at = now();
+        $item->reversed_by = $this->owner->id;
+        $item->correction_reason = 'Forged metadata attempt';
+        $item->reversal_posting_batch_id = 999999;
+
+        $this->expectException(ImmutableRecordException::class);
+        $this->expectExceptionMessage('Direct status transition to reversed is prohibited outside canonical reversal action.');
+
+        $item->save();
+    }
+
+    public function test_economic_attributes_and_reversal_immutability(): void
+    {
+        $item = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '300.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'economic-immutability-test',
+        );
+
+        try {
+            $item->amount_currency = '400.000000';
+            $this->fail('Direct modification of amount_currency must throw ImmutableRecordException');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('immutable', $e->getMessage());
+        }
+
+        try {
+            $item->delete();
+            $this->fail('Direct deletion of opening trade item must throw ImmutableRecordException');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('cannot be deleted', $e->getMessage());
+        }
+
+        $reversed = app(ReverseOpeningTradeItemAction::class)->execute(
+            item: $item,
+            actor: $this->owner,
+            reason: 'Valid correction reason',
+            reversalDate: '2026-01-02',
+        );
+        $this->assertTrue($reversed->isReversed());
+
+        try {
+            $reversed->status = OpeningTradeItem::STATUS_POSTED;
+            $this->fail('Direct mutation of reversed item must throw ImmutableRecordException');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('immutable', $e->getMessage());
+        }
+    }
+
+    public function test_api_preview_requires_side_specific_permissions_before_overlap_disclosure(): void
+    {
+        $unauthorizedUser = User::factory()->create();
+        CompanyUser::create([
+            'company_id' => $this->company->id,
+            'user_id' => $unauthorizedUser->id,
+            'status' => 'active',
+            'is_owner' => false,
+        ]);
+
+        $deviceSession = $this->createDeviceSession($unauthorizedUser, $this->company);
+
+        $headers = ['X-CSRF-TOKEN' => $deviceSession['token']];
+
+        // 1. Customer side preview without permissions returns 403 and does not disclose GL overlap
+        $responseCust = $this->withCredentials()
+            ->withCookie(config('session.cookie'), $deviceSession['id'])
+            ->postJson("/api/v1/companies/{$this->company->id}/accounting/opening-trade-items/preview", [
+                'side' => 'customer',
+                'party_id' => $this->customer->id,
+                'amount' => '100.00',
+                'currency_code' => 'ILS',
+            ], $headers);
+
+        $responseCust->assertStatus(403);
+        $this->assertArrayNotHasKey('has_gl_overlap', $responseCust->json('data') ?? []);
+
+        // 2. Vendor side preview without permissions returns 403 and does not disclose GL overlap
+        $responseVend = $this->withCredentials()
+            ->withCookie(config('session.cookie'), $deviceSession['id'])
+            ->postJson("/api/v1/companies/{$this->company->id}/accounting/opening-trade-items/preview", [
+                'side' => 'vendor',
+                'party_id' => $this->testVendor->id,
+                'amount' => '100.00',
+                'currency_code' => 'ILS',
+            ], $headers);
+
+        $responseVend->assertStatus(403);
+        $this->assertArrayNotHasKey('has_gl_overlap', $responseVend->json('data') ?? []);
+    }
+
+    public function test_api_preview_rejects_base_currency_exchange_rate_different_from_one_for_both_sides(): void
+    {
+        $headers = ['X-CSRF-TOKEN' => $this->deviceSession['token']];
+
+        // 1. Customer side: base currency ILS with exchange_rate = 2 returns 422
+        $responseCust = $this->withCredentials()
+            ->withCookie(config('session.cookie'), $this->deviceSession['id'])
+            ->postJson("/api/v1/companies/{$this->company->id}/accounting/opening-trade-items/preview", [
+                'side' => 'customer',
+                'party_id' => $this->customer->id,
+                'amount' => '100.00',
+                'currency_code' => 'ILS',
+                'exchange_rate' => '2.0000000000',
+            ], $headers);
+
+        $responseCust->assertStatus(422);
+        $responseCust->assertJsonPath('detail', 'The given data failed validation.');
+
+        // 2. Vendor side: base currency ILS with exchange_rate = 2 returns 422
+        $responseVend = $this->withCredentials()
+            ->withCookie(config('session.cookie'), $this->deviceSession['id'])
+            ->postJson("/api/v1/companies/{$this->company->id}/accounting/opening-trade-items/preview", [
+                'side' => 'vendor',
+                'party_id' => $this->testVendor->id,
+                'amount' => '100.00',
+                'currency_code' => 'ILS',
+                'exchange_rate' => '2.0000000000',
+            ], $headers);
+
+        $responseVend->assertStatus(422);
+        $responseVend->assertJsonPath('detail', 'The given data failed validation.');
     }
 }

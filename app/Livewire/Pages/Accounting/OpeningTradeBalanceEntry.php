@@ -7,6 +7,7 @@ namespace App\Livewire\Pages\Accounting;
 use App\Actions\Accounting\PostOpeningTradeItemAction;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Exceptions\LegacyGlOpeningOverlapException;
+use App\Domain\Posting\Exceptions\IdempotencyConflictException;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Models\CompanyCurrency;
 use App\Models\Customer;
@@ -54,7 +55,7 @@ class OpeningTradeBalanceEntry extends Component
 
     public bool $has_multiple_lines = false;
 
-    /** @var list<array{amount: string, currency_code?: string, exchange_rate: ?string, original_reference: ?string, due_date: ?string, notes: ?string}> */
+    /** @var list<array{amount: string, currency_code?: string, exchange_rate?: ?string, original_reference?: ?string, due_date?: ?string, notes?: ?string}> */
     public array $additional_lines = [];
 
     public ?string $successMessage = null;
@@ -94,6 +95,10 @@ class OpeningTradeBalanceEntry extends Component
         } elseif ($this->exchange_rate === null || $this->exchange_rate === '') {
             $this->exchange_rate = '1.0000000000';
         }
+        foreach ($this->additional_lines as &$line) {
+            $line['currency_code'] = $this->currency_code;
+        }
+        unset($line);
     }
 
     public function checkGlOverlap(): void
@@ -113,7 +118,6 @@ class OpeningTradeBalanceEntry extends Component
         $this->additional_lines[] = [
             'amount' => '',
             'currency_code' => $this->currency_code,
-            'exchange_rate' => $this->exchange_rate,
             'original_reference' => '',
             'due_date' => '',
             'notes' => '',
@@ -160,14 +164,52 @@ class OpeningTradeBalanceEntry extends Component
 
         foreach ($this->additional_lines as $index => $line) {
             $prefix = 'additional_lines.'.$index.'.';
-            $rules[$prefix.'amount'] = ['required', new OpeningTradeAmount((int) $company->id, (string) ($line['currency_code'] ?? ''))];
+            $lineCurrency = (string) ($line['currency_code'] ?? $this->currency_code);
+            $isLineBase = $lineCurrency === $company->base_currency_code;
+            $requiresSeparateRate = ! $isLineBase && $lineCurrency !== $this->currency_code;
+            $rules[$prefix.'amount'] = ['required', new OpeningTradeAmount((int) $company->id, $lineCurrency)];
             $rules[$prefix.'currency_code'] = 'required|string|size:3';
-            $rules[$prefix.'exchange_rate'] = [($line['currency_code'] ?? '') === $company->base_currency_code ? 'nullable' : 'required', new PositiveExactDecimal(10)];
+            $rules[$prefix.'exchange_rate'] = [$requiresSeparateRate ? 'required' : 'nullable', new PositiveExactDecimal(10)];
             $rules[$prefix.'original_reference'] = 'nullable|string|max:100';
             $rules[$prefix.'due_date'] = 'nullable|date_format:Y-m-d';
             $rules[$prefix.'notes'] = 'nullable|string|max:500';
         }
-        $this->validate($rules);
+
+        $existingMain = OpeningTradeItem::where('company_id', $company->id)
+            ->where('idempotency_key', $this->formIdempotencyKey)
+            ->first();
+
+        if ($existingMain === null) {
+            $this->validate($rules);
+        } else {
+            // Authorized canonical replay: validate structural fields without blocking on fresh currency disablement
+            $replayRules = [
+                'side' => 'required|in:customer,vendor',
+                'party_id' => 'required|integer|min:1',
+                'amount' => 'required|string',
+                'currency_code' => 'required|string|size:3',
+                'opening_date' => 'required|date_format:Y-m-d',
+                'due_date' => 'nullable|date_format:Y-m-d',
+                'original_reference' => 'nullable|string|max:100',
+                'notes' => 'nullable|string|max:500',
+            ];
+            if (! $isBase) {
+                $replayRules['exchange_rate'] = ['required', new PositiveExactDecimal(10)];
+            }
+            foreach ($this->additional_lines as $index => $line) {
+                $prefix = 'additional_lines.'.$index.'.';
+                $lineCurrency = (string) ($line['currency_code'] ?? $this->currency_code);
+                $isLineBase = $lineCurrency === $company->base_currency_code;
+                $requiresSeparateRate = ! $isLineBase && $lineCurrency !== $this->currency_code;
+                $replayRules[$prefix.'amount'] = 'required|string';
+                $replayRules[$prefix.'currency_code'] = 'required|string|size:3';
+                $replayRules[$prefix.'exchange_rate'] = [$requiresSeparateRate ? 'required' : 'nullable', new PositiveExactDecimal(10)];
+                $replayRules[$prefix.'original_reference'] = 'nullable|string|max:100';
+                $replayRules[$prefix.'due_date'] = 'nullable|date_format:Y-m-d';
+                $replayRules[$prefix.'notes'] = 'nullable|string|max:500';
+            }
+            $this->validate($replayRules);
+        }
 
         $action = app(PostOpeningTradeItemAction::class);
         /** @var User $actor */
@@ -194,9 +236,9 @@ class OpeningTradeBalanceEntry extends Component
 
                 // Post any additional lines
                 foreach ($this->additional_lines as $index => $line) {
-                    $lineCurrency = (string) ($line['currency_code'] ?? '');
+                    $lineCurrency = (string) ($line['currency_code'] ?? $this->currency_code);
                     $isLineBase = $lineCurrency === $company->base_currency_code;
-                    $lineRate = $isLineBase ? null : (! empty($line['exchange_rate']) ? (string) $line['exchange_rate'] : $this->exchange_rate);
+                    $lineRate = $isLineBase ? null : ($lineCurrency === $this->currency_code ? $this->exchange_rate : (! empty($line['exchange_rate']) ? (string) $line['exchange_rate'] : $this->exchange_rate));
 
                     $action->execute(
                         company: $company,
@@ -233,6 +275,8 @@ class OpeningTradeBalanceEntry extends Component
             $this->glOverlapMessage = $this->side === OpeningTradeItem::SIDE_CUSTOMER
                 ? __('accounting.gl_overlap_customer')
                 : __('accounting.gl_overlap_vendor');
+        } catch (IdempotencyConflictException $e) {
+            $this->errorMessage = $e->getMessage();
         } catch (\Throwable $e) {
             report($e);
             $this->errorMessage = __('accounting.opening_post_failed');
@@ -292,12 +336,29 @@ class OpeningTradeBalanceEntry extends Component
         $isBase = $this->currency_code === $company->base_currency_code;
         $carryingBasePreview = null;
 
-        if (! $isBase && ! empty($this->amount) && ! empty($this->exchange_rate)) {
+        if (! $isBase && ! empty($this->exchange_rate)) {
             try {
-                $amt = BigDecimal::of($this->amount);
                 $rate = BigDecimal::of($this->exchange_rate);
-                if ($amt->isPositive() && $rate->isPositive()) {
-                    $carryingBasePreview = (string) $amt->multipliedBy($rate)->toScale(2, RoundingMode::HALF_UP);
+                if ($rate->isPositive()) {
+                    $totalAmt = BigDecimal::zero();
+                    if (! empty($this->amount)) {
+                        $mainAmt = BigDecimal::of($this->amount);
+                        if ($mainAmt->isPositive()) {
+                            $totalAmt = $totalAmt->plus($mainAmt);
+                        }
+                    }
+                    foreach ($this->additional_lines as $line) {
+                        $lineAmtRaw = trim($line['amount']);
+                        if ($lineAmtRaw !== '') {
+                            $lineAmt = BigDecimal::of($lineAmtRaw);
+                            if ($lineAmt->isPositive()) {
+                                $totalAmt = $totalAmt->plus($lineAmt);
+                            }
+                        }
+                    }
+                    if ($totalAmt->isPositive()) {
+                        $carryingBasePreview = (string) $totalAmt->multipliedBy($rate)->toScale(2, RoundingMode::HALF_UP);
+                    }
                 }
             } catch (\Throwable) {
                 $carryingBasePreview = null;

@@ -61,11 +61,16 @@ final class CustomerApplicationHistory
             $documentDate = $isOpening ? $invoice->opening_date : $invoice->issue_date;
             $documentTotal = $isOpening ? $invoice->amount_currency : $invoice->grand_total_currency;
             $documentBase = $isOpening ? $invoice->carrying_value_base : $invoice->grand_total_base;
-            if (($isOpening && ($invoice->side !== OpeningTradeItem::SIDE_CUSTOMER || $invoice->posting_batch_id === null))
-                || $row->company_id !== $event->company_id || $row->customer_payment_id !== $payment->id || $invoice->customer_id !== $payment->customer_id
-                || $row->prior_posting_batch_id !== $first->prior_posting_batch_id
-                || $date < Carbon::parse($documentDate)->toDateString() || $row->prior_posting_batch_id < $invoice->posting_batch_id
-                || ! PostingBatch::where('company_id', $event->company_id)->whereKey($row->prior_posting_batch_id)->exists()) {
+            if (($isOpening && (
+                $invoice->side !== OpeningTradeItem::SIDE_CUSTOMER
+                || $invoice->posting_batch_id === null
+                || (! in_array($invoice->status, [OpeningTradeItem::STATUS_POSTED, OpeningTradeItem::STATUS_REVERSED], true))
+                || ($invoice->isReversed() && ! $payment->is_reversed)
+            ))
+            || $row->company_id !== $event->company_id || $row->customer_payment_id !== $payment->id || $invoice->customer_id !== $payment->customer_id
+            || $row->prior_posting_batch_id !== $first->prior_posting_batch_id
+            || $date < Carbon::parse($documentDate)->toDateString() || $row->prior_posting_batch_id < $invoice->posting_batch_id
+            || ! PostingBatch::where('company_id', $event->company_id)->whereKey($row->prior_posting_batch_id)->exists()) {
                 throw new InvalidArgumentException('Credit allocation historical provenance mismatch.');
             }
             $values = PaymentAllocationIntent::amounts(['allocated_amount' => $row->allocated_amount, 'payment_currency_amount' => $row->payment_currency_amount], $invoice->currency_code, $payment->currency_code);

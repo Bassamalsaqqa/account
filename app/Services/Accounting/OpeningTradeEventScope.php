@@ -8,6 +8,7 @@ use App\Actions\Accounting\PostOpeningTradeItemAction;
 use App\Actions\Accounting\ReverseOpeningTradeItemAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Posting\DTO\PostingCommand;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\User;
 use InvalidArgumentException;
@@ -78,6 +79,44 @@ final class OpeningTradeEventScope
 
         if ((int) $batch->company_id !== $this->activeReversal->companyId || (int) $batch->id !== $this->activeReversal->originalBatchId) {
             throw new InvalidArgumentException('Reversal batch does not match authorized reversal capability.');
+        }
+    }
+
+    public function assertCanCreateItem(OpeningTradeItem $item): void
+    {
+        if ($this->activePosting === null) {
+            throw new ImmutableRecordException('Direct creation of posted opening trade item is prohibited outside canonical posting action.');
+        }
+
+        if ((int) $item->company_id !== $this->activePosting->companyId || $item->side !== $this->activePosting->side) {
+            throw new InvalidArgumentException('Opening trade item does not match authorized posting capability.');
+        }
+
+        $partyId = (int) ($item->customer_id ?? $item->vendor_id ?? 0);
+        if ($partyId !== $this->activePosting->partyId) {
+            throw new InvalidArgumentException('Opening trade item party does not match authorized posting capability.');
+        }
+    }
+
+    public function assertCanLinkPostingBatch(OpeningTradeItem $item, int $batchId): void
+    {
+        if ($this->activePosting === null) {
+            throw new ImmutableRecordException('Linking posting batch to opening trade item requires canonical posting capability.');
+        }
+
+        if ((int) $item->company_id !== $this->activePosting->companyId) {
+            throw new InvalidArgumentException('Opening trade item company does not match authorized posting capability.');
+        }
+    }
+
+    public function assertCanReverseItem(OpeningTradeItem $item): void
+    {
+        if ($this->activeReversal === null) {
+            throw new ImmutableRecordException('Direct status transition to reversed is prohibited outside canonical reversal action.');
+        }
+
+        if ((int) $item->company_id !== $this->activeReversal->companyId || (int) $item->posting_batch_id !== $this->activeReversal->originalBatchId) {
+            throw new InvalidArgumentException('Opening trade item does not match authorized reversal capability.');
         }
     }
 }

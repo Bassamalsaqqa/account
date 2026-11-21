@@ -213,10 +213,29 @@
             <div class="flex items-end gap-2" wire:key="historical-line-{{ $index }}">
                 <div class="flex-1">
                     <x-input-label :for="'historical-amount-'.$index" :value="__('accounting.balance_amount')" />
-                    <x-text-input :id="'historical-amount-'.$index" aria-invalid="{{ $errors->has('additional_lines.'.$index.'.amount') ? 'true' : 'false' }}" wire:model="additional_lines.{{ $index }}.amount" inputmode="decimal" dir="ltr" class="w-full tabular-nums text-base sm:text-sm" />
+                    <x-text-input :id="'historical-amount-'.$index" aria-invalid="{{ $errors->has('additional_lines.'.$index.'.amount') ? 'true' : 'false' }}" wire:model.live.debounce.300ms="additional_lines.{{ $index }}.amount" inputmode="decimal" dir="ltr" class="w-full tabular-nums text-base sm:text-sm" />
                     <x-input-error :messages="$errors->get('additional_lines.'.$index.'.amount')" />
                 </div>
-                <span class="py-3 text-sm font-bold text-text-muted px-1" dir="ltr">{{ $line['currency_code'] ?? $currency_code }}</span>
+                <div class="py-2.5 flex items-center gap-1.5 shrink-0" dir="ltr">
+                    <span class="text-sm font-bold text-text-muted px-1">{{ $line['currency_code'] ?? $currency_code }}</span>
+                    @if (! $isBase && ! empty($exchange_rate) && ! empty($line['amount']))
+                        @php
+                            $lineBasePreview = null;
+                            try {
+                                $lAmt = \Brick\Math\BigDecimal::of($line['amount']);
+                                $lRate = \Brick\Math\BigDecimal::of($exchange_rate);
+                                if ($lAmt->isPositive() && $lRate->isPositive()) {
+                                    $lineBasePreview = (string) $lAmt->multipliedBy($lRate)->toScale(2, \Brick\Math\RoundingMode::HALF_UP);
+                                }
+                            } catch (\Throwable) {}
+                        @endphp
+                        @if ($lineBasePreview)
+                            <span class="text-xs font-mono tabular-nums text-text-secondary">
+                                ≈ {{ $lineBasePreview }} {{ $company->base_currency_code }}
+                            </span>
+                        @endif
+                    @endif
+                </div>
                 <x-secondary-button type="button" wire:click="removeAdditionalLine({{ $index }})" class="min-h-11">{{ __('accounting.remove_line') }}</x-secondary-button>
             </div>
         @endforeach

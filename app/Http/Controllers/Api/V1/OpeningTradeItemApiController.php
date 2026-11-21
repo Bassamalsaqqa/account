@@ -17,6 +17,7 @@ use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\MoneyValues;
 use App\Services\Security\CommandSessionGuard;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
@@ -40,7 +41,7 @@ final class OpeningTradeItemApiController extends ApiController
         $traceId = $this->resolveTraceId($request);
         $context = app(CompanyContext::class);
         $company = $context->company();
-        /** @var User $actor */
+        /** @var User|null $actor */
         $actor = auth()->user();
 
         $payload = $request->json()->all();
@@ -54,6 +55,20 @@ final class OpeningTradeItemApiController extends ApiController
         $side = (string) ($payload['side'] ?? '');
         if (! in_array($side, [OpeningTradeItem::SIDE_CUSTOMER, OpeningTradeItem::SIDE_VENDOR], true)) {
             return $this->problem('Unprocessable Content', 422, "Field [side] must be either 'customer' or 'vendor'.", $traceId);
+        }
+
+        if ($actor === null || ! $actor->belongsToCompany((int) $company->id)) {
+            return $this->problem('Forbidden', 403, 'User does not belong to company.', $traceId);
+        }
+
+        if ($side === OpeningTradeItem::SIDE_CUSTOMER) {
+            if (! $actor->hasPermissionTo('customers.manage') || ! $actor->hasPermissionTo('settings.accounting.manage')) {
+                return $this->problem('Forbidden', 403, 'Posting opening customer receivables requires customers.manage and settings.accounting.manage permissions.', $traceId);
+            }
+        } elseif ($side === OpeningTradeItem::SIDE_VENDOR) {
+            if (! $actor->hasPermissionTo('vendors.manage') || ! $actor->hasPermissionTo('settings.accounting.manage') || ! $actor->hasPermissionTo('purchasing.cost.view')) {
+                return $this->problem('Forbidden', 403, 'Posting opening supplier payables requires vendors.manage, settings.accounting.manage, and purchasing.cost.view permissions.', $traceId);
+            }
         }
 
         $partyId = (int) ($payload['party_id'] ?? ($side === OpeningTradeItem::SIDE_CUSTOMER ? ($payload['customer_id'] ?? 0) : ($payload['vendor_id'] ?? 0)));
@@ -85,18 +100,32 @@ final class OpeningTradeItemApiController extends ApiController
         }
 
         $companyBase = strtoupper((string) $company->base_currency_code);
-        $rateRaw = $payload['exchange_rate'] ?? ($currencyCode === $companyBase ? '1.0000000000' : null);
-        if ($rateRaw === null) {
-            return $this->problem('Unprocessable Content', 422, 'Exchange rate is required for non-base currency.', $traceId);
-        }
-
-        try {
-            $rateDec = PositiveExactDecimal::parse($rateRaw, 10);
-            if ($rateDec->isNegative() || $rateDec->isZero()) {
-                return $this->problem('Unprocessable Content', 422, 'Exchange rate must be strictly positive.', $traceId);
+        if ($currencyCode === $companyBase) {
+            if (isset($payload['exchange_rate'])) {
+                try {
+                    $rateDec = PositiveExactDecimal::parse((string) $payload['exchange_rate'], 10);
+                    if (! $rateDec->isEqualTo(1)) {
+                        return $this->problem('Unprocessable Content', 422, "Exchange rate for base currency [{$companyBase}] must be exactly 1.", $traceId);
+                    }
+                } catch (Throwable) {
+                    return $this->problem('Unprocessable Content', 422, "Exchange rate for base currency [{$companyBase}] must be exactly 1.", $traceId);
+                }
             }
-        } catch (Throwable) {
-            return $this->problem('Unprocessable Content', 422, 'Exchange rate must be a valid positive decimal.', $traceId);
+            $rateDec = BigDecimal::one();
+        } else {
+            $rateRaw = $payload['exchange_rate'] ?? null;
+            if ($rateRaw === null) {
+                return $this->problem('Unprocessable Content', 422, 'Exchange rate is required for non-base currency.', $traceId);
+            }
+
+            try {
+                $rateDec = PositiveExactDecimal::parse((string) $rateRaw, 10);
+                if ($rateDec->isNegative() || $rateDec->isZero()) {
+                    return $this->problem('Unprocessable Content', 422, 'Exchange rate must be strictly positive.', $traceId);
+                }
+            } catch (Throwable) {
+                return $this->problem('Unprocessable Content', 422, 'Exchange rate must be a valid positive decimal.', $traceId);
+            }
         }
 
         $hasGlOverlap = PostOpeningTradeItemAction::hasLegacyOverlap((int) $company->id, $side);
@@ -138,7 +167,7 @@ final class OpeningTradeItemApiController extends ApiController
 
         $context = app(CompanyContext::class);
         $company = $context->company();
-        /** @var User $actor */
+        /** @var User|null $actor */
         $actor = auth()->user();
 
         $payload = $request->json()->all();
@@ -219,7 +248,7 @@ final class OpeningTradeItemApiController extends ApiController
         $traceId = $this->resolveTraceId($request);
         $context = app(CompanyContext::class);
         $company = $context->company();
-        /** @var User $actor */
+        /** @var User|null $actor */
         $actor = auth()->user();
 
         $reason = trim((string) $request->input('reason', ''));
@@ -271,7 +300,7 @@ final class OpeningTradeItemApiController extends ApiController
         $traceId = $this->resolveTraceId($request);
         $context = app(CompanyContext::class);
         $company = $context->company();
-        /** @var User $actor */
+        /** @var User|null $actor */
         $actor = auth()->user();
 
         try {

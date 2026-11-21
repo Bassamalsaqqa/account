@@ -145,23 +145,27 @@ final class ReverseOpeningTradeItemAction
                 $reversalBatch = $this->eventScope->withReversalCapability(
                     $this,
                     new OpeningTradeReversalCapability($lockedCompany->id, $actor->id, $originalBatch->id),
-                    fn (): PostingBatch => $this->postingService->reverse(
-                        original: $originalBatch,
-                        actingUser: $actor,
-                        reason: "Opening balance reversal: {$cleanReason}",
-                        postingDate: $revDateStr,
-                    )
+                    function () use ($originalBatch, $actor, $cleanReason, $revDateStr, $lockedItem): PostingBatch {
+                        $reversalBatch = $this->postingService->reverse(
+                            original: $originalBatch,
+                            actingUser: $actor,
+                            reason: "Opening balance reversal: {$cleanReason}",
+                            postingDate: $revDateStr,
+                        );
+
+                        $lockedItem->status = OpeningTradeItem::STATUS_REVERSED;
+                        $lockedItem->reversal_posting_batch_id = $reversalBatch->id;
+                        $lockedItem->reversed_at = now();
+                        $lockedItem->reversed_by = $actor->id;
+                        $lockedItem->correction_reason = $cleanReason;
+                        $lockedItem->save();
+
+                        return $reversalBatch;
+                    }
                 );
             } finally {
                 $this->activeEventScope = null;
             }
-
-            $lockedItem->status = OpeningTradeItem::STATUS_REVERSED;
-            $lockedItem->reversal_posting_batch_id = $reversalBatch->id;
-            $lockedItem->reversed_at = now();
-            $lockedItem->reversed_by = $actor->id;
-            $lockedItem->correction_reason = $cleanReason;
-            $lockedItem->save();
 
             $this->auditService->log(
                 companyId: (int) $lockedCompany->id,

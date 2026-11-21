@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Services\Accounting\OpeningTradeEventScope;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -122,19 +123,57 @@ class OpeningTradeItem extends Model
             } else {
                 throw new InvalidArgumentException("Invalid side [{$item->side}]. Must be 'customer' or 'vendor'.");
             }
+
+            if ($item->status === self::STATUS_REVERSED) {
+                throw new ImmutableRecordException('Direct creation of reversed opening trade item is prohibited.');
+            }
+
+            if ($item->status === self::STATUS_POSTED) {
+                app(OpeningTradeEventScope::class)->assertCanCreateItem($item);
+            }
         });
 
         static::updating(function (self $item): void {
-            // Once posted, economic and party attributes are immutable.
-            // Only posting batch attachment (from null) and reversal transition fields can be updated.
-            $dirty = array_keys($item->getDirty());
-            $allowed = ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'updated_at'];
-            if ($item->getOriginal('posting_batch_id') === null) {
-                $allowed[] = 'posting_batch_id';
+            if ($item->getOriginal('status') === self::STATUS_REVERSED) {
+                throw new ImmutableRecordException('Reversed opening trade items are immutable.');
             }
-            $disallowed = array_diff($dirty, $allowed);
-            if (! empty($disallowed)) {
-                throw new ImmutableRecordException('Opening trade items are immutable once posted.');
+
+            if ($item->getOriginal('status') === self::STATUS_POSTED) {
+                if ($item->isDirty('status')) {
+                    if ($item->status !== self::STATUS_REVERSED) {
+                        throw new ImmutableRecordException('Posted opening trade items can only transition to reversed.');
+                    }
+
+                    app(OpeningTradeEventScope::class)->assertCanReverseItem($item);
+
+                    if (empty($item->reversed_at) || empty($item->reversed_by) || empty($item->correction_reason) || empty($item->reversal_posting_batch_id)) {
+                        throw new ImmutableRecordException('Direct status transition to reversed is prohibited without canonical reversal metadata.');
+                    }
+
+                    $revBatch = PostingBatch::withoutGlobalScopes()->find($item->reversal_posting_batch_id);
+                    if ($revBatch === null || (int) $revBatch->reversal_of_id !== (int) $item->posting_batch_id || (int) $revBatch->company_id !== (int) $item->company_id) {
+                        throw new ImmutableRecordException('Direct status transition to reversed requires a valid canonical accounting reversal batch.');
+                    }
+                }
+
+                if ($item->isDirty('posting_batch_id')) {
+                    if ($item->getOriginal('posting_batch_id') !== null) {
+                        throw new ImmutableRecordException('Posting batch cannot be reassigned on a posted opening trade item.');
+                    }
+                    app(OpeningTradeEventScope::class)->assertCanLinkPostingBatch($item, (int) $item->posting_batch_id);
+                }
+
+                // Once posted, economic and party attributes are immutable.
+                // Only posting batch attachment (from null) and reversal transition fields can be updated.
+                $dirty = array_keys($item->getDirty());
+                $allowed = ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'updated_at', 'notes'];
+                if ($item->getOriginal('posting_batch_id') === null) {
+                    $allowed[] = 'posting_batch_id';
+                }
+                $disallowed = array_diff($dirty, $allowed);
+                if (! empty($disallowed)) {
+                    throw new ImmutableRecordException('Opening trade items are immutable once posted.');
+                }
             }
         });
 
@@ -145,6 +184,10 @@ class OpeningTradeItem extends Model
 
     public function setAttribute($key, $value)
     {
+        if ($this->exists && $this->getOriginal('status') === self::STATUS_REVERSED) {
+            throw new ImmutableRecordException('Reversed opening trade items are immutable.');
+        }
+
         if ($this->exists && $this->isPosted() && ! in_array($key, ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'notes', 'posting_batch_id', 'updated_at', 'created_at'], true)) {
             throw new ImmutableRecordException('Opening trade items are immutable once posted.');
         }

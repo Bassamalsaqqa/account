@@ -926,4 +926,110 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             $this->assertTrue(BigDecimal::of($alloc->payment_currency_amount)->isEqualTo('150.00'));
         }
     }
+
+    public function test_later_credit_application_enforces_target_lifecycle_guard_rejecting_corrupt_reversed_target_until_parent_reversed(): void
+    {
+        // 1. Customer side: unallocated customer receipt, later credit allocation
+        $custOpening = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company, side: 'customer', partyId: $this->customer->id, openingDate: '2026-01-01',
+            amount: '100.00', currencyCode: 'ILS', exchangeRate: '1.0000000000',
+            actor: $this->owner, idempotencyKey: 'cust-later-credit-opening',
+        );
+
+        $custPayment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-05',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '100.00',
+            'idempotency_key' => 'cust-later-credit-pmt',
+            'allocations' => [],
+        ]);
+
+        $custEvent = app(ApplyCustomerPaymentCreditAction::class)->execute($custPayment->fresh(), $this->owner, [
+            'application_date' => '2026-01-10',
+            'idempotency_key' => 'cust-later-credit-event',
+            'allocations' => [
+                ['opening_trade_item_id' => $custOpening->id, 'allocated_amount' => '100.00'],
+            ],
+        ]);
+
+        // Clean validation while active
+        app(CustomerApplicationHistory::class)->validate($custEvent->fresh());
+
+        // Deliberately corrupt target opening item to reversed while parent payment is active
+        DB::table('opening_trade_items')->where('id', $custOpening->id)->update(['status' => 'reversed']);
+
+        try {
+            app(CustomerApplicationHistory::class)->validate($custEvent->fresh());
+            $this->fail('CustomerApplicationHistory must reject reversed opening trade item when parent payment is active');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('provenance mismatch', $e->getMessage());
+        }
+
+        // Restore posted status to reverse parent payment canonically
+        DB::table('opening_trade_items')->where('id', $custOpening->id)->update(['status' => 'posted']);
+        app(ReverseCustomerPaymentAction::class)->execute($custPayment->fresh(), $this->owner, 'Reverse parent receipt', '2026-01-15');
+
+        // Now reverse opening item canonically
+        app(ReverseOpeningTradeItemAction::class)->execute($custOpening->fresh(), $this->owner, 'Reverse opening', '2026-01-20');
+
+        // Now reversed opening item is permitted because parent payment is reversed
+        app(CustomerApplicationHistory::class)->validate($custEvent->fresh());
+
+        // 2. Vendor side: unallocated advance, later credit allocation
+        $vendOpening = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company, side: 'vendor', partyId: $this->testVendor->id, openingDate: '2026-01-01',
+            amount: '100.00', currencyCode: 'ILS', exchangeRate: '1.0000000000',
+            actor: $this->owner, idempotencyKey: 'vend-later-credit-opening',
+        );
+
+        $vendPayment = app(PostVendorPaymentAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->testVendor->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-05',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '100.00',
+            'idempotency_key' => 'vend-later-credit-pmt',
+            'allocations' => [],
+        ]);
+
+        $vendEvent = app(ApplyVendorPaymentCreditAction::class)->execute($vendPayment->fresh(), $this->owner, [
+            'application_date' => '2026-01-10',
+            'idempotency_key' => 'vend-later-credit-event',
+            'allocations' => [
+                ['opening_trade_item_id' => $vendOpening->id, 'allocated_amount' => '100.00'],
+            ],
+        ]);
+
+        // Clean validation while active
+        app(VendorPaymentHistoryCommands::class)->application($vendEvent->fresh());
+
+        // Deliberately corrupt vendor target opening item to reversed while parent payment is active
+        DB::table('opening_trade_items')->where('id', $vendOpening->id)->update(['status' => 'reversed']);
+
+        try {
+            app(VendorPaymentHistoryCommands::class)->application($vendEvent->fresh());
+            $this->fail('VendorPaymentHistoryCommands must reject reversed opening trade item when parent payment is active');
+        } catch (InvalidArgumentException|ImmutableRecordException $e) {
+            $this->assertStringContainsString('Opening trade item must be posted or belong to a reversed payment', $e->getMessage());
+        }
+
+        // Restore posted status to reverse parent vendor payment canonically
+        DB::table('opening_trade_items')->where('id', $vendOpening->id)->update(['status' => 'posted']);
+        app(ReverseVendorPaymentAction::class)->execute($vendPayment->fresh(), $this->owner, 'Reverse parent vendor advance', '2026-01-15');
+
+        // Now reverse vendor opening item canonically
+        app(ReverseOpeningTradeItemAction::class)->execute($vendOpening->fresh(), $this->owner, 'Reverse opening', '2026-01-20');
+
+        // Now reversed opening item is permitted because parent vendor payment is reversed
+        app(VendorPaymentHistoryCommands::class)->application($vendEvent->fresh());
+
+        // Assert all six canonical reconciliation services pass
+        $this->assertAllSixReconciliations();
+    }
 }
