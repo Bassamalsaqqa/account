@@ -480,8 +480,15 @@ class ReturnForm extends Component
         $return = $createAction->execute($company, $user, $payload, $existing);
 
         if ($andPost) {
-            $return = $postAction->execute($return, $user);
-            session()->flash('success', __('sales.posted_successfully'));
+            try {
+                $return = $postAction->execute($return, $user);
+                session()->flash('success', __('sales.posted_successfully'));
+            } catch (\InvalidArgumentException $e) {
+                $this->draftPublicId = $return->public_id;
+                $this->addError('lines', $e->getMessage());
+
+                return null;
+            }
         } else {
             session()->flash('success', __('sales.created_successfully'));
         }

@@ -136,14 +136,9 @@ class PostSalesReturnAction implements StockEventOwner
                     }
                 }
             }
-            foreach ($taxCheck as $comp) {
-                if ($comp['pos']->isPositive() && $fx->toBase(MoneyAmount::from($comp['pos']))->isZero()) {
-                    throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
-                }
-                if ($comp['neg']->isNegative() && $fx->toBase(MoneyAmount::from($comp['neg']->abs()))->isZero()) {
-                    throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
-                }
-            }
+            $returnGrandCurrency = BigDecimal::of((string) $lockedReturn->grand_total_currency);
+            $reliefBase = app(ReceivableBookValue::class)->relief($invoice, $returnGrandCurrency, (int) $lockedReturn->id);
+            app(SalesReturnAmounts::class)->validateRepresentability($fx, $returnGrandCurrency, $reliefBase, $taxCheck);
 
             // 5. Stock restoration at exact original historical sale cost
             $totalCogsBase = BigDecimal::zero();

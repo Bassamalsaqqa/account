@@ -95,9 +95,11 @@ final class SupplierController extends Controller
 
         $vendorIds = $records->pluck('id')->all();
         $balances = [];
+        $balancesLoaded = false;
         try {
             app(CompanyContext::class)->setCompany($company, $user);
             $balances = $balanceQuery->execute($vendorIds);
+            $balancesLoaded = true;
         } catch (Throwable) {
             // Keep empty on error
         }
@@ -105,19 +107,28 @@ final class SupplierController extends Controller
         $baseCurr = (string) $company->base_currency_code;
         $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
 
-        $suppliers = $records->map(function (Vendor $v) use ($balances, $baseCurr, $cmu): array {
+        $suppliers = $records->map(function (Vendor $v) use ($balances, $balancesLoaded, $baseCurr, $cmu): array {
             $balData = $balances[$v->id] ?? null;
             $totalPayable = null;
             $totalAdvance = null;
 
-            if ($balData !== null && isset($balData[$baseCurr])) {
-                $b = BigDecimal::of($balData[$baseCurr]['balance']);
-                if ($b->isPositive()) {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
-                } elseif ($b->isNegative()) {
-                    $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+            if ($balancesLoaded) {
+                if ($balData !== null && isset($balData[$baseCurr])) {
+                    $b = BigDecimal::of($balData[$baseCurr]['balance']);
+                    if ($b->isPositive()) {
+                        $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                        $totalAdvance = '0.'.str_repeat('0', $cmu);
+                    } elseif ($b->isNegative()) {
+                        $totalPayable = '0.'.str_repeat('0', $cmu);
+                        $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+                    } else {
+                        $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                        $totalAdvance = '0.'.str_repeat('0', $cmu);
+                    }
                 } else {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                    $zeroFormatted = '0.'.str_repeat('0', $cmu);
+                    $totalPayable = $zeroFormatted;
+                    $totalAdvance = $zeroFormatted;
                 }
             }
 
@@ -131,6 +142,7 @@ final class SupplierController extends Controller
                 'currency' => $baseCurr,
                 'currency_minor_units' => $cmu,
                 'balance_owed' => $totalPayable,
+                'owed' => $totalPayable,
                 'advances' => $totalAdvance,
             ];
         })->values()->all();
@@ -194,6 +206,7 @@ final class SupplierController extends Controller
         $baseCurr = (string) $company->base_currency_code;
         $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
         $totalPayable = null;
+        $totalAdvance = null;
         try {
             app(CompanyContext::class)->setCompany($company, $user);
             $balances = $balanceQuery->execute([(int) $vendor->id]);
@@ -202,11 +215,18 @@ final class SupplierController extends Controller
                 $b = BigDecimal::of($balData[$baseCurr]['balance']);
                 if ($b->isPositive()) {
                     $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                    $totalAdvance = '0.'.str_repeat('0', $cmu);
                 } elseif ($b->isNegative()) {
                     $totalPayable = '0.'.str_repeat('0', $cmu);
+                    $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
                 } else {
                     $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                    $totalAdvance = '0.'.str_repeat('0', $cmu);
                 }
+            } else {
+                $zeroFormatted = '0.'.str_repeat('0', $cmu);
+                $totalPayable = $zeroFormatted;
+                $totalAdvance = $zeroFormatted;
             }
         } catch (Throwable) {
             // Balance remains null when error/unauthorized - never invent zero
@@ -226,6 +246,8 @@ final class SupplierController extends Controller
             'currency' => $baseCurr,
             'currency_minor_units' => $cmu,
             'balance_owed' => $totalPayable,
+            'owed' => $totalPayable,
+            'advances' => $totalAdvance,
             'status' => $vendor->status === 'active' ? 'active' : 'inactive',
         ], 200, [
             'Content-Type' => 'application/json',
@@ -427,6 +449,8 @@ final class SupplierController extends Controller
                         'address' => $vendor->address_ar ?? $vendor->address_en,
                         'balance' => null,
                         'balance_owed' => null,
+                        'owed' => null,
+                        'advances' => null,
                         'currency' => $baseCurr,
                         'currency_minor_units' => $cmu,
                         'status' => $vendor->status === 'active' ? 'active' : 'inactive',
@@ -679,6 +703,8 @@ final class SupplierController extends Controller
                         'address' => $updated->address_ar ?? $updated->address_en,
                         'balance' => null,
                         'balance_owed' => null,
+                        'owed' => null,
+                        'advances' => null,
                         'currency' => $baseCurr,
                         'currency_minor_units' => $cmu,
                         'status' => $updated->status === 'active' ? 'active' : 'inactive',

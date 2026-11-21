@@ -8,7 +8,6 @@ use App\Actions\Sales\ExecuteNativeSalesReturnAction;
 use App\Actions\Sales\SalesReturnInput;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
-use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
@@ -16,6 +15,7 @@ use App\Models\SalesInvoice;
 use App\Models\SalesReturnLine;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Services\Sales\ReceivableBookValue;
 use App\Services\Sales\SalesReturnAmounts;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -114,6 +114,8 @@ final class SalesReturnController extends Controller
                 $restockWarehouseId = $invoice->warehouse ? (string) $invoice->warehouse->public_id : (string) $invoice->warehouse_id;
 
                 $seen = [];
+                $taxComponents = [];
+                $fx = ExchangeRate::from($invoice->exchange_rate);
                 foreach (SalesReturnInput::normalize($requestedLines) as $input) {
                     $original = SalesReturnInput::resolveLine($invoice, $input);
                     if (isset($seen[$original->id])) {
@@ -123,14 +125,17 @@ final class SalesReturnController extends Controller
                     $prior = $priorReturns->get($original->id, collect());
                     $quantity = BigDecimal::of($input['quantity']);
                     $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
-                    $fx = ExchangeRate::from($invoice->exchange_rate);
-                    if ($amounts['tax']->isPositive() && $fx->toBase(MoneyAmount::from($amounts['tax']))->isZero()) {
-                        throw new \InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
-                    }
-                    if ($amounts['total']->isPositive() && $fx->toBase(MoneyAmount::from($amounts['total']))->isZero()) {
-                        throw new \InvalidArgumentException('Sales return total component cannot be represented at the current exchange rate.');
-                    }
                     $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
+                    $tax = $amounts['tax'];
+                    if (! $tax->isZero()) {
+                        $taxAccId = (int) $original->sales_tax_account_id;
+                        $taxComponents[$taxAccId] ??= ['pos' => BigDecimal::zero(), 'neg' => BigDecimal::zero()];
+                        if ($tax->isPositive()) {
+                            $taxComponents[$taxAccId]['pos'] = $taxComponents[$taxAccId]['pos']->plus($tax);
+                        } else {
+                            $taxComponents[$taxAccId]['neg'] = $taxComponents[$taxAccId]['neg']->plus($tax);
+                        }
+                    }
                     $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
                     $restockItems[] = [
                         'sales_invoice_line_id' => (string) $original->public_id,
@@ -144,6 +149,9 @@ final class SalesReturnController extends Controller
                         'restock_warehouse_id' => $restockWarehouseId,
                     ];
                 }
+
+                $reliefBase = app(ReceivableBookValue::class)->relief($invoice, $totalReturnAmount);
+                app(SalesReturnAmounts::class)->validateRepresentability($fx, $totalReturnAmount, $reliefBase, $taxComponents);
 
                 $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
 

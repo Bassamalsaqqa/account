@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Sales;
 
 use App\Application\Platform\TenantWriteAccess;
+use App\Domain\Money\ValueObjects\ExchangeRate;
+use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
@@ -80,5 +82,29 @@ final class SalesReturnAmounts
         }
         $return->save();
         $return->unsetRelation('lines');
+    }
+
+    /**
+     * Validate that return tax and AR totals are representable in base currency at posting exchange rate.
+     * Shared canonical rule for preview, web post, and native post:
+     * 1. Positive return total must produce positive base relief.
+     * 2. Grouped tax components by ledger account and sign must not round to zero base.
+     *
+     * @param  array<int, array{pos: BigDecimal, neg: BigDecimal}>  $taxComponents
+     */
+    public function validateRepresentability(ExchangeRate $fx, BigDecimal $grandTotalCurrency, BigDecimal $grandTotalBase, array $taxComponents): void
+    {
+        if ($grandTotalCurrency->isPositive() && $grandTotalBase->isZero()) {
+            throw new InvalidArgumentException('Sales return total component cannot be represented at the current exchange rate.');
+        }
+
+        foreach ($taxComponents as $comp) {
+            if ($comp['pos']->isPositive() && $fx->toBase(MoneyAmount::from($comp['pos']))->isZero()) {
+                throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
+            }
+            if ($comp['neg']->isNegative() && $fx->toBase(MoneyAmount::from($comp['neg']->abs()))->isZero()) {
+                throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
+            }
+        }
     }
 }

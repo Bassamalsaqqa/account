@@ -23,6 +23,7 @@ use App\Models\CompanyUser;
 use App\Models\Currency;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
+use App\Models\LedgerAccount;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MoneyAccount;
@@ -2346,6 +2347,12 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $previewResp->json('error.message'));
 
         // 2. Post endpoint MUST reject unrepresentable tax component before sequence numbering or stock movements
+        $returnsBefore = DB::table('sales_returns')->count();
+        $movementsBefore = DB::table('stock_movements')->count();
+        $batchesBefore = DB::table('posting_batches')->count();
+        $linesBefore = DB::table('posting_lines')->count();
+        $receiptsBefore = DB::table('native_command_receipts')->count();
+
         $postResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
             ->withHeader('Idempotency-Key', 'RET-MICRO-'.Str::uuid())
             ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
@@ -2362,7 +2369,15 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
         $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $postResp->json('error.message'));
 
+        $this->assertSame($returnsBefore, DB::table('sales_returns')->count());
+        $this->assertSame($movementsBefore, DB::table('stock_movements')->count());
+        $this->assertSame($batchesBefore, DB::table('posting_batches')->count());
+        $this->assertSame($linesBefore, DB::table('posting_lines')->count());
+        $this->assertSame($receiptsBefore, DB::table('native_command_receipts')->count());
+
         // 3. Domain action directly throws InvalidArgumentException before side effects
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
         $draft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
             'sales_invoice_id' => $invoice->id,
             'issue_date' => now()->format('Y-m-d'),
@@ -2377,6 +2392,139 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Sales return tax component cannot be represented at the current exchange rate.');
         app(PostSalesReturnAction::class)->execute($draft, $this->owner);
+    }
+
+    public function test_sales_return_grouped_tax_components_expressible_in_base_accepted_consistently(): void
+    {
+        $this->restoreStaffPermissions();
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        // At FX 0.00003, two lines with USD 0.01 tax each (0.01 * 0.00003 = 0.0000003) each round to 0 base individually.
+        // But grouped by tax account (0.02 * 0.00003 = 0.0000006) rounds to 0.000001 base!
+        // Both preview and post MUST accept this expressible group.
+        $taxAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'tax_output')->firstOrFail();
+        $taxRate = TaxRate::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'ضريبة ضئيلة',
+            'name_en' => 'Tiny Tax',
+            'code' => 'TINY-'.Str::random(4),
+            'rate' => '1.000000',
+            'calculation' => TaxRate::CALC_EXCLUSIVE,
+            'sales_tax_account_id' => $taxAccount->id,
+            'active' => true,
+        ]);
+
+        $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'USD',
+            'exchange_rate' => '0.0000300000',
+            'issue_date' => now()->format('Y-m-d'),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => 'Tiny Tax Line 1',
+                    'quantity' => '10.000000',
+                    'unit_price' => '1.000000',
+                    'tax_rate_id' => $taxRate->id,
+                ],
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => 'Tiny Tax Line 2',
+                    'quantity' => '10.000000',
+                    'unit_price' => '1.000000',
+                    'tax_rate_id' => $taxRate->id,
+                ],
+            ],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $lines = $invoice->lines()->get();
+        $line1 = $lines[0];
+        $line2 = $lines[1];
+
+        // 1. Preview with both lines succeeds because grouped tax is expressible (0.000001 base)
+        $previewResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns/preview", [
+                'sales_invoice_id' => $invoice->public_id,
+                'lines' => [
+                    ['sales_invoice_line_id' => $line1->public_id, 'quantity' => '1.000000'],
+                    ['sales_invoice_line_id' => $line2->public_id, 'quantity' => '1.000000'],
+                ],
+            ]);
+        $previewResp->assertStatus(200);
+
+        // 2. Post endpoint succeeds and commits exactly one posted return with balanced journal
+        $postResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'RET-GROUP-'.Str::uuid())
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
+                'sales_invoice_id' => $invoice->public_id,
+                'reason' => 'Expressible group tax return',
+                'lines' => [
+                    ['sales_invoice_line_id' => $line1->public_id, 'quantity' => '1.000000'],
+                    ['sales_invoice_line_id' => $line2->public_id, 'quantity' => '1.000000'],
+                ],
+            ]);
+        $postResp->assertStatus(201);
+        $this->assertSame('posted', $postResp->json('status'));
+    }
+
+    public function test_sales_return_tax_free_unrepresentable_gross_rejected_before_stock_or_numbering(): void
+    {
+        $this->restoreStaffPermissions();
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        // Tax-free invoice with tiny gross at FX 0.00003: 0.01 USD -> converts to 0.000000 base AR.
+        // Both preview and post MUST reject this unrepresentable gross total before side effects.
+        $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'USD',
+            'exchange_rate' => '0.0000300000',
+            'issue_date' => now()->format('Y-m-d'),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => 'Tax Free Tiny Gross Line',
+                    'quantity' => '1.000000',
+                    'unit_price' => '0.010000',
+                    'tax_rate_id' => null,
+                ],
+            ],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $invLine = $invoice->lines()->firstOrFail();
+
+        // 1. Preview rejects unrepresentable gross total
+        $previewResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns/preview", [
+                'sales_invoice_id' => $invoice->public_id,
+                'lines' => [
+                    ['sales_invoice_line_id' => $invLine->public_id, 'quantity' => '1.000000'],
+                ],
+            ]);
+        $previewResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $previewResp->json('error.message'));
+
+        // 2. Post endpoint rejects before stock movements or numbering
+        $postResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'RET-GROSS-'.Str::uuid())
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
+                'sales_invoice_id' => $invoice->public_id,
+                'reason' => 'Unrepresentable gross return',
+                'lines' => [
+                    ['sales_invoice_line_id' => $invLine->public_id, 'quantity' => '1.000000'],
+                ],
+            ]);
+        $postResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
     }
 
     public function test_sales_history_audit_validates_all_or_none_currency_metadata(): void

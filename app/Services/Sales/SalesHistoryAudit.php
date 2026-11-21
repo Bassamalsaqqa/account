@@ -130,41 +130,39 @@ final class SalesHistoryAudit
                     $arAcc = (int) ($accounts['accounts_receivable'] ?? 0);
                     $revAcc = (int) ($accounts['sales_revenue'] ?? 0);
                     $grandTotalBase = BigDecimal::of((string) $document->grand_total_base);
-                    $subtotalBase = BigDecimal::of((string) $document->subtotal_base);
+                    $revenueBase = BigDecimal::of((string) $document->grand_total_base)->minus($document->tax_total_base);
                     $arComputed = $grandCurr->isZero() ? BigDecimal::zero() : $grandCurr->abs()->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                     $revComputed = $subtotalCurr->isZero() ? BigDecimal::zero() : $subtotalCurr->abs()->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
 
-                    if ($grandCurr->isPositive()) {
+                    $arResidual = $grandTotalBase->abs()->minus($arComputed);
+                    if ($grandTotalBase->isPositive()) {
                         if ($arComputed->isPositive()) {
-                            $debitComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr;
+                            $debitComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
-                        $arResidual = $grandTotalBase->minus($arComputed);
                         if (! $arResidual->isZero()) {
                             $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
                         }
-                    } elseif ($grandCurr->isNegative()) {
+                    } elseif ($grandTotalBase->isNegative()) {
                         if ($arComputed->isPositive()) {
                             $creditComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
-                        $arResidual = $grandTotalBase->abs()->minus($arComputed);
                         if (! $arResidual->isZero()) {
                             $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->minus($arResidual);
                         }
                     }
 
-                    if ($subtotalCurr->isPositive()) {
+                    $revResidual = $revenueBase->abs()->minus($revComputed);
+                    if ($revenueBase->isPositive()) {
                         if ($revComputed->isPositive()) {
-                            $creditComponents["{$revAcc}:{$curr}:{$rate}"] = $subtotalCurr;
+                            $creditComponents["{$revAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
-                        $revResidual = $subtotalBase->minus($revComputed);
                         if (! $revResidual->isZero()) {
                             $baseAdjustments[$revAcc] = ($baseAdjustments[$revAcc] ?? BigDecimal::zero())->minus($revResidual);
                         }
-                    } elseif ($subtotalCurr->isNegative()) {
+                    } elseif ($revenueBase->isNegative()) {
                         if ($revComputed->isPositive()) {
                             $debitComponents["{$revAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
-                        $revResidual = $subtotalBase->abs()->minus($revComputed);
                         if (! $revResidual->isZero()) {
                             $baseAdjustments[$revAcc] = ($baseAdjustments[$revAcc] ?? BigDecimal::zero())->plus($revResidual);
                         }
@@ -196,41 +194,39 @@ final class SalesHistoryAudit
                     $arAcc = (int) ($accounts['accounts_receivable'] ?? 0);
                     $retAcc = (int) ($accounts['sales_returns'] ?? 0);
                     $grandTotalBase = BigDecimal::of((string) $document->grand_total_base);
-                    $subtotalBase = BigDecimal::of((string) $document->grand_total_base)->minus($document->tax_total_base);
+                    $returnBase = BigDecimal::of((string) $document->grand_total_base)->minus($document->tax_total_base);
                     $arComputed = $grandCurr->isZero() ? BigDecimal::zero() : $grandCurr->abs()->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                     $retComputed = $subtotalCurr->isZero() ? BigDecimal::zero() : $subtotalCurr->abs()->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
 
-                    if ($grandCurr->isPositive()) {
+                    $arResidual = $grandTotalBase->abs()->minus($arComputed);
+                    if ($grandTotalBase->isPositive()) {
                         if ($arComputed->isPositive()) {
-                            $creditComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr;
+                            $creditComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
-                        $arResidual = $grandTotalBase->minus($arComputed);
                         if (! $arResidual->isZero()) {
                             $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->minus($arResidual);
                         }
-                    } elseif ($grandCurr->isNegative()) {
+                    } elseif ($grandTotalBase->isNegative()) {
                         if ($arComputed->isPositive()) {
                             $debitComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
-                        $arResidual = $grandTotalBase->abs()->minus($arComputed);
                         if (! $arResidual->isZero()) {
                             $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
                         }
                     }
 
-                    if ($subtotalCurr->isPositive()) {
+                    $retResidual = $returnBase->abs()->minus($retComputed);
+                    if ($returnBase->isPositive()) {
                         if ($retComputed->isPositive()) {
-                            $debitComponents["{$retAcc}:{$curr}:{$rate}"] = $subtotalCurr;
+                            $debitComponents["{$retAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
-                        $retResidual = $subtotalBase->minus($retComputed);
                         if (! $retResidual->isZero()) {
                             $baseAdjustments[$retAcc] = ($baseAdjustments[$retAcc] ?? BigDecimal::zero())->plus($retResidual);
                         }
-                    } elseif ($subtotalCurr->isNegative()) {
+                    } elseif ($returnBase->isNegative()) {
                         if ($retComputed->isPositive()) {
                             $creditComponents["{$retAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
-                        $retResidual = $subtotalBase->abs()->minus($retComputed);
                         if (! $retResidual->isZero()) {
                             $baseAdjustments[$retAcc] = ($baseAdjustments[$retAcc] ?? BigDecimal::zero())->minus($retResidual);
                         }
@@ -267,8 +263,6 @@ final class SalesHistoryAudit
                             if ($posBase->isPositive()) {
                                 $debitComponents["{$tAccId}:{$curr}:{$rate}"] = ($debitComponents["{$tAccId}:{$curr}:{$rate}"] ?? BigDecimal::zero())->plus($tComp['pos']);
                                 $signedBaseSum = $signedBaseSum->plus($posBase);
-                            } else {
-                                $errors[] = "$label unrepresentable currency tax component with zero base.";
                             }
                         }
                         if ($tComp['neg']->isNegative()) {
@@ -276,8 +270,6 @@ final class SalesHistoryAudit
                             if ($negBase->isPositive()) {
                                 $creditComponents["{$tAccId}:{$curr}:{$rate}"] = ($creditComponents["{$tAccId}:{$curr}:{$rate}"] ?? BigDecimal::zero())->plus($tComp['neg']->abs());
                                 $signedBaseSum = $signedBaseSum->minus($negBase);
-                            } else {
-                                $errors[] = "$label unrepresentable currency tax component with zero base.";
                             }
                         }
                         $bResidual = $gBase->minus($signedBaseSum);

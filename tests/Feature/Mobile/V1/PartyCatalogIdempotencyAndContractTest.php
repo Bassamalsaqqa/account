@@ -1499,6 +1499,8 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         DB::table('purchases')->where('id', $purchase->id)->update(['grand_total_currency' => '0.000000']);
 
         // 3. Multiple free purchases bounded query count verification
+        $this->actingAs($this->user);
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
         $draft2 = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->user, [
             'vendor_id' => $vendor->id,
             'warehouse_id' => $warehouse->id,
@@ -1533,5 +1535,85 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         // Assert query count across multiple free purchases is bounded with no duplicate lazy reloads
         $lineTableQueries = collect($queries)->filter(fn ($q) => str_contains($q['query'], 'purchase_lines'));
         $this->assertLessThanOrEqual(2, $lineTableQueries->count(), 'Query count across multiple free purchases must remain bounded with no duplicate lazy reloads');
+    }
+
+    public function test_customer_update_snapshot_preserves_six_decimal_credit_limit_exact6(): void
+    {
+        $this->actingAs($this->user);
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'CUST-EXACT-'.Str::random(4),
+            'name_ar' => 'عميل دقة السقف',
+            'status' => 'active',
+            'credit_limit' => '123.456789',
+            'created_by' => $this->user->id,
+        ]);
+
+        // 1. Detail endpoint returns both minor-unit display and exact6 authoritative limit
+        $detailResp = $this->withHeader('Authorization', "Bearer {$this->rawToken}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}");
+        $detailResp->assertStatus(200);
+        $this->assertSame('123.46', $detailResp->json('credit_limit'));
+        $this->assertSame('123.456789', $detailResp->json('credit_limit_exact'));
+        $this->assertSame('123.456789', $detailResp->json('credit_limit_exact6'));
+
+        // 2. Cold name update without credit_limit preserves stored 6-decimal limit in DB and snapshot
+        $updateResp = $this->withHeader('Authorization', "Bearer {$this->rawToken}")
+            ->withHeader('Idempotency-Key', 'UPD-EXACT-'.Str::uuid())
+            ->putJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}", [
+                'name_ar' => 'عميل دقة السقف المعدل',
+            ]);
+        $updateResp->assertStatus(200);
+        $this->assertSame('123.46', $updateResp->json('credit_limit'));
+        $this->assertSame('123.456789', $updateResp->json('credit_limit_exact'));
+        $this->assertSame('123.456789', $updateResp->json('credit_limit_exact6'));
+
+        $freshCustomer = $customer->fresh();
+        $this->assertSame('123.456789', (string) $freshCustomer->credit_limit);
+        $this->assertSame('عميل دقة السقف المعدل', $freshCustomer->name_ar);
+
+        // 3. Update using credit_limit_exact6 explicitly sets exact limit
+        $updateExactResp = $this->withHeader('Authorization', "Bearer {$this->rawToken}")
+            ->withHeader('Idempotency-Key', 'UPD-EXACT2-'.Str::uuid())
+            ->putJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$customer->public_id}", [
+                'credit_limit_exact6' => '987.654321',
+            ]);
+        $updateExactResp->assertStatus(200);
+        $this->assertSame('987.65', $updateExactResp->json('credit_limit'));
+        $this->assertSame('987.654321', $updateExactResp->json('credit_limit_exact6'));
+        $this->assertSame('987.654321', (string) $customer->fresh()->credit_limit);
+    }
+
+    public function test_supplier_detail_and_directory_expose_authoritative_owed_and_advances_separately(): void
+    {
+        $this->actingAs($this->user);
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'code' => 'SUPP-ADV-'.Str::random(4),
+            'name_ar' => 'مورد سلفة دائنة',
+            'status' => 'active',
+            'created_by' => $this->user->id,
+        ]);
+
+        // When no transactions, owed and advances are 0.00
+        $detailResp = $this->withHeader('Authorization', "Bearer {$this->rawToken}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$vendor->public_id}");
+        $detailResp->assertStatus(200);
+        $this->assertSame('0.00', $detailResp->json('balance_owed'));
+        $this->assertSame('0.00', $detailResp->json('owed'));
+        $this->assertSame('0.00', $detailResp->json('advances'));
+
+        $dirResp = $this->withHeader('Authorization', "Bearer {$this->rawToken}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/suppliers");
+        $dirResp->assertStatus(200);
+        $found = collect((array) $dirResp->json('suppliers'))->firstWhere('id', $vendor->public_id);
+        $this->assertNotNull($found);
+        $this->assertSame('0.00', $found['balance_owed']);
+        $this->assertSame('0.00', $found['owed']);
+        $this->assertSame('0.00', $found['advances']);
     }
 }

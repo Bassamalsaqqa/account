@@ -193,7 +193,7 @@ final class PurchasePayableAsOf
                     }
                     $calcResults[] = $calcResult;
                 }
-                $totals = app(SalesDocumentTotalsCalculator::class)->calculate($calcResults, BigDecimal::of((string) $zPurchase->exchange_rate));
+                $totals = app(SalesDocumentTotalsCalculator::class)->calculate($calcResults);
                 foreach ($totals->toArray() as $field => $expected) {
                     if (! BigDecimal::of((string) $expected)->isEqualTo($zPurchase->{$field})) {
                         throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');

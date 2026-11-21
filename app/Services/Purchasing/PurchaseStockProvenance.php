@@ -15,11 +15,15 @@ use InvalidArgumentException;
 /** Read-only validation shared by completion, retries and inventory history replay. */
 final class PurchaseStockProvenance
 {
-    public function value(StockMovement $movement, bool $requirePosted = true): BigDecimal
+    public function value(StockMovement $movement, bool $requirePosted = true, ?Purchase $purchase = null, ?PurchaseLine $line = null): BigDecimal
     {
-        $purchase = Purchase::withoutGlobalScopes()->where('company_id', $movement->company_id)->find($movement->source_id);
-        $line = PurchaseLine::withoutGlobalScopes()->where('company_id', $movement->company_id)
-            ->where('purchase_id', $movement->source_id)->find($movement->source_line_id);
+        $purchase = ($purchase !== null && (int) $purchase->id === (int) $movement->source_id && (int) $purchase->company_id === (int) $movement->company_id)
+            ? $purchase
+            : Purchase::withoutGlobalScopes()->where('company_id', $movement->company_id)->find($movement->source_id);
+        $line = ($line !== null && (int) $line->id === (int) $movement->source_line_id && (int) $line->purchase_id === (int) $movement->source_id && (int) $line->company_id === (int) $movement->company_id)
+            ? $line
+            : PurchaseLine::withoutGlobalScopes()->where('company_id', $movement->company_id)
+                ->where('purchase_id', $movement->source_id)->find($movement->source_line_id);
         if ($purchase === null || $line === null || ($requirePosted && ! in_array($purchase->status, [Purchase::STATUS_POSTED, Purchase::STATUS_VOID], true))
             || $movement->source_type !== 'purchase' || $movement->movement_type !== StockMovement::TYPE_PURCHASE
             || (int) $movement->warehouse_id !== (int) $purchase->warehouse_id
@@ -34,13 +38,13 @@ final class PurchaseStockProvenance
             $this->fail();
         }
         $unitCost = app(PurchaseAcquisitionValue::class)->unitCost($line, $value);
-        $unitId = $line->productUnit()->withoutGlobalScopes()->where('company_id', $line->company_id)->value('unit_id');
+        $unitId = $line->relationLoaded('productUnit') ? $line->productUnit?->unit_id : $line->productUnit()->withoutGlobalScopes()->where('company_id', $line->company_id)->value('unit_id');
         if (! BigDecimal::of($movement->unit_cost_base)->isEqualTo($unitCost)
             || ! BigDecimal::of($movement->conversion_to_base)->isEqualTo($line->unit_conversion_ratio)
             || (int) $movement->unit_id !== (int) $unitId) {
             $this->fail();
         }
-        $lots = $line->lots()->withoutGlobalScopes()->where('company_id', $line->company_id)->get();
+        $lots = $line->relationLoaded('lots') ? $line->lots : $line->lots()->withoutGlobalScopes()->where('company_id', $line->company_id)->get();
         $line->setRelation('lots', $lots);
         $quantity = $line->quantity;
         $base = $line->quantity_base;

@@ -27,14 +27,14 @@ final class PurchasePostingCommandBuilder
         $inventoryCurrency = BigDecimal::zero();
         $taxes = [];
         $movementCount = 0;
-        if (! $purchase->relationLoaded('lines')) {
+        if (! $requirePosted || ! $purchase->relationLoaded('lines')) {
             $purchase->setRelation('lines', $purchase->lines()->withoutGlobalScopes()->get());
         }
         foreach ($purchase->lines as $line) {
             if ((int) $line->company_id !== (int) $purchase->company_id) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
             }
-            if (! $line->relationLoaded('lots')) {
+            if (! $requirePosted || ! $line->relationLoaded('lots')) {
                 $line->setRelation('lots', $line->lots()->withoutGlobalScopes()->get());
             }
             foreach ($line->lots as $lot) {
@@ -61,7 +61,7 @@ final class PurchasePostingCommandBuilder
             $actual = BigDecimal::zero();
             $movementCount += $movements->count();
             foreach ($movements as $movement) {
-                $actual = $actual->plus(app(PurchaseStockProvenance::class)->value($movement, $requirePosted));
+                $actual = $actual->plus(app(PurchaseStockProvenance::class)->value($movement, $requirePosted, $purchase, $line));
             }
             if (! $actual->isEqualTo($expected)) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));

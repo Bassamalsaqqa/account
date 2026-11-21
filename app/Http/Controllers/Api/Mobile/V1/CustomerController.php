@@ -41,7 +41,7 @@ final class CustomerController extends Controller
         'name', 'name_ar', 'name_en', 'business_name_ar', 'business_name_en',
         'code', 'phone', 'whatsapp', 'email', 'tax_number',
         'address', 'address_ar', 'address_en', 'address_line_1_ar', 'address_line_1_en',
-        'city_ar', 'city_en', 'notes', 'credit_limit', 'preferred_locale',
+        'city_ar', 'city_en', 'notes', 'credit_limit', 'credit_limit_exact', 'credit_limit_exact6', 'preferred_locale',
         'default_currency_code', 'status', 'active',
     ];
 
@@ -283,6 +283,9 @@ final class CustomerController extends Controller
         $creditLimit = $customer->credit_limit !== null
             ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale($cmu, RoundingMode::HALF_UP)
             : null;
+        $creditLimitExact = $customer->credit_limit !== null
+            ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale(6)
+            : null;
 
         return response()->json([
             'id' => (string) $customer->public_id,
@@ -299,6 +302,8 @@ final class CustomerController extends Controller
             'currency_minor_units' => $cmu,
             'balance' => $balance,
             'credit_limit' => $creditLimit,
+            'credit_limit_exact' => $creditLimitExact,
+            'credit_limit_exact6' => $creditLimitExact,
             'status' => $customer->status === 'active' ? 'active' : 'inactive',
         ], 200, [
             'Content-Type' => 'application/json',
@@ -360,6 +365,11 @@ final class CustomerController extends Controller
                 message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
                 status: 422
             );
+        }
+        if (array_key_exists('credit_limit_exact', $payload) && ! array_key_exists('credit_limit', $payload)) {
+            $payload['credit_limit'] = $payload['credit_limit_exact'];
+        } elseif (array_key_exists('credit_limit_exact6', $payload) && ! array_key_exists('credit_limit', $payload)) {
+            $payload['credit_limit'] = $payload['credit_limit_exact6'];
         }
         if (array_key_exists('credit_limit', $payload)) {
             $rawLimit = $payload['credit_limit'];
@@ -470,6 +480,9 @@ final class CustomerController extends Controller
                     $creditLimit = $customer->credit_limit !== null
                         ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale($cmu, RoundingMode::HALF_UP)
                         : null;
+                    $creditLimitExact = $customer->credit_limit !== null
+                        ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale(6)
+                        : null;
 
                     $snapshot = [
                         'id' => (string) $customer->public_id,
@@ -481,6 +494,8 @@ final class CustomerController extends Controller
                         'address' => $customer->address_ar ?? $customer->address_line_1_ar ?? $customer->address_en,
                         'balance' => null,
                         'credit_limit' => $creditLimit,
+                        'credit_limit_exact' => $creditLimitExact,
+                        'credit_limit_exact6' => $creditLimitExact,
                         'currency' => (string) $lockedCompany->base_currency_code,
                         'currency_minor_units' => $cmu,
                         'status' => $customer->status === 'active' ? 'active' : 'inactive',
@@ -585,6 +600,11 @@ final class CustomerController extends Controller
                 message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
                 status: 422
             );
+        }
+        if (array_key_exists('credit_limit_exact', $payload) && ! array_key_exists('credit_limit', $payload)) {
+            $payload['credit_limit'] = $payload['credit_limit_exact'];
+        } elseif (array_key_exists('credit_limit_exact6', $payload) && ! array_key_exists('credit_limit', $payload)) {
+            $payload['credit_limit'] = $payload['credit_limit_exact6'];
         }
         if (array_key_exists('credit_limit', $payload)) {
             $rawLimit = $payload['credit_limit'];
@@ -699,6 +719,9 @@ final class CustomerController extends Controller
                     $creditLimit = $updated->credit_limit !== null
                         ? (string) BigDecimal::of((string) $updated->credit_limit)->toScale($cmu, RoundingMode::HALF_UP)
                         : null;
+                    $creditLimitExact = $updated->credit_limit !== null
+                        ? (string) BigDecimal::of((string) $updated->credit_limit)->toScale(6)
+                        : null;
 
                     $snapshot = [
                         'id' => (string) $updated->public_id,
@@ -710,6 +733,8 @@ final class CustomerController extends Controller
                         'address' => $updated->address_ar ?? $updated->address_line_1_ar ?? $updated->address_en,
                         'balance' => null,
                         'credit_limit' => $creditLimit,
+                        'credit_limit_exact' => $creditLimitExact,
+                        'credit_limit_exact6' => $creditLimitExact,
                         'currency' => (string) $lockedCompany->base_currency_code,
                         'currency_minor_units' => $cmu,
                         'status' => $updated->status === 'active' ? 'active' : 'inactive',
