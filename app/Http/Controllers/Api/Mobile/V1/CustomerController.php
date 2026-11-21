@@ -584,8 +584,18 @@ final class CustomerController extends Controller
         if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
         }
+        $rawRate = $request->input('exchange_rate');
+        if ($paymentCurrency !== (string) $company->base_currency_code) {
+            if (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '') {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Explicit exchange_rate is required for foreign currency payment.',
+                    status: 422
+                );
+            }
+        }
         try {
-            $paymentRate = NativeWriteContextResolver::validateDecimalString($request->input('exchange_rate', '1'), 'exchange_rate', 10, true);
+            $paymentRate = NativeWriteContextResolver::validateDecimalString($rawRate ?? '1', 'exchange_rate', 10, true);
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
         }
@@ -671,6 +681,15 @@ final class CustomerController extends Controller
 
         if ($request->has('exchange_rate') || $request->has('currency')) {
             $canonicalPayload['exchange_rate'] = (string) BigDecimal::of($paymentRate)->toScale(10);
+        }
+
+        $legacyHashes = [];
+        if ($paymentCurrency === (string) $company->base_currency_code && BigDecimal::of($paymentRate)->compareTo(1) === 0) {
+            if (isset($canonicalPayload['exchange_rate'])) {
+                $legacyPayload = $canonicalPayload;
+                unset($legacyPayload['exchange_rate']);
+                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+            }
         }
 
         try {
@@ -783,7 +802,8 @@ final class CustomerController extends Controller
                         'entity_id' => (int) $payment->id,
                         'entity_public_id' => (string) $payment->public_id,
                     ];
-                }
+                },
+                legacyHashes: $legacyHashes
             );
 
             $headers = [

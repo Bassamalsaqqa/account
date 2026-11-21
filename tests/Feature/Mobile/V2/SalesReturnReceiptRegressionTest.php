@@ -12,27 +12,38 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Models\AuditEvent;
 use App\Models\Company;
+use App\Models\CompanyCurrency;
 use App\Models\CompanyUser;
+use App\Models\Currency;
 use App\Models\Customer;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MoneyAccount;
+use App\Models\NativeCommandReceipt;
+use App\Models\PostingBatch;
 use App\Models\Product;
 use App\Models\ProductUnit;
+use App\Models\Purchase;
+use App\Models\SalesInvoice;
+use App\Models\SalesReturn;
 use App\Models\StockMovement;
 use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
+use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Accounting\AccountingReconciliationService;
 use App\Services\Accounting\Phase7ReconciliationService;
 use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
+use App\Services\Purchasing\PurchasePayableAsOf;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
@@ -144,6 +155,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             'sales.invoice.create',
             'sales.invoice.post',
             'sales.invoice.view',
+            'sales.invoice.change_price',
             'money.receipt.create',
             'money.receipt.allocate',
             'money.receipt.view',
@@ -678,7 +690,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         // Restore role for subsequent assertions and recon
         setPermissionsTeamId($this->company->id);
         app(PermissionRegistrar::class)->setPermissionsTeamId($this->company->id);
-        $this->staff->assignRole('Sales');
+        $this->restoreStaffPermissions();
         $this->assertAllSixReconciliationsPass();
     }
 
@@ -705,5 +717,492 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertSame(0, DB::table('posting_batches')->where('company_id', $this->company->id)->where('source_type', 'sales_return')->count());
         $this->assertSame($before, $this->fingerprint());
         $this->assertAllSixReconciliationsPass();
+    }
+
+    private function restoreStaffPermissions(): void
+    {
+        setPermissionsTeamId($this->company->id);
+        app(PermissionRegistrar::class)->setPermissionsTeamId($this->company->id);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->staff->assignRole('Sales');
+        $this->staff->givePermissionTo([
+            'sales.invoice.create',
+            'sales.invoice.post',
+            'sales.invoice.view',
+            'sales.invoice.change_price',
+            'sales.return.create',
+            'sales.return.post',
+            'sales.return.view',
+            'money.receipt.create',
+            'money.receipt.allocate',
+            'money.receipt.view',
+            'money.vendor_payment.create',
+            'purchasing.cost.view',
+        ]);
+        $this->staff->unsetRelation('roles')->unsetRelation('permissions');
+    }
+
+    public function test_three_step_fractional_return_negative_revenue_residual_balances_journal(): void
+    {
+        $this->restoreStaffPermissions();
+        $this->baseUnit->update(['allows_fraction' => true, 'decimal_places' => 6]);
+
+        // 1. Create a sale with 1 unit at 0.07 price + 16% tax (0.01) => 0.08 gross
+        $salePayload = $this->validSalePayload(
+            eventId: (string) Str::uuid(),
+            amount: '0.080000',
+            unitPrice: '0.070000',
+            settlementMode: 'full'
+        );
+        $sale = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $salePayload);
+        $this->assertSame(201, $sale->status(), $sale->getContent());
+        $invoicePublicId = (string) $sale->json('invoice_id');
+
+        $returnPath = "/api/mobile/v1/companies/{$this->company->public_id}/sales/returns";
+
+        // Step 1: Return 0.49 units
+        // Total: 0.04, Tax: 0.00, Subtotal: 0.04
+        $payload1 = [
+            'sales_invoice_id' => $invoicePublicId,
+            'lines' => [['product_id' => $this->product->public_id, 'quantity' => '0.490000']],
+        ];
+        $preview1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)->postJson($returnPath.'/preview', $payload1);
+        $preview1->assertStatus(200);
+        $this->assertSame('0.04', $preview1->json('total_return_amount'));
+
+        $resp1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'step-return-1')
+            ->postJson($returnPath, $payload1);
+        $this->assertSame(201, $resp1->status(), 'Resp1 error: '.$resp1->getContent());
+        $this->assertSame('0.04', $resp1->json('total_amount'));
+
+        // Step 2: Return 0.02 units
+        // Cumulative qty: 0.51 units
+        // Cumulative total: 0.51 * 0.08 = 0.0408 => 0.04. Prior total: 0.04 => Step total: 0.00!
+        // Cumulative tax: 0.51 * 0.01 = 0.0051 => 0.01. Prior tax: 0.00 => Step tax: 0.01!
+        // Subtotal: 0.00 - 0.01 = -0.01 (negative revenue residual!)
+        $payload2 = [
+            'sales_invoice_id' => $invoicePublicId,
+            'lines' => [['product_id' => $this->product->public_id, 'quantity' => '0.020000']],
+        ];
+        $preview2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)->postJson($returnPath.'/preview', $payload2);
+        $preview2->assertStatus(200);
+        $this->assertSame('0.00', $preview2->json('total_return_amount'));
+
+        $resp2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'step-return-2')
+            ->postJson($returnPath, $payload2);
+        $this->assertSame(201, $resp2->status(), 'Resp2 error: '.$resp2->getContent());
+        $this->assertSame('0.00', $resp2->json('total_amount'));
+
+        // Verify Step 2 posting batch is balanced (Debits = Credits: 0.01 revenue residual + 0.40 inventory restoration)
+        $latestBatch = PostingBatch::withoutGlobalScopes()->where('company_id', $this->company->id)
+            ->where('source_type', 'sales_return')
+            ->latest('id')
+            ->firstOrFail();
+
+        $lines = DB::table('posting_lines')->where('company_id', $this->company->id)->where('posting_batch_id', $latestBatch->id)->get();
+        $this->assertNotEmpty($lines);
+        $totalDebits = BigDecimal::zero();
+        $totalCredits = BigDecimal::zero();
+        foreach ($lines as $line) {
+            $totalDebits = $totalDebits->plus((string) $line->debit_base);
+            $totalCredits = $totalCredits->plus((string) $line->credit_base);
+        }
+        $this->assertTrue($totalDebits->isEqualTo($totalCredits), "Debits [{$totalDebits}] must equal Credits [{$totalCredits}]");
+        $this->assertTrue($totalDebits->isEqualTo('0.410000'), "Expected total debits 0.410000 (0.01 revenue/tax residual + 0.40 inventory restoration), got [{$totalDebits}]");
+
+        // Step 3: Return remaining 0.49 units (completing 1.0 unit total return)
+        $payload3 = [
+            'sales_invoice_id' => $invoicePublicId,
+            'lines' => [['product_id' => $this->product->public_id, 'quantity' => '0.490000']],
+        ];
+        $preview3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)->postJson($returnPath.'/preview', $payload3);
+        $preview3->assertStatus(200);
+        $this->assertSame('0.04', $preview3->json('total_return_amount'));
+
+        $resp3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'step-return-3')
+            ->postJson($returnPath, $payload3);
+        $this->assertSame(201, $resp3->status(), 'Resp3 error: '.$resp3->getContent());
+        $this->assertSame('0.04', $resp3->json('total_amount'));
+
+        // Fourth attempt should fail because 1.000000 is fully returned
+        $payload4 = [
+            'sales_invoice_id' => $invoicePublicId,
+            'lines' => [['product_id' => $this->product->public_id, 'quantity' => '0.010000']],
+        ];
+        $this->withHeader('Authorization', 'Bearer '.$this->rawToken)->postJson($returnPath.'/preview', $payload4)->assertStatus(422);
+
+        $this->assertAllSixReconciliationsPass();
+    }
+
+    public function test_authoritative_jod_three_decimal_precision_in_sales_return(): void
+    {
+        $this->restoreStaffPermissions();
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        Currency::updateOrCreate(['code' => 'JOD'], ['name' => 'Jordanian Dinar', 'symbol' => 'JD', 'minor_units' => 3, 'active' => true]);
+        CompanyCurrency::firstOrCreate(['company_id' => $this->company->id, 'currency_code' => 'JOD'], ['enabled' => true, 'is_base' => false]);
+
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
+
+        $salePayload = $this->validSalePayload(
+            eventId: (string) Str::uuid(),
+            amount: '0.000000',
+            unitPrice: '50.000000',
+            settlementMode: 'unpaid'
+        );
+        $salePayload['lines'][0]['quantity'] = '3.000000';
+        $sale = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $salePayload);
+        $this->assertSame(201, $sale->status(), $sale->getContent());
+        $invoicePublicId = (string) $sale->json('invoice_id');
+
+        // Update invoice currency to JOD to test 3 decimal precision
+        SalesInvoice::withoutGlobalScopes()->where('public_id', $invoicePublicId)->update(['currency_code' => 'JOD']);
+        $inv = SalesInvoice::withoutGlobalScopes()->where('public_id', $invoicePublicId)->firstOrFail();
+        if ($inv->posting_batch_id !== null) {
+            PostingBatch::where('company_id', $this->company->id)->where('id', $inv->posting_batch_id)->update(['transaction_currency_code' => 'JOD']);
+        }
+
+        $payload = [
+            'sales_invoice_id' => $invoicePublicId,
+            'lines' => [['product_id' => $this->product->public_id, 'quantity' => '1.000000']],
+        ];
+        $preview = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns/preview", $payload);
+        $preview->assertStatus(200);
+        $this->assertSame(3, $preview->json('currency_minor_units'));
+        $this->assertSame('58.000', $preview->json('total_return_amount'));
+        $this->assertNotNull($preview->json('total_return_amount_exact'));
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'jod-return-precision')
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", $payload);
+        $resp->assertStatus(201);
+        $this->assertSame(3, $resp->json('currency_minor_units'));
+        $this->assertSame('58.000', $resp->json('total_amount'));
+        $this->assertSame('58.000000', $resp->json('total_amount_exact'));
+        $this->assertSame('JOD', $resp->json('currency'));
+
+        $this->assertAllSixReconciliationsPass();
+    }
+
+    public function test_idempotency_key_with_slashes_and_unicode_routing_and_lookup(): void
+    {
+        $payload = $this->returnPayload();
+        $slashKey = 'pos/shift-1/return-99';
+
+        $resp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', $slashKey)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", $payload);
+        $resp->assertStatus(201);
+
+        // Path lookup with URL encoding (%2F)
+        $encodedPath = "/api/mobile/v1/companies/{$this->company->public_id}/receipts/".urlencode($slashKey).'/status';
+        $getResp1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)->getJson($encodedPath);
+        $getResp1->assertStatus(200);
+        $this->assertSame($slashKey, $getResp1->json('idempotency_key'));
+        $this->assertSame('sales_return', $getResp1->json('command_type'));
+
+        // Query parameter fallback lookup
+        $queryPath = "/api/mobile/v1/companies/{$this->company->public_id}/receipts/status?idempotency_key=".urlencode($slashKey);
+        $getResp2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)->getJson($queryPath);
+        $getResp2->assertStatus(200);
+        $this->assertSame($slashKey, $getResp2->json('idempotency_key'));
+
+        // Unicode key lookup
+        $unicodeKey = 'مفتاح-١/فاتورة-٢';
+        $payload2 = $this->returnPayload();
+        $respUnicode = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', $unicodeKey)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", $payload2);
+        $this->assertSame(201, $respUnicode->status(), $respUnicode->getContent());
+
+        $queryUnicode = "/api/mobile/v1/companies/{$this->company->public_id}/receipts/status?idempotency_key=".urlencode($unicodeKey);
+        $getRespUnicode = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)->getJson($queryUnicode);
+        $getRespUnicode->assertStatus(200);
+        $this->assertSame($unicodeKey, $getRespUnicode->json('idempotency_key'));
+    }
+
+    public function test_unrecorded_legacy_mobile_return_lost_ack_repost_is_blocked(): void
+    {
+        $payload = $this->returnPayload();
+        $invoicePublicId = $payload['sales_invoice_id'];
+
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $invoice = SalesInvoice::where('public_id', $invoicePublicId)->firstOrFail();
+
+        // Simulate old 8c1 committed return with no NativeCommandReceipt row
+        DB::table('sales_returns')->insert([
+            'public_id' => (string) Str::ulid(),
+            'company_id' => $this->company->id,
+            'sales_invoice_id' => $invoice->id,
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'return_number' => 'RET-LEGACY-001',
+            'status' => SalesReturn::STATUS_POSTED,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => now()->toDateString(),
+            'subtotal_base' => '50.000000',
+            'discount_total_base' => '0.000000',
+            'tax_total_base' => '8.000000',
+            'grand_total_base' => '58.000000',
+            'cogs_total_base' => '0.000000',
+            'subtotal_currency' => '50.000000',
+            'discount_total_currency' => '0.000000',
+            'tax_total_currency' => '8.000000',
+            'grand_total_currency' => '58.000000',
+            'posted_at' => now(),
+            'posted_by' => $this->staff->id,
+            'reason' => 'مرتجع مبيعات من تطبيق الجوال',
+            'document_locale' => 'ar',
+            'created_by' => $this->staff->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
+
+        // Attempting to post return for this invoice should fail closed with 409
+        $resp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'retry-lost-ack')
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", $payload);
+
+        $resp->assertStatus(409);
+        $this->assertStringContainsString('already has an unrecorded mobile return', (string) ($resp->json('error.message') ?? $resp->json('message')));
+
+        // Ensure no new sales return was added
+        $this->assertSame(1, DB::table('sales_returns')->where('sales_invoice_id', $invoice->id)->count());
+    }
+
+    public function test_foreign_currency_payment_without_explicit_exchange_rate_fails_422_and_rolls_back(): void
+    {
+        setPermissionsTeamId($this->company->id);
+        $this->staff->givePermissionTo(['money.receipt.create', 'money.vendor_payment.create', 'purchasing.cost.view']);
+
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        Currency::updateOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'symbol' => '$', 'minor_units' => 2, 'active' => true]);
+        CompanyCurrency::firstOrCreate(['company_id' => $this->company->id, 'currency_code' => 'USD'], ['enabled' => true, 'is_base' => false]);
+
+        // 1. Customer payment without explicit exchange rate
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
+        $custResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'cust-usd-no-rate')
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments", [
+                'amount' => '100.00',
+                'currency' => 'USD',
+            ]);
+        $custResp->assertStatus(422);
+        $this->assertStringContainsString('Explicit exchange_rate is required', (string) ($custResp->json('error.message') ?? $custResp->json('message')));
+        $this->assertSame(0, DB::table('customer_payments')->where('company_id', $this->company->id)->where('currency_code', 'USD')->count());
+
+        // 2. Supplier payment without explicit exchange rate
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'مورد أمريكي',
+            'name_en' => 'US Vendor',
+            'currency_code' => 'USD',
+            'created_by' => $this->owner->id,
+        ]);
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
+        $suppResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'supp-usd-no-rate')
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$vendor->public_id}/payments", [
+                'amount' => '100.00',
+                'currency' => 'USD',
+            ]);
+        $suppResp->assertStatus(422);
+        $this->assertStringContainsString('Explicit exchange_rate is required', (string) ($suppResp->json('error.message') ?? $suppResp->json('message')));
+        $this->assertSame(0, DB::table('vendor_payments')->where('company_id', $this->company->id)->where('currency_code', 'USD')->count());
+    }
+
+    public function test_adr0013_zero_cost_purchase_payable_as_of_read_provenance_succeeds(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'مورد العينات المجانية',
+            'name_en' => 'Free Samples Vendor',
+            'currency_code' => 'ILS',
+            'created_by' => $this->owner->id,
+        ]);
+
+        $purchaseId = DB::table('purchases')->insertGetId([
+            'public_id' => (string) Str::ulid(),
+            'company_id' => $this->company->id,
+            'vendor_id' => $vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_number' => 'PO-ZERO-001',
+            'status' => 'posted',
+            'currency_code' => 'ILS',
+            'base_currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'document_locale' => 'ar',
+            'subtotal_base' => '0.000000',
+            'subtotal_currency' => '0.000000',
+            'discount_total_base' => '0.000000',
+            'discount_total_currency' => '0.000000',
+            'tax_total_base' => '0.000000',
+            'tax_total_currency' => '0.000000',
+            'grand_total_base' => '0.000000',
+            'grand_total_currency' => '0.000000',
+            'posting_batch_id' => null, // Legitimate zero-value ADR 0013 has NULL batch
+            'purchase_date' => now()->toDateString(),
+            'posted_at' => now(),
+            'posted_by' => $this->owner->id,
+            'created_by' => $this->owner->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $purchase = Purchase::withoutGlobalScopes()->findOrFail($purchaseId);
+
+        $opId = DB::table('inventory_operations')->insertGetId([
+            'company_id' => $this->company->id,
+            'idempotency_key' => 'adr0013-op-'.Str::ulid(),
+            'operation_type' => 'movement',
+            'line_count' => 1,
+            'request_hash' => hash('sha256', 'adr0013-'.$purchase->id),
+            'created_by' => $this->owner->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('stock_movements')->insert([
+            'inventory_operation_id' => $opId,
+            'public_id' => (string) Str::ulid(),
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'warehouse_id' => $this->warehouse->id,
+            'movement_type' => 'receipt',
+            'movement_date' => now()->toDateString(),
+            'quantity_delta_base' => '10.000000',
+            'unit_cost_base' => '0.000000',
+            'value_delta_base' => '0.000000',
+            'average_cost_after' => '0.000000',
+            'quantity_after_product_company' => '10.000000',
+            'source_type' => 'purchase',
+            'source_id' => $purchase->id,
+            'created_by' => $this->owner->id,
+            'created_at' => now(),
+        ]);
+        $asOf = app(PurchasePayableAsOf::class);
+        $result = $asOf->components([$purchase], Carbon::now());
+
+        $this->assertArrayHasKey((int) $purchase->id, $result);
+        $this->assertTrue(BigDecimal::of($result[(int) $purchase->id]['outstanding'])->isZero());
+
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
+    }
+
+    public function test_baseline_receipt_hash_replay_compatibility_for_base_currency_payment(): void
+    {
+        setPermissionsTeamId($this->company->id);
+        $this->staff->givePermissionTo(['money.receipt.create']);
+
+        $idempotencyKey = 'legacy-baseline-replay-'.Str::random(6);
+        $paymentDate = now()->toDateString();
+
+        // Baseline canonical payload (without exchange_rate!)
+        $baselinePayload = [
+            'actor_id' => (int) $this->staff->id,
+            'device_id' => (string) $this->device->device_id,
+            'customer_id' => (string) $this->customer->public_id,
+            'cash_account_id' => null,
+            'amount' => '50.000000',
+            'currency' => 'ILS',
+            'payment_date' => $paymentDate,
+            'reference' => null,
+            'notes' => null,
+            'allocations' => [],
+        ];
+        $baselineHash = hash('sha256', json_encode($baselinePayload, JSON_THROW_ON_ERROR));
+
+        // Seed receipt matching baseline hash
+        $frozenSnapshot = [
+            'id' => (string) Str::ulid(),
+            'receipt_id' => (string) Str::ulid(),
+            'payment_number' => 'RCT-LEGACY-001',
+            'amount' => '50.00',
+            'currency' => 'ILS',
+            'success' => true,
+        ];
+
+        NativeCommandReceipt::create([
+            'company_id' => $this->company->id,
+            'command_type' => 'customer_payment',
+            'idempotency_key' => $idempotencyKey,
+            'actor_id' => $this->staff->id,
+            'device_id' => $this->device->device_id,
+            'request_hash' => $baselineHash,
+            'payload' => $baselinePayload,
+            'response_snapshot' => $frozenSnapshot,
+            'status' => 'completed',
+        ]);
+
+        // Replay with identical body containing currency ILS and exchange_rate 1
+        $resp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', $idempotencyKey)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments", [
+                'amount' => '50.00',
+                'currency' => 'ILS',
+                'exchange_rate' => '1',
+            ]);
+
+        $resp->assertStatus(200);
+        $this->assertSame('true', $resp->headers->get('X-Idempotent-Replay'));
+        $this->assertSame($frozenSnapshot, $resp->json());
+    }
+
+    public function test_sales_invoice_date_cutoff_and_returned_exact_exposure(): void
+    {
+        $this->restoreStaffPermissions();
+
+        // 1. Create a sale
+        $salePayload = $this->validSalePayload(
+            eventId: (string) Str::uuid(),
+            amount: '174.000000',
+            unitPrice: '50.000000'
+        );
+        $salePayload['lines'][0]['quantity'] = '3.000000';
+        $sale = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $salePayload);
+        $this->assertSame(201, $sale->status(), $sale->getContent());
+        $invoicePublicId = (string) $sale->json('invoice_id');
+
+        // Post a partial return of 1 unit (58.00)
+        $returnResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'return-for-detail-test')
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
+                'sales_invoice_id' => $invoicePublicId,
+                'lines' => [['product_id' => $this->product->public_id, 'quantity' => '1.000000']],
+            ]);
+        $returnResp->assertStatus(201);
+
+        // 2. Check detail view for returned and returned_exact
+        $detail = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
+        $detail->assertStatus(200);
+        $this->assertSame('58.00', $detail->json('returned'));
+        $this->assertSame('58.000000', $detail->json('returned_exact'));
+        $this->assertSame('58.00', $detail->json('thermal_receipt.returned_amount'));
+        $this->assertSame('58.000000', $detail->json('thermal_receipt.returned_exact'));
+
+        // 3. Check list view
+        $list = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices");
+        $list->assertStatus(200);
+        $row = collect($list->json('invoices'))->firstWhere('id', $invoicePublicId);
+        $this->assertNotNull($row);
+        $this->assertSame('58.00', $row['returned']);
+        $this->assertSame('58.000000', $row['returned_exact']);
     }
 }

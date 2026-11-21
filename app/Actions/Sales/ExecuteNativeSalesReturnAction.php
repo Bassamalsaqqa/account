@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Actions\Sales;
 
+use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
 use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\NativeCommandReceipt;
 use App\Models\SalesInvoice;
+use App\Models\SalesReturn;
 use App\Models\User;
 use App\Services\Audit\AuditService;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -36,6 +39,23 @@ final class ExecuteNativeSalesReturnAction
                 app(CompanyContext::class)->setCompany($company, $actor);
                 $invoice = SalesInvoice::where('company_id', $company->id)->whereKey($invoice->id)
                     ->with('lines.product')->lockForUpdate()->firstOrFail();
+
+                // Guard against lost-ACK duplicate posting for unrecorded legacy returns from old 8c1
+                $unrecordedLegacy = SalesReturn::where('company_id', $company->id)
+                    ->where('sales_invoice_id', $invoice->id)
+                    ->where('status', SalesReturn::STATUS_POSTED)
+                    ->where('reason', 'مرتجع مبيعات من تطبيق الجوال')
+                    ->whereNotExists(function ($q) use ($company): void {
+                        $q->selectRaw('1')->from('native_command_receipts')
+                            ->where('company_id', $company->id)
+                            ->where('entity_type', 'sales_return')
+                            ->whereColumn('entity_id', 'sales_returns.id');
+                    })
+                    ->first();
+                if ($unrecordedLegacy !== null) {
+                    throw new IdempotencyConflictException("Sales invoice [{$invoice->public_id}] already has an unrecorded mobile return [{$unrecordedLegacy->public_id}] from a prior version without an idempotency receipt. Use web management or contact support to review return state.");
+                }
+
                 $draftLines = [];
                 foreach ($lines as $input) {
                     $original = SalesReturnInput::resolveLine($invoice, $input);
@@ -54,12 +74,16 @@ final class ExecuteNativeSalesReturnAction
 
                 app(AuditService::class)->log((int) $company->id, 'sales_return.native_posted', 'Native sales return posted', (int) $actor->id, $posted);
 
+                $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $posted->currency_code, $company);
+
                 return ['snapshot' => [
                     'id' => (string) $posted->public_id,
                     'return_number' => (string) $posted->return_number,
                     'status' => (string) $posted->status,
-                    'total_amount' => (string) BigDecimal::of((string) $posted->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
+                    'total_amount' => (string) BigDecimal::of((string) $posted->grand_total_currency)->toScale($cmu, RoundingMode::HALF_UP),
+                    'total_amount_exact' => (string) BigDecimal::of((string) $posted->grand_total_currency),
                     'currency' => (string) $posted->currency_code,
+                    'currency_minor_units' => $cmu,
                     'posted_at' => $posted->posted_at->format('Y-m-d\TH:i:s\Z'),
                 ], 'entity_type' => 'sales_return', 'entity_id' => $posted->id, 'entity_public_id' => $posted->public_id];
             });

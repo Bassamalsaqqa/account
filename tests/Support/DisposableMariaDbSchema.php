@@ -179,10 +179,11 @@ final class DisposableMariaDbSchema
     public function migrate(): void
     {
         $process = new Process([PHP_BINARY, 'artisan', 'migrate', '--database=mysql', '--force'], dirname(__DIR__, 2), $this->environment());
-        // Windows full-suite fixture migration exceeded the former two-minute
-        // limit. Keep a finite setup bound; SQL/lock and test assertion deadlines
+        // Windows and container full-suite fixture migration exceeded the former
+        // two-minute limit. Keep a finite setup bound; SQL/lock and test assertion deadlines
         // are unchanged.
-        $process->setTimeout(PHP_OS_FAMILY === 'Windows' ? 300 : 120)->mustRun();
+        $migrationTimeout = (int) (getenv('PHASE8_MIGRATION_TIMEOUT') ?: (PHP_OS_FAMILY === 'Windows' ? 300 : 300));
+        $process->setTimeout($migrationTimeout)->mustRun();
         // Canonical catalogue provisioning, not a copy of uncommitted parent records.
         $this->runApplicationCode('app(App\\Services\\Tenancy\\CompanyRoleService::class)->ensurePermissionsExist();');
     }

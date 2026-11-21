@@ -13,6 +13,7 @@ use App\Models\Company;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturnLine;
 use App\Models\User;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesReturnAmounts;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -73,6 +74,20 @@ final class SalesReturnController extends Controller
             );
         }
 
+        if (! $user->hasPermissionTo('sales.return.view')) {
+            $hasPriorReturns = SalesReturnLine::where('company_id', $company->id)
+                ->whereIn('sales_invoice_line_id', $invoice->lines->pluck('id'))
+                ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))
+                ->exists();
+            if ($hasPriorReturns) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'FORBIDDEN',
+                    message: 'Action is unauthorized. Missing required sales.return.view permission to inspect return history.',
+                    status: 403
+                );
+            }
+        }
+
         $requestedLines = $request->input('lines', []);
         if (! is_array($requestedLines) || empty($requestedLines)) {
             return MobileApiBoundary::buildErrorResponse(
@@ -102,13 +117,16 @@ final class SalesReturnController extends Controller
                 $quantity = BigDecimal::of($input['quantity']);
                 $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
                 $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
+                $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
                 $restockItems[] = [
                     'sales_invoice_line_id' => (string) $original->public_id,
                     'product_id' => $original->product?->public_id,
                     'product_name' => $original->product ? (string) $original->product->displayName() : (string) $original->item_description,
                     'quantity_returned' => (string) $quantity,
-                    'unit_price' => (string) BigDecimal::of((string) $original->unit_price)->toScale(2, RoundingMode::HALF_UP),
-                    'line_total' => (string) $amounts['total']->toScale(2, RoundingMode::HALF_UP),
+                    'unit_price' => (string) BigDecimal::of((string) $original->unit_price)->toScale($cmu, RoundingMode::HALF_UP),
+                    'unit_price_exact' => (string) BigDecimal::of((string) $original->unit_price),
+                    'line_total' => (string) $amounts['total']->toScale($cmu, RoundingMode::HALF_UP),
+                    'line_total_exact' => (string) $amounts['total'],
                     'restock_warehouse_id' => $restockWarehouseId,
                 ];
             }
@@ -116,11 +134,15 @@ final class SalesReturnController extends Controller
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
         }
 
+        $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
+
         return response()->json([
             'sales_invoice_id' => (string) $invoice->public_id,
             'invoice_number' => (string) ($invoice->invoice_number ?? $invoice->public_id),
             'currency' => (string) $invoice->currency_code,
-            'total_return_amount' => (string) $totalReturnAmount->toScale(2, RoundingMode::HALF_UP),
+            'currency_minor_units' => $cmu,
+            'total_return_amount' => (string) $totalReturnAmount->toScale($cmu, RoundingMode::HALF_UP),
+            'total_return_amount_exact' => (string) $totalReturnAmount,
             'lines' => $restockItems,
         ], 200, [
             'Content-Type' => 'application/json',
@@ -187,6 +209,20 @@ final class SalesReturnController extends Controller
                 message: 'The original sales invoice was not found.',
                 status: 404
             );
+        }
+
+        if (! $user->hasPermissionTo('sales.return.view')) {
+            $hasPriorReturns = SalesReturnLine::where('company_id', $company->id)
+                ->whereIn('sales_invoice_line_id', $invoice->lines->pluck('id'))
+                ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))
+                ->exists();
+            if ($hasPriorReturns) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'FORBIDDEN',
+                    message: 'Action is unauthorized. Missing required sales.return.view permission to inspect return history.',
+                    status: 403
+                );
+            }
         }
 
         $lines = $request->input('lines', []);

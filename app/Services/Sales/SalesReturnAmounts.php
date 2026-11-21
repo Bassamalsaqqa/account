@@ -8,6 +8,7 @@ use App\Application\Platform\TenantWriteAccess;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use InvalidArgumentException;
@@ -19,7 +20,7 @@ final class SalesReturnAmounts
      */
     public function calculateLine(SalesInvoiceLine $original, BigDecimal $quantity, iterable $prior, string $currency): array
     {
-        $scale = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+        $scale = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
         $amounts = [];
         $previousQty = BigDecimal::zero();
         foreach ($prior as $previous) {
@@ -31,7 +32,7 @@ final class SalesReturnAmounts
         if (! $quantity->isPositive() || $cumulativeQty->isGreaterThan($originalQty)) {
             throw new InvalidArgumentException('Return quantity exceeds the remaining original invoice quantity.');
         }
-        foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
+        foreach (['discount', 'tax', 'total'] as $field) {
             $column = 'line_'.$field;
             $already = BigDecimal::zero();
             foreach ($prior as $previous) {
@@ -43,6 +44,9 @@ final class SalesReturnAmounts
             $amount = $entitlement->minus($already)->toScale(6);
             $amounts[$field] = $amount;
         }
+
+        // Canonical subtotal reflects gross minus tax plus discount to prevent parallel unbalancing
+        $amounts['subtotal'] = $amounts['total']->plus($amounts['discount'])->minus($amounts['tax'])->toScale(6);
 
         return $amounts;
     }

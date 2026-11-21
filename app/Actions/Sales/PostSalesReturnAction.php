@@ -322,7 +322,7 @@ class PostSalesReturnAction implements StockEventOwner
             $postingLines = [];
             $lineNum = 1;
 
-            // Dr Sales Returns (revenue contra)
+            // Dr Sales Returns (revenue contra) or Cr Sales Returns (revenue reversal adjustment if negative)
             if ($subtotalBase->isPositive()) {
                 app(SalesPostingLines::class)->append($postingLines,
                     lineNumber: $lineNum++,
@@ -334,7 +334,17 @@ class PostSalesReturnAction implements StockEventOwner
                     exchangeRate: $fx,
                     description: "Sales Return {$returnNumber} Revenue Reversal",
                 );
-
+            } elseif ($subtotalBase->isNegative()) {
+                app(SalesPostingLines::class)->append($postingLines,
+                    lineNumber: $lineNum++,
+                    ledgerAccountId: $salesReturnsAccount->id,
+                    debitBase: MoneyAmount::from('0.000000'),
+                    creditBase: MoneyAmount::from((string) $subtotalBase->abs()->toScale(6)),
+                    transactionCurrencyCode: $currency,
+                    transactionAmount: MoneyAmount::from((string) $subtotalCurrency->abs()->toScale(6)),
+                    exchangeRate: $fx,
+                    description: "Sales Return {$returnNumber} Revenue Reversal Adjustment",
+                );
             }
 
             $taxes = [];
@@ -358,16 +368,29 @@ class PostSalesReturnAction implements StockEventOwner
             }
 
             // Cr Accounts Receivable (reduces customer AR)
-            app(SalesPostingLines::class)->append($postingLines,
-                lineNumber: $lineNum++,
-                ledgerAccountId: $arAccount->id,
-                debitBase: MoneyAmount::from('0.000000'),
-                creditBase: MoneyAmount::from((string) $grandTotalBase->toScale(6)),
-                transactionCurrencyCode: $currency,
-                transactionAmount: MoneyAmount::from((string) $grandTotalCurrency->toScale(6)),
-                exchangeRate: $fx,
-                description: "Sales Return {$returnNumber} - {$customer->displayName()}",
-            );
+            if ($grandTotalBase->isPositive()) {
+                app(SalesPostingLines::class)->append($postingLines,
+                    lineNumber: $lineNum++,
+                    ledgerAccountId: $arAccount->id,
+                    debitBase: MoneyAmount::from('0.000000'),
+                    creditBase: MoneyAmount::from((string) $grandTotalBase->toScale(6)),
+                    transactionCurrencyCode: $currency,
+                    transactionAmount: MoneyAmount::from((string) $grandTotalCurrency->toScale(6)),
+                    exchangeRate: $fx,
+                    description: "Sales Return {$returnNumber} - {$customer->displayName()}",
+                );
+            } elseif ($grandTotalBase->isNegative()) {
+                app(SalesPostingLines::class)->append($postingLines,
+                    lineNumber: $lineNum++,
+                    ledgerAccountId: $arAccount->id,
+                    debitBase: MoneyAmount::from((string) $grandTotalBase->abs()->toScale(6)),
+                    creditBase: MoneyAmount::from('0.000000'),
+                    transactionCurrencyCode: $currency,
+                    transactionAmount: MoneyAmount::from((string) $grandTotalCurrency->abs()->toScale(6)),
+                    exchangeRate: $fx,
+                    description: "Sales Return {$returnNumber} - {$customer->displayName()}",
+                );
+            }
 
             // Dr Inventory / Cr COGS at restored original cost
             if ($totalCogsBase->isPositive()) {

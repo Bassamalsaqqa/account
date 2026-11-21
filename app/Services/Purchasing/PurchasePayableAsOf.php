@@ -142,15 +142,41 @@ final class PurchasePayableAsOf
     private function assertReadProvenance(int $companyId, array $ids, string $date): void
     {
         $purchases = DB::table('purchases as p')
-            ->join('posting_batches as b', 'b.id', '=', 'p.posting_batch_id')
+            ->leftJoin('posting_batches as b', 'b.id', '=', 'p.posting_batch_id')
             ->leftJoin('posting_batches as vb', 'vb.id', '=', 'p.void_posting_batch_id')
             ->whereIn('p.id', $ids)->where('p.company_id', $companyId)
             ->where(fn ($q) => $q->where('p.status', 'posted')->orWhere(fn ($q) => $q->where('p.status', 'void')->where('p.void_business_date', '>', $date)))
             ->whereNotNull('p.purchase_number')->where('p.purchase_number', '!=', '')
             ->whereNotNull('p.posted_at')->whereNotNull('p.posted_by')
-            ->where('b.company_id', $companyId)->where('b.source_type', 'purchase')
-            ->whereColumn('b.source_id', 'p.id')->whereIn('b.status', ['posted', 'reversed'])
-            ->whereNull('b.reversal_of_id')->whereColumn('b.posting_date', 'p.purchase_date')->count();
+            ->where(function ($q) use ($companyId): void {
+                $q->where(function ($batchQ) use ($companyId): void {
+                    $batchQ->whereNotNull('p.posting_batch_id')
+                        ->where('b.company_id', $companyId)
+                        ->where('b.source_type', 'purchase')
+                        ->whereColumn('b.source_id', 'p.id')
+                        ->whereIn('b.status', ['posted', 'reversed'])
+                        ->whereNull('b.reversal_of_id')
+                        ->whereColumn('b.posting_date', 'p.purchase_date');
+                })->orWhere(function ($zeroQ) use ($companyId): void {
+                    $zeroQ->whereNull('p.posting_batch_id')
+                        ->where(function ($valQ): void {
+                            $valQ->where('p.grand_total_base', '0')
+                                ->orWhere('p.grand_total_base', '0.000000');
+                        })
+                        ->where(function ($valCurQ): void {
+                            $valCurQ->where('p.grand_total_currency', '0')
+                                ->orWhere('p.grand_total_currency', '0.000000');
+                        })
+                        ->whereExists(function ($stockQ) use ($companyId): void {
+                            $stockQ->selectRaw('1')
+                                ->from('stock_movements as sm')
+                                ->where('sm.company_id', $companyId)
+                                ->where('sm.source_type', 'purchase')
+                                ->whereColumn('sm.source_id', 'p.id');
+                        });
+                });
+            })
+            ->count();
         if ($purchases !== count($ids)) {
             throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
         }

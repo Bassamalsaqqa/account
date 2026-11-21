@@ -238,19 +238,47 @@ final class SalesInvoiceController extends Controller
             );
         }
 
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
+        $businessDate = Carbon::now($companyTimezone)->toDateString();
+
         $query = SalesInvoice::where('company_id', $company->id)
             ->withCount(['paymentAllocations as mobile_cash_allocations_count' => fn ($q) => $q->active()->whereHas('customerPayment', fn ($p) => $p->where('payment_method', CustomerPayment::METHOD_CASH))])
             ->with(['customer' => fn ($q) => $q->where('company_id', $company->id)]);
+
+        $allocatedSql = sprintf(
+            '(SELECT COALESCE(SUM(cpa.allocated_amount), 0) FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id LEFT JOIN posting_batches pr ON pr.id = cp.reversal_posting_batch_id LEFT JOIN posting_batches er ON er.id = cpae.reversal_posting_batch_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.company_id = %d AND cp.customer_id = sales_invoices.customer_id AND cp.posting_batch_id IS NOT NULL AND cp.payment_date <= \'%s\' AND (cp.is_reversed = 0 OR pr.posting_date > \'%s\') AND (cpa.application_event_id IS NULL OR (cpae.company_id = %d AND cpae.customer_payment_id = cp.id AND cpae.applied_at IS NOT NULL AND cpae.application_date <= \'%s\' AND (cpae.reversed_at IS NULL OR er.posting_date > \'%s\' OR (cpae.posting_batch_id IS NULL AND pr.posting_date > \'%s\')))))',
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            $businessDate
+        );
+
+        $returnedSql = sprintf(
+            '(SELECT COALESCE(SUM(sr.grand_total_currency), 0) FROM sales_returns sr LEFT JOIN posting_batches inverse ON inverse.id = sr.void_posting_batch_id WHERE sr.sales_invoice_id = sales_invoices.id AND sr.company_id = %d AND sr.posting_batch_id IS NOT NULL AND sr.issue_date <= \'%s\' AND (sr.status = "posted" OR inverse.posting_date > \'%s\'))',
+            (int) $company->id,
+            $businessDate,
+            $businessDate
+        );
+
+        $hasCashSql = sprintf(
+            'EXISTS (SELECT 1 FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id LEFT JOIN posting_batches pr ON pr.id = cp.reversal_posting_batch_id LEFT JOIN posting_batches er ON er.id = cpae.reversal_posting_batch_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.company_id = %d AND cp.payment_method = "cash" AND cp.customer_id = sales_invoices.customer_id AND cp.posting_batch_id IS NOT NULL AND cp.payment_date <= \'%s\' AND (cp.is_reversed = 0 OR pr.posting_date > \'%s\') AND (cpa.application_event_id IS NULL OR (cpae.company_id = %d AND cpae.customer_payment_id = cp.id AND cpae.applied_at IS NOT NULL AND cpae.application_date <= \'%s\' AND (cpae.reversed_at IS NULL OR er.posting_date > \'%s\' OR (cpae.posting_batch_id IS NULL AND pr.posting_date > \'%s\')))))',
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            $businessDate
+        );
 
         // Filter by invoice status or payment status
         if ($statusFilter !== null) {
             if (in_array($statusFilter, ['DRAFT', 'POSTED', 'VOID'], true)) {
                 $query->where('status', strtolower($statusFilter));
             } elseif (in_array($statusFilter, ['PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
-                $allocatedSql = '(SELECT COALESCE(SUM(cpa.allocated_amount), 0) FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
-                $returnedSql = '(SELECT COALESCE(SUM(sr.grand_total_currency), 0) FROM sales_returns sr WHERE sr.sales_invoice_id = sales_invoices.id AND sr.status = "posted")';
-                $hasCashSql = 'EXISTS (SELECT 1 FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND cp.payment_method = "cash" AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
-
                 $query->where('status', SalesInvoice::STATUS_POSTED);
 
                 if ($statusFilter === 'PAID_CASH') {
@@ -311,7 +339,10 @@ final class SalesInvoiceController extends Controller
         }
 
         if ($request->boolean('allocatable')) {
-            $query->where('status', SalesInvoice::STATUS_POSTED)->whereNotNull('posting_batch_id')->where('issue_date', '<=', now()->toDateString());
+            $query->where('status', SalesInvoice::STATUS_POSTED)
+                ->whereNotNull('posting_batch_id')
+                ->where('issue_date', '<=', $businessDate)
+                ->whereRaw("sales_invoices.grand_total_currency > ({$allocatedSql} + {$returnedSql})");
         }
 
         $records = $query->orderBy('public_id', 'desc')
@@ -326,11 +357,12 @@ final class SalesInvoiceController extends Controller
             $nextCursor = null;
         }
 
-        $positions = app(ReceivablePositionAsOf::class)->components($records->filter(fn ($i) => $i->isPosted()), now()->toDateString());
-        $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver, $positions): array {
+        $positions = app(ReceivablePositionAsOf::class)->components($records->filter(fn ($i) => $i->isPosted()), $businessDate);
+        $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver, $positions, $businessDate): array {
             $cmu = $minorUnitsResolver->resolve((string) $inv->currency_code, $company);
-            $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($inv, $positions[(int) $inv->id] ?? null);
+            $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($inv, $positions[(int) $inv->id] ?? null, $businessDate);
             $paid = $financialSummary['paid'];
+            $returned = $financialSummary['returned'];
             $grandTotal = $financialSummary['grand_total'];
             $remaining = $financialSummary['remaining'];
             $paymentStatus = $financialSummary['payment_status'];
@@ -353,8 +385,10 @@ final class SalesInvoiceController extends Controller
                 'tax' => (string) BigDecimal::of((string) ($inv->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
                 'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
                 'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+                'returned' => (string) $returned->toScale($cmu, RoundingMode::HALF_UP),
                 'total_exact' => (string) $grandTotal,
                 'paid_exact' => (string) $paid,
+                'returned_exact' => (string) $returned,
                 'remaining_exact' => (string) $remaining,
                 'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
                 'currency' => (string) $inv->currency_code,
@@ -363,10 +397,6 @@ final class SalesInvoiceController extends Controller
                 'created_at' => $inv->created_at?->format('Y-m-d\TH:i:s\Z'),
             ];
         })->values()->all();
-
-        if ($request->boolean('allocatable')) {
-            $invoices = array_values(array_filter($invoices, fn (array $row): bool => BigDecimal::of($row['remaining_exact'])->isPositive()));
-        }
 
         return response()->json([
             'company_id' => $company->public_id,
@@ -422,9 +452,13 @@ final class SalesInvoiceController extends Controller
             );
         }
 
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
+        $businessDate = Carbon::now($companyTimezone)->toDateString();
+
         $cmu = $minorUnitsResolver->resolve((string) $invoice->currency_code, $company);
-        $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($invoice);
+        $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($invoice, null, $businessDate);
         $paid = $financialSummary['paid'];
+        $returned = $financialSummary['returned'];
         $grandTotal = $financialSummary['grand_total'];
         $remaining = $financialSummary['remaining'];
         $paymentStatus = $financialSummary['payment_status'];
@@ -504,8 +538,10 @@ final class SalesInvoiceController extends Controller
             'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
             'grand_total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
             'paid_amount' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'returned_amount' => (string) $returned->toScale($cmu, RoundingMode::HALF_UP),
             'total_exact' => (string) $grandTotal,
             'paid_exact' => (string) $paid,
+            'returned_exact' => (string) $returned,
             'remaining_exact' => (string) $remaining,
             'remaining_balance' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'currency' => (string) $invoice->currency_code,
@@ -528,8 +564,10 @@ final class SalesInvoiceController extends Controller
             'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
             'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
             'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'returned' => (string) $returned->toScale($cmu, RoundingMode::HALF_UP),
             'total_exact' => (string) $grandTotal,
             'paid_exact' => (string) $paid,
+            'returned_exact' => (string) $returned,
             'remaining_exact' => (string) $remaining,
             'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'lines' => $linesPayload,
@@ -542,23 +580,26 @@ final class SalesInvoiceController extends Controller
 
     /**
      * @param  array{paid: BigDecimal, returned: BigDecimal, outstanding: BigDecimal}|null  $position
-     * @return array{paid: BigDecimal, grand_total: BigDecimal, remaining: BigDecimal, payment_status: string}
+     * @return array{paid: BigDecimal, returned: BigDecimal, grand_total: BigDecimal, remaining: BigDecimal, payment_status: string}
      */
-    private function resolveFinancialSummaryAndPaymentStatus(SalesInvoice $invoice, ?array $position = null): array
+    private function resolveFinancialSummaryAndPaymentStatus(SalesInvoice $invoice, ?array $position = null, ?string $asOfDate = null): array
     {
         if (! $invoice->isPosted()) {
             $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
 
             return [
                 'paid' => BigDecimal::zero(),
+                'returned' => BigDecimal::zero(),
                 'grand_total' => $grandTotal,
                 'remaining' => $invoice->isVoid() ? BigDecimal::zero() : $grandTotal,
                 'payment_status' => 'ON_CREDIT',
             ];
         }
 
-        $summary = $position ?? app(ReceivablePositionAsOf::class)->components([$invoice], now()->toDateString())[(int) $invoice->id];
+        $date = $asOfDate ?? Carbon::now($invoice->company->timezone ?: 'UTC')->toDateString();
+        $summary = $position ?? app(ReceivablePositionAsOf::class)->components([$invoice], $date)[(int) $invoice->id];
         $paid = $summary['paid'];
+        $returned = $summary['returned'];
         $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
         $remaining = $summary['outstanding'];
 
@@ -576,6 +617,7 @@ final class SalesInvoiceController extends Controller
 
         return [
             'paid' => $paid,
+            'returned' => $returned,
             'grand_total' => $grandTotal,
             'remaining' => $remaining,
             'payment_status' => $paymentStatus,

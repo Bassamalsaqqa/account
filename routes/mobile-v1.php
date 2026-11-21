@@ -118,5 +118,6 @@ Route::prefix('companies/{companyId}')
         Route::get('/reports/treasury', [ReportController::class, 'treasury'])->middleware('mobile.auth:reports.financial.view')->name('mobile.v1.reports.treasury');
 
         // Receipts & Command Status
-        Route::get('/receipts/{idempotencyKey}/status', [ReceiptStatusController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.receipts.status');
+        Route::get('/receipts/status', [ReceiptStatusController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.receipts.status.query');
+        Route::get('/receipts/{idempotencyKey}/status', [ReceiptStatusController::class, 'show'])->where('idempotencyKey', '.*')->middleware('mobile.auth')->name('mobile.v1.receipts.status');
     });
