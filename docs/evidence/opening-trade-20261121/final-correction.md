@@ -1,0 +1,19 @@
+# Opening trade validation and browser correction
+
+Baseline: `0c666662d864f9912e4783940ad788a5c2c161cc`, existing checkout; no migration changes.
+
+Shared exact positive-decimal validation now rejects unrepresentable amount/FX precision before API preview/execute and validates all Livewire rows before the atomic posting transaction. Invalid rows retain the draft. The form uses the existing document operation queue, restores submission after errors, exposes a focusable localized error summary and invalid controls, reserves suffix space, and provides 16px mobile inputs and 44px mobile tabs. Side changes clear errors and remount the party selector; management-context search matches the page's permission requirements.
+
+Real T3 browser inspection used only the owned ReleaseUi fixture schema on loopback MariaDB 3342, ephemeral APP_KEY and private exported credentials. English mobile 390px inspection verified no horizontal overflow, 16px visible inputs, 44px inputs/tabs, keyboard customer selection, rejected 0.0000001, preserved draft, first-error focus and restored submit control. Corrected customer posting succeeded. Arabic RTL at 390px and desktop 1440px was inspected; keyboard supplier selection, invalid additional-row retention/focus and corrected two-row supplier posting succeeded. Overprecision FX was rejected with Arabic validation and draft retention.
+
+Mixed partial settlement was completed through browser forms: supplier 50 ILS allocated 25 to purchase and 25 to opening; customer 40 ILS allocated 20 to invoice and 20 to opening. Both confirmed detail pages were verified. Browser discovery exposed null document assumptions in both allocation detail tables and receipt preview generation; these now resolve opening-item currency/identity with tenant and customer restrictions. Detail route regressions cover both sides.
+
+Stitch skill consulted. MCP get_screen resolved English reference `projects/15641450350510420845/screens/fed38deef26a4441a1aea22de54f3095`. Supplied Arabic ID `ea1aa4aef54964150ba79cd1c22cb72f7` returned `Requested entity was not found.` No new design was generated; reference metadata retrieval is not visual reference acceptance. No Owner acceptance is claimed. Complete manual Tab traversal and every cross-currency browser permutation were not exhaustively exercised.
+
+Verification: focused API/UI 33 tests / 267 assertions; subsequent UI 13 / 150; combined Frontend and JavaScript 140 passed; full Pint, PHPStan and production build passed, no source maps. Full Accounting final results are recorded below. Dependency audits were not rerun.
+
+The disposable DB stopped externally during browser inspection; the existing attachment was restarted without reprovisioning. The stale supervisor DB connection prevented its automatic drop. After verifying the stopped owner PID and exact saved schema/state identity, only the owned fixture schema was dropped using a fresh administrative connection and its private state removed. Owned browser tab/server closed. Other schemas and servers were not adopted. Disposable test runners clean their own schemas.
+
+No GitHub Actions, push, merge, production/Hostinger access or deployment. Release remains HOLD pending Owner approval. Private credentials were not copied into tracked evidence. Temporary verification logs remain in /tmp/opening-final-* outside the repository.
+
+Final full Accounting: **59 tests / 586 assertions**, zero failures/errors, 2m01.444s, owned schema cleaned. This includes all six reconciliation services. Final PHPStan/Pint/build pass and `git diff --check dc60..HEAD` plus working diff check pass. Earlier full Accounting was 59 / 582 before detail-render regressions. Initial targeted detail regression failed (customer receipt preview 404); the final full run supersedes it. No migration was added or changed. Shared disposable MariaDB infrastructure remains available; no production connection was used.

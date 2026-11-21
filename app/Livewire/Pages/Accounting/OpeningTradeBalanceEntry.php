@@ -13,6 +13,7 @@ use App\Models\Customer;
 use App\Models\OpeningTradeItem;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Rules\PositiveExactDecimal;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -52,7 +53,7 @@ class OpeningTradeBalanceEntry extends Component
 
     public bool $has_multiple_lines = false;
 
-    /** @var list<array{amount: string, currency_code: string, exchange_rate: ?string, original_reference: ?string, due_date: ?string, notes: ?string}> */
+    /** @var list<array{amount: string, currency_code?: string, exchange_rate: ?string, original_reference: ?string, due_date: ?string, notes: ?string}> */
     public array $additional_lines = [];
 
     public ?string $successMessage = null;
@@ -76,6 +77,7 @@ class OpeningTradeBalanceEntry extends Component
 
     public function updatedSide(): void
     {
+        $this->resetValidation();
         $this->party_id = null;
         $this->successMessage = null;
         $this->errorMessage = null;
@@ -143,18 +145,27 @@ class OpeningTradeBalanceEntry extends Component
         $rules = [
             'side' => 'required|in:customer,vendor',
             'party_id' => 'required|integer|min:1',
-            'amount' => 'required|numeric|gt:0',
+            'amount' => ['required', new PositiveExactDecimal(6)],
             'currency_code' => 'required|string|size:3',
-            'opening_date' => 'required|date',
-            'due_date' => 'nullable|date',
+            'opening_date' => 'required|date_format:Y-m-d',
+            'due_date' => 'nullable|date_format:Y-m-d',
             'original_reference' => 'nullable|string|max:100',
             'notes' => 'nullable|string|max:500',
         ];
 
         if (! $isBase) {
-            $rules['exchange_rate'] = 'required|numeric|gt:0';
+            $rules['exchange_rate'] = ['required', new PositiveExactDecimal(10)];
         }
 
+        foreach ($this->additional_lines as $index => $line) {
+            $prefix = 'additional_lines.'.$index.'.';
+            $rules[$prefix.'amount'] = ['required', new PositiveExactDecimal(6)];
+            $rules[$prefix.'currency_code'] = 'required|string|size:3';
+            $rules[$prefix.'exchange_rate'] = [($line['currency_code'] ?? '') === $company->base_currency_code ? 'nullable' : 'required', new PositiveExactDecimal(10)];
+            $rules[$prefix.'original_reference'] = 'nullable|string|max:100';
+            $rules[$prefix.'due_date'] = 'nullable|date_format:Y-m-d';
+            $rules[$prefix.'notes'] = 'nullable|string|max:500';
+        }
         $this->validate($rules);
 
         $action = app(PostOpeningTradeItemAction::class);
@@ -182,23 +193,23 @@ class OpeningTradeBalanceEntry extends Component
 
                 // Post any additional lines
                 foreach ($this->additional_lines as $index => $line) {
-                    if (! empty($line['amount']) && BigDecimal::of($line['amount'])->isPositive()) {
-                        $action->execute(
-                            company: $company,
-                            side: $this->side,
-                            partyId: (int) $this->party_id,
-                            openingDate: $this->opening_date,
-                            amount: (string) $line['amount'],
-                            currencyCode: (string) $line['currency_code'],
-                            exchangeRate: $line['exchange_rate'] ?? $this->exchange_rate,
-                            actor: $actor,
-                            idempotencyKey: $this->formIdempotencyKey.':line:'.$index,
-                            originalReference: ! empty($line['original_reference']) ? (string) $line['original_reference'] : null,
-                            dueDate: ! empty($line['due_date']) ? (string) $line['due_date'] : null,
-                            notes: ! empty($line['notes']) ? (string) $line['notes'] : null,
-                            sourceIdentity: 'manual_web'
-                        );
-                    }
+
+                    $action->execute(
+                        company: $company,
+                        side: $this->side,
+                        partyId: (int) $this->party_id,
+                        openingDate: $this->opening_date,
+                        amount: (string) $line['amount'],
+                        currencyCode: (string) $line['currency_code'],
+                        exchangeRate: $line['exchange_rate'] ?? $this->exchange_rate,
+                        actor: $actor,
+                        idempotencyKey: $this->formIdempotencyKey.':line:'.$index,
+                        originalReference: ! empty($line['original_reference']) ? (string) $line['original_reference'] : null,
+                        dueDate: ! empty($line['due_date']) ? (string) $line['due_date'] : null,
+                        notes: ! empty($line['notes']) ? (string) $line['notes'] : null,
+                        sourceIdentity: 'manual_web'
+                    );
+
                 }
 
             });
@@ -220,7 +231,8 @@ class OpeningTradeBalanceEntry extends Component
                 ? __('accounting.gl_overlap_customer')
                 : __('accounting.gl_overlap_vendor');
         } catch (\Throwable $e) {
-            $this->errorMessage = $e->getMessage();
+            report($e);
+            $this->errorMessage = __('accounting.opening_post_failed');
         }
     }
 
@@ -268,7 +280,7 @@ class OpeningTradeBalanceEntry extends Component
 
     protected function searchableSelectorContext(): string
     {
-        return $this->side === OpeningTradeItem::SIDE_VENDOR ? 'purchasing' : 'sales';
+        return 'management';
     }
 
     public function render(): View

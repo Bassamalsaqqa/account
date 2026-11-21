@@ -11,10 +11,10 @@ use App\Domain\Accounting\Exceptions\LegacyGlOpeningOverlapException;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
 use App\Models\OpeningTradeItem;
 use App\Models\User;
+use App\Rules\PositiveExactDecimal;
 use App\Services\Accounting\OpeningTradeCutoverAuditService;
 use App\Services\Security\CommandSessionGuard;
 use App\Support\Tenancy\CompanyContext;
-use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
@@ -61,7 +61,7 @@ final class OpeningTradeItemApiController extends ApiController
 
         $amountRaw = (string) ($payload['amount'] ?? '');
         try {
-            $amountDec = BigDecimal::of($amountRaw);
+            $amountDec = PositiveExactDecimal::parse($amountRaw, 6);
             if ($amountDec->isNegative() || $amountDec->isZero()) {
                 return $this->problem('Unprocessable Content', 422, 'Amount must be strictly positive.', $traceId);
             }
@@ -81,7 +81,7 @@ final class OpeningTradeItemApiController extends ApiController
         }
 
         try {
-            $rateDec = BigDecimal::of((string) $rateRaw)->toScale(10, RoundingMode::HALF_UP);
+            $rateDec = PositiveExactDecimal::parse($rateRaw, 10);
             if ($rateDec->isNegative() || $rateDec->isZero()) {
                 return $this->problem('Unprocessable Content', 422, 'Exchange rate must be strictly positive.', $traceId);
             }
@@ -151,6 +151,10 @@ final class OpeningTradeItemApiController extends ApiController
         $sourceIdentity = (string) ($payload['source_identity'] ?? 'manual_api');
 
         try {
+            PositiveExactDecimal::parse($amount, 6);
+            if ($exchangeRate !== null) {
+                PositiveExactDecimal::parse($exchangeRate, 10);
+            }
             app(CommandSessionGuard::class)->authorize($actor);
 
             $action = app(PostOpeningTradeItemAction::class);

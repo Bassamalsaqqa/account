@@ -17,7 +17,7 @@
                 role="tab"
                 aria-selected="{{ $side === 'customer' ? 'true' : 'false' }}"
                 wire:click="$set('side', 'customer')"
-                class="min-h-9 px-3 py-1 text-xs font-bold rounded-control transition-colors cursor-pointer {{ $side === 'customer' ? 'bg-surface text-text-primary shadow-xs' : 'text-text-muted hover:text-text-primary' }}"
+                class="min-h-11 lg:min-h-9 px-3 py-1 text-xs font-bold rounded-control transition-colors cursor-pointer {{ $side === 'customer' ? 'bg-surface text-text-primary shadow-xs' : 'text-text-muted hover:text-text-primary' }}"
             >
                 {{ __('accounting.customer_side') }}
             </button>
@@ -26,7 +26,7 @@
                 role="tab"
                 aria-selected="{{ $side === 'vendor' ? 'true' : 'false' }}"
                 wire:click="$set('side', 'vendor')"
-                class="min-h-9 px-3 py-1 text-xs font-bold rounded-control transition-colors cursor-pointer {{ $side === 'vendor' ? 'bg-surface text-text-primary shadow-xs' : 'text-text-muted hover:text-text-primary' }}"
+                class="min-h-11 lg:min-h-9 px-3 py-1 text-xs font-bold rounded-control transition-colors cursor-pointer {{ $side === 'vendor' ? 'bg-surface text-text-primary shadow-xs' : 'text-text-muted hover:text-text-primary' }}"
             >
                 {{ __('accounting.vendor_side') }}
             </button>
@@ -58,17 +58,25 @@
         </div>
     @endif
 
+    @if ($errors->any())
+        <div role="alert" tabindex="-1" data-form-attention class="text-sm text-danger">
+            @foreach ($errors->all() as $message)
+                <p>{{ $message }}</p>
+            @endforeach
+        </div>
+    @endif
+
     {{-- Main Form Card --}}
-    <form wire:submit.prevent="postOpeningBalance" class="bg-surface border border-border rounded-card p-4 sm:p-5 space-y-4 shadow-xs">
+    <form x-data="{ saving: false }" @submit.prevent="if (!saving) { saving = true; if (window.isDocumentBlocked && window.isDocumentBlocked($wire) && window.resyncDocumentQueue) { window.resyncDocumentQueue($wire, true).catch(() => {}); } const op = window.enqueueDocumentOperation ? window.enqueueDocumentOperation($wire, 'save') : $wire.save(); Promise.resolve(op).catch(() => {}).finally(() => { saving = false; }); }" class="bg-surface border border-border rounded-card p-4 sm:p-5 space-y-4 shadow-xs">
         {{-- Party Selection --}}
-        <div>
+        <div wire:key="opening-party-{{ $side }}">
             <label for="party_combobox" class="block text-xs font-bold text-text-primary mb-1">
                 {{ $side === 'customer' ? __('accounting.customer') : __('accounting.vendor') }} <span class="text-danger">*</span>
             </label>
             <x-searchable-combobox
                 id="party_combobox"
                 :type="$side === 'customer' ? 'customer' : 'vendor'"
-                :context="$side === 'customer' ? 'sales' : 'purchasing'"
+                context="management"
                 wireModel="party_id"
                 :selectedId="$party_id"
                 :selectedLabel="$selectedPartyLabel"
@@ -90,10 +98,10 @@
                     <input
                         type="text"
                         inputmode="decimal"
-                        id="opening-amount"
+                        id="opening-amount" aria-invalid="{{ $errors->has('amount') ? 'true' : 'false' }}"
                         wire:model.live.debounce.300ms="amount"
                         placeholder="0.00"
-                        class="block w-full min-h-11 rounded-control border border-border-strong bg-surface px-3 py-2 text-sm font-semibold tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
+                        class="block w-full min-h-11 rounded-control border border-border-strong bg-surface pl-3 pr-16 py-2 text-base sm:text-sm font-semibold tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
                         dir="ltr"
                         required
                     />
@@ -110,9 +118,9 @@
                     {{ __('accounting.currency') }} <span class="text-danger">*</span>
                 </label>
                 <select
-                    id="opening-currency"
+                    id="opening-currency" aria-invalid="{{ $errors->has('currency_code') ? 'true' : 'false' }}"
                     wire:model.live="currency_code"
-                    class="block w-full min-h-11 rounded-control border border-border-strong bg-surface text-sm py-2 px-3 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
+                    class="block w-full min-h-11 rounded-control border border-border-strong bg-surface text-base sm:text-sm py-2 px-3 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
                 >
                     @foreach ($currencies as $curr)
                         <option value="{{ $curr }}">{{ $curr }}</option>
@@ -139,10 +147,10 @@
                     <input
                         type="text"
                         inputmode="decimal"
-                        id="opening-exchange-rate"
+                        id="opening-exchange-rate" aria-invalid="{{ $errors->has('exchange_rate') ? 'true' : 'false' }}"
                         wire:model.live.debounce.300ms="exchange_rate"
                         placeholder="1.0000000000"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface px-2.5 py-1.5 text-xs font-mono tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface px-2.5 py-1.5 text-base sm:text-xs font-mono tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
                     />
                 </div>
                 <x-input-error :messages="$errors->get('exchange_rate')" class="mt-0.5" />
@@ -160,9 +168,9 @@
                     <label for="opening-date" class="block mb-1 font-bold text-text-secondary">{{ __('accounting.opening_date') }}</label>
                     <input
                         type="date"
-                        id="opening-date"
+                        id="opening-date" aria-invalid="{{ $errors->has('opening_date') ? 'true' : 'false' }}"
                         wire:model="opening_date"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('opening_date')" class="mt-0.5" />
                 </div>
@@ -170,10 +178,10 @@
                     <label for="opening-reference" class="block mb-1 font-bold text-text-secondary">{{ __('accounting.original_reference') }}</label>
                     <input
                         type="text"
-                        id="opening-reference"
+                        id="opening-reference" aria-invalid="{{ $errors->has('original_reference') ? 'true' : 'false' }}"
                         wire:model="original_reference"
                         placeholder="{{ __('accounting.original_reference_placeholder') }}"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('original_reference')" class="mt-0.5" />
                 </div>
@@ -181,9 +189,9 @@
                     <label for="opening-due-date" class="block mb-1 font-bold text-text-secondary">{{ __('accounting.due_date') }}</label>
                     <input
                         type="date"
-                        id="opening-due-date"
+                        id="opening-due-date" aria-invalid="{{ $errors->has('due_date') ? 'true' : 'false' }}"
                         wire:model="due_date"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('due_date')" class="mt-0.5" />
                 </div>
@@ -191,10 +199,10 @@
                     <label for="opening-notes" class="block mb-1 font-bold text-text-secondary">{{ __('accounting.notes') }}</label>
                     <input
                         type="text"
-                        id="opening-notes"
+                        id="opening-notes" aria-invalid="{{ $errors->has('notes') ? 'true' : 'false' }}"
                         wire:model="notes"
                         placeholder="{{ __('accounting.notes_placeholder') }}"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('notes')" class="mt-0.5" />
                 </div>
@@ -205,10 +213,10 @@
             <div class="flex items-end gap-2" wire:key="historical-line-{{ $index }}">
                 <div class="flex-1">
                     <x-input-label :for="'historical-amount-'.$index" :value="__('accounting.balance_amount')" />
-                    <x-text-input :id="'historical-amount-'.$index" wire:model="additional_lines.{{ $index }}.amount" inputmode="decimal" dir="ltr" class="w-full tabular-nums" />
+                    <x-text-input :id="'historical-amount-'.$index" aria-invalid="{{ $errors->has('additional_lines.'.$index.'.amount') ? 'true' : 'false' }}" wire:model="additional_lines.{{ $index }}.amount" inputmode="decimal" dir="ltr" class="w-full tabular-nums text-base sm:text-sm" />
                     <x-input-error :messages="$errors->get('additional_lines.'.$index.'.amount')" />
                 </div>
-                <span class="py-3 text-sm" dir="ltr">{{ $line['currency_code'] }}</span>
+                <span class="py-3 text-sm font-bold text-text-muted px-1" dir="ltr">{{ $line['currency_code'] ?? $currency_code }}</span>
                 <x-secondary-button type="button" wire:click="removeAdditionalLine({{ $index }})" class="min-h-11">{{ __('accounting.remove_line') }}</x-secondary-button>
             </div>
         @endforeach
@@ -216,6 +224,7 @@
 
         <div class="flex items-center justify-end pt-2">
             <x-primary-button
+                x-bind:disabled="saving"
                 wire:loading.attr="disabled"
                 :disabled="$glOverlapMessage !== null"
                 class="min-h-11 px-5"

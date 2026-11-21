@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'invalid_exact_decimal' => 'أدخل مبلغاً موجباً بما لا يتجاوز :scale منازل عشرية.',
+    'opening_post_failed' => 'تعذر قيد الرصيد الافتتاحي. راجع البيانات وحاول مجدداً.',
     'opening_trade_balances_title' => 'تسجيل الأرصدة الافتتاحية للذمم',
     'opening_trade_customer_subtitle' => 'قيد رصيد افتتاحي لزبون (ذمة مدينة لنا)',
     'opening_trade_vendor_subtitle' => 'قيد رصيد افتتاحي لمورد (ذمة دائنة علينا)',

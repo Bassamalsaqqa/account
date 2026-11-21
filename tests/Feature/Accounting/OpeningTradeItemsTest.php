@@ -584,8 +584,24 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $this->postJson($url.'/execute', array_replace($payload, ['amount' => '101']), $headers)->assertStatus(409);
         $this->assertSame($posted, $snapshot());
         foreach (['invalid', '0', '-1', '0.0000001', 1.25] as $amount) {
+            $this->postJson($url.'/preview', array_replace($payload, ['amount' => $amount]), $headers)->assertStatus(422);
             $this->postJson($url.'/execute', array_replace($payload, ['amount' => $amount, 'idempotency_key' => 'invalid-api-'.$amount]), $headers)->assertStatus(422);
             $this->assertSame($posted, $snapshot());
+        }
+    }
+
+    public function test_preview_and_execute_reject_overprecision_fx_for_both_sides(): void
+    {
+        $headers = ['X-CSRF-TOKEN' => $this->deviceSession['token']];
+        foreach (['customer', 'vendor'] as $side) {
+            foreach (['preview', 'execute'] as $operation) {
+                $this->withCredentials()->withCookie(config('session.cookie'), $this->deviceSession['id'])
+                    ->postJson("/api/v1/companies/{$this->company->id}/accounting/opening-trade-items/{$operation}", [
+                        'side' => $side, 'party_id' => $side === 'customer' ? $this->customer->id : $this->vendor->id,
+                        'amount' => '12', 'currency_code' => 'USD', 'exchange_rate' => '1.00000000001',
+                        'opening_date' => '2026-01-01', 'idempotency_key' => 'invalid-fx-'.$side,
+                    ], $headers)->assertStatus(422);
+            }
         }
     }
 

@@ -35,6 +35,27 @@ final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
         $this->testVendor = $this->vendor;
     }
 
+    public function test_invalid_additional_rows_retain_entries_and_post_no_legs(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            foreach (['', 'garbage', '0', '-1', '1e2', '0.0000001'] as $amount) {
+                $beforeItems = OpeningTradeItem::count();
+                $beforeBatches = PostingBatch::count();
+                $beforeLines = PostingLine::count();
+                $rows = [['amount' => '12', 'currency_code' => 'ILS'], ['amount' => $amount, 'currency_code' => 'ILS']];
+                Livewire::actingAs($this->owner)->test(OpeningTradeBalanceEntry::class)
+                    ->set('side', $side)
+                    ->set('party_id', $side === 'customer' ? $this->customer->id : $this->testVendor->id)
+                    ->set('amount', '100')->set('additional_lines', $rows)
+                    ->call('save')->assertHasErrors('additional_lines.1.amount')
+                    ->assertSet('additional_lines', $rows)->assertSet('amount', '100');
+                $this->assertSame($beforeItems, OpeningTradeItem::count());
+                $this->assertSame($beforeBatches, PostingBatch::count());
+                $this->assertSame($beforeLines, PostingLine::count());
+            }
+        }
+    }
+
     public function test_can_render_opening_trade_balance_entry_page(): void
     {
         $response = $this->actingAs($this->owner)->get(route('accounting.opening-balances.trade'));

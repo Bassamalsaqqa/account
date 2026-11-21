@@ -115,6 +115,7 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             ],
         ]);
 
+        $this->get(route('payments.show', $payment->public_id))->assertOk()->assertSee($item->public_id);
         $this->assertInstanceOf(CustomerPayment::class, $payment);
         $this->assertCount(1, $payment->allocations);
 
@@ -174,6 +175,7 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             ],
         ]);
 
+        $this->get(route('vendor-payments.show', $payment->public_id))->assertOk()->assertSee($item->public_id);
         $this->assertInstanceOf(VendorPayment::class, $payment);
         $this->assertCount(1, $payment->allocations);
 

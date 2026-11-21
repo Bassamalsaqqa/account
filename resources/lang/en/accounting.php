@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'invalid_exact_decimal' => 'Enter a positive decimal with at most :scale decimal places.',
+    'opening_post_failed' => 'Unable to post the opening balance. Review the entries and try again.',
     'opening_trade_balances_title' => 'Opening Trade Balances',
     'opening_trade_customer_subtitle' => 'Record customer opening balance (receivable)',
     'opening_trade_vendor_subtitle' => 'Record supplier opening balance (payable)',
