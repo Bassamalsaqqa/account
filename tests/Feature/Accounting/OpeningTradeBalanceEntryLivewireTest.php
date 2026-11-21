@@ -15,9 +15,13 @@ use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\Tenancy\CompanyContext;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\Feature\Phase8\TradeTestCase;
 
 final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
@@ -30,7 +34,9 @@ final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
     {
         parent::setUp();
 
-        config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
+        if (! config('app.key')) {
+            config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
+        }
         $this->activateUser($this->owner);
         $this->customer = $this->defaultCustomer;
         $this->testVendor = $this->vendor;
@@ -650,5 +656,209 @@ final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
             ->set('additional_lines.0.amount', '999.00') // altered additional line
             ->call('save')
             ->assertSet('errorMessage', "Opening trade item idempotency key [{$multiKey}:line:0] was already used with a different economic payload.");
+    }
+
+    public function test_whole_form_replay_row_set_count_mismatch_fails_atomically(): void
+    {
+        CompanyCurrency::updateOrCreate([
+            'company_id' => $this->company->id,
+            'currency_code' => 'USD',
+        ], [
+            'enabled' => true,
+        ]);
+
+        $key = 'whole-form-rowset-count-key';
+
+        // 1. Initial 2-row post: main + 1 additional line
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $key)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '50.00')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $countItems = fn () => OpeningTradeItem::where('company_id', $this->company->id)
+            ->where(function ($q) use ($key): void {
+                $q->where('idempotency_key', $key)
+                    ->orWhere('idempotency_key', 'like', $key.':line:%');
+            })->count();
+
+        $this->assertSame(2, $countItems());
+
+        // 2. Replay with extra line appended (3 rows) fails with count mismatch and creates 0 new records
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $key)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '50.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.1.amount', '25.00')
+            ->call('save')
+            ->assertSet('errorMessage', "Form idempotency key [{$key}] was already used with a different row set count: committed 2 rows, received 3.");
+
+        $this->assertSame(2, $countItems());
+
+        // 3. Replay with removed line (1 row) fails with count mismatch
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('formIdempotencyKey', $key)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('save')
+            ->assertSet('errorMessage', "Form idempotency key [{$key}] was already used with a different row set count: committed 2 rows, received 1.");
+
+        $this->assertSame(2, $countItems());
+    }
+
+    public function test_mixed_currency_and_rate_tampering_on_additional_lines_rejected(): void
+    {
+        CompanyCurrency::updateOrCreate([
+            'company_id' => $this->company->id,
+            'currency_code' => 'USD',
+        ], [
+            'enabled' => true,
+        ]);
+        CompanyCurrency::updateOrCreate([
+            'company_id' => $this->company->id,
+            'currency_code' => 'JOD',
+        ], [
+            'enabled' => true,
+        ]);
+
+        // Main line is USD with rate 3.5; tampered additional line with JOD is rejected
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '50.00')
+            ->set('additional_lines.0.currency_code', 'JOD')
+            ->call('save')
+            ->assertHasErrors(['additional_lines.0.currency_code']);
+
+        // Main line is USD with rate 3.5; tampered additional line with rate 5.0 is rejected
+        Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'customer')
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '3.5000000000')
+            ->set('amount', '100.00')
+            ->call('addAdditionalLine')
+            ->set('additional_lines.0.amount', '50.00')
+            ->set('additional_lines.0.exchange_rate', '5.0000000000')
+            ->call('save')
+            ->assertHasErrors(['additional_lines.0.exchange_rate']);
+    }
+
+    public function test_livewire_public_methods_revalidate_permissions_on_every_interaction(): void
+    {
+        // Create user with explicit permissions for vendor opening balance
+        $member = User::factory()->create();
+        $this->company->memberships()->create([
+            'user_id' => $member->id,
+            'status' => 'active',
+            'is_owner' => false,
+        ]);
+        setPermissionsTeamId($this->company->id);
+        app(PermissionRegistrar::class)->setPermissionsTeamId($this->company->id);
+
+        $role = Role::create([
+            'company_id' => $this->company->id,
+            'name' => 'VendorOpeningManager_'.Str::random(8),
+            'guard_name' => 'web',
+        ]);
+        $role->givePermissionTo(['customers.manage', 'vendors.manage', 'settings.accounting.manage', 'purchasing.cost.view']);
+        $member->assignRole($role);
+        $this->activateUser($member);
+
+        // Mount component successfully
+        $component = Livewire::actingAs($member)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', 'vendor')
+            ->set('party_id', $this->testVendor->id);
+
+        // Revoke purchasing.cost.view mid-session
+        $role->revokePermissionTo('purchasing.cost.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $member->unsetRelation('roles');
+        $member->unsetRelation('permissions');
+        auth()->setUser($member);
+
+        // 1. checkGlOverlap aborts 403 via Livewire HTTP update
+        $component->call('checkGlOverlap')->assertForbidden();
+
+        // 2. Direct calls on mounted component instance verify fresh side permission revalidation on EVERY public method
+        $instance = new OpeningTradeBalanceEntry;
+        $instance->pageCompanyId = (int) $this->company->id;
+        $instance->side = OpeningTradeItem::SIDE_VENDOR;
+        $instance->party_id = $this->testVendor->id;
+
+        foreach (['checkGlOverlap', 'updatedSide', 'updatedCurrencyCode', 'addAdditionalLine', 'getPartyName', 'render'] as $method) {
+            try {
+                $instance->{$method}();
+                $this->fail("Method [{$method}] must throw AuthorizationException when purchasing.cost.view is revoked.");
+            } catch (AuthorizationException $e) {
+                $this->assertStringContainsString('vendor opening trade permissions', $e->getMessage());
+            }
+        }
+
+        try {
+            $instance->removeAdditionalLine(0);
+            $this->fail('Method [removeAdditionalLine] must throw AuthorizationException when purchasing.cost.view is revoked.');
+        } catch (AuthorizationException $e) {
+            $this->assertStringContainsString('vendor opening trade permissions', $e->getMessage());
+        }
+
+        // 3. Re-grant purchasing.cost.view but revoke company membership: all methods deny on membership check
+        $role->givePermissionTo('purchasing.cost.view');
+        $this->company->memberships()->where('user_id', $member->id)->delete();
+        $member->unsetRelation('memberships');
+
+        try {
+            $instance->checkGlOverlap();
+            $this->fail('Method [checkGlOverlap] must throw AuthorizationException when company membership is revoked.');
+        } catch (AuthorizationException $e) {
+            $this->assertStringContainsString('membership', $e->getMessage());
+        }
+
+        // 4. Tenant change simulation: company context switched to foreign company denies access
+        $foreignCompany = Company::create([
+            'name_ar' => 'شركة أخرى',
+            'name_en' => 'Other Company',
+            'base_currency_code' => 'ILS',
+            'timezone' => 'Asia/Gaza',
+            'status' => 'active',
+        ]);
+        $foreignCompany->memberships()->create([
+            'user_id' => $member->id,
+            'status' => 'active',
+            'is_owner' => true,
+        ]);
+        app(CompanyContext::class)->setCompany($foreignCompany, $member);
+
+        try {
+            $instance->checkGlOverlap();
+            $this->fail('Method [checkGlOverlap] must throw AuthorizationException on tenant company context change.');
+        } catch (AuthorizationException $e) {
+            $this->assertStringContainsString('Company context mismatch', $e->getMessage());
+        }
     }
 }

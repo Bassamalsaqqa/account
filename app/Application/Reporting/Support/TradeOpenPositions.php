@@ -125,8 +125,15 @@ final class TradeOpenPositions
             ->where('company_id', $company->id)
             ->where('side', $side)
             ->where('opening_date', '<=', $cutoff)
-            ->where(fn ($q) => $q->whereNull('reversal_posting_batch_id')
-                ->orWhereHas('reversalPostingBatch', fn ($b) => $b->where('posting_date', '>', $cutoff)));
+            ->where(function ($q) use ($cutoff): void {
+                $q->where(function ($posted): void {
+                    $posted->where('status', OpeningTradeItem::STATUS_POSTED)
+                        ->whereNull('reversal_posting_batch_id');
+                })->orWhere(function ($rev) use ($cutoff): void {
+                    $rev->where('status', OpeningTradeItem::STATUS_REVERSED)
+                        ->whereHas('reversalPostingBatch', fn ($b) => $b->where('posting_date', '>', $cutoff));
+                });
+            });
 
         if ($partyId !== null) {
             $openingQuery->where($party.'_id', $partyId);

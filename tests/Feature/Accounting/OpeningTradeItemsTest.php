@@ -17,6 +17,8 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
+use App\Domain\Purchasing\Queries\VendorStatementQuery;
+use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\CompanyUser;
@@ -1117,5 +1119,201 @@ final class OpeningTradeItemsTest extends TradeTestCase
 
         $responseVend->assertStatus(422);
         $responseVend->assertJsonPath('detail', 'The given data failed validation.');
+    }
+
+    public function test_creation_omitting_status_throws_immutable_record_exception(): void
+    {
+        $this->expectException(ImmutableRecordException::class);
+        $this->expectExceptionMessage('Creation of opening trade item requires canonical action capability with explicit posted status.');
+
+        OpeningTradeItem::create([
+            'company_id' => $this->company->id,
+            'public_id' => (string) Str::ulid(),
+            'side' => OpeningTradeItem::SIDE_CUSTOMER,
+            'customer_id' => $this->customer->id,
+            'opening_date' => '2026-01-01',
+            'currency_code' => 'ILS',
+            'amount_currency' => '100.000000',
+            'exchange_rate' => '1.0000000000',
+            'carrying_value_base' => '100.000000',
+            'created_by' => $this->owner->id,
+            'source_identity' => 'direct_omitted_status',
+            'idempotency_key' => 'direct-omitted-status',
+            'idempotency_payload_hash' => hash('sha256', 'bypass'),
+        ]);
+    }
+
+    public function test_creation_with_null_draft_or_unsupported_status_throws(): void
+    {
+        foreach ([null, 'draft', 'pending', 'reversed'] as $badStatus) {
+            try {
+                OpeningTradeItem::create([
+                    'company_id' => $this->company->id,
+                    'public_id' => (string) Str::ulid(),
+                    'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                    'customer_id' => $this->customer->id,
+                    'opening_date' => '2026-01-01',
+                    'currency_code' => 'ILS',
+                    'amount_currency' => '100.000000',
+                    'exchange_rate' => '1.0000000000',
+                    'carrying_value_base' => '100.000000',
+                    'status' => $badStatus,
+                    'created_by' => $this->owner->id,
+                    'source_identity' => 'direct_bad_status',
+                    'idempotency_key' => 'direct-bad-status-'.(string) $badStatus,
+                    'idempotency_payload_hash' => hash('sha256', 'bypass-'.(string) $badStatus),
+                ]);
+                $this->fail("Creation with status [{$badStatus}] must throw ImmutableRecordException.");
+            } catch (ImmutableRecordException $e) {
+                $this->assertTrue(true);
+            }
+        }
+    }
+
+    public function test_creation_with_non_null_posting_batch_or_reversal_metadata_throws(): void
+    {
+        // 1. non-null posting_batch_id
+        try {
+            OpeningTradeItem::create([
+                'company_id' => $this->company->id,
+                'public_id' => (string) Str::ulid(),
+                'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                'customer_id' => $this->customer->id,
+                'opening_date' => '2026-01-01',
+                'currency_code' => 'ILS',
+                'amount_currency' => '100.000000',
+                'exchange_rate' => '1.0000000000',
+                'carrying_value_base' => '100.000000',
+                'status' => OpeningTradeItem::STATUS_POSTED,
+                'posting_batch_id' => 999,
+                'created_by' => $this->owner->id,
+                'source_identity' => 'direct_posting_batch',
+                'idempotency_key' => 'direct-posting-batch',
+                'idempotency_payload_hash' => hash('sha256', 'bypass-batch'),
+            ]);
+            $this->fail('Creation with non-null posting_batch_id must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('canonical posting capability', $e->getMessage());
+        }
+
+        // 2. non-null reversal metadata
+        try {
+            OpeningTradeItem::create([
+                'company_id' => $this->company->id,
+                'public_id' => (string) Str::ulid(),
+                'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                'customer_id' => $this->customer->id,
+                'opening_date' => '2026-01-01',
+                'currency_code' => 'ILS',
+                'amount_currency' => '100.000000',
+                'exchange_rate' => '1.0000000000',
+                'carrying_value_base' => '100.000000',
+                'status' => OpeningTradeItem::STATUS_POSTED,
+                'reversal_posting_batch_id' => 888,
+                'created_by' => $this->owner->id,
+                'source_identity' => 'direct_reversal_meta',
+                'idempotency_key' => 'direct-reversal-meta',
+                'idempotency_payload_hash' => hash('sha256', 'bypass-rev'),
+            ]);
+            $this->fail('Creation with non-null reversal_posting_batch_id must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Reversal attributes cannot be populated on creation', $e->getMessage());
+        }
+    }
+
+    public function test_mutating_reversal_metadata_while_status_is_posted_throws(): void
+    {
+        $item = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '120.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'reversal-meta-mutation-test',
+        );
+
+        // Mutating reversal_posting_batch_id while status remains posted throws
+        try {
+            $item->reversal_posting_batch_id = 999;
+            $item->save();
+            $this->fail('Setting reversal_posting_batch_id on posted item must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('canonical transition to reversed', $e->getMessage());
+        }
+
+        // Mutating reversed_at while status remains posted throws
+        try {
+            $item->reversed_at = now();
+            $item->save();
+            $this->fail('Setting reversed_at on posted item must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('canonical transition to reversed', $e->getMessage());
+        }
+
+        // Mutating correction_reason while status remains posted throws
+        try {
+            $item->correction_reason = 'Fake reason';
+            $item->save();
+            $this->fail('Setting correction_reason on posted item must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('canonical transition to reversed', $e->getMessage());
+        }
+    }
+
+    public function test_statement_queries_and_open_positions_ignore_non_canonical_reversals(): void
+    {
+        $custItem = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '350.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'cust-statement-canonical-test',
+        );
+
+        $vendItem = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_VENDOR,
+            partyId: $this->testVendor->id,
+            openingDate: '2026-01-01',
+            amount: '450.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'vend-statement-canonical-test',
+        );
+
+        // Activate owner and ensure statement query permissions
+        $this->activateUser($this->owner);
+        $this->owner->givePermissionTo(['vendors.statement.view', 'purchasing.cost.view']);
+        $this->owner->unsetRelation('roles')->unsetRelation('permissions');
+
+        // Verify statements before reversal include only the opening entry
+        $custStmt = (new CustomerStatementQuery)->execute($this->customer);
+        $custEntries = collect($custStmt['currencies']['ILS']['entries'] ?? []);
+        $this->assertTrue($custEntries->contains('type', 'opening_balance'));
+        $this->assertFalse($custEntries->contains('type', 'reversal'));
+
+        $vendStmt = (new VendorStatementQuery)->execute($this->testVendor);
+        $vendEntries = collect($vendStmt['currencies']['ILS']['entries'] ?? []);
+        $this->assertTrue($vendEntries->contains('type', 'opening_balance'));
+        $this->assertFalse($vendEntries->contains('type', 'reversal'));
+
+        // Canonical reversal
+        $reversedCust = app(ReverseOpeningTradeItemAction::class)->execute(
+            item: $custItem,
+            actor: $this->owner,
+            reason: 'Legitimate correction',
+            reversalDate: '2026-01-02',
+        );
+        $this->assertTrue($reversedCust->hasCanonicalReversal());
+
+        // Now statement includes REV line
+        $custStmtAfter = (new CustomerStatementQuery)->execute($this->customer);
+        $custTxAfter = collect($custStmtAfter['currencies']['ILS']['entries'] ?? []);
+        $this->assertTrue($custTxAfter->contains('type', 'reversal'));
     }
 }

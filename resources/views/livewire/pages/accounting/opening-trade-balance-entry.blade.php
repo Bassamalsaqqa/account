@@ -217,7 +217,7 @@
                     <x-input-error :messages="$errors->get('additional_lines.'.$index.'.amount')" />
                 </div>
                 <div class="py-2.5 flex items-center gap-1.5 shrink-0" dir="ltr">
-                    <span class="text-sm font-bold text-text-muted px-1">{{ $line['currency_code'] ?? $currency_code }}</span>
+                    <span class="text-sm font-bold text-text-muted px-1">{{ $currency_code }}</span>
                     @if (! $isBase && ! empty($exchange_rate) && ! empty($line['amount']))
                         @php
                             $lineBasePreview = null;

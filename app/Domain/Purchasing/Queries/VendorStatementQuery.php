@@ -157,7 +157,7 @@ class VendorStatementQuery
                 'created_at' => $item->created_at,
             ];
 
-            if ($item->reversalPostingBatch !== null) {
+            if ($item->hasCanonicalReversal()) {
                 $revDate = $item->reversalPostingBatch->posting_date->toDateString();
                 if ($toDate === null || $revDate <= $toDate) {
                     $rawRows[] = [

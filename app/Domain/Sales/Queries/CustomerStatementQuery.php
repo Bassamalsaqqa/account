@@ -130,7 +130,7 @@ class CustomerStatementQuery
                 'invoice' => null,
             ];
 
-            if ($item->reversalPostingBatch !== null) {
+            if ($item->hasCanonicalReversal()) {
                 $revDate = $item->reversalPostingBatch->posting_date->toDateString();
                 if ($toDate === null || $revDate <= $toDate) {
                     $rawRows[] = [

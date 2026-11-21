@@ -74,6 +74,9 @@ final class PostOpeningTradeItemAction
         protected AuditService $auditService,
     ) {}
 
+    /**
+     * @param  array<string, mixed>|null  $rowsetContext
+     */
     public function execute(
         Company $company,
         string $side,
@@ -88,6 +91,7 @@ final class PostOpeningTradeItemAction
         DateTimeInterface|string|null $dueDate = null,
         ?string $notes = null,
         string $sourceIdentity = 'manual',
+        ?array $rowsetContext = null,
     ): OpeningTradeItem {
         $context = app(CompanyContext::class);
 
@@ -179,6 +183,9 @@ final class PostOpeningTradeItemAction
             'original_reference' => $cleanRef,
             'due_date' => $dueDateStr,
         ];
+        if ($rowsetContext !== null) {
+            $payloadForHash['rowset'] = $rowsetContext;
+        }
         $payloadHash = hash('sha256', json_encode($payloadForHash, JSON_THROW_ON_ERROR));
 
         return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use (
@@ -198,6 +205,7 @@ final class PostOpeningTradeItemAction
             $payloadHash,
             $sourceIdentity,
             $notes,
+            $rowsetContext,
         ): OpeningTradeItem {
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
@@ -223,6 +231,27 @@ final class PostOpeningTradeItemAction
                 }
 
                 return $existing;
+            }
+
+            if ($rowsetContext !== null) {
+                $formKey = (string) ($rowsetContext['form_key'] ?? '');
+                $expectedRowsetHash = (string) ($rowsetContext['rowset_hash'] ?? '');
+                if ($formKey !== '' && $expectedRowsetHash !== '') {
+                    $divergentItem = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                        ->where(function ($q) use ($formKey): void {
+                            $q->where('idempotency_key', $formKey)
+                                ->orWhere('idempotency_key', 'like', $formKey.':line:%');
+                        })
+                        ->where(function ($q) use ($expectedRowsetHash): void {
+                            $q->whereNull('control_route->rowset->rowset_hash')
+                                ->orWhere('control_route->rowset->rowset_hash', '!=', $expectedRowsetHash);
+                        })
+                        ->first();
+
+                    if ($divergentItem !== null) {
+                        throw new IdempotencyConflictException("Opening trade form [{$formKey}] has committed items with a different row set identity.");
+                    }
+                }
             }
 
             // New events use locked, fresh currency policy; identical receipts above
@@ -314,6 +343,9 @@ final class PostOpeningTradeItemAction
                 'offset_account_id' => $obeAccount->id,
                 'offset_account_key' => $obeAccount->system_key,
             ];
+            if ($rowsetContext !== null) {
+                $controlRoute['rowset'] = $rowsetContext;
+            }
 
             $lines = [];
             $lineCurrency = $currencyCode;

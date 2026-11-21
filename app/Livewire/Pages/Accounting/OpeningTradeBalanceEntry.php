@@ -19,6 +19,7 @@ use App\Rules\PositiveExactDecimal;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
@@ -64,6 +65,13 @@ class OpeningTradeBalanceEntry extends Component
 
     public ?string $glOverlapMessage = null;
 
+    public function boot(): void
+    {
+        if (isset($this->pageCompanyId)) {
+            $this->authorizeAccess();
+        }
+    }
+
     public function mount(CompanyContext $context): void
     {
         $company = $context->company();
@@ -79,16 +87,17 @@ class OpeningTradeBalanceEntry extends Component
 
     public function updatedSide(): void
     {
+        $this->authorizeAccess();
         $this->resetValidation();
         $this->party_id = null;
         $this->successMessage = null;
         $this->errorMessage = null;
-        $this->authorizeAccess();
         $this->checkGlOverlap();
     }
 
     public function updatedCurrencyCode(): void
     {
+        $this->authorizeAccess();
         $company = app(CompanyContext::class)->company();
         if ($this->currency_code === $company->base_currency_code) {
             $this->exchange_rate = null;
@@ -103,6 +112,8 @@ class OpeningTradeBalanceEntry extends Component
 
     public function checkGlOverlap(): void
     {
+        $this->authorizeAccess();
+
         if (PostOpeningTradeItemAction::hasLegacyOverlap($this->pageCompanyId, $this->side)) {
             $this->glOverlapMessage = $this->side === OpeningTradeItem::SIDE_CUSTOMER
                 ? __('accounting.gl_overlap_customer')
@@ -114,6 +125,7 @@ class OpeningTradeBalanceEntry extends Component
 
     public function addAdditionalLine(): void
     {
+        $this->authorizeAccess();
         $this->has_multiple_lines = true;
         $this->additional_lines[] = [
             'amount' => '',
@@ -126,6 +138,7 @@ class OpeningTradeBalanceEntry extends Component
 
     public function removeAdditionalLine(int $index): void
     {
+        $this->authorizeAccess();
         unset($this->additional_lines[$index]);
         $this->additional_lines = array_values($this->additional_lines);
         if (empty($this->additional_lines)) {
@@ -165,11 +178,11 @@ class OpeningTradeBalanceEntry extends Component
         foreach ($this->additional_lines as $index => $line) {
             $prefix = 'additional_lines.'.$index.'.';
             $lineCurrency = (string) ($line['currency_code'] ?? $this->currency_code);
-            $isLineBase = $lineCurrency === $company->base_currency_code;
-            $requiresSeparateRate = ! $isLineBase && $lineCurrency !== $this->currency_code;
             $rules[$prefix.'amount'] = ['required', new OpeningTradeAmount((int) $company->id, $lineCurrency)];
-            $rules[$prefix.'currency_code'] = 'required|string|size:3';
-            $rules[$prefix.'exchange_rate'] = [$requiresSeparateRate ? 'required' : 'nullable', new PositiveExactDecimal(10)];
+            $rules[$prefix.'currency_code'] = ['required', 'string', 'size:3', 'in:'.$this->currency_code];
+            if (! $isBase) {
+                $rules[$prefix.'exchange_rate'] = ['nullable', 'same:exchange_rate'];
+            }
             $rules[$prefix.'original_reference'] = 'nullable|string|max:100';
             $rules[$prefix.'due_date'] = 'nullable|date_format:Y-m-d';
             $rules[$prefix.'notes'] = 'nullable|string|max:500';
@@ -198,12 +211,11 @@ class OpeningTradeBalanceEntry extends Component
             }
             foreach ($this->additional_lines as $index => $line) {
                 $prefix = 'additional_lines.'.$index.'.';
-                $lineCurrency = (string) ($line['currency_code'] ?? $this->currency_code);
-                $isLineBase = $lineCurrency === $company->base_currency_code;
-                $requiresSeparateRate = ! $isLineBase && $lineCurrency !== $this->currency_code;
                 $replayRules[$prefix.'amount'] = 'required|string';
-                $replayRules[$prefix.'currency_code'] = 'required|string|size:3';
-                $replayRules[$prefix.'exchange_rate'] = [$requiresSeparateRate ? 'required' : 'nullable', new PositiveExactDecimal(10)];
+                $replayRules[$prefix.'currency_code'] = ['required', 'string', 'size:3', 'in:'.$this->currency_code];
+                if (! $isBase) {
+                    $replayRules[$prefix.'exchange_rate'] = ['nullable', 'same:exchange_rate'];
+                }
                 $replayRules[$prefix.'original_reference'] = 'nullable|string|max:100';
                 $replayRules[$prefix.'due_date'] = 'nullable|date_format:Y-m-d';
                 $replayRules[$prefix.'notes'] = 'nullable|string|max:500';
@@ -215,8 +227,97 @@ class OpeningTradeBalanceEntry extends Component
         /** @var User $actor */
         $actor = auth()->user();
 
+        // Build durable whole-command rowset identity
+        $mainRateStr = $isBase ? '1.0000000000' : (string) BigDecimal::of($this->exchange_rate ?? '1')->toScale(10);
+        $normalizedRows = [
+            [
+                'row_index' => 0,
+                'amount' => (string) BigDecimal::of($this->amount)->toScale(6),
+                'currency_code' => $this->currency_code,
+                'exchange_rate' => $mainRateStr,
+                'original_reference' => $this->original_reference !== null && trim($this->original_reference) !== '' ? trim($this->original_reference) : null,
+                'due_date' => $this->due_date ?: null,
+                'notes' => $this->notes ?: null,
+            ],
+        ];
+
+        foreach ($this->additional_lines as $idx => $line) {
+            $normalizedRows[] = [
+                'row_index' => $idx + 1,
+                'amount' => (string) BigDecimal::of((string) $line['amount'])->toScale(6),
+                'currency_code' => $this->currency_code,
+                'exchange_rate' => $mainRateStr,
+                'original_reference' => ! empty($line['original_reference']) ? trim((string) $line['original_reference']) : null,
+                'due_date' => ! empty($line['due_date']) ? (string) $line['due_date'] : null,
+                'notes' => ! empty($line['notes']) ? (string) $line['notes'] : null,
+            ];
+        }
+
+        $totalRows = count($normalizedRows);
+        $rowsetHash = hash('sha256', json_encode([
+            'company_id' => (int) $company->id,
+            'side' => $this->side,
+            'party_id' => (int) $this->party_id,
+            'opening_date' => $this->opening_date,
+            'total_rows' => $totalRows,
+            'rows' => $normalizedRows,
+        ], JSON_THROW_ON_ERROR));
+
         try {
-            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($action, $company, $actor, $isBase): void {
+            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($action, $company, $actor, $isBase, $totalRows, $rowsetHash, $normalizedRows): void {
+                $formKey = $this->formIdempotencyKey;
+                $existingFormItems = OpeningTradeItem::where('company_id', $company->id)
+                    ->where(function ($q) use ($formKey): void {
+                        $q->where('idempotency_key', $formKey)
+                            ->orWhere('idempotency_key', 'like', $formKey.':line:%');
+                    })
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy('idempotency_key');
+
+                if ($existingFormItems->isNotEmpty()) {
+                    if ($existingFormItems->count() !== $totalRows) {
+                        throw new IdempotencyConflictException("Form idempotency key [{$formKey}] was already used with a different row set count: committed {$existingFormItems->count()} rows, received {$totalRows}.");
+                    }
+
+                    foreach ($existingFormItems as $existingItem) {
+                        $committedRowset = $existingItem->control_route['rowset'] ?? null;
+                        if (! is_array($committedRowset) || ($committedRowset['rowset_hash'] ?? null) !== $rowsetHash) {
+                            $divergedKey = $formKey;
+                            $mainItem = $existingFormItems->get($formKey);
+                            if ($mainItem !== null) {
+                                $mainAmt = (string) BigDecimal::of($mainItem->amount_currency)->toScale(6);
+                                $mainRate = (string) BigDecimal::of($mainItem->exchange_rate)->toScale(10);
+                                if ($mainAmt !== $normalizedRows[0]['amount']
+                                    || $mainRate !== $normalizedRows[0]['exchange_rate']
+                                    || $mainItem->currency_code !== $normalizedRows[0]['currency_code']) {
+                                    $divergedKey = $formKey;
+                                } else {
+                                    foreach ($this->additional_lines as $idx => $line) {
+                                        $lineKey = "{$formKey}:line:{$idx}";
+                                        $lineItem = $existingFormItems->get($lineKey);
+                                        $nRow = $normalizedRows[$idx + 1] ?? null;
+                                        if ($lineItem === null || $nRow === null) {
+                                            $divergedKey = $lineKey;
+                                            break;
+                                        }
+                                        $lineAmt = (string) BigDecimal::of($lineItem->amount_currency)->toScale(6);
+                                        $lineRate = (string) BigDecimal::of($lineItem->exchange_rate)->toScale(10);
+                                        if ($lineAmt !== $nRow['amount']
+                                            || $lineRate !== $nRow['exchange_rate']
+                                            || $lineItem->currency_code !== $nRow['currency_code']) {
+                                            $divergedKey = $lineKey;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            throw new IdempotencyConflictException("Opening trade item idempotency key [{$divergedKey}] was already used with a different economic payload.");
+                        }
+                    }
+                }
+
                 // Post main item
                 $action->execute(
                     company: $company,
@@ -227,36 +328,43 @@ class OpeningTradeBalanceEntry extends Component
                     currencyCode: $this->currency_code,
                     exchangeRate: $isBase ? null : $this->exchange_rate,
                     actor: $actor,
-                    idempotencyKey: $this->formIdempotencyKey,
+                    idempotencyKey: $formKey,
                     originalReference: $this->original_reference,
                     dueDate: $this->due_date,
                     notes: $this->notes,
-                    sourceIdentity: 'manual_web'
+                    sourceIdentity: 'manual_web',
+                    rowsetContext: [
+                        'form_key' => $formKey,
+                        'row_index' => 0,
+                        'total_rows' => $totalRows,
+                        'rowset_hash' => $rowsetHash,
+                    ],
                 );
 
                 // Post any additional lines
                 foreach ($this->additional_lines as $index => $line) {
-                    $lineCurrency = (string) ($line['currency_code'] ?? $this->currency_code);
-                    $isLineBase = $lineCurrency === $company->base_currency_code;
-                    $lineRate = $isLineBase ? null : ($lineCurrency === $this->currency_code ? $this->exchange_rate : (! empty($line['exchange_rate']) ? (string) $line['exchange_rate'] : $this->exchange_rate));
-
                     $action->execute(
                         company: $company,
                         side: $this->side,
                         partyId: (int) $this->party_id,
                         openingDate: $this->opening_date,
                         amount: (string) $line['amount'],
-                        currencyCode: $lineCurrency,
-                        exchangeRate: $lineRate,
+                        currencyCode: $this->currency_code,
+                        exchangeRate: $isBase ? null : $this->exchange_rate,
                         actor: $actor,
-                        idempotencyKey: $this->formIdempotencyKey.':line:'.$index,
+                        idempotencyKey: $formKey.':line:'.$index,
                         originalReference: ! empty($line['original_reference']) ? (string) $line['original_reference'] : null,
                         dueDate: ! empty($line['due_date']) ? (string) $line['due_date'] : null,
                         notes: ! empty($line['notes']) ? (string) $line['notes'] : null,
-                        sourceIdentity: 'manual_web'
+                        sourceIdentity: 'manual_web',
+                        rowsetContext: [
+                            'form_key' => $formKey,
+                            'row_index' => $index + 1,
+                            'total_rows' => $totalRows,
+                            'rowset_hash' => $rowsetHash,
+                        ],
                     );
                 }
-
             });
 
             $partyName = $this->getPartyName();
@@ -285,6 +393,8 @@ class OpeningTradeBalanceEntry extends Component
 
     public function getPartyName(): string
     {
+        $this->authorizeAccess();
+
         if (! $this->party_id) {
             return '';
         }
@@ -307,22 +417,37 @@ class OpeningTradeBalanceEntry extends Component
 
     protected function authorizeAccess(): void
     {
-        abort_unless(auth()->check(), 403);
+        if (! auth()->check()) {
+            throw new AuthorizationException('Unauthenticated.');
+        }
         /** @var User $user */
         $user = auth()->user();
-        abort_unless($user->belongsToCompany($this->pageCompanyId), 403);
+
+        $context = app(CompanyContext::class);
+        if (! $context->hasCompany() || (int) $context->companyId() !== (int) $this->pageCompanyId || ! $user->belongsToCompany($this->pageCompanyId)) {
+            throw new AuthorizationException('Company context mismatch or inactive membership.');
+        }
+
+        $user->unsetRelation('roles');
+        $user->unsetRelation('permissions');
 
         if ($this->side === OpeningTradeItem::SIDE_CUSTOMER) {
-            abort_unless($user->hasPermissionTo('customers.manage') && $user->hasPermissionTo('settings.accounting.manage'), 403);
+            if (! $user->hasPermissionTo('customers.manage') || ! $user->hasPermissionTo('settings.accounting.manage')) {
+                throw new AuthorizationException('Missing required customer opening trade permissions.');
+            }
+        } elseif ($this->side === OpeningTradeItem::SIDE_VENDOR) {
+            if (! $user->hasPermissionTo('vendors.manage') || ! $user->hasPermissionTo('settings.accounting.manage') || ! $user->hasPermissionTo('purchasing.cost.view')) {
+                throw new AuthorizationException('Missing required vendor opening trade permissions.');
+            }
         } else {
-            abort_unless($user->hasPermissionTo('vendors.manage') && $user->hasPermissionTo('settings.accounting.manage') && $user->hasPermissionTo('purchasing.cost.view'), 403);
+            throw new AuthorizationException('Invalid opening trade side.');
         }
     }
 
     /** @return list<string> */
     protected function allowedSearchableSelectorTypes(): array
     {
-        return ['customer', 'vendor'];
+        return [$this->side === OpeningTradeItem::SIDE_CUSTOMER ? 'customer' : 'vendor'];
     }
 
     protected function searchableSelectorContext(): string
@@ -332,6 +457,8 @@ class OpeningTradeBalanceEntry extends Component
 
     public function render(): View
     {
+        $this->authorizeAccess();
+
         $company = app(CompanyContext::class)->company();
         $isBase = $this->currency_code === $company->base_currency_code;
         $carryingBasePreview = null;
