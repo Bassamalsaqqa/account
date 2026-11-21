@@ -32,7 +32,7 @@ final class NativeCommandReceiptManager
      *
      * @param  list<string>  $requiredPermissions
      * @param  array<string, mixed>  $canonicalPayload
-     * @param  Closure(Company, User, MobileDevice, MobileAccessToken): array{snapshot: array<string, mixed>, entity_type?: string|null, entity_id?: int|null, entity_public_id?: string|null}  $executor
+     * @param  Closure(Company, User, MobileDevice, MobileAccessToken): array{snapshot: array<string, mixed>, status?: int|null, entity_type?: string|null, entity_id?: int|null, entity_public_id?: string|null}  $executor
      * @param  list<string>  $legacyHashes
      * @return array{outcome: 'created'|'replay', status: int, snapshot: array<string, mixed>, receipt: NativeCommandReceipt}
      */
@@ -128,7 +128,7 @@ final class NativeCommandReceiptManager
 
             return [
                 'outcome' => 'created',
-                'status' => 201,
+                'status' => $executionResult['status'] ?? 201,
                 'snapshot' => $executionResult['snapshot'],
                 'receipt' => $receipt,
             ];
@@ -200,21 +200,6 @@ final class NativeCommandReceiptManager
             ->first();
 
         if ($receipt === null) {
-            $candidates = array_values(array_filter(array_unique([
-                urldecode($trimmedKey),
-                rawurldecode($trimmedKey),
-                urlencode($trimmedKey),
-                rawurlencode($trimmedKey),
-            ]), fn (string $k): bool => $k !== '' && $k !== $trimmedKey));
-
-            if (! empty($candidates)) {
-                $receipt = NativeCommandReceipt::where('company_id', $company->id)
-                    ->whereIn('idempotency_key', $candidates)
-                    ->first();
-            }
-        }
-
-        if ($receipt === null) {
             throw new InvalidArgumentException("Receipt [{$trimmedKey}] not found.");
         }
 
@@ -231,6 +216,8 @@ final class NativeCommandReceiptManager
             'inventory.adjustment' => ['inventory.stock.view'],
             'purchase_return' => ['purchasing.return.view', 'purchasing.cost.view'],
             'sales_return' => ['sales.return.view'],
+            'customer_create', 'customer.create', 'customer_update', 'customer.update' => ['customers.view'],
+            'supplier_create', 'supplier.create', 'supplier_update', 'supplier.update' => ['vendors.view'],
             default => throw new AuthorizationException('Receipt command is not available for status lookup.'),
         };
         foreach ($permissions as $permission) {

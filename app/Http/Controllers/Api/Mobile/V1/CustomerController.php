@@ -299,13 +299,31 @@ final class CustomerController extends Controller
     /**
      * POST /api/mobile/v1/companies/{companyId}/customers
      */
-    public function store(Request $request, string $companyId, CustomerCatalogService $catalogService): JsonResponse
-    {
-        /** @var Company $company */
+    public function store(
+        Request $request,
+        string $companyId,
+        CustomerCatalogService $catalogService,
+        NativeCommandReceiptManager $receiptManager,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        /** @var Company|null $company */
         $company = $request->attributes->get('mobile_company');
-        /** @var User $user */
+        /** @var User|null $user */
         $user = $request->attributes->get('mobile_user');
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
 
+        if ($company === null || $user === null || $token === null || $device === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
+
+        setPermissionsTeamId($company->id);
         if (! $user->hasPermissionTo('customers.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -333,13 +351,87 @@ final class CustomerController extends Controller
             );
         }
 
-        if (empty($payload['name_ar']) && ! empty($payload['name'])) {
-            $payload['name_ar'] = $payload['name'];
+        $normalizedPayload = $payload;
+        if (empty($normalizedPayload['name_ar']) && ! empty($normalizedPayload['name'])) {
+            $normalizedPayload['name_ar'] = $normalizedPayload['name'];
         }
+        if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
+            $normalizedPayload['address_ar'] = $normalizedPayload['address'];
+        }
+        ksort($normalizedPayload);
+
+        $canonicalPayload = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'command' => 'customer_create',
+            'payload' => $normalizedPayload,
+        ];
 
         try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $customer = $catalogService->save($company, $user, $payload);
+            $result = $receiptManager->execute(
+                companyId: (int) $company->id,
+                actor: $user,
+                token: $token,
+                device: $device,
+                commandType: 'customer_create',
+                idempotencyKey: $idempotencyKey,
+                canonicalPayload: $canonicalPayload,
+                requiredPermissions: ['customers.manage'],
+                executor: function (Company $lockedCompany, User $lockedActor, MobileDevice $lockedDevice, MobileAccessToken $lockedToken) use (
+                    $catalogService,
+                    $normalizedPayload,
+                    $minorUnitsResolver
+                ): array {
+                    app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
+                    $customer = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
+
+                    $cmu = $minorUnitsResolver->resolve((string) $lockedCompany->base_currency_code, $lockedCompany);
+                    $creditLimit = $customer->credit_limit !== null
+                        ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale($cmu, RoundingMode::HALF_UP)
+                        : null;
+
+                    $snapshot = [
+                        'id' => (string) $customer->public_id,
+                        'code' => $customer->code,
+                        'name' => (string) $customer->displayName(),
+                        'name_ar' => $customer->name_ar,
+                        'name_en' => $customer->name_en,
+                        'phone' => $customer->phone,
+                        'address' => $customer->address_ar ?? $customer->address_line_1_ar ?? $customer->address_en,
+                        'balance' => null,
+                        'credit_limit' => $creditLimit,
+                        'currency' => (string) $lockedCompany->base_currency_code,
+                        'currency_minor_units' => $cmu,
+                        'status' => $customer->status === 'active' ? 'active' : 'inactive',
+                    ];
+
+                    return [
+                        'status' => 201,
+                        'snapshot' => $snapshot,
+                        'entity_type' => 'customer',
+                        'entity_id' => (int) $customer->id,
+                        'entity_public_id' => (string) $customer->public_id,
+                    ];
+                }
+            );
+
+            $headers = [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                'Idempotency-Key' => $idempotencyKey,
+            ];
+            if ($result['outcome'] === 'replay') {
+                $headers['X-Idempotent-Replay'] = 'true';
+            }
+
+            return response()->json($result['snapshot'], $result['status'], $headers);
+        } catch (AuthenticationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
+        } catch (AuthorizationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -347,34 +439,37 @@ final class CustomerController extends Controller
                 status: 422
             );
         }
-
-        $creditLimit = $customer->credit_limit !== null
-            ? (string) BigDecimal::of((string) $customer->credit_limit)->toScale(2, RoundingMode::HALF_UP)
-            : null;
-
-        return response()->json([
-            'id' => (string) $customer->public_id,
-            'name' => (string) $customer->displayName(),
-            'code' => $customer->code,
-            'phone' => $customer->phone,
-            'balance' => null,
-            'credit_limit' => $creditLimit,
-        ], 201, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**
      * PUT /api/mobile/v1/companies/{companyId}/customers/{customerId}
      */
-    public function update(Request $request, string $companyId, string $customerId, CustomerCatalogService $catalogService): JsonResponse
-    {
-        /** @var Company $company */
+    public function update(
+        Request $request,
+        string $companyId,
+        string $customerId,
+        CustomerCatalogService $catalogService,
+        NativeCommandReceiptManager $receiptManager,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        /** @var Company|null $company */
         $company = $request->attributes->get('mobile_company');
-        /** @var User $user */
+        /** @var User|null $user */
         $user = $request->attributes->get('mobile_user');
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
 
+        if ($company === null || $user === null || $token === null || $device === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
+
+        setPermissionsTeamId($company->id);
         if (! $user->hasPermissionTo('customers.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -414,32 +509,109 @@ final class CustomerController extends Controller
         }
 
         $payload = $request->json()->all();
+        $normalizedPayload = $payload;
+        if (array_key_exists('name', $normalizedPayload) && ! array_key_exists('name_ar', $normalizedPayload)) {
+            $normalizedPayload['name_ar'] = $normalizedPayload['name'];
+        }
+        if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
+            $normalizedPayload['address_ar'] = $normalizedPayload['address'];
+        }
+        ksort($normalizedPayload);
+
+        $canonicalPayload = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'customer_id' => $customerId,
+            'command' => 'customer_update',
+            'payload' => $normalizedPayload,
+        ];
 
         try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $updated = $catalogService->save($company, $user, $payload, (int) $customer->id);
+            $result = $receiptManager->execute(
+                companyId: (int) $company->id,
+                actor: $user,
+                token: $token,
+                device: $device,
+                commandType: 'customer_update',
+                idempotencyKey: $idempotencyKey,
+                canonicalPayload: $canonicalPayload,
+                requiredPermissions: ['customers.manage'],
+                executor: function (Company $lockedCompany, User $lockedActor, MobileDevice $lockedDevice, MobileAccessToken $lockedToken) use (
+                    $customerId,
+                    $catalogService,
+                    $normalizedPayload,
+                    $minorUnitsResolver
+                ): array {
+                    /** @var Customer|null $lockedCustomer */
+                    $lockedCustomer = Customer::where('company_id', $lockedCompany->id)
+                        ->where('public_id', $customerId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($lockedCustomer === null) {
+                        throw new InvalidArgumentException('The requested customer was not found.');
+                    }
+
+                    app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
+                    $updated = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload, (int) $lockedCustomer->id);
+
+                    $cmu = $minorUnitsResolver->resolve((string) $lockedCompany->base_currency_code, $lockedCompany);
+                    $creditLimit = $updated->credit_limit !== null
+                        ? (string) BigDecimal::of((string) $updated->credit_limit)->toScale($cmu, RoundingMode::HALF_UP)
+                        : null;
+
+                    $snapshot = [
+                        'id' => (string) $updated->public_id,
+                        'code' => $updated->code,
+                        'name' => (string) $updated->displayName(),
+                        'name_ar' => $updated->name_ar,
+                        'name_en' => $updated->name_en,
+                        'phone' => $updated->phone,
+                        'address' => $updated->address_ar ?? $updated->address_line_1_ar ?? $updated->address_en,
+                        'credit_limit' => $creditLimit,
+                        'currency' => (string) $lockedCompany->base_currency_code,
+                        'currency_minor_units' => $cmu,
+                        'status' => $updated->status === 'active' ? 'active' : 'inactive',
+                    ];
+
+                    return [
+                        'status' => 200,
+                        'snapshot' => $snapshot,
+                        'entity_type' => 'customer',
+                        'entity_id' => (int) $updated->id,
+                        'entity_public_id' => (string) $updated->public_id,
+                    ];
+                }
+            );
+
+            $headers = [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                'Idempotency-Key' => $idempotencyKey,
+            ];
+            if ($result['outcome'] === 'replay') {
+                $headers['X-Idempotent-Replay'] = 'true';
+            }
+
+            return response()->json($result['snapshot'], $result['status'], $headers);
+        } catch (AuthenticationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
+        } catch (AuthorizationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
         } catch (Throwable $e) {
+            if (str_contains($e->getMessage(), 'not found')) {
+                return MobileApiBoundary::buildErrorResponse(code: 'NOT_FOUND', message: $e->getMessage(), status: 404);
+            }
+
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
                 message: 'Failed to update customer: '.$e->getMessage(),
                 status: 422
             );
         }
-
-        $creditLimit = $updated->credit_limit !== null
-            ? (string) BigDecimal::of((string) $updated->credit_limit)->toScale(2, RoundingMode::HALF_UP)
-            : null;
-
-        return response()->json([
-            'id' => (string) $updated->public_id,
-            'name' => (string) $updated->displayName(),
-            'code' => $updated->code,
-            'phone' => $updated->phone,
-            'credit_limit' => $creditLimit,
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**

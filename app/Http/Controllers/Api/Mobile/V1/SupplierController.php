@@ -226,15 +226,31 @@ final class SupplierController extends Controller
     /**
      * POST /api/mobile/v1/companies/{companyId}/suppliers
      */
-    public function store(Request $request, string $companyId, VendorCatalogService $catalogService): JsonResponse
-    {
-        /** @var Company $company */
+    public function store(
+        Request $request,
+        string $companyId,
+        VendorCatalogService $catalogService,
+        NativeCommandReceiptManager $receiptManager,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        /** @var Company|null $company */
         $company = $request->attributes->get('mobile_company');
-        /** @var User $user */
+        /** @var User|null $user */
         $user = $request->attributes->get('mobile_user');
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
+
+        if ($company === null || $user === null || $token === null || $device === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
 
         setPermissionsTeamId($company->id);
-
         if (! $user->hasPermissionTo('vendors.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -262,13 +278,87 @@ final class SupplierController extends Controller
             );
         }
 
-        if (empty($payload['name_ar']) && ! empty($payload['name'])) {
-            $payload['name_ar'] = $payload['name'];
+        $normalizedPayload = $payload;
+        if (empty($normalizedPayload['name_ar']) && ! empty($normalizedPayload['name'])) {
+            $normalizedPayload['name_ar'] = $normalizedPayload['name'];
         }
+        if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
+            $normalizedPayload['address_ar'] = $normalizedPayload['address'];
+        }
+        if (array_key_exists('company_name', $normalizedPayload) && ! array_key_exists('business_name_ar', $normalizedPayload)) {
+            $normalizedPayload['business_name_ar'] = $normalizedPayload['company_name'];
+        }
+        ksort($normalizedPayload);
+
+        $canonicalPayload = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'command' => 'supplier_create',
+            'payload' => $normalizedPayload,
+        ];
 
         try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $vendor = $catalogService->save($company, $user, $payload);
+            $result = $receiptManager->execute(
+                companyId: (int) $company->id,
+                actor: $user,
+                token: $token,
+                device: $device,
+                commandType: 'supplier_create',
+                idempotencyKey: $idempotencyKey,
+                canonicalPayload: $canonicalPayload,
+                requiredPermissions: ['vendors.manage'],
+                executor: function (Company $lockedCompany, User $lockedActor, MobileDevice $lockedDevice, MobileAccessToken $lockedToken) use (
+                    $catalogService,
+                    $normalizedPayload,
+                    $minorUnitsResolver
+                ): array {
+                    app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
+                    $vendor = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
+
+                    $baseCurr = (string) $lockedCompany->base_currency_code;
+                    $cmu = $minorUnitsResolver->resolve($baseCurr, $lockedCompany);
+
+                    $snapshot = [
+                        'id' => (string) $vendor->public_id,
+                        'code' => $vendor->code,
+                        'name' => (string) $vendor->displayName(),
+                        'name_ar' => $vendor->name_ar,
+                        'name_en' => $vendor->name_en,
+                        'phone' => $vendor->phone,
+                        'address' => $vendor->address_ar ?? $vendor->address_en,
+                        'balance_owed' => null,
+                        'currency' => $baseCurr,
+                        'currency_minor_units' => $cmu,
+                        'status' => $vendor->status === 'active' ? 'active' : 'inactive',
+                    ];
+
+                    return [
+                        'status' => 201,
+                        'snapshot' => $snapshot,
+                        'entity_type' => 'supplier',
+                        'entity_id' => (int) $vendor->id,
+                        'entity_public_id' => (string) $vendor->public_id,
+                    ];
+                }
+            );
+
+            $headers = [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                'Idempotency-Key' => $idempotencyKey,
+            ];
+            if ($result['outcome'] === 'replay') {
+                $headers['X-Idempotent-Replay'] = 'true';
+            }
+
+            return response()->json($result['snapshot'], $result['status'], $headers);
+        } catch (AuthenticationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
+        } catch (AuthorizationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -276,31 +366,37 @@ final class SupplierController extends Controller
                 status: 422
             );
         }
-
-        return response()->json([
-            'id' => (string) $vendor->public_id,
-            'name' => (string) $vendor->displayName(),
-            'code' => $vendor->code,
-            'phone' => $vendor->phone,
-            'balance_owed' => null,
-        ], 201, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**
      * PUT /api/mobile/v1/companies/{companyId}/suppliers/{supplierId}
      */
-    public function update(Request $request, string $companyId, string $supplierId, VendorCatalogService $catalogService): JsonResponse
-    {
-        /** @var Company $company */
+    public function update(
+        Request $request,
+        string $companyId,
+        string $supplierId,
+        VendorCatalogService $catalogService,
+        NativeCommandReceiptManager $receiptManager,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        /** @var Company|null $company */
         $company = $request->attributes->get('mobile_company');
-        /** @var User $user */
+        /** @var User|null $user */
         $user = $request->attributes->get('mobile_user');
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
+
+        if ($company === null || $user === null || $token === null || $device === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
 
         setPermissionsTeamId($company->id);
-
         if (! $user->hasPermissionTo('vendors.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -340,27 +436,109 @@ final class SupplierController extends Controller
         }
 
         $payload = $request->json()->all();
+        $normalizedPayload = $payload;
+        if (array_key_exists('name', $normalizedPayload) && ! array_key_exists('name_ar', $normalizedPayload)) {
+            $normalizedPayload['name_ar'] = $normalizedPayload['name'];
+        }
+        if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
+            $normalizedPayload['address_ar'] = $normalizedPayload['address'];
+        }
+        if (array_key_exists('company_name', $normalizedPayload) && ! array_key_exists('business_name_ar', $normalizedPayload)) {
+            $normalizedPayload['business_name_ar'] = $normalizedPayload['company_name'];
+        }
+        ksort($normalizedPayload);
+
+        $canonicalPayload = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'supplier_id' => $supplierId,
+            'command' => 'supplier_update',
+            'payload' => $normalizedPayload,
+        ];
 
         try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $updated = $catalogService->save($company, $user, $payload, (int) $vendor->id);
+            $result = $receiptManager->execute(
+                companyId: (int) $company->id,
+                actor: $user,
+                token: $token,
+                device: $device,
+                commandType: 'supplier_update',
+                idempotencyKey: $idempotencyKey,
+                canonicalPayload: $canonicalPayload,
+                requiredPermissions: ['vendors.manage'],
+                executor: function (Company $lockedCompany, User $lockedActor, MobileDevice $lockedDevice, MobileAccessToken $lockedToken) use (
+                    $supplierId,
+                    $catalogService,
+                    $normalizedPayload,
+                    $minorUnitsResolver
+                ): array {
+                    /** @var Vendor|null $lockedVendor */
+                    $lockedVendor = Vendor::where('company_id', $lockedCompany->id)
+                        ->where('public_id', $supplierId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($lockedVendor === null) {
+                        throw new InvalidArgumentException('The requested supplier was not found.');
+                    }
+
+                    app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
+                    $updated = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload, (int) $lockedVendor->id);
+
+                    $baseCurr = (string) $lockedCompany->base_currency_code;
+                    $cmu = $minorUnitsResolver->resolve($baseCurr, $lockedCompany);
+
+                    $snapshot = [
+                        'id' => (string) $updated->public_id,
+                        'code' => $updated->code,
+                        'name' => (string) $updated->displayName(),
+                        'name_ar' => $updated->name_ar,
+                        'name_en' => $updated->name_en,
+                        'phone' => $updated->phone,
+                        'address' => $updated->address_ar ?? $updated->address_en,
+                        'currency' => $baseCurr,
+                        'currency_minor_units' => $cmu,
+                        'status' => $updated->status === 'active' ? 'active' : 'inactive',
+                    ];
+
+                    return [
+                        'status' => 200,
+                        'snapshot' => $snapshot,
+                        'entity_type' => 'supplier',
+                        'entity_id' => (int) $updated->id,
+                        'entity_public_id' => (string) $updated->public_id,
+                    ];
+                }
+            );
+
+            $headers = [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                'Idempotency-Key' => $idempotencyKey,
+            ];
+            if ($result['outcome'] === 'replay') {
+                $headers['X-Idempotent-Replay'] = 'true';
+            }
+
+            return response()->json($result['snapshot'], $result['status'], $headers);
+        } catch (AuthenticationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
+        } catch (AuthorizationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
         } catch (Throwable $e) {
+            if (str_contains($e->getMessage(), 'not found')) {
+                return MobileApiBoundary::buildErrorResponse(code: 'NOT_FOUND', message: $e->getMessage(), status: 404);
+            }
+
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
                 message: 'Failed to update supplier: '.$e->getMessage(),
                 status: 422
             );
         }
-
-        return response()->json([
-            'id' => (string) $updated->public_id,
-            'name' => (string) $updated->displayName(),
-            'code' => $updated->code,
-            'phone' => $updated->phone,
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**

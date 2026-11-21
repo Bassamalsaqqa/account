@@ -25,6 +25,16 @@ final class VendorCatalogService
                 ? new Vendor
                 : Vendor::where('company_id', $company->id)->whereKey($vendorId)->lockForUpdate()->firstOrFail();
 
+            if (array_key_exists('address', $data) && ! array_key_exists('address_ar', $data)) {
+                $data['address_ar'] = $data['address'];
+            }
+            if (array_key_exists('company_name', $data) && ! array_key_exists('business_name_ar', $data)) {
+                $data['business_name_ar'] = $data['company_name'];
+            }
+            if (array_key_exists('name', $data) && ! array_key_exists('name_ar', $data)) {
+                $data['name_ar'] = $data['name'];
+            }
+
             foreach ($data as $key => $value) {
                 if (is_string($value)) {
                     $data[$key] = trim($value) === '' ? null : trim($value);
