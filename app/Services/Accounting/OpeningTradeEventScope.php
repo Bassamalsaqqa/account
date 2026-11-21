@@ -20,6 +20,11 @@ final class OpeningTradeEventScope
 
     private ?OpeningTradeReversalCapability $activeReversal = null;
 
+    public function hasActiveCapability(): bool
+    {
+        return $this->activePosting !== null || $this->activeReversal !== null;
+    }
+
     /**
      * @template T
      *
@@ -96,6 +101,10 @@ final class OpeningTradeEventScope
         if ($partyId !== $this->activePosting->partyId) {
             throw new InvalidArgumentException('Opening trade item party does not match authorized posting capability.');
         }
+
+        if (! $this->activePosting->isItemAuthorized($item)) {
+            throw new ImmutableRecordException('Opening trade item is not authorized by the active posting capability.');
+        }
     }
 
     public function assertCanLinkPostingBatch(OpeningTradeItem $item, int $batchId): void
@@ -107,6 +116,10 @@ final class OpeningTradeEventScope
         if ((int) $item->company_id !== $this->activePosting->companyId) {
             throw new InvalidArgumentException('Opening trade item company does not match authorized posting capability.');
         }
+
+        if (! $this->activePosting->isBatchLinkAuthorized((int) $item->id, $batchId)) {
+            throw new ImmutableRecordException("Linking posting batch [{$batchId}] to opening trade item [{$item->id}] is not authorized by active capability.");
+        }
     }
 
     public function assertCanReverseItem(OpeningTradeItem $item): void
@@ -117,6 +130,14 @@ final class OpeningTradeEventScope
 
         if ((int) $item->company_id !== $this->activeReversal->companyId || (int) $item->posting_batch_id !== $this->activeReversal->originalBatchId) {
             throw new InvalidArgumentException('Opening trade item does not match authorized reversal capability.');
+        }
+
+        if ((int) $item->id !== $this->activeReversal->itemId) {
+            throw new InvalidArgumentException('Opening trade item ID does not match authorized reversal capability.');
+        }
+
+        if ($item->reversal_posting_batch_id !== null && ! $this->activeReversal->isReversalBatchAuthorized((int) $item->reversal_posting_batch_id)) {
+            throw new ImmutableRecordException("Reversal batch [{$item->reversal_posting_batch_id}] is not authorized for opening trade item [{$item->id}].");
         }
     }
 }

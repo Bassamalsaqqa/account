@@ -130,8 +130,17 @@ final class TradeOpenPositions
                     $posted->where('status', OpeningTradeItem::STATUS_POSTED)
                         ->whereNull('reversal_posting_batch_id');
                 })->orWhere(function ($rev) use ($cutoff): void {
-                    $rev->where('status', OpeningTradeItem::STATUS_REVERSED)
-                        ->whereHas('reversalPostingBatch', fn ($b) => $b->where('posting_date', '>', $cutoff));
+                    $rev->where(function ($r): void {
+                        $r->where('status', OpeningTradeItem::STATUS_REVERSED)
+                            ->orWhereNotNull('reversal_posting_batch_id');
+                    })->where(function ($sub) use ($cutoff): void {
+                        $sub->whereHas('reversalPostingBatch', function ($b) use ($cutoff): void {
+                            $b->where('status', 'posted')
+                                ->where('posting_date', '>', $cutoff);
+                        })->orWhereDoesntHave('reversalPostingBatch', function ($b): void {
+                            $b->where('status', 'posted');
+                        });
+                    });
                 });
             });
 

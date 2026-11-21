@@ -9,6 +9,9 @@ use App\Actions\Accounting\PostOpeningTradeItemAction;
 use App\Actions\Accounting\ReverseOpeningTradeItemAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Application\Platform\TenantWriteAccess;
+use App\Application\Reporting\DTO\ReportFilters;
+use App\Application\Reporting\DTO\ReportPeriod;
+use App\Application\Reporting\Support\TradeOpenPositions;
 use App\Domain\Accounting\Exceptions\ActiveSettlementBlockedException;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Accounting\Exceptions\LegacyGlOpeningOverlapException;
@@ -1302,6 +1305,61 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $this->assertTrue($vendEntries->contains('type', 'opening_balance'));
         $this->assertFalse($vendEntries->contains('type', 'reversal'));
 
+        // Test incoherent / non-canonical reversal link on vendor item:
+        // An unposted or unlinked reversal batch must NOT cause the item to be treated as reversed on statements or open positions.
+        $unpostedBatch = new PostingBatch([
+            'public_id' => (string) Str::ulid(),
+            'company_id' => $this->company->id,
+            'source_type' => 'opening_trade_item',
+            'source_id' => $vendItem->id,
+            'posting_date' => '2026-01-05',
+            'posted_at' => '2026-01-05 00:00:00',
+            'transaction_currency_code' => 'ILS',
+            'base_currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'status' => 'draft', // Unposted!
+            'idempotency_key' => 'unposted-rev-batch-'.Str::ulid(),
+            'description' => 'Unposted reversal attempt',
+            'posted_by' => $this->owner->id,
+            'created_by' => $this->owner->id,
+        ]);
+        $unpostedBatch->saveQuietly();
+
+        DB::table('opening_trade_items')
+            ->where('id', $vendItem->id)
+            ->update([
+                'status' => OpeningTradeItem::STATUS_REVERSED,
+                'reversal_posting_batch_id' => $unpostedBatch->id,
+            ]);
+
+        $incoherentVend = $vendItem->fresh();
+        $this->assertFalse($incoherentVend->hasCanonicalReversal());
+        $this->assertTrue(BigDecimal::of('450.00')->isEqualTo($incoherentVend->calculateOutstanding()));
+
+        // Vendor statement must NOT include a reversal entry for non-canonical reversal
+        $vendStmtIncoherent = (new VendorStatementQuery)->execute($this->testVendor);
+        $vendEntriesIncoherent = collect($vendStmtIncoherent['currencies']['ILS']['entries'] ?? []);
+        $this->assertFalse($vendEntriesIncoherent->contains('type', 'reversal'));
+
+        // Open positions must STILL include the vendor item
+        $openPositionsIncoherent = TradeOpenPositions::read(
+            $this->company,
+            new ReportFilters(period: ReportPeriod::custom('2026-01-01', '2026-01-10', $this->company)),
+            vendor: true,
+            aging: false,
+            overdue: false,
+        );
+        $itemsIncoherent = collect($openPositionsIncoherent['rows'] ?? []);
+        $this->assertTrue($itemsIncoherent->contains('opening_trade_item_id', $vendItem->id));
+
+        // Restore vendItem to posted state so it can be tested canonically
+        DB::table('opening_trade_items')
+            ->where('id', $vendItem->id)
+            ->update([
+                'status' => OpeningTradeItem::STATUS_POSTED,
+                'reversal_posting_batch_id' => null,
+            ]);
+
         // Canonical reversal
         $reversedCust = app(ReverseOpeningTradeItemAction::class)->execute(
             item: $custItem,
@@ -1315,5 +1373,365 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $custStmtAfter = (new CustomerStatementQuery)->execute($this->customer);
         $custTxAfter = collect($custStmtAfter['currencies']['ILS']['entries'] ?? []);
         $this->assertTrue($custTxAfter->contains('type', 'reversal'));
+    }
+
+    public function test_event_suppressed_and_bulk_orm_operations_are_strictly_rejected(): void
+    {
+        $item = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '200.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'persistence-guards-test',
+        );
+
+        // 1. Direct model saveQuietly on new item without canonical action authority throws
+        try {
+            $unauthorizedItem = new OpeningTradeItem([
+                'company_id' => $this->company->id,
+                'public_id' => (string) Str::ulid(),
+                'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                'customer_id' => $this->customer->id,
+                'opening_date' => '2026-01-01',
+                'currency_code' => 'ILS',
+                'amount_currency' => '100.00',
+                'exchange_rate' => '1.0000000000',
+                'carrying_value_base' => '100.00',
+                'status' => OpeningTradeItem::STATUS_POSTED,
+                'created_by' => $this->owner->id,
+                'source_identity' => 'test',
+                'idempotency_key' => 'quiet-create',
+                'idempotency_payload_hash' => hash('sha256', 'quiet'),
+            ]);
+            $unauthorizedItem->saveQuietly();
+            $this->fail('saveQuietly creation without canonical capability must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('outside canonical posting action', $e->getMessage());
+        }
+
+        // 2. withoutEvents creation throws
+        try {
+            OpeningTradeItem::withoutEvents(function () {
+                $unauthorizedItem = new OpeningTradeItem([
+                    'company_id' => $this->company->id,
+                    'public_id' => (string) Str::ulid(),
+                    'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                    'customer_id' => $this->customer->id,
+                    'opening_date' => '2026-01-01',
+                    'currency_code' => 'ILS',
+                    'amount_currency' => '100.00',
+                    'exchange_rate' => '1.0000000000',
+                    'carrying_value_base' => '100.00',
+                    'status' => OpeningTradeItem::STATUS_POSTED,
+                    'created_by' => $this->owner->id,
+                    'source_identity' => 'test',
+                    'idempotency_key' => 'without-events-create',
+                    'idempotency_payload_hash' => hash('sha256', 'without-events'),
+                ]);
+                $unauthorizedItem->save();
+            });
+            $this->fail('withoutEvents creation must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('outside canonical posting action', $e->getMessage());
+        }
+
+        // 3. Bulk update on Eloquent query throws
+        try {
+            OpeningTradeItem::where('id', $item->id)->update(['notes' => 'Attempted direct bulk update']);
+            $this->fail('Bulk update via Eloquent query must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Direct bulk updates on opening trade items are prohibited', $e->getMessage());
+        }
+
+        // 4. Bulk delete on Eloquent query throws
+        try {
+            OpeningTradeItem::where('id', $item->id)->delete();
+            $this->fail('Bulk delete via Eloquent query must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('cannot be deleted', $e->getMessage());
+        }
+
+        // 5. Model delete() throws
+        try {
+            $item->delete();
+            $this->fail('Direct model delete() must throw.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('cannot be deleted', $e->getMessage());
+        }
+    }
+
+    public function test_capability_requires_exact_item_and_journal_binding(): void
+    {
+        $capability = new OpeningTradePostingCapability(
+            (int) $this->company->id,
+            (int) $this->owner->id,
+            OpeningTradeItem::SIDE_CUSTOMER,
+            (int) $this->customer->id,
+        );
+
+        $action = app(PostOpeningTradeItemAction::class);
+        $eventScope = app(OpeningTradeEventScope::class);
+
+        $refProp = new \ReflectionProperty($action, 'activeEventScope');
+        $refProp->setValue($action, $eventScope);
+
+        try {
+            // Attempting to create an item without capability->authorizeItem throws
+            $eventScope->withPostingCapability($action, $capability, function () {
+                $item = new OpeningTradeItem([
+                    'company_id' => $this->company->id,
+                    'public_id' => (string) Str::ulid(),
+                    'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                    'customer_id' => $this->customer->id,
+                    'opening_date' => '2026-01-01',
+                    'currency_code' => 'ILS',
+                    'amount_currency' => '100.00',
+                    'exchange_rate' => '1.0000000000',
+                    'carrying_value_base' => '100.00',
+                    'status' => OpeningTradeItem::STATUS_POSTED,
+                    'created_by' => $this->owner->id,
+                    'source_identity' => 'test',
+                    'idempotency_key' => 'unauth-item',
+                    'idempotency_payload_hash' => hash('sha256', 'unauth'),
+                ]);
+
+                try {
+                    $item->save();
+                    $this->fail('Item not authorized by capability must throw.');
+                } catch (ImmutableRecordException $e) {
+                    $this->assertStringContainsString('not authorized by the active posting capability', $e->getMessage());
+                }
+            });
+        } finally {
+            $refProp->setValue($action, null);
+        }
+    }
+
+    public function test_execute_form_atomic_commit_retry_and_conflict_handling(): void
+    {
+        $action = app(PostOpeningTradeItemAction::class);
+        $formKey = 'form-atomic-'.Str::ulid();
+
+        $rows = [
+            [
+                'amount' => '100.00',
+                'original_reference' => 'REF-1',
+                'due_date' => '2026-02-01',
+                'notes' => 'Row 1 notes',
+            ],
+            [
+                'amount' => '250.00',
+                'original_reference' => 'REF-2',
+                'due_date' => '2026-02-15',
+                'notes' => 'Row 2 notes',
+            ],
+        ];
+
+        // 1. Initial execution commits both rows and their GL batches atomically
+        $items = $action->executeForm(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            currencyCode: 'ILS',
+            exchangeRate: null,
+            rows: $rows,
+            actor: $this->owner,
+            formIdempotencyKey: $formKey,
+            sourceIdentity: 'manual_web',
+        );
+
+        $this->assertCount(2, $items);
+        $this->assertSame('100.000000', $items[0]->amount_currency);
+        $this->assertSame('250.000000', $items[1]->amount_currency);
+        $this->assertNotNull($items[0]->posting_batch_id);
+        $this->assertNotNull($items[1]->posting_batch_id);
+
+        // Verify journal source identity on both batches
+        $b1 = PostingBatch::findOrFail($items[0]->posting_batch_id);
+        $b2 = PostingBatch::findOrFail($items[1]->posting_batch_id);
+        $this->assertSame('opening_trade_item', $b1->source_type);
+        $this->assertSame($items[0]->id, $b1->source_id);
+        $this->assertSame('opening_trade_item', $b2->source_type);
+        $this->assertSame($items[1]->id, $b2->source_id);
+
+        // 2. Identical retry returns existing items with identical IDs and batches
+        $retryItems = $action->executeForm(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            currencyCode: 'ILS',
+            exchangeRate: null,
+            rows: $rows,
+            actor: $this->owner,
+            formIdempotencyKey: $formKey,
+            sourceIdentity: 'manual_web',
+        );
+
+        $this->assertCount(2, $retryItems);
+        $this->assertSame($items[0]->id, $retryItems[0]->id);
+        $this->assertSame($items[1]->id, $retryItems[1]->id);
+
+        // 3. Append conflict: same key with 3 rows throws IdempotencyConflictException
+        $appendedRows = array_merge($rows, [
+            ['amount' => '50.00', 'original_reference' => 'REF-3', 'due_date' => null, 'notes' => null],
+        ]);
+        try {
+            $action->executeForm(
+                company: $this->company,
+                side: OpeningTradeItem::SIDE_CUSTOMER,
+                partyId: $this->customer->id,
+                openingDate: '2026-01-01',
+                currencyCode: 'ILS',
+                exchangeRate: null,
+                rows: $appendedRows,
+                actor: $this->owner,
+                formIdempotencyKey: $formKey,
+            );
+            $this->fail('Append conflict must throw IdempotencyConflictException.');
+        } catch (IdempotencyConflictException $e) {
+            $this->assertStringContainsString('different row set count', $e->getMessage());
+        }
+
+        // 4. Remove conflict: same key with 1 row throws IdempotencyConflictException
+        try {
+            $action->executeForm(
+                company: $this->company,
+                side: OpeningTradeItem::SIDE_CUSTOMER,
+                partyId: $this->customer->id,
+                openingDate: '2026-01-01',
+                currencyCode: 'ILS',
+                exchangeRate: null,
+                rows: [$rows[0]],
+                actor: $this->owner,
+                formIdempotencyKey: $formKey,
+            );
+            $this->fail('Remove conflict must throw IdempotencyConflictException.');
+        } catch (IdempotencyConflictException $e) {
+            $this->assertStringContainsString('different row set count', $e->getMessage());
+        }
+
+        // 5. Reorder conflict: row 0 and row 1 swapped throws IdempotencyConflictException
+        try {
+            $action->executeForm(
+                company: $this->company,
+                side: OpeningTradeItem::SIDE_CUSTOMER,
+                partyId: $this->customer->id,
+                openingDate: '2026-01-01',
+                currencyCode: 'ILS',
+                exchangeRate: null,
+                rows: [$rows[1], $rows[0]],
+                actor: $this->owner,
+                formIdempotencyKey: $formKey,
+            );
+            $this->fail('Reorder conflict must throw IdempotencyConflictException.');
+        } catch (IdempotencyConflictException $e) {
+            $this->assertStringContainsString('different economic payload', $e->getMessage());
+        }
+
+        // 6. Changed economic payload throws IdempotencyConflictException
+        $changedRows = $rows;
+        $changedRows[1]['amount'] = '300.00';
+        try {
+            $action->executeForm(
+                company: $this->company,
+                side: OpeningTradeItem::SIDE_CUSTOMER,
+                partyId: $this->customer->id,
+                openingDate: '2026-01-01',
+                currencyCode: 'ILS',
+                exchangeRate: null,
+                rows: $changedRows,
+                actor: $this->owner,
+                formIdempotencyKey: $formKey,
+            );
+            $this->fail('Changed payload must throw IdempotencyConflictException.');
+        } catch (IdempotencyConflictException $e) {
+            $this->assertStringContainsString('different economic payload', $e->getMessage());
+        }
+
+        // 7. Failure rollback: when a row fails, zero items/journals remain committed
+        $failKey = 'form-fail-'.Str::ulid();
+        $failRows = [
+            ['amount' => '150.00', 'original_reference' => 'VALID'],
+            ['amount' => '-50.00', 'original_reference' => 'INVALID_NEGATIVE'],
+        ];
+
+        $beforeItemsCount = OpeningTradeItem::count();
+        $beforeBatchesCount = PostingBatch::count();
+
+        try {
+            $action->executeForm(
+                company: $this->company,
+                side: OpeningTradeItem::SIDE_CUSTOMER,
+                partyId: $this->customer->id,
+                openingDate: '2026-01-01',
+                currencyCode: 'ILS',
+                exchangeRate: null,
+                rows: $failRows,
+                actor: $this->owner,
+                formIdempotencyKey: $failKey,
+            );
+            $this->fail('Invalid row must throw InvalidArgumentException.');
+        } catch (\InvalidArgumentException) {
+            $this->assertSame($beforeItemsCount, OpeningTradeItem::count());
+            $this->assertSame($beforeBatchesCount, PostingBatch::count());
+        }
+    }
+
+    public function test_statements_aging_and_open_positions_agree_on_reversals_and_legacy_fixtures(): void
+    {
+        $item = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '500.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'agree-item-'.Str::ulid(),
+        );
+
+        $revAction = app(ReverseOpeningTradeItemAction::class);
+        $revAction->execute($item, $this->owner, 'Reversal test', '2026-01-10');
+
+        // As of 2026-01-05 (before reversal):
+        // Statement: opening balance present, reversal not present (as of 2026-01-05) -> balance = 500
+        // Open positions: item is open (as of 2026-01-05) -> balance = 500
+        $stmtBefore = (new CustomerStatementQuery)->execute($this->customer, toDate: '2026-01-05');
+        $entriesBefore = collect($stmtBefore['currencies']['ILS']['entries'] ?? []);
+        $this->assertTrue($entriesBefore->contains('type', 'opening_balance'));
+        $this->assertFalse($entriesBefore->contains('type', 'reversal'));
+
+        $openPositionsBefore = TradeOpenPositions::read(
+            $this->company,
+            new ReportFilters(period: ReportPeriod::custom('2026-01-01', '2026-01-05', $this->company)),
+            vendor: false,
+            aging: false,
+            overdue: false,
+        );
+        $itemsBefore = collect($openPositionsBefore['rows'] ?? []);
+        $this->assertTrue($itemsBefore->contains('opening_trade_item_id', $item->id));
+
+        // As of 2026-01-15 (after reversal):
+        // Statement: both opening balance and reversal present -> net balance = 0
+        // Open positions: excluded -> 0
+        $stmtAfter = (new CustomerStatementQuery)->execute($this->customer, toDate: '2026-01-15');
+        $entriesAfter = collect($stmtAfter['currencies']['ILS']['entries'] ?? []);
+        $this->assertTrue($entriesAfter->contains('type', 'opening_balance'));
+        $this->assertTrue($entriesAfter->contains('type', 'reversal'));
+
+        $openPositionsAfter = TradeOpenPositions::read(
+            $this->company,
+            new ReportFilters(period: ReportPeriod::custom('2026-01-01', '2026-01-15', $this->company)),
+            vendor: false,
+            aging: false,
+            overdue: false,
+        );
+        $itemsAfter = collect($openPositionsAfter['rows'] ?? []);
+        $this->assertFalse($itemsAfter->contains('opening_trade_item_id', $item->id));
     }
 }

@@ -158,7 +158,8 @@ class VendorStatementQuery
             ];
 
             if ($item->hasCanonicalReversal()) {
-                $revDate = $item->reversalPostingBatch->posting_date->toDateString();
+                $revDate = $item->reversalPostingBatch?->posting_date?->toDateString()
+                    ?? ($item->reversed_at ? Carbon::parse($item->reversed_at)->toDateString() : Carbon::parse($item->opening_date)->toDateString());
                 if ($toDate === null || $revDate <= $toDate) {
                     $rawRows[] = [
                         'id' => (int) $item->id,

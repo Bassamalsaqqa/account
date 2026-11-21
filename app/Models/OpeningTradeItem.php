@@ -109,101 +109,141 @@ class OpeningTradeItem extends Model
         ];
     }
 
+    /**
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @return OpeningTradeItemBuilder<static>
+     */
+    public function newEloquentBuilder($query): OpeningTradeItemBuilder
+    {
+        /** @var OpeningTradeItemBuilder<static> */
+        return new OpeningTradeItemBuilder($query);
+    }
+
     protected static function booted(): void
     {
         static::creating(function (self $item): void {
-            if ($item->side === self::SIDE_CUSTOMER) {
-                if ($item->customer_id === null || $item->vendor_id !== null) {
-                    throw new InvalidArgumentException('Customer opening trade item must have customer_id and null vendor_id.');
-                }
-            } elseif ($item->side === self::SIDE_VENDOR) {
-                if ($item->vendor_id === null || $item->customer_id !== null) {
-                    throw new InvalidArgumentException('Vendor opening trade item must have vendor_id and null customer_id.');
-                }
-            } else {
-                throw new InvalidArgumentException("Invalid side [{$item->side}]. Must be 'customer' or 'vendor'.");
-            }
-
-            // Whitelist valid creation state: ANY persisted opening trade item MUST have status explicitly 'posted'.
-            // Omitted, null, 'draft', 'pending', or 'reversed' are prohibited.
-            if ($item->status !== self::STATUS_POSTED) {
-                if ($item->status === self::STATUS_REVERSED) {
-                    throw new ImmutableRecordException('Direct creation of reversed opening trade item is prohibited.');
-                }
-                throw new ImmutableRecordException('Creation of opening trade item requires canonical action capability with explicit posted status.');
-            }
-
-            // Posting batch ID must be null on creation; it is linked after GL posting batch is created.
-            if ($item->posting_batch_id !== null) {
-                throw new ImmutableRecordException('Opening trade item posting batch must be attached via canonical posting capability after creation.');
-            }
-
-            // Reversal metadata must be null on creation.
-            if ($item->reversal_posting_batch_id !== null || $item->reversed_at !== null || $item->reversed_by !== null || $item->correction_reason !== null) {
-                throw new ImmutableRecordException('Reversal attributes cannot be populated on creation.');
-            }
-
-            // Canonical action capability requirement for creation:
-            app(OpeningTradeEventScope::class)->assertCanCreateItem($item);
+            $item->assertCanonicalPersistenceAuthority();
         });
 
         static::updating(function (self $item): void {
-            if ($item->getOriginal('status') === self::STATUS_REVERSED) {
-                throw new ImmutableRecordException('Reversed opening trade items are immutable.');
-            }
-
-            if ($item->getOriginal('status') !== self::STATUS_POSTED) {
-                throw new ImmutableRecordException('Unsupported opening trade item status transition.');
-            }
-
-            // Whitelist transitions: only posted -> reversed is permitted for status change
-            $reversalMetadataDirty = $item->isDirty('reversal_posting_batch_id')
-                || $item->isDirty('reversed_at')
-                || $item->isDirty('reversed_by')
-                || $item->isDirty('correction_reason');
-
-            if ($item->isDirty('status')) {
-                if ($item->status !== self::STATUS_REVERSED) {
-                    throw new ImmutableRecordException('Posted opening trade items can only transition to reversed.');
-                }
-
-                app(OpeningTradeEventScope::class)->assertCanReverseItem($item);
-
-                if (empty($item->reversed_at) || empty($item->reversed_by) || empty($item->correction_reason) || empty($item->reversal_posting_batch_id)) {
-                    throw new ImmutableRecordException('Direct status transition to reversed is prohibited without canonical reversal metadata.');
-                }
-
-                $revBatch = PostingBatch::withoutGlobalScopes()->find($item->reversal_posting_batch_id);
-                if ($revBatch === null || (int) $revBatch->reversal_of_id !== (int) $item->posting_batch_id || (int) $revBatch->company_id !== (int) $item->company_id || $revBatch->status !== 'posted') {
-                    throw new ImmutableRecordException('Direct status transition to reversed requires a valid canonical accounting reversal batch.');
-                }
-            } elseif ($reversalMetadataDirty) {
-                throw new ImmutableRecordException('Reversal metadata can only be populated during canonical transition to reversed status.');
-            }
-
-            if ($item->isDirty('posting_batch_id')) {
-                if ($item->getOriginal('posting_batch_id') !== null) {
-                    throw new ImmutableRecordException('Posting batch cannot be reassigned on a posted opening trade item.');
-                }
-                app(OpeningTradeEventScope::class)->assertCanLinkPostingBatch($item, (int) $item->posting_batch_id);
-            }
-
-            // Once posted, economic and party attributes are immutable.
-            // Only posting batch attachment (from null) and reversal transition fields can be updated.
-            $dirty = array_keys($item->getDirty());
-            $allowed = ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'updated_at', 'notes'];
-            if ($item->getOriginal('posting_batch_id') === null) {
-                $allowed[] = 'posting_batch_id';
-            }
-            $disallowed = array_diff($dirty, $allowed);
-            if (! empty($disallowed)) {
-                throw new ImmutableRecordException('Opening trade items are immutable once posted.');
-            }
+            $item->assertCanonicalPersistenceAuthority();
         });
 
         static::deleting(function (): void {
             throw new ImmutableRecordException('Opening trade items cannot be deleted.');
         });
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return bool
+     */
+    protected function performUpdate(Builder $query)
+    {
+        $this->assertCanonicalPersistenceAuthority();
+
+        if ($query instanceof OpeningTradeItemBuilder) {
+            $query->allowModelSave($this);
+        }
+
+        return parent::performUpdate($query);
+    }
+
+    public function save(array $options = [])
+    {
+        $this->assertCanonicalPersistenceAuthority();
+
+        return parent::save($options);
+    }
+
+    public function delete()
+    {
+        throw new ImmutableRecordException('Opening trade items cannot be deleted.');
+    }
+
+    public function assertCanonicalPersistenceAuthority(): void
+    {
+        if (! $this->exists) {
+            if ($this->side === self::SIDE_CUSTOMER) {
+                if ($this->customer_id === null || $this->vendor_id !== null) {
+                    throw new InvalidArgumentException('Customer opening trade item must have customer_id and null vendor_id.');
+                }
+            } elseif ($this->side === self::SIDE_VENDOR) {
+                if ($this->vendor_id === null || $this->customer_id !== null) {
+                    throw new InvalidArgumentException('Vendor opening trade item must have vendor_id and null customer_id.');
+                }
+            } else {
+                throw new InvalidArgumentException("Invalid side [{$this->side}]. Must be 'customer' or 'vendor'.");
+            }
+
+            if ($this->status !== self::STATUS_POSTED) {
+                if ($this->status === self::STATUS_REVERSED) {
+                    throw new ImmutableRecordException('Direct creation of reversed opening trade item is prohibited.');
+                }
+                throw new ImmutableRecordException('Creation of opening trade item requires canonical action capability with explicit posted status.');
+            }
+
+            if ($this->posting_batch_id !== null) {
+                throw new ImmutableRecordException('Opening trade item posting batch must be attached via canonical posting capability after creation.');
+            }
+
+            if ($this->reversal_posting_batch_id !== null || $this->reversed_at !== null || $this->reversed_by !== null || $this->correction_reason !== null) {
+                throw new ImmutableRecordException('Reversal attributes cannot be populated on creation.');
+            }
+
+            app(OpeningTradeEventScope::class)->assertCanCreateItem($this);
+
+            return;
+        }
+
+        if ($this->getOriginal('status') === self::STATUS_REVERSED) {
+            throw new ImmutableRecordException('Reversed opening trade items are immutable.');
+        }
+
+        if ($this->getOriginal('status') !== self::STATUS_POSTED) {
+            throw new ImmutableRecordException('Unsupported opening trade item status transition.');
+        }
+
+        $reversalMetadataDirty = $this->isDirty('reversal_posting_batch_id')
+            || $this->isDirty('reversed_at')
+            || $this->isDirty('reversed_by')
+            || $this->isDirty('correction_reason');
+
+        if ($this->isDirty('status')) {
+            if ($this->status !== self::STATUS_REVERSED) {
+                throw new ImmutableRecordException('Posted opening trade items can only transition to reversed.');
+            }
+
+            app(OpeningTradeEventScope::class)->assertCanReverseItem($this);
+
+            if (empty($this->reversed_at) || empty($this->reversed_by) || empty($this->correction_reason) || empty($this->reversal_posting_batch_id)) {
+                throw new ImmutableRecordException('Direct status transition to reversed is prohibited without canonical reversal metadata.');
+            }
+
+            $revBatch = PostingBatch::withoutGlobalScopes()->find($this->reversal_posting_batch_id);
+            if ($revBatch === null || (int) $revBatch->reversal_of_id !== (int) $this->posting_batch_id || (int) $revBatch->company_id !== (int) $this->company_id || $revBatch->status !== 'posted') {
+                throw new ImmutableRecordException('Direct status transition to reversed requires a valid canonical accounting reversal batch.');
+            }
+        } elseif ($reversalMetadataDirty) {
+            throw new ImmutableRecordException('Reversal metadata can only be populated during canonical transition to reversed status.');
+        }
+
+        if ($this->isDirty('posting_batch_id')) {
+            if ($this->getOriginal('posting_batch_id') !== null) {
+                throw new ImmutableRecordException('Posting batch cannot be reassigned on a posted opening trade item.');
+            }
+            app(OpeningTradeEventScope::class)->assertCanLinkPostingBatch($this, (int) $this->posting_batch_id);
+        }
+
+        $dirty = array_keys($this->getDirty());
+        $allowed = ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'updated_at'];
+        if ($this->getOriginal('posting_batch_id') === null) {
+            $allowed[] = 'posting_batch_id';
+        }
+        $disallowed = array_diff($dirty, $allowed);
+        if (! empty($disallowed)) {
+            throw new ImmutableRecordException('Opening trade items are immutable once posted.');
+        }
     }
 
     public function setAttribute($key, $value)
@@ -220,7 +260,7 @@ class OpeningTradeItem extends Model
             if ($this->getOriginal('posting_batch_id') !== null && $key === 'posting_batch_id') {
                 throw new ImmutableRecordException('Posting batch cannot be reassigned on a posted opening trade item.');
             }
-            if (! in_array($key, ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'notes', 'posting_batch_id', 'updated_at'], true)) {
+            if (! in_array($key, ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'posting_batch_id', 'updated_at'], true)) {
                 throw new ImmutableRecordException('Opening trade items are immutable once posted.');
             }
         }
@@ -313,18 +353,31 @@ class OpeningTradeItem extends Model
 
     public function hasCanonicalReversal(): bool
     {
-        if (! $this->isReversed() || $this->reversal_posting_batch_id === null) {
+        if (! $this->isReversed() || $this->reversal_posting_batch_id === null || $this->posting_batch_id === null) {
             return false;
         }
 
-        $batch = $this->reversalPostingBatch;
-        if ($batch === null) {
+        $revBatch = $this->reversalPostingBatch;
+        if ($revBatch === null) {
             return false;
         }
 
-        return $batch->status === 'posted'
-            && (int) $batch->reversal_of_id === (int) $this->posting_batch_id
-            && (int) $batch->company_id === (int) $this->company_id;
+        if ($revBatch->status !== 'posted'
+            || (int) $revBatch->company_id !== (int) $this->company_id
+            || (int) $revBatch->reversal_of_id !== (int) $this->posting_batch_id) {
+            return false;
+        }
+
+        $origBatch = $this->postingBatch;
+        if ($origBatch === null) {
+            return false;
+        }
+
+        return in_array($origBatch->status, ['posted', 'reversed'], true)
+            && $origBatch->source_type === 'opening_trade_item'
+            && (int) $origBatch->source_id === (int) $this->id
+            && (int) $origBatch->company_id === (int) $this->company_id
+            && (int) $origBatch->reversed_by_batch_id === (int) $revBatch->id;
     }
 
     public function isCustomerSide(): bool
@@ -385,8 +438,13 @@ class OpeningTradeItem extends Model
         if ($asOfDate !== null && $this->opening_date->toDateString() > $asOfDate) {
             return BigDecimal::zero();
         }
-        if ($this->hasCanonicalReversal() && ($asOfDate === null || $this->reversalPostingBatch?->posting_date->toDateString() <= $asOfDate)) {
-            return BigDecimal::zero();
+        if ($this->hasCanonicalReversal()) {
+            $revBatch = $this->reversalPostingBatch;
+            $revDate = $revBatch?->posting_date?->toDateString()
+                ?? ($this->reversed_at ? Carbon::parse($this->reversed_at)->toDateString() : Carbon::parse($this->opening_date)->toDateString());
+            if ($asOfDate === null || $revDate <= $asOfDate) {
+                return BigDecimal::zero();
+            }
         }
 
         $prefix = $this->isCustomerSide() ? 'customer' : 'vendor';

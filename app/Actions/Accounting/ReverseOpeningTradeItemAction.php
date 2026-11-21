@@ -19,6 +19,7 @@ use App\Services\Audit\AuditService;
 use App\Services\Posting\AccountingPostingService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 final class ReverseOpeningTradeItemAction
@@ -61,10 +62,6 @@ final class ReverseOpeningTradeItemAction
             throw new AuthorizationException('Reversing opening trade items requires settings.accounting.manage permission.');
         }
 
-        if ($item->isVendorSide() && ! $actor->hasPermissionTo('purchasing.cost.view')) {
-            throw new AuthorizationException('Reversing opening supplier payables requires purchasing.cost.view permission.');
-        }
-
         $cleanReason = trim($reason);
         if ($cleanReason === '') {
             throw new InvalidArgumentException('A specific correction reason is required to reverse an opening trade balance.');
@@ -94,6 +91,17 @@ final class ReverseOpeningTradeItemAction
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            // Recheck authorization against the freshly locked item
+            if ($lockedItem->isCustomerSide()) {
+                if (! $actor->hasPermissionTo('customers.manage')) {
+                    throw new AuthorizationException('Reversing opening customer receivables requires customers.manage permission.');
+                }
+            } elseif ($lockedItem->isVendorSide()) {
+                if (! $actor->hasPermissionTo('vendors.manage') || ! $actor->hasPermissionTo('purchasing.cost.view')) {
+                    throw new AuthorizationException('Reversing opening supplier payables requires vendors.manage and purchasing.cost.view permissions.');
+                }
+            }
+
             if ($lockedItem->isReversed()) {
                 throw new InvalidArgumentException("Opening trade item [{$lockedItem->public_id}] is already reversed.");
             }
@@ -102,26 +110,29 @@ final class ReverseOpeningTradeItemAction
                 throw new InvalidArgumentException("Opening trade item [{$lockedItem->public_id}] is not in a posted state.");
             }
 
-            // Block reversal if active settlements exist
-            if ($lockedItem->isCustomerSide()) {
-                $activeCount = $lockedItem->customerPaymentAllocations()
-                    ->join('customer_payments', 'customer_payments.id', '=', 'customer_payment_allocations.customer_payment_id')
-                    ->where('customer_payments.is_reversed', false)
-                    ->count();
-
-                if ($activeCount > 0) {
-                    throw new ActiveSettlementBlockedException("Cannot reverse opening customer receivable [{$lockedItem->public_id}] while active customer payment allocations exist. Reverse or unallocate payments first.");
-                }
-            } else {
-                $activeCount = $lockedItem->vendorPaymentAllocations()
-                    ->join('vendor_payments', 'vendor_payments.id', '=', 'vendor_payment_allocations.vendor_payment_id')
-                    ->where('vendor_payments.is_reversed', false)
-                    ->count();
-
-                if ($activeCount > 0) {
-                    throw new ActiveSettlementBlockedException("Cannot reverse opening supplier payable [{$lockedItem->public_id}] while active vendor payment allocations exist. Reverse or unallocate payments first.");
-                }
-            }
+            $prefix = $lockedItem->isCustomerSide() ? 'customer' : 'vendor';
+            $allocations = DB::table($prefix.'_payment_allocations as a')
+                ->join($prefix.'_payments as p', 'p.id', '=', 'a.'.$prefix.'_payment_id')
+                ->join('posting_batches as pb', 'pb.id', '=', 'p.posting_batch_id')
+                ->leftJoin('posting_batches as pr', 'pr.id', '=', 'p.reversal_posting_batch_id')
+                ->leftJoin($prefix.'_payment_application_events as e', 'e.id', '=', 'a.application_event_id')
+                ->leftJoin('posting_batches as eb', 'eb.id', '=', 'e.posting_batch_id')
+                ->leftJoin('posting_batches as er', 'er.id', '=', 'e.reversal_posting_batch_id')
+                ->where('a.company_id', $lockedCompany->id)
+                ->where('p.company_id', $lockedCompany->id)
+                ->where('a.opening_trade_item_id', $lockedItem->id)
+                ->get([
+                    'p.id as payment_id',
+                    'p.payment_date',
+                    'p.is_reversed as payment_is_reversed',
+                    'pb.posting_date as payment_posting_date',
+                    'pr.posting_date as payment_reversal_posting_date',
+                    'a.application_event_id',
+                    'e.application_date as application_date',
+                    'e.reversed_at as application_reversed_at',
+                    'eb.posting_date as application_posting_date',
+                    'er.posting_date as application_reversal_posting_date',
+                ]);
 
             $revDateStr = $reversalDate ?? now($lockedCompany->timezone)->toDateString();
             if (! preg_match('/^\d{4}-\d{2}-\d{2}$/D', $revDateStr)) {
@@ -134,18 +145,47 @@ final class ReverseOpeningTradeItemAction
                 throw new InvalidArgumentException('Reversal date cannot be in the future.');
             }
 
+            foreach ($allocations as $alloc) {
+                $eventReversed = $alloc->application_event_id !== null && ($alloc->application_reversed_at !== null || $alloc->application_reversal_posting_date !== null);
+                $isAllocationActive = ! $alloc->payment_is_reversed && ! $eventReversed;
+                if ($isAllocationActive) {
+                    $sideLabel = $lockedItem->isCustomerSide() ? 'customer receivable' : 'supplier payable';
+                    $typeLabel = $lockedItem->isCustomerSide() ? 'customer payment' : 'vendor payment';
+                    throw new ActiveSettlementBlockedException("Cannot reverse opening {$sideLabel} [{$lockedItem->public_id}] while active {$typeLabel} allocations exist. Reverse or unallocate payments first.");
+                }
+
+                $settlementDate = (string) ($alloc->application_posting_date ?? $alloc->application_date ?? $alloc->payment_posting_date ?? $alloc->payment_date);
+                $settlementDate = substr($settlementDate, 0, 10);
+                $reversalDateCandidates = [];
+                if ($alloc->payment_is_reversed && $alloc->payment_reversal_posting_date !== null) {
+                    $reversalDateCandidates[] = substr((string) $alloc->payment_reversal_posting_date, 0, 10);
+                }
+                if ($alloc->application_reversal_posting_date !== null) {
+                    $reversalDateCandidates[] = substr((string) $alloc->application_reversal_posting_date, 0, 10);
+                }
+                $latestReversalDate = empty($reversalDateCandidates) ? $settlementDate : max($reversalDateCandidates);
+                $prerequisiteDate = max($settlementDate, $latestReversalDate);
+
+                if ($revDateStr < $prerequisiteDate) {
+                    throw new InvalidArgumentException("Opening trade balance reversal date [{$revDateStr}] cannot precede prerequisite settlement reversal date [{$prerequisiteDate}].");
+                }
+            }
+
             /** @var PostingBatch $originalBatch */
             $originalBatch = PostingBatch::where('company_id', $lockedCompany->id)
                 ->where('id', $lockedItem->posting_batch_id)
+                ->where('source_type', 'opening_trade_item')
+                ->where('source_id', $lockedItem->id)
                 ->lockForUpdate()
                 ->firstOrFail();
 
+            $capability = new OpeningTradeReversalCapability($lockedCompany->id, $actor->id, $originalBatch->id, (int) $lockedItem->id);
             $this->activeEventScope = $this->eventScope;
             try {
                 $reversalBatch = $this->eventScope->withReversalCapability(
                     $this,
-                    new OpeningTradeReversalCapability($lockedCompany->id, $actor->id, $originalBatch->id),
-                    function () use ($originalBatch, $actor, $cleanReason, $revDateStr, $lockedItem): PostingBatch {
+                    $capability,
+                    function () use ($originalBatch, $actor, $cleanReason, $revDateStr, $lockedItem, $capability): PostingBatch {
                         $reversalBatch = $this->postingService->reverse(
                             original: $originalBatch,
                             actingUser: $actor,
@@ -153,6 +193,18 @@ final class ReverseOpeningTradeItemAction
                             postingDate: $revDateStr,
                         );
 
+                        if ($reversalBatch->status !== PostingBatch::STATUS_POSTED || (int) $reversalBatch->reversal_of_id !== (int) $originalBatch->id) {
+                            throw new InvalidArgumentException('Reversal journal must link to original posting batch.');
+                        }
+                        if ($originalBatch->source_type !== 'opening_trade_item' || (int) $originalBatch->source_id !== (int) $lockedItem->id) {
+                            throw new InvalidArgumentException('Original journal source identity must match opening trade item.');
+                        }
+                        $freshOriginal = PostingBatch::withoutGlobalScopes()->find($originalBatch->id);
+                        if ($freshOriginal === null || (int) $freshOriginal->reversed_by_batch_id !== (int) $reversalBatch->id) {
+                            throw new InvalidArgumentException('Original posting batch must reciprocally link to reversal batch.');
+                        }
+
+                        $capability->authorizeReversalBatch((int) $reversalBatch->id);
                         $lockedItem->status = OpeningTradeItem::STATUS_REVERSED;
                         $lockedItem->reversal_posting_batch_id = $reversalBatch->id;
                         $lockedItem->reversed_at = now();

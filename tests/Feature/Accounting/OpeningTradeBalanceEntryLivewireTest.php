@@ -861,4 +861,35 @@ final class OpeningTradeBalanceEntryLivewireTest extends TradeTestCase
             $this->assertStringContainsString('Company context mismatch', $e->getMessage());
         }
     }
+
+    public function test_form_carrying_value_preview_sums_per_row_six_place_values_before_display_rounding(): void
+    {
+        DB::table('currencies')->updateOrInsert(['code' => 'USD'], ['name' => 'US Dollar', 'symbol' => '$', 'minor_units' => 2, 'active' => true]);
+        DB::table('company_currencies')->updateOrInsert(['company_id' => $this->company->id, 'currency_code' => 'USD'], ['enabled' => true]);
+
+        // Rate is 0.0024999900
+        // Row 1: 1.00 USD -> 1.00 * 0.0024999900 = 0.0024999900 -> 6-place: 0.002500
+        // Row 2: 1.00 USD -> 1.00 * 0.0024999900 = 0.0024999900 -> 6-place: 0.002500
+        // Sum of per-row 6-place values: 0.002500 + 0.002500 = 0.005000
+        // Display rounding (2-place): 0.005000 -> 0.01
+        $component = Livewire::actingAs($this->owner)
+            ->test(OpeningTradeBalanceEntry::class)
+            ->set('side', OpeningTradeItem::SIDE_CUSTOMER)
+            ->set('party_id', $this->customer->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '0.0024999900')
+            ->set('amount', '1.00')
+            ->set('has_multiple_lines', true)
+            ->set('additional_lines', [
+                [
+                    'amount' => '1.00',
+                    'currency_code' => 'USD',
+                    'original_reference' => 'LINE-2',
+                    'due_date' => '',
+                    'notes' => '',
+                ],
+            ]);
+
+        $component->assertSee('≈ 0.01 ILS');
+    }
 }

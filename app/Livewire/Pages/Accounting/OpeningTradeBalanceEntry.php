@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Livewire\Pages\Accounting;
 
 use App\Actions\Accounting\PostOpeningTradeItemAction;
-use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Accounting\Exceptions\LegacyGlOpeningOverlapException;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
@@ -189,7 +188,11 @@ class OpeningTradeBalanceEntry extends Component
         }
 
         $existingMain = OpeningTradeItem::where('company_id', $company->id)
-            ->where('idempotency_key', $this->formIdempotencyKey)
+            ->where(function ($q): void {
+                $q->where('idempotency_key', $this->formIdempotencyKey)
+                    ->orWhere('idempotency_key', 'like', $this->formIdempotencyKey.':%')
+                    ->orWhere('control_route->form->form_key', $this->formIdempotencyKey);
+            })
             ->first();
 
         if ($existingMain === null) {
@@ -223,149 +226,41 @@ class OpeningTradeBalanceEntry extends Component
             $this->validate($replayRules);
         }
 
-        $action = app(PostOpeningTradeItemAction::class);
         /** @var User $actor */
         $actor = auth()->user();
 
-        // Build durable whole-command rowset identity
-        $mainRateStr = $isBase ? '1.0000000000' : (string) BigDecimal::of($this->exchange_rate ?? '1')->toScale(10);
-        $normalizedRows = [
+        $rows = [
             [
-                'row_index' => 0,
-                'amount' => (string) BigDecimal::of($this->amount)->toScale(6),
-                'currency_code' => $this->currency_code,
-                'exchange_rate' => $mainRateStr,
-                'original_reference' => $this->original_reference !== null && trim($this->original_reference) !== '' ? trim($this->original_reference) : null,
-                'due_date' => $this->due_date ?: null,
-                'notes' => $this->notes ?: null,
+                'amount' => $this->amount,
+                'original_reference' => $this->original_reference,
+                'due_date' => $this->due_date,
+                'notes' => $this->notes,
             ],
         ];
 
-        foreach ($this->additional_lines as $idx => $line) {
-            $normalizedRows[] = [
-                'row_index' => $idx + 1,
-                'amount' => (string) BigDecimal::of((string) $line['amount'])->toScale(6),
-                'currency_code' => $this->currency_code,
-                'exchange_rate' => $mainRateStr,
-                'original_reference' => ! empty($line['original_reference']) ? trim((string) $line['original_reference']) : null,
-                'due_date' => ! empty($line['due_date']) ? (string) $line['due_date'] : null,
-                'notes' => ! empty($line['notes']) ? (string) $line['notes'] : null,
+        foreach ($this->additional_lines as $line) {
+            $rows[] = [
+                'amount' => (string) $line['amount'],
+                'original_reference' => $line['original_reference'] ?? null,
+                'due_date' => $line['due_date'] ?? null,
+                'notes' => $line['notes'] ?? null,
             ];
         }
 
-        $totalRows = count($normalizedRows);
-        $rowsetHash = hash('sha256', json_encode([
-            'company_id' => (int) $company->id,
-            'side' => $this->side,
-            'party_id' => (int) $this->party_id,
-            'opening_date' => $this->opening_date,
-            'total_rows' => $totalRows,
-            'rows' => $normalizedRows,
-        ], JSON_THROW_ON_ERROR));
-
         try {
-            app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($action, $company, $actor, $isBase, $totalRows, $rowsetHash, $normalizedRows): void {
-                $formKey = $this->formIdempotencyKey;
-                $existingFormItems = OpeningTradeItem::where('company_id', $company->id)
-                    ->where(function ($q) use ($formKey): void {
-                        $q->where('idempotency_key', $formKey)
-                            ->orWhere('idempotency_key', 'like', $formKey.':line:%');
-                    })
-                    ->lockForUpdate()
-                    ->get()
-                    ->keyBy('idempotency_key');
-
-                if ($existingFormItems->isNotEmpty()) {
-                    if ($existingFormItems->count() !== $totalRows) {
-                        throw new IdempotencyConflictException("Form idempotency key [{$formKey}] was already used with a different row set count: committed {$existingFormItems->count()} rows, received {$totalRows}.");
-                    }
-
-                    foreach ($existingFormItems as $existingItem) {
-                        $committedRowset = $existingItem->control_route['rowset'] ?? null;
-                        if (! is_array($committedRowset) || ($committedRowset['rowset_hash'] ?? null) !== $rowsetHash) {
-                            $divergedKey = $formKey;
-                            $mainItem = $existingFormItems->get($formKey);
-                            if ($mainItem !== null) {
-                                $mainAmt = (string) BigDecimal::of($mainItem->amount_currency)->toScale(6);
-                                $mainRate = (string) BigDecimal::of($mainItem->exchange_rate)->toScale(10);
-                                if ($mainAmt !== $normalizedRows[0]['amount']
-                                    || $mainRate !== $normalizedRows[0]['exchange_rate']
-                                    || $mainItem->currency_code !== $normalizedRows[0]['currency_code']) {
-                                    $divergedKey = $formKey;
-                                } else {
-                                    foreach ($this->additional_lines as $idx => $line) {
-                                        $lineKey = "{$formKey}:line:{$idx}";
-                                        $lineItem = $existingFormItems->get($lineKey);
-                                        $nRow = $normalizedRows[$idx + 1] ?? null;
-                                        if ($lineItem === null || $nRow === null) {
-                                            $divergedKey = $lineKey;
-                                            break;
-                                        }
-                                        $lineAmt = (string) BigDecimal::of($lineItem->amount_currency)->toScale(6);
-                                        $lineRate = (string) BigDecimal::of($lineItem->exchange_rate)->toScale(10);
-                                        if ($lineAmt !== $nRow['amount']
-                                            || $lineRate !== $nRow['exchange_rate']
-                                            || $lineItem->currency_code !== $nRow['currency_code']) {
-                                            $divergedKey = $lineKey;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-
-                            throw new IdempotencyConflictException("Opening trade item idempotency key [{$divergedKey}] was already used with a different economic payload.");
-                        }
-                    }
-                }
-
-                // Post main item
-                $action->execute(
-                    company: $company,
-                    side: $this->side,
-                    partyId: (int) $this->party_id,
-                    openingDate: $this->opening_date,
-                    amount: $this->amount,
-                    currencyCode: $this->currency_code,
-                    exchangeRate: $isBase ? null : $this->exchange_rate,
-                    actor: $actor,
-                    idempotencyKey: $formKey,
-                    originalReference: $this->original_reference,
-                    dueDate: $this->due_date,
-                    notes: $this->notes,
-                    sourceIdentity: 'manual_web',
-                    rowsetContext: [
-                        'form_key' => $formKey,
-                        'row_index' => 0,
-                        'total_rows' => $totalRows,
-                        'rowset_hash' => $rowsetHash,
-                    ],
-                );
-
-                // Post any additional lines
-                foreach ($this->additional_lines as $index => $line) {
-                    $action->execute(
-                        company: $company,
-                        side: $this->side,
-                        partyId: (int) $this->party_id,
-                        openingDate: $this->opening_date,
-                        amount: (string) $line['amount'],
-                        currencyCode: $this->currency_code,
-                        exchangeRate: $isBase ? null : $this->exchange_rate,
-                        actor: $actor,
-                        idempotencyKey: $formKey.':line:'.$index,
-                        originalReference: ! empty($line['original_reference']) ? (string) $line['original_reference'] : null,
-                        dueDate: ! empty($line['due_date']) ? (string) $line['due_date'] : null,
-                        notes: ! empty($line['notes']) ? (string) $line['notes'] : null,
-                        sourceIdentity: 'manual_web',
-                        rowsetContext: [
-                            'form_key' => $formKey,
-                            'row_index' => $index + 1,
-                            'total_rows' => $totalRows,
-                            'rowset_hash' => $rowsetHash,
-                        ],
-                    );
-                }
-            });
+            $action = app(PostOpeningTradeItemAction::class);
+            $action->executeForm(
+                company: $company,
+                side: $this->side,
+                partyId: (int) $this->party_id,
+                openingDate: $this->opening_date,
+                currencyCode: $this->currency_code,
+                exchangeRate: $isBase ? null : $this->exchange_rate,
+                rows: $rows,
+                actor: $actor,
+                formIdempotencyKey: $this->formIdempotencyKey,
+                sourceIdentity: 'manual_web',
+            );
 
             $partyName = $this->getPartyName();
             $this->successMessage = $this->side === OpeningTradeItem::SIDE_CUSTOMER
@@ -467,24 +362,26 @@ class OpeningTradeBalanceEntry extends Component
             try {
                 $rate = BigDecimal::of($this->exchange_rate);
                 if ($rate->isPositive()) {
-                    $totalAmt = BigDecimal::zero();
+                    $totalCarryingSixPlace = BigDecimal::zero();
                     if (! empty($this->amount)) {
                         $mainAmt = BigDecimal::of($this->amount);
                         if ($mainAmt->isPositive()) {
-                            $totalAmt = $totalAmt->plus($mainAmt);
+                            $rowCarrying = $mainAmt->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP);
+                            $totalCarryingSixPlace = $totalCarryingSixPlace->plus($rowCarrying);
                         }
                     }
                     foreach ($this->additional_lines as $line) {
-                        $lineAmtRaw = trim($line['amount']);
+                        $lineAmtRaw = trim((string) $line['amount']);
                         if ($lineAmtRaw !== '') {
                             $lineAmt = BigDecimal::of($lineAmtRaw);
                             if ($lineAmt->isPositive()) {
-                                $totalAmt = $totalAmt->plus($lineAmt);
+                                $rowCarrying = $lineAmt->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP);
+                                $totalCarryingSixPlace = $totalCarryingSixPlace->plus($rowCarrying);
                             }
                         }
                     }
-                    if ($totalAmt->isPositive()) {
-                        $carryingBasePreview = (string) $totalAmt->multipliedBy($rate)->toScale(2, RoundingMode::HALF_UP);
+                    if ($totalCarryingSixPlace->isPositive()) {
+                        $carryingBasePreview = (string) $totalCarryingSixPlace->toScale(2, RoundingMode::HALF_UP);
                     }
                 }
             } catch (\Throwable) {

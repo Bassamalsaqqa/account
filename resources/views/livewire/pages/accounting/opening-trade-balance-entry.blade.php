@@ -225,7 +225,7 @@
                                 $lAmt = \Brick\Math\BigDecimal::of($line['amount']);
                                 $lRate = \Brick\Math\BigDecimal::of($exchange_rate);
                                 if ($lAmt->isPositive() && $lRate->isPositive()) {
-                                    $lineBasePreview = (string) $lAmt->multipliedBy($lRate)->toScale(2, \Brick\Math\RoundingMode::HALF_UP);
+                                    $lineBasePreview = (string) $lAmt->multipliedBy($lRate)->toScale(6, \Brick\Math\RoundingMode::HALF_UP)->toScale(2, \Brick\Math\RoundingMode::HALF_UP);
                                 }
                             } catch (\Throwable) {}
                         @endphp

@@ -41,6 +41,7 @@ use App\Services\Purchasing\VendorPaymentHistoryCommands;
 use App\Services\Sales\SalesReconciliationService;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Feature\Phase8\TradeTestCase;
@@ -1030,6 +1031,113 @@ final class OpeningTradeSettlementTest extends TradeTestCase
         app(VendorPaymentHistoryCommands::class)->application($vendEvent->fresh());
 
         // Assert all six canonical reconciliation services pass
+        $this->assertAllSixReconciliations();
+    }
+
+    public function test_opening_reversal_date_must_respect_effective_settlement_and_parent_payment_reversal_dates_on_both_sides(): void
+    {
+        $this->activateUser($this->owner);
+
+        // 1. Customer Side
+        $custOpening = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '500.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'cust-open-rev-date-'.Str::ulid(),
+        );
+
+        $custPayment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-15',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '200.00',
+            'idempotency_key' => 'pmt-cust-date-test-'.Str::ulid(),
+            'allocations' => [],
+        ]);
+
+        app(ApplyCustomerPaymentCreditAction::class)->execute($custPayment->fresh(), $this->owner, [
+            'application_date' => '2026-01-15',
+            'idempotency_key' => 'pmt-cust-apply-date-'.Str::ulid(),
+            'allocations' => [
+                [
+                    'opening_trade_item_id' => $custOpening->id,
+                    'allocated_amount' => '200.00',
+                ],
+            ],
+        ]);
+
+        // Reverse payment with effective posting date 2026-02-10
+        app(ReverseCustomerPaymentAction::class)->execute($custPayment->fresh(), $this->owner, 'Reverse pmt', '2026-02-10');
+
+        // Attempt opening reversal on 2026-02-05: must be rejected because payment reversal took effect 2026-02-10
+        try {
+            app(ReverseOpeningTradeItemAction::class)->execute($custOpening->fresh(), $this->owner, 'Early reversal', '2026-02-05');
+            $this->fail('Opening reversal on 2026-02-05 must be rejected when payment reversal took effect 2026-02-10');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('cannot precede prerequisite settlement reversal date [2026-02-10]', $e->getMessage());
+        }
+
+        // Legitimate correction on 2026-02-10 succeeds
+        $reversedCust = app(ReverseOpeningTradeItemAction::class)->execute($custOpening->fresh(), $this->owner, 'Valid reversal', '2026-02-10');
+        $this->assertTrue($reversedCust->isReversed());
+
+        // 2. Vendor Side
+        $vendOpening = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_VENDOR,
+            partyId: $this->testVendor->id,
+            openingDate: '2026-01-01',
+            amount: '600.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'vend-open-rev-date-'.Str::ulid(),
+        );
+
+        $vendPayment = app(PostVendorPaymentAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->testVendor->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-15',
+            'payment_method' => VendorPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '300.00',
+            'idempotency_key' => 'pmt-vend-date-test-'.Str::ulid(),
+            'allocations' => [],
+        ]);
+
+        app(ApplyVendorPaymentCreditAction::class)->execute($vendPayment->fresh(), $this->owner, [
+            'application_date' => '2026-01-15',
+            'idempotency_key' => 'pmt-vend-apply-date-'.Str::ulid(),
+            'allocations' => [
+                [
+                    'opening_trade_item_id' => $vendOpening->id,
+                    'allocated_amount' => '300.00',
+                ],
+            ],
+        ]);
+
+        // Reverse vendor payment with effective posting date 2026-02-10
+        app(ReverseVendorPaymentAction::class)->execute($vendPayment->fresh(), $this->owner, 'Reverse vend pmt', '2026-02-10');
+
+        // Attempt opening reversal on 2026-02-05: rejected
+        try {
+            app(ReverseOpeningTradeItemAction::class)->execute($vendOpening->fresh(), $this->owner, 'Early reversal', '2026-02-05');
+            $this->fail('Opening reversal on 2026-02-05 must be rejected when vendor payment reversal took effect 2026-02-10');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('cannot precede prerequisite settlement reversal date [2026-02-10]', $e->getMessage());
+        }
+
+        // Legitimate correction on 2026-02-11 succeeds
+        $reversedVend = app(ReverseOpeningTradeItemAction::class)->execute($vendOpening->fresh(), $this->owner, 'Valid reversal', '2026-02-11');
+        $this->assertTrue($reversedVend->isReversed());
+
         $this->assertAllSixReconciliations();
     }
 }
