@@ -137,6 +137,9 @@ final class AuthController extends Controller
 
         $priorTeamId = getPermissionsTeamId();
         try {
+            // InnoDB may report ER_CHECKREAD (1020) after a competing recovery-code
+            // update. Laravel recognizes this concurrency error: retry the entire
+            // admission with fresh locked models, never just the failed query.
             return DB::transaction(function () use ($payload, $challenge, $ipKey, $actorKey, $candidateUser): JsonResponse {
                 // Discovery is a ceiling for this admission: newly granted companies require a fresh login.
                 // Locked current reads below may remove candidates, never widen this set.
@@ -202,6 +205,19 @@ final class AuthController extends Controller
                         status: 401
                     );
                 }
+
+                // The challenge was single-use reserved before admission. Re-read it
+                // on every attempt: waiting/retrying must not admit an expired or
+                // rebound challenge using the preliminary model snapshot.
+                $currentChallenge = MobileAuthChallenge::whereKey($challenge->id)->lockForUpdate()->first();
+                if ($currentChallenge === null || ! $currentChallenge->isConsumed()
+                    || $currentChallenge->isExpired()
+                    || $currentChallenge->device_id !== $payload['device_id']
+                    || ! $currentChallenge->verifyNonce($payload['nonce'])
+                    || ($currentChallenge->user_id !== null && (int) $currentChallenge->user_id !== (int) $user->id)) {
+                    return MobileApiBoundary::buildErrorResponse(code: 'INVALID_CREDENTIALS', message: 'Invalid credentials or challenge expired.', status: 401);
+                }
+                $challenge = $currentChallenge;
 
                 // 2. Lock & validate MobileDevice (hardware binding to user)
                 $device = MobileDevice::where('device_id', strtolower($payload['device_id']))->lockForUpdate()->first();
@@ -356,7 +372,7 @@ final class AuthController extends Controller
                 }
 
                 return $response;
-            });
+            }, attempts: 3);
         } finally {
             setPermissionsTeamId($priorTeamId);
         }
