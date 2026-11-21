@@ -10,19 +10,14 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
 
-// Ensure test administrative environment for DisposableMariaDbSchema
-putenv('APP_ENV=testing');
-putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
-putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
-putenv('PHASE8_TEST_DB_PORT=3342');
-putenv('PHASE8_TEST_DB_USERNAME=test_runner');
-putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
-$_ENV['APP_ENV'] = 'testing';
-$_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
-$_ENV['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
-$_ENV['PHASE8_TEST_DB_PORT'] = '3342';
-$_ENV['PHASE8_TEST_DB_USERNAME'] = 'test_runner';
-$_ENV['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+// Credentials must be exported by the caller; never load machine-specific files.
+if (getenv('APP_ENV') !== 'testing'
+    || getenv('PHASE8_ALLOW_DISPOSABLE_DB') !== '1'
+    || getenv('PHASE8_TEST_DB_HOST') !== '127.0.0.1'
+    || getenv('PHASE8_TEST_DB_PORT') !== '3342') {
+    throw new RuntimeException('Release UI requires explicit disposable testing configuration on 127.0.0.1:3342.');
+}
+DisposableMariaDbSchema::testSettings();
 
 $root = dirname(__DIR__, 3);
 
@@ -96,8 +91,9 @@ PHP;
     $env['DB_DATABASE'] = $schemaName;
     $env['DB_PORT'] = '3342';
     $env['DB_HOST'] = '127.0.0.1';
-    $env['DB_USERNAME'] = 'test_runner';
-    $env['DB_PASSWORD'] = '';
+    $settings = DisposableMariaDbSchema::testSettings();
+    $env['DB_USERNAME'] = $settings['USERNAME'];
+    $env['DB_PASSWORD'] = $settings['PASSWORD'];
     $env['SESSION_DRIVER'] = 'database';
     $env['CACHE_STORE'] = 'array';
     foreach (DisposableMariaDbSchema::testSettings() as $k => $v) {
@@ -146,13 +142,15 @@ PHP;
         'DB_HOST' => '127.0.0.1',
         'DB_PORT' => '3342',
         'DB_DATABASE' => $schemaName,
-        'DB_USERNAME' => 'test_runner',
-        'DB_PASSWORD' => '',
+        'DB_USERNAME' => $settings['USERNAME'],
+        'DB_PASSWORD' => $settings['PASSWORD'],
         'SESSION_DRIVER' => 'database',
         'SESSION_LIFETIME' => '120',
         'SESSION_SECURE_COOKIE' => 'false',
         'CACHE_STORE' => 'array',
         'VITE_APP_URL' => "http://127.0.0.1:{$port}",
+        'PHASE8_DISPOSABLE_DB_PROOF' => (string) ($env['PHASE8_DISPOSABLE_DB_PROOF'] ?? ''),
+        'PHASE8_DISPOSABLE_DB_NONCE' => (string) ($env['PHASE8_DISPOSABLE_DB_NONCE'] ?? ''),
         'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin',
         'HOME' => getenv('HOME') ?: sys_get_temp_dir(),
     ];

@@ -126,10 +126,13 @@ final class CheckHistory
             $documentKey = $incoming ? 'sales_invoice_id' : 'purchase_id';
             $initialIntent = [];
             foreach ($payment->allocations()->whereNull('application_event_id')->orderBy($documentKey)->get() as $allocation) {
-                $initialIntent[] = PaymentAllocationIntent::historicalRow($documentKey, (int) $allocation->getAttribute($documentKey),
+                $initialIntent[] = PaymentAllocationIntent::historicalRow($allocation->opening_trade_item_id !== null ? 'opening_trade_item_id' : $documentKey, (int) ($allocation->opening_trade_item_id ?? $allocation->getAttribute($documentKey)),
                     $allocation->allocated_amount, $allocation->payment_currency_amount, (int) $payment->allocation_version);
             }
-            if ($initialIntent !== PaymentAllocationIntent::normalize($payload['allocations'] ?? [], $documentKey)
+            if ((int) $payment->allocation_version === 3) {
+                $initialIntent = PaymentAllocationIntent::normalize($initialIntent, $documentKey);
+            }
+            if ($initialIntent !== PaymentAllocationIntent::forPayment($payload['allocations'] ?? [], $documentKey, (int) $company->id, $check->currency_code)
                 || $payment->idempotency_key !== 'check-payment:'.$check->public_id
                 || $payment->reference_number !== $check->check_number || $payment->notes !== $check->notes) {
                 throw new InvalidArgumentException('Check request does not own its linked Payment initial intent.');

@@ -14,6 +14,7 @@ use App\Models\Check;
 use App\Models\Company;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\Purchase;
 use App\Models\User;
@@ -65,28 +66,52 @@ final class VendorPaymentHistoryCommands
         $seen = [];
         $rows = $payment->allocations()->whereNull('application_event_id')->orderBy('id')->get();
         foreach ($rows as $row) {
-            $this->require(! isset($seen[$row->purchase_id]), 'Duplicate initial allocation');
-            $seen[$row->purchase_id] = true;
-            $purchase = $this->purchase($payment, $row, Carbon::parse($payment->payment_date)->toDateString());
-            $value = $this->positive($row->allocated_amount, $purchase->currency_code);
-            $book = $this->book($purchase, $row, $value);
-            $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
-            PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $purchase->currency_code, $payment->currency_code);
-            $used = $used->plus($paid);
-            $this->require($used->isLessThanOrEqualTo($amount), 'Payment over-allocation');
-            $target = $used->isEqualTo($amount) ? $base : $used->multipliedBy($fx->getValue())->toScale(6, RoundingMode::HALF_UP);
-            $segment = $target->minus($settled);
-            $settled = $target;
-            $this->allocation($row, $purchase, $payment, $book, $segment);
-            $delta = $segment->minus($book);
-            if ($delta->isPositive()) {
-                $loss = $loss->plus($delta);
+            $key = $row->opening_trade_item_id !== null ? 'opening:'.$row->opening_trade_item_id : 'purchase:'.$row->purchase_id;
+            $this->require(! isset($seen[$key]), 'Duplicate initial allocation');
+            $seen[$key] = true;
+            if ($row->opening_trade_item_id !== null) {
+                $openingItem = $this->openingTradeItem($payment, $row, Carbon::parse($payment->payment_date)->toDateString());
+                $value = $this->positive($row->allocated_amount, $openingItem->currency_code);
+                $book = $this->bookOpeningItem($openingItem, $row, $value);
+                $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
+                PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $openingItem->currency_code, $payment->currency_code);
+                $used = $used->plus($paid);
+                $this->require($used->isLessThanOrEqualTo($amount), 'Payment over-allocation');
+                $target = $used->isEqualTo($amount) ? $base : $used->multipliedBy($fx->getValue())->toScale(6, RoundingMode::HALF_UP);
+                $segment = $target->minus($settled);
+                $settled = $target;
+                $this->allocationOpeningItem($row, $openingItem, $payment, $book, $segment);
+                $delta = $segment->minus($book);
+                if ($delta->isPositive()) {
+                    $loss = $loss->plus($delta);
+                }
+                if ($delta->isNegative()) {
+                    $gain = $gain->plus($delta->abs());
+                }
+                $this->append($lines, $accounts['accounts_payable'], true, $book, "Vendor Payment {$payment->payment_number} AP Relief Opening #{$openingItem->public_id}", $openingItem->currency_code, $value, ExchangeRate::from($openingItem->exchange_rate));
+                $intent[] = PaymentAllocationIntent::historicalRow('opening_trade_item_id', (int) $openingItem->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $payment->allocation_version);
+            } else {
+                $purchase = $this->purchase($payment, $row, Carbon::parse($payment->payment_date)->toDateString());
+                $value = $this->positive($row->allocated_amount, $purchase->currency_code);
+                $book = $this->book($purchase, $row, $value);
+                $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
+                PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $purchase->currency_code, $payment->currency_code);
+                $used = $used->plus($paid);
+                $this->require($used->isLessThanOrEqualTo($amount), 'Payment over-allocation');
+                $target = $used->isEqualTo($amount) ? $base : $used->multipliedBy($fx->getValue())->toScale(6, RoundingMode::HALF_UP);
+                $segment = $target->minus($settled);
+                $settled = $target;
+                $this->allocation($row, $purchase, $payment, $book, $segment);
+                $delta = $segment->minus($book);
+                if ($delta->isPositive()) {
+                    $loss = $loss->plus($delta);
+                }
+                if ($delta->isNegative()) {
+                    $gain = $gain->plus($delta->abs());
+                }
+                $this->append($lines, $accounts['accounts_payable'], true, $book, "Vendor Payment {$payment->payment_number} AP Relief Pur #{$purchase->id}", $purchase->currency_code, $value, ExchangeRate::from($purchase->exchange_rate));
+                $intent[] = PaymentAllocationIntent::historicalRow('purchase_id', (int) $purchase->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $payment->allocation_version);
             }
-            if ($delta->isNegative()) {
-                $gain = $gain->plus($delta->abs());
-            }
-            $this->append($lines, $accounts['accounts_payable'], true, $book, "Vendor Payment {$payment->payment_number} AP Relief Pur #{$purchase->id}", $purchase->currency_code, $value, ExchangeRate::from($purchase->exchange_rate));
-            $intent[] = PaymentAllocationIntent::historicalRow('purchase_id', (int) $purchase->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $payment->allocation_version);
         }
         $advance = $amount->minus($used);
         if ($advance->isPositive()) {
@@ -98,7 +123,11 @@ final class VendorPaymentHistoryCommands
         if ($gain->isPositive()) {
             $this->append($lines, $accounts['fx_gain'], false, $gain, "Vendor Payment {$payment->payment_number} Realized FX Gain");
         }
-        usort($intent, fn (array $a, array $b): int => $a['purchase_id'] <=> $b['purchase_id']);
+        if ((int) $payment->allocation_version === 3) {
+            usort($intent, fn (array $a, array $b): int => ($a['kind'] ?? 'purchase').':'.($a['id'] ?? $a['purchase_id'] ?? 0) <=> ($b['kind'] ?? 'purchase').':'.($b['id'] ?? $b['purchase_id'] ?? 0));
+        } else {
+            usort($intent, fn (array $a, array $b): int => ($a['purchase_id'] ?? 0) <=> ($b['purchase_id'] ?? 0));
+        }
         $payload = [
             'company_id' => $cid, 'actor_id' => (int) $payment->created_by,
             'vendor_id' => (int) $vendor->id, 'money_account_id' => $money?->id,
@@ -141,32 +170,61 @@ final class VendorPaymentHistoryCommands
         $intent = [];
         $seen = [];
         foreach ($rows as $row) {
+            $key = $row->opening_trade_item_id !== null ? 'opening:'.$row->opening_trade_item_id : 'purchase:'.$row->purchase_id;
             $this->require((int) $row->vendor_payment_id === (int) $payment->id
-                && (int) $row->application_event_id === (int) $event->id && ! isset($seen[$row->purchase_id]), 'Application parent/set');
-            $seen[$row->purchase_id] = true;
-            $purchase = $this->purchase($payment, $row, $date);
-            $value = $this->positive($row->allocated_amount, $purchase->currency_code);
-            $book = $this->book($purchase, $row, $value);
-            $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
-            PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $purchase->currency_code, $payment->currency_code);
-            $used = $used->plus($paid);
-            $this->require($used->isLessThanOrEqualTo($payment->amount), 'Advance over-consumption');
-            $target = $used->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
-                : $used->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
-            $segment = $target->minus($usedBase);
-            $usedBase = $target;
-            $this->allocation($row, $purchase, $payment, $book, $segment);
-            $delta = $segment->minus($book);
-            if ($delta->isPositive()) {
-                $this->append($lines, $accounts['fx_loss'], true, $delta, 'Vendor advance application realized FX loss');
-                $this->append($lines, $accounts['accounts_payable'], false, $delta, 'Vendor advance application AP delta');
-            } elseif ($delta->isNegative()) {
-                $this->append($lines, $accounts['accounts_payable'], true, $delta->abs(), 'Vendor advance application AP delta');
-                $this->append($lines, $accounts['fx_gain'], false, $delta->abs(), 'Vendor advance application realized FX gain');
+                && (int) $row->application_event_id === (int) $event->id && ! isset($seen[$key]), 'Application parent/set');
+            $seen[$key] = true;
+            if ($row->opening_trade_item_id !== null) {
+                $openingItem = $this->openingTradeItem($payment, $row, $date);
+                $value = $this->positive($row->allocated_amount, $openingItem->currency_code);
+                $book = $this->bookOpeningItem($openingItem, $row, $value);
+                $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
+                PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $openingItem->currency_code, $payment->currency_code);
+                $used = $used->plus($paid);
+                $this->require($used->isLessThanOrEqualTo($payment->amount), 'Advance over-consumption');
+                $target = $used->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
+                    : $used->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                $segment = $target->minus($usedBase);
+                $usedBase = $target;
+                $this->allocationOpeningItem($row, $openingItem, $payment, $book, $segment);
+                $delta = $segment->minus($book);
+                if ($delta->isPositive()) {
+                    $this->append($lines, $accounts['fx_loss'], true, $delta, 'Vendor advance application realized FX loss');
+                    $this->append($lines, $accounts['accounts_payable'], false, $delta, 'Vendor advance application AP delta');
+                } elseif ($delta->isNegative()) {
+                    $this->append($lines, $accounts['accounts_payable'], true, $delta->abs(), 'Vendor advance application AP delta');
+                    $this->append($lines, $accounts['fx_gain'], false, $delta->abs(), 'Vendor advance application realized FX gain');
+                }
+                $intent[] = PaymentAllocationIntent::historicalRow('opening_trade_item_id', (int) $openingItem->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $event->allocation_version);
+            } else {
+                $purchase = $this->purchase($payment, $row, $date);
+                $value = $this->positive($row->allocated_amount, $purchase->currency_code);
+                $book = $this->book($purchase, $row, $value);
+                $paid = $this->positive($row->payment_currency_amount, $payment->currency_code);
+                PaymentAllocationIntent::amounts(['allocated_amount' => (string) $value, 'payment_currency_amount' => (string) $paid], $purchase->currency_code, $payment->currency_code);
+                $used = $used->plus($paid);
+                $this->require($used->isLessThanOrEqualTo($payment->amount), 'Advance over-consumption');
+                $target = $used->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
+                    : $used->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                $segment = $target->minus($usedBase);
+                $usedBase = $target;
+                $this->allocation($row, $purchase, $payment, $book, $segment);
+                $delta = $segment->minus($book);
+                if ($delta->isPositive()) {
+                    $this->append($lines, $accounts['fx_loss'], true, $delta, 'Vendor advance application realized FX loss');
+                    $this->append($lines, $accounts['accounts_payable'], false, $delta, 'Vendor advance application AP delta');
+                } elseif ($delta->isNegative()) {
+                    $this->append($lines, $accounts['accounts_payable'], true, $delta->abs(), 'Vendor advance application AP delta');
+                    $this->append($lines, $accounts['fx_gain'], false, $delta->abs(), 'Vendor advance application realized FX gain');
+                }
+                $intent[] = PaymentAllocationIntent::historicalRow('purchase_id', (int) $purchase->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $event->allocation_version);
             }
-            $intent[] = PaymentAllocationIntent::historicalRow('purchase_id', (int) $purchase->id, (string) $value->toScale(6), (string) $paid->toScale(6), (int) $event->allocation_version);
         }
-        usort($intent, fn (array $a, array $b): int => $a['purchase_id'] <=> $b['purchase_id']);
+        if ((int) $event->allocation_version === 3) {
+            usort($intent, fn (array $a, array $b): int => ($a['kind'] ?? 'purchase').':'.($a['id'] ?? $a['purchase_id'] ?? 0) <=> ($b['kind'] ?? 'purchase').':'.($b['id'] ?? $b['purchase_id'] ?? 0));
+        } else {
+            usort($intent, fn (array $a, array $b): int => ($a['purchase_id'] ?? 0) <=> ($b['purchase_id'] ?? 0));
+        }
         $this->require($event->request_hash === ApplyVendorPaymentCreditAction::requestHash((int) $event->company_id,
             (int) $payment->id, (int) $event->applied_by, $date, $intent), 'Application request identity');
 
@@ -222,6 +280,50 @@ final class VendorPaymentHistoryCommands
         app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
 
         return $purchase;
+    }
+
+    private function openingTradeItem(VendorPayment $payment, VendorPaymentAllocation $row, string $date): OpeningTradeItem
+    {
+        /** @var OpeningTradeItem $item */
+        $item = OpeningTradeItem::where('company_id', $payment->company_id)->findOrFail($row->opening_trade_item_id);
+        $this->require((int) $row->company_id === (int) $payment->company_id
+            && (int) $row->vendor_payment_id === (int) $payment->id
+            && (int) $item->vendor_id === (int) $payment->vendor_id
+            && $item->side === OpeningTradeItem::SIDE_VENDOR
+            && $date >= Carbon::parse($item->opening_date)->toDateString(), 'Allocation source identity/date');
+        $this->require($item->isPosted(), 'Opening trade item must be posted');
+
+        return $item;
+    }
+
+    private function bookOpeningItem(OpeningTradeItem $item, VendorPaymentAllocation $row, BigDecimal $value): BigDecimal
+    {
+        $boundary = PostingBatch::where('company_id', $row->company_id)->find($row->prior_posting_batch_id);
+        $this->require($boundary !== null && (int) $boundary->id >= (int) $item->posting_batch_id, 'Historical accounting boundary');
+        $ownBatch = PostingBatch::where('company_id', $row->company_id)
+            ->where('source_type', $row->application_event_id === null ? 'vendor_payment' : 'vendor_payment_application')
+            ->where('source_id', $row->application_event_id ?? $row->vendor_payment_id)->first();
+        if ($ownBatch !== null) {
+            $previous = PostingBatch::where('company_id', $row->company_id)->where('id', '<', $ownBatch->id)->max('id');
+            $this->require((int) $previous === (int) $row->prior_posting_batch_id, 'Exact prior accounting boundary');
+        }
+        $prior = $this->history->beforeOpeningItem((int) $item->company_id, (int) $item->id, (int) $row->prior_posting_batch_id, (int) $row->id);
+        $cumulative = $prior['amount']->plus($value);
+        $this->require($cumulative->isLessThanOrEqualTo($item->amount), 'Historical over-allocation');
+        $target = $cumulative->isEqualTo($item->amount) ? BigDecimal::of($item->carrying_value_base)
+            : $cumulative->multipliedBy($item->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+
+        return $target->minus($prior['base']);
+    }
+
+    private function allocationOpeningItem(VendorPaymentAllocation $row, OpeningTradeItem $item, VendorPayment $payment, BigDecimal $book, BigDecimal $segment): void
+    {
+        $this->require($segment->isEqualTo($row->settlement_base_value), 'settlement base mismatch');
+        $this->require($book->isPositive() && $segment->isPositive()
+            && $book->isEqualTo($row->base_amount_applied_to_payable)
+            && $segment->minus($book)->isEqualTo($row->realized_fx_gain_loss_base)
+            && BigDecimal::of($row->purchase_exchange_rate)->isEqualTo($item->exchange_rate)
+            && BigDecimal::of($row->payment_exchange_rate)->isEqualTo($payment->exchange_rate), 'Allocation exact values');
     }
 
     private function book(Purchase $purchase, VendorPaymentAllocation $row, BigDecimal $value): BigDecimal

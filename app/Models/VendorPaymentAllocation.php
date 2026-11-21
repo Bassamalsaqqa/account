@@ -22,7 +22,7 @@ use InvalidArgumentException;
  * @property int $id
  * @property int $company_id
  * @property int $vendor_payment_id
- * @property int $purchase_id
+ * @property int|null $purchase_id
  * @property string $payment_currency_amount
  * @property string $allocated_amount
  * @property string $purchase_exchange_rate
@@ -46,6 +46,7 @@ class VendorPaymentAllocation extends Model
         'company_id',
         'vendor_payment_id',
         'purchase_id',
+        'opening_trade_item_id',
         'allocated_amount',
         'payment_currency_amount',
         'purchase_exchange_rate',
@@ -131,12 +132,23 @@ class VendorPaymentAllocation extends Model
             if (empty($alloc->prior_posting_batch_id)) {
                 $alloc->prior_posting_batch_id = (int) DB::table('posting_batches')->where('company_id', $payment->company_id)->max('id');
             }
+            if (($alloc->purchase_id !== null && $alloc->opening_trade_item_id !== null) || ($alloc->purchase_id === null && $alloc->opening_trade_item_id === null)) {
+                throw new InvalidArgumentException('Vendor payment allocation must target exactly one of purchase_id or opening_trade_item_id.');
+            }
             if ($alloc->purchase_id) {
                 $purchase = Purchase::withoutGlobalScopes()->find($alloc->purchase_id);
                 if ($purchase === null || (int) $purchase->company_id !== (int) $payment->company_id
                     || (int) $alloc->company_id !== (int) $payment->company_id
                     || (int) $purchase->vendor_id !== (int) $payment->vendor_id) {
                     throw new InvalidArgumentException('Vendor payment and allocated purchase must belong to the same company, vendor, and currency.');
+                }
+            } elseif ($alloc->opening_trade_item_id) {
+                $item = OpeningTradeItem::withoutGlobalScopes()->find($alloc->opening_trade_item_id);
+                if ($item === null || (int) $item->company_id !== (int) $payment->company_id
+                    || (int) $alloc->company_id !== (int) $payment->company_id
+                    || (int) $item->vendor_id !== (int) $payment->vendor_id
+                    || $item->side !== OpeningTradeItem::SIDE_VENDOR) {
+                    throw new InvalidArgumentException('Vendor payment and allocated opening trade item must belong to the same company and vendor.');
                 }
             }
         });
@@ -229,5 +241,13 @@ class VendorPaymentAllocation extends Model
     public function purchase(): BelongsTo
     {
         return $this->belongsTo(Purchase::class);
+    }
+
+    /**
+     * @return BelongsTo<OpeningTradeItem, $this>
+     */
+    public function openingTradeItem(): BelongsTo
+    {
+        return $this->belongsTo(OpeningTradeItem::class);
     }
 }

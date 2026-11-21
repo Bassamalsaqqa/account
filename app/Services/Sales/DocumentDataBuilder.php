@@ -9,6 +9,7 @@ use App\Models\Company;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
 use App\Models\CustomerPaymentApplicationEvent;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\Quotation;
 use App\Models\SalesInvoice;
@@ -131,8 +132,11 @@ final class DocumentDataBuilder
                 throw new InvalidArgumentException('Receipt exceeds the supported allocation limit.');
             }
             foreach ($originalAllocations->orderBy('id')->get() as $allocation) {
-                $invoice = SalesInvoice::where('company_id', $source->company_id)->findOrFail($allocation->sales_invoice_id);
-                $lines[] = ['item_description' => $invoice->invoice_number ?? '', 'quantity' => '1',
+                $invoice = $allocation->opening_trade_item_id !== null
+                    ? OpeningTradeItem::where('company_id', $source->company_id)->where('side', OpeningTradeItem::SIDE_CUSTOMER)->where('customer_id', $source->customer_id)->findOrFail($allocation->opening_trade_item_id)
+                    : SalesInvoice::where('company_id', $source->company_id)->findOrFail($allocation->sales_invoice_id);
+                $allocationDescription = $invoice instanceof OpeningTradeItem ? __('accounting.opening_balance', [], $locale).' — '.$invoice->public_id : $invoice->invoice_number;
+                $lines[] = ['item_description' => $allocationDescription, 'quantity' => '1',
                     'unit_name' => null, 'sku' => null, 'unit_price' => (string) $allocation->allocated_amount,
                     'discount' => '0', 'tax' => '0', 'total' => (string) $allocation->allocated_amount,
                     'currency_code' => $invoice->currency_code, 'payment_currency_code' => $source->currency_code,
@@ -146,10 +150,13 @@ final class DocumentDataBuilder
                     throw new InvalidArgumentException('Receipt exceeds the supported allocation limit.');
                 }
                 foreach ($later->orderBy('id')->get() as $allocation) {
-                    $invoice = SalesInvoice::where('company_id', $source->company_id)->findOrFail($allocation->sales_invoice_id);
+                    $invoice = $allocation->opening_trade_item_id !== null
+                    ? OpeningTradeItem::where('company_id', $source->company_id)->where('side', OpeningTradeItem::SIDE_CUSTOMER)->where('customer_id', $source->customer_id)->findOrFail($allocation->opening_trade_item_id)
+                    : SalesInvoice::where('company_id', $source->company_id)->findOrFail($allocation->sales_invoice_id);
+                    $allocationDescription = $invoice instanceof OpeningTradeItem ? __('accounting.opening_balance', [], $locale).' — '.$invoice->public_id : $invoice->invoice_number;
                     $event = CustomerPaymentApplicationEvent::where('company_id', $source->company_id)
                         ->where('customer_payment_id', $source->id)->findOrFail($allocation->application_event_id);
-                    $applications[] = ['item_description' => $invoice->invoice_number, 'application_date' => Carbon::parse($event->application_date)->format('Y-m-d'),
+                    $applications[] = ['item_description' => $allocationDescription, 'application_date' => Carbon::parse($event->application_date)->format('Y-m-d'),
                         'status' => $event->reversed_at === null ? 'posted' : 'reversed',
                         'currency_code' => $invoice->currency_code, 'total' => (string) $allocation->allocated_amount,
                         'payment_currency_code' => $source->currency_code, 'payment_currency_amount' => (string) $allocation->payment_currency_amount,

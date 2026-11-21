@@ -79,8 +79,11 @@ final class SalesCorrectionAudit
             $intent = [];
             $expected = [];
             foreach ($rows as $row) {
-                $intent[] = PaymentAllocationIntent::historicalRow('sales_invoice_id', (int) $row->sales_invoice_id, $row->allocated_amount, $row->payment_currency_amount, (int) $event->allocation_version);
-                $invoice = DB::table('sales_invoices')->where('id', $row->sales_invoice_id)->first();
+                $intent[] = PaymentAllocationIntent::historicalRow($row->opening_trade_item_id !== null ? 'opening_trade_item_id' : 'sales_invoice_id', (int) ($row->opening_trade_item_id ?? $row->sales_invoice_id), $row->allocated_amount, $row->payment_currency_amount, (int) $event->allocation_version);
+                $isOpening = $row->opening_trade_item_id !== null;
+                $invoice = DB::table($isOpening ? 'opening_trade_items' : 'sales_invoices')->where('id', $row->opening_trade_item_id ?? $row->sales_invoice_id)->first();
+                $total = $isOpening ? ($invoice->amount_currency ?? '0') : ($invoice->grand_total_currency ?? '0');
+                $baseTotal = $isOpening ? ($invoice->carrying_value_base ?? '0') : ($invoice->grand_total_base ?? '0');
                 if ($invoice === null || $invoice->posting_batch_id === null || (int) $row->company_id !== $companyId || (int) $row->customer_payment_id !== (int) $payment->id
                     || (int) $invoice->company_id !== $companyId || (int) $invoice->customer_id !== (int) $payment->customer_id) {
                     $errors[] = "$label allocation tenant/customer/currency mismatch.";
@@ -97,13 +100,13 @@ final class SalesCorrectionAudit
 
                     continue;
                 }
-                $prior = app(ReceivableReliefHistory::class)->before($companyId, (int) $invoice->id, (int) $row->prior_posting_batch_id, (int) $row->id);
+                $prior = app(ReceivableReliefHistory::class)->{($isOpening ? 'beforeOpeningItem' : 'before')}($companyId, (int) $invoice->id, (int) $row->prior_posting_batch_id, (int) $row->id);
                 $cumulative = $prior['amount']->plus($row->allocated_amount);
-                $target = $cumulative->isEqualTo($invoice->grand_total_currency) ? BigDecimal::of($invoice->grand_total_base)
+                $target = $cumulative->isEqualTo($total) ? BigDecimal::of($baseTotal)
                     : $cumulative->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 $book = $target->minus($prior['base']);
                 $fx = BigDecimal::of($row->settlement_base_value)->minus($book);
-                if ($cumulative->isGreaterThan($invoice->grand_total_currency) || ! $book->isEqualTo($row->base_amount_applied_to_receivable)
+                if ($cumulative->isGreaterThan($total) || ! $book->isEqualTo($row->base_amount_applied_to_receivable)
                     || ! $fx->isEqualTo($row->realized_fx_gain_loss_base) || ! BigDecimal::of($row->allocated_amount)->isPositive()
                     || ! BigDecimal::of($row->invoice_exchange_rate)->isEqualTo($invoice->exchange_rate)
                     || ! BigDecimal::of($row->payment_exchange_rate)->isEqualTo($payment->exchange_rate)) {
@@ -111,6 +114,9 @@ final class SalesCorrectionAudit
                 }
                 $this->add($expected, (int) ($accounts['accounts_receivable'] ?? 0), $fx);
                 $this->add($expected, (int) ($accounts[$fx->isNegative() ? 'fx_loss' : 'fx_gain'] ?? 0), $fx->negated());
+            }
+            if ((int) $event->allocation_version === 3) {
+                $intent = PaymentAllocationIntent::normalize($intent, 'sales_invoice_id');
             }
             if ($event->request_hash !== ApplyCustomerPaymentCreditAction::requestHash($companyId, (int) $payment->id, (int) $event->applied_by, $event->application_date, $intent)
                 || ! preg_match('/^[A-Za-z0-9:_-]{1,128}$/D', $event->idempotency_key)) {

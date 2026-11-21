@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Models\OpeningTradeItem;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\VendorPaymentAllocation;
@@ -46,6 +47,33 @@ final class PayableBookValue
         $target = $cumulative->isEqualTo(BigDecimal::of((string) $purchase->grand_total_currency))
             ? BigDecimal::of((string) $purchase->grand_total_base)
             : $cumulative->multipliedBy($purchase->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+
+        return $target->minus($usedBase)->toScale(6);
+    }
+
+    public function reliefOpeningItem(OpeningTradeItem $item, BigDecimal $amount, ?int $excludingAllocationId = null): BigDecimal
+    {
+        $usedAmount = BigDecimal::zero();
+        $usedBase = BigDecimal::zero();
+
+        $allocations = VendorPaymentAllocation::where('company_id', $item->company_id)
+            ->where('opening_trade_item_id', $item->id)
+            ->active()
+            ->lockForUpdate();
+
+        if ($excludingAllocationId !== null) {
+            $allocations->where('id', '!=', $excludingAllocationId);
+        }
+
+        foreach ($allocations->get() as $allocation) {
+            $usedAmount = $usedAmount->plus(BigDecimal::of((string) $allocation->allocated_amount));
+            $usedBase = $usedBase->plus(BigDecimal::of((string) $allocation->base_amount_applied_to_payable));
+        }
+
+        $cumulative = $usedAmount->plus($amount);
+        $target = $cumulative->isEqualTo(BigDecimal::of((string) $item->amount_currency))
+            ? BigDecimal::of((string) $item->carrying_value_base)
+            : $cumulative->multipliedBy(BigDecimal::of((string) $item->exchange_rate))->toScale(6, RoundingMode::HALF_UP);
 
         return $target->minus($usedBase)->toScale(6);
     }

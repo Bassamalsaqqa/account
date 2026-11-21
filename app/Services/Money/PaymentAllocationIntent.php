@@ -4,16 +4,29 @@ declare(strict_types=1);
 
 namespace App\Services\Money;
 
+use App\Models\OpeningTradeItem;
+use App\Models\Purchase;
+use App\Models\SalesInvoice;
 use App\Services\Sales\ReceiptRequestValues;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
 
-/** Version 1 byte-compatible request identity; version 2 explicitly preserves BOTH currencies. */
+/**
+ * Version 1: byte-compatible legacy request identity ($documentKey, allocated_amount).
+ * Version 2: explicitly preserves BOTH currencies ($documentKey, allocated_amount, payment_currency_amount).
+ * Version 3: typed intent (kind, id) or explicit opening_trade_item_id preserving distinct IDs (e.g. invoice 42 vs opening item 42).
+ */
 final class PaymentAllocationIntent
 {
     /** @param list<array<string, mixed>> $inputs */
     public static function version(array $inputs): int
     {
+        foreach ($inputs as $input) {
+            if (array_key_exists('kind', $input) || array_key_exists('target_type', $input) || array_key_exists('opening_trade_item_id', $input)) {
+                return 3;
+            }
+        }
+
         foreach ($inputs as $input) {
             if (array_key_exists('payment_currency_amount', $input)) {
                 return 2;
@@ -23,34 +36,157 @@ final class PaymentAllocationIntent
         return 1;
     }
 
-    /** @param list<array<string, mixed>> $inputs
+    /**
+     * @param  list<array<string, mixed>>  $inputs
      * @return list<array<string, mixed>>
      */
     public static function normalize(array $inputs, string $documentKey): array
     {
         $version = self::version($inputs);
+
+        if ($version < 3) {
+            $grouped = [];
+            foreach ($inputs as $input) {
+                $id = ReceiptRequestValues::id($input[$documentKey]);
+                $amount = BigDecimal::of(ReceiptRequestValues::decimal($input['allocated_amount'], 6));
+                $paid = $version === 1 ? $amount : BigDecimal::of(ReceiptRequestValues::decimal($input['payment_currency_amount'] ?? null, 6));
+                $previous = $grouped[$id] ?? ['amount' => BigDecimal::zero(), 'paid' => BigDecimal::zero()];
+                $grouped[$id] = ['amount' => $previous['amount']->plus($amount), 'paid' => $previous['paid']->plus($paid)];
+            }
+            ksort($grouped, SORT_NUMERIC);
+            $intent = [];
+            foreach ($grouped as $id => $totals) {
+                $row = [$documentKey => $id, 'allocated_amount' => (string) $totals['amount']->toScale(6)];
+                if ($version === 2) {
+                    $row['payment_currency_amount'] = (string) $totals['paid']->toScale(6);
+                }
+                $intent[] = $row;
+            }
+
+            return $intent;
+        }
+
+        // Version 3: Typed target (kind, id) ensuring IDs like 42 for invoice and 42 for opening item never collide.
+        $defaultKind = match ($documentKey) {
+            'sales_invoice_id' => 'invoice',
+            'purchase_id' => 'purchase',
+            default => 'document',
+        };
+
         $grouped = [];
         foreach ($inputs as $input) {
-            $id = ReceiptRequestValues::id($input[$documentKey]);
-            $amount = BigDecimal::of(ReceiptRequestValues::decimal($input['allocated_amount'], 6));
-            $paid = $version === 1 ? $amount : BigDecimal::of(ReceiptRequestValues::decimal($input['payment_currency_amount'] ?? null, 6));
-            $previous = $grouped[$id] ?? ['amount' => BigDecimal::zero(), 'paid' => BigDecimal::zero()];
-            $grouped[$id] = ['amount' => $previous['amount']->plus($amount), 'paid' => $previous['paid']->plus($paid)];
-        }
-        ksort($grouped, SORT_NUMERIC);
-        $intent = [];
-        foreach ($grouped as $id => $totals) {
-            $row = [$documentKey => $id, 'allocated_amount' => (string) $totals['amount']->toScale(6)];
-            if ($version === 2) {
-                $row['payment_currency_amount'] = (string) $totals['paid']->toScale(6);
+            $isOpening = array_key_exists('opening_trade_item_id', $input) && $input['opening_trade_item_id'] !== null;
+            $kind = $isOpening
+                ? 'opening_trade_item'
+                : (string) ($input['kind'] ?? $input['target_type'] ?? $defaultKind);
+
+            $kind = match ($kind) {
+                'sales_invoice' => 'invoice',
+                'opening_trade_item', 'invoice', 'purchase' => $kind,
+                default => throw new InvalidArgumentException('Unknown allocation target kind.'),
+            };
+            if ($kind !== 'opening_trade_item' && $kind !== $defaultKind) {
+                throw new InvalidArgumentException('Allocation target kind does not match this payment.');
             }
+            if ($isOpening && isset($input[$documentKey])) {
+                throw new InvalidArgumentException('An allocation must identify exactly one target.');
+            }
+
+            $id = $isOpening
+                ? ReceiptRequestValues::id($input['opening_trade_item_id'])
+                : (isset($input['id']) ? ReceiptRequestValues::id($input['id']) : ReceiptRequestValues::id($input[$documentKey]));
+
+            $compositeKey = "{$kind}:{$id}";
+            $amount = BigDecimal::of(ReceiptRequestValues::decimal($input['allocated_amount'], 6));
+            $hasPaymentCurrencyAmount = array_key_exists('payment_currency_amount', $input);
+            $paid = $hasPaymentCurrencyAmount
+                ? BigDecimal::of(ReceiptRequestValues::decimal($input['payment_currency_amount'], 6))
+                : null;
+
+            $previous = $grouped[$compositeKey] ?? [
+                'kind' => $kind,
+                'id' => $id,
+                'amount' => BigDecimal::zero(),
+                'paid' => null,
+                'hasPaid' => false,
+            ];
+
+            if (isset($grouped[$compositeKey]) && $previous['hasPaid'] !== $hasPaymentCurrencyAmount) {
+                throw new InvalidArgumentException('Cannot mix explicit and omitted payment-currency amounts for the same target.');
+            }
+
+            $newPaid = null;
+            if ($hasPaymentCurrencyAmount) {
+                $newPaid = $previous['paid'] !== null ? $previous['paid']->plus($paid) : $paid;
+            }
+
+            $grouped[$compositeKey] = [
+                'kind' => $kind,
+                'id' => $id,
+                'amount' => $previous['amount']->plus($amount),
+                'paid' => $newPaid,
+                'hasPaid' => $hasPaymentCurrencyAmount,
+            ];
+        }
+
+        ksort($grouped, SORT_STRING);
+        $intent = [];
+        foreach ($grouped as $data) {
+            $row = [
+                'kind' => $data['kind'],
+                'id' => $data['id'],
+                'allocated_amount' => (string) $data['amount']->toScale(6),
+            ];
+
+            if ($data['hasPaid'] && $data['paid'] !== null) {
+                $row['payment_currency_amount'] = (string) $data['paid']->toScale(6);
+            }
+
+            if ($data['kind'] === 'opening_trade_item') {
+                $row['opening_trade_item_id'] = $data['id'];
+            } else {
+                $row[$documentKey] = $data['id'];
+            }
+
             $intent[] = $row;
         }
 
         return $intent;
     }
 
-    /** @param array<string, mixed> $input
+    /**
+     * Resolve omitted typed amounts only after the target currency is known.
+     *
+     * @param  list<array<string, mixed>>  $inputs
+     * @return list<array<string, mixed>>
+     */
+    public static function forPayment(array $inputs, string $documentKey, int $companyId, string $paymentCurrency): array
+    {
+        $intent = self::normalize($inputs, $documentKey);
+        if (self::version($inputs) !== 3) {
+            return $intent;
+        }
+        foreach ($intent as &$row) {
+            if (array_key_exists('payment_currency_amount', $row)) {
+                continue;
+            }
+            $model = match ($row['kind']) {
+                'opening_trade_item' => OpeningTradeItem::class,
+                'invoice' => SalesInvoice::class,
+                'purchase' => Purchase::class,
+                default => throw new InvalidArgumentException('Unknown allocation target kind.'),
+            };
+            $target = $model::where('company_id', $companyId)->findOrFail($row['id']);
+            self::amounts($row, $target->currency_code, $paymentCurrency);
+            $row['payment_currency_amount'] = $row['allocated_amount'];
+        }
+        unset($row);
+
+        return self::normalize($intent, $documentKey);
+    }
+
+    /**
+     * @param  array<string, mixed>  $input
      * @return array{document: BigDecimal, payment: BigDecimal}
      */
     public static function amounts(array $input, string $documentCurrency, string $paymentCurrency): array
@@ -70,14 +206,28 @@ final class PaymentAllocationIntent
     /** @return array<string, mixed> */
     public static function historicalRow(string $documentKey, int $id, string $documentAmount, string $paymentAmount, int $version): array
     {
-        if (! in_array($version, [1, 2], true)) {
+        if (! in_array($version, [1, 2, 3], true)) {
             throw new InvalidArgumentException('Unknown allocation history version.');
         }
+
         $row = [$documentKey => $id, 'allocated_amount' => $documentAmount];
-        if ($version === 2) {
+
+        if ($version >= 2) {
             $row['payment_currency_amount'] = $paymentAmount;
         } elseif (! BigDecimal::of($documentAmount)->isEqualTo($paymentAmount)) {
             throw new InvalidArgumentException('Legacy allocation payment-currency amount must equal its document amount.');
+        }
+
+        if ($version === 3) {
+            $row['id'] = $id;
+            $row['kind'] = match ($documentKey) {
+                'opening_trade_item_id' => 'opening_trade_item',
+                'sales_invoice_id' => 'invoice',
+                'purchase_id' => 'purchase',
+                default => 'document',
+            };
+
+            return self::normalize([$row], $documentKey === 'opening_trade_item_id' ? 'sales_invoice_id' : $documentKey)[0];
         }
 
         return $row;

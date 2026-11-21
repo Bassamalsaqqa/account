@@ -26,6 +26,7 @@ class CustomerPaymentAllocation extends Model
         'company_id',
         'customer_payment_id',
         'sales_invoice_id',
+        'opening_trade_item_id',
         'allocated_amount',
         'payment_currency_amount',
         'invoice_exchange_rate',
@@ -62,10 +63,18 @@ class CustomerPaymentAllocation extends Model
                 throw new \InvalidArgumentException('Cannot add allocations to a reversed customer payment.');
             }
             $alloc->prior_posting_batch_id = (int) DB::table('posting_batches')->where('company_id', $payment->company_id)->max('id');
+            if (($alloc->sales_invoice_id !== null && $alloc->opening_trade_item_id !== null) || ($alloc->sales_invoice_id === null && $alloc->opening_trade_item_id === null)) {
+                throw new \InvalidArgumentException('Customer payment allocation must target exactly one of sales_invoice_id or opening_trade_item_id.');
+            }
             if ($alloc->sales_invoice_id) {
                 $invoice = SalesInvoice::withoutGlobalScopes()->find($alloc->sales_invoice_id);
                 if ($invoice === null || (int) $invoice->company_id !== (int) $payment->company_id || (int) $alloc->company_id !== (int) $payment->company_id || (int) $invoice->customer_id !== (int) $payment->customer_id) {
                     throw new \InvalidArgumentException('Customer payment and allocated invoice must belong to the same company.');
+                }
+            } elseif ($alloc->opening_trade_item_id) {
+                $item = OpeningTradeItem::withoutGlobalScopes()->find($alloc->opening_trade_item_id);
+                if ($item === null || (int) $item->company_id !== (int) $payment->company_id || (int) $alloc->company_id !== (int) $payment->company_id || (int) $item->customer_id !== (int) $payment->customer_id || $item->side !== OpeningTradeItem::SIDE_CUSTOMER) {
+                    throw new \InvalidArgumentException('Customer payment and allocated opening trade item must belong to the same company and customer.');
                 }
             }
         });
@@ -136,5 +145,13 @@ class CustomerPaymentAllocation extends Model
     public function salesInvoice(): BelongsTo
     {
         return $this->belongsTo(SalesInvoice::class);
+    }
+
+    /**
+     * @return BelongsTo<OpeningTradeItem, $this>
+     */
+    public function openingTradeItem(): BelongsTo
+    {
+        return $this->belongsTo(OpeningTradeItem::class);
     }
 }

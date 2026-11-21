@@ -40,7 +40,7 @@ class CustomerPaymentApplicationEvent extends Model
 
     private bool $completing = false;
 
-    /** @var array<int, array<string, mixed>> */
+    /** @var array<string, array<string, mixed>> */
     private array $pendingAllocations = [];
 
     /** @param array<string, mixed> $attributes
@@ -56,8 +56,8 @@ class CustomerPaymentApplicationEvent extends Model
             throw new ImmutableRecordException('Credit application requires a posted active receipt and allocations.');
         }
         $version = (int) ($attributes['allocation_version'] ?? 1);
-        $intent = array_map(fn (array $row): array => PaymentAllocationIntent::historicalRow('sales_invoice_id', (int) $row['sales_invoice_id'], (string) $row['allocated_amount'], (string) $row['payment_currency_amount'], $version), $allocations);
-        if (count(array_unique(array_column($intent, 'sales_invoice_id'))) !== count($intent)) {
+        $intent = array_map(fn (array $row): array => PaymentAllocationIntent::historicalRow($row['opening_trade_item_id'] !== null ? 'opening_trade_item_id' : 'sales_invoice_id', (int) ($row['opening_trade_item_id'] ?? $row['sales_invoice_id']), (string) $row['allocated_amount'], (string) $row['payment_currency_amount'], $version), $allocations);
+        if (count(array_unique(array_map(fn (array $row): string => ($row['kind'] ?? 'sales_invoice_id').':'.($row['id'] ?? $row['sales_invoice_id']), $intent))) !== count($intent)) {
             throw new ImmutableRecordException('Canonical application allocations must be aggregated once per invoice.');
         }
         $expected = app(ApplyCustomerPaymentCreditAction::class)->prepare($payment, $intent, $attributes['application_date']);
@@ -71,7 +71,7 @@ class CustomerPaymentApplicationEvent extends Model
         try {
             $event->save();
             foreach ($allocations as $values) {
-                $event->pendingAllocations[(int) $values['sales_invoice_id']] = $values;
+                $event->pendingAllocations[self::allocationKey($values)] = $values;
                 CustomerPaymentAllocation::appendCanonicalApplication($event, $values, $actor);
             }
         } finally {
@@ -85,9 +85,17 @@ class CustomerPaymentApplicationEvent extends Model
     /** One-use capability tied to this newly recorded event and its exact prepared allocation, never recoverable from a DB read.
      * @param  array<string, mixed>  $values
      */
+    private static function allocationKey(array $values): string
+    {
+        return $values['opening_trade_item_id'] !== null
+            ? 'opening_trade_item:'.$values['opening_trade_item_id']
+            : 'sales_invoice_id:'.$values['sales_invoice_id'];
+    }
+
+    /** @param array<string, mixed> $values */
     public function consumePreparedAllocation(array $values): bool
     {
-        $id = (int) ($values['sales_invoice_id'] ?? 0);
+        $id = self::allocationKey($values);
         if (! $this->recordingApplication || ($this->pendingAllocations[$id] ?? null) !== $values) {
             return false;
         }

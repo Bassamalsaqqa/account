@@ -11,6 +11,7 @@ use App\Domain\Posting\DTO\PostingCommand;
 use App\Exceptions\IdempotencyConflictException;
 use App\Models\CompanyCurrency;
 use App\Models\LedgerAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\Purchase;
 use App\Models\User;
 use App\Models\VendorPayment;
@@ -51,7 +52,7 @@ final class ApplyVendorPaymentCreditAction
      * @param array{
      *     application_date: string,
      *     idempotency_key: string,
-     *     allocations: list<array{purchase_id: int, allocated_amount: string|BigDecimal}>
+     *     allocations: list<array{purchase_id?: int, opening_trade_item_id?: int, kind?: string, id?: int, allocated_amount: string|BigDecimal, payment_currency_amount?: string}>
      * } $data
      */
     public function execute(VendorPayment $payment, User $actor, array $data): VendorPaymentApplicationEvent
@@ -60,7 +61,7 @@ final class ApplyVendorPaymentCreditAction
         app(SalesDocumentRules::class)->date($data['application_date']);
 
         $version = PaymentAllocationIntent::version($data['allocations']);
-        $intent = PaymentAllocationIntent::normalize($data['allocations'], 'purchase_id');
+        $intent = PaymentAllocationIntent::forPayment($data['allocations'], 'purchase_id', (int) $payment->company_id, $payment->currency_code);
         if ($intent === []) {
             throw new \InvalidArgumentException('Application requires a positive allocation.');
         }
@@ -227,7 +228,7 @@ final class ApplyVendorPaymentCreditAction
     }
 
     /**
-     * @param  list<array{purchase_id: int, allocated_amount: string}>  $intent
+     * @param  list<array{purchase_id?: int, opening_trade_item_id?: int, kind?: string, id?: int, allocated_amount: string, payment_currency_amount?: string}>  $intent
      * @return list<array<string, mixed>>
      */
     public function prepare(VendorPayment $payment, array $intent, ?string $applicationDate = null): array
@@ -239,54 +240,112 @@ final class ApplyVendorPaymentCreditAction
         $prepared = [];
 
         foreach ($intent as $input) {
-            /** @var Purchase|null $purchase */
-            $purchase = Purchase::where('company_id', $payment->company_id)->lockForUpdate()->find($input['purchase_id']);
-            if ($purchase === null || ! $purchase->isPosted() || (int) $purchase->vendor_id !== (int) $payment->vendor_id) {
-                throw new VendorPaymentValidationException('purchasing.application_purchase_invalid');
-            }
+            $isOpening = (isset($input['opening_trade_item_id']))
+                || (($input['kind'] ?? null) === 'opening_trade_item');
 
-            app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
-
-            if ($applicationDate !== null) {
-                $purchaseDate = $purchase->purchase_date->format('Y-m-d');
-                if ($applicationDate < $purchaseDate) {
-                    throw new VendorPaymentValidationException('purchasing.application_date_too_early', 'Advance application date cannot precede vendor payment date or cannot precede purchase date.');
+            if ($isOpening) {
+                $itemId = (int) ($input['opening_trade_item_id'] ?? $input['id']);
+                /** @var OpeningTradeItem|null $openingItem */
+                $openingItem = OpeningTradeItem::where('company_id', $payment->company_id)->lockForUpdate()->find($itemId);
+                if ($openingItem === null || ! $openingItem->isPosted() || $openingItem->isReversed() || (int) $openingItem->vendor_id !== (int) $payment->vendor_id || $openingItem->side !== OpeningTradeItem::SIDE_VENDOR) {
+                    throw new VendorPaymentValidationException('purchasing.application_purchase_invalid');
                 }
+
+                if ($applicationDate !== null) {
+                    $itemDate = Carbon::parse($openingItem->opening_date)->toDateString();
+                    if ($applicationDate < $itemDate) {
+                        throw new VendorPaymentValidationException('purchasing.application_date_too_early', 'Advance application date cannot precede vendor payment date or cannot precede opening item date.');
+                    }
+                }
+
+                if (CompanyCurrency::where('company_id', $payment->company_id)->whereIn('currency_code', array_unique([$payment->currency_code, $openingItem->currency_code]))->where('enabled', true)->count() !== count(array_unique([$payment->currency_code, $openingItem->currency_code]))) {
+                    throw new \InvalidArgumentException('Payment and document currencies must be enabled.');
+                }
+
+                $amounts = PaymentAllocationIntent::amounts($input, $openingItem->currency_code, $payment->currency_code);
+                $amount = $amounts['document'];
+                $consumed = $amounts['payment'];
+                if ($consumed->isGreaterThan($remaining) || $amount->isGreaterThan($openingItem->calculateOutstanding())) {
+                    throw new \InvalidArgumentException('Application exceeds payment credit or document outstanding.');
+                }
+                $book = app(PayableBookValue::class)->reliefOpeningItem($openingItem, $amount);
+                $usedAmount = $usedAmount->plus($consumed);
+
+                $targetBase = $usedAmount->isEqualTo(BigDecimal::of((string) $payment->amount))
+                    ? BigDecimal::of((string) $payment->amount_base)
+                    : $usedAmount->multipliedBy(BigDecimal::of((string) $payment->exchange_rate))->toScale(6, RoundingMode::HALF_UP);
+
+                $settlement = $targetBase->minus($usedBase);
+
+                if ($book->isZero() || $settlement->isZero()) {
+                    throw new VendorPaymentValidationException('purchasing.payment_component_unrepresentable');
+                }
+
+                $delta = $settlement->minus($book); // S - B
+
+                $prepared[] = [
+                    'purchase_id' => null,
+                    'opening_trade_item_id' => $openingItem->id,
+                    'allocated_amount' => (string) $amount->toScale(6),
+                    'payment_currency_amount' => (string) $consumed->toScale(6),
+                    'purchase_exchange_rate' => (string) $openingItem->exchange_rate,
+                    'payment_exchange_rate' => (string) $payment->exchange_rate,
+                    'base_amount_applied_to_payable' => (string) $book->toScale(6),
+                    'settlement_base_value' => (string) $settlement->toScale(6),
+                    'realized_fx_gain_loss_base' => (string) $delta->toScale(6),
+                ];
+            } else {
+                /** @var Purchase|null $purchase */
+                $purchase = Purchase::where('company_id', $payment->company_id)->lockForUpdate()->find($input['purchase_id'] ?? $input['id']);
+                if ($purchase === null || ! $purchase->isPosted() || (int) $purchase->vendor_id !== (int) $payment->vendor_id) {
+                    throw new VendorPaymentValidationException('purchasing.application_purchase_invalid');
+                }
+
+                app(PurchasePostingCommandBuilder::class)->validatePosted($purchase);
+
+                if ($applicationDate !== null) {
+                    $purchaseDate = $purchase->purchase_date->format('Y-m-d');
+                    if ($applicationDate < $purchaseDate) {
+                        throw new VendorPaymentValidationException('purchasing.application_date_too_early', 'Advance application date cannot precede vendor payment date or cannot precede purchase date.');
+                    }
+                }
+
+                if (CompanyCurrency::where('company_id', $payment->company_id)->whereIn('currency_code', array_unique([$payment->currency_code, $purchase->currency_code]))->where('enabled', true)->count() !== count(array_unique([$payment->currency_code, $purchase->currency_code]))) {
+                    throw new \InvalidArgumentException('Payment and document currencies must be enabled.');
+                }
+                $amounts = PaymentAllocationIntent::amounts($input, $purchase->currency_code, $payment->currency_code);
+                $amount = $amounts['document'];
+                $consumed = $amounts['payment'];
+                if ($consumed->isGreaterThan($remaining) || $amount->isGreaterThan($purchase->calculateOutstanding())) {
+                    throw new \InvalidArgumentException('Application exceeds payment credit or document outstanding.');
+                }
+                $book = app(PayableBookValue::class)->relief($purchase, $amount);
+                $usedAmount = $usedAmount->plus($consumed);
+
+                $targetBase = $usedAmount->isEqualTo(BigDecimal::of((string) $payment->amount))
+                    ? BigDecimal::of((string) $payment->amount_base)
+                    : $usedAmount->multipliedBy(BigDecimal::of((string) $payment->exchange_rate))->toScale(6, RoundingMode::HALF_UP);
+
+                $settlement = $targetBase->minus($usedBase);
+
+                if ($book->isZero() || $settlement->isZero()) {
+                    throw new VendorPaymentValidationException('purchasing.payment_component_unrepresentable');
+                }
+
+                $delta = $settlement->minus($book); // S - B
+
+                $prepared[] = [
+                    'purchase_id' => $purchase->id,
+                    'opening_trade_item_id' => null,
+                    'allocated_amount' => (string) $amount->toScale(6),
+                    'payment_currency_amount' => (string) $consumed->toScale(6),
+                    'purchase_exchange_rate' => (string) $purchase->exchange_rate,
+                    'payment_exchange_rate' => (string) $payment->exchange_rate,
+                    'base_amount_applied_to_payable' => (string) $book->toScale(6),
+                    'settlement_base_value' => (string) $settlement->toScale(6),
+                    'realized_fx_gain_loss_base' => (string) $delta->toScale(6),
+                ];
             }
-
-            if (CompanyCurrency::where('company_id', $payment->company_id)->whereIn('currency_code', array_unique([$payment->currency_code, $purchase->currency_code]))->where('enabled', true)->count() !== count(array_unique([$payment->currency_code, $purchase->currency_code]))) {
-                throw new \InvalidArgumentException('Payment and document currencies must be enabled.');
-            }
-            $amounts = PaymentAllocationIntent::amounts($input, $purchase->currency_code, $payment->currency_code);
-            $amount = $amounts['document'];
-            $consumed = $amounts['payment'];
-            if ($consumed->isGreaterThan($remaining) || $amount->isGreaterThan($purchase->calculateOutstanding())) {
-                throw new \InvalidArgumentException('Application exceeds payment credit or document outstanding.');
-            }
-            $book = app(PayableBookValue::class)->relief($purchase, $amount);
-            $usedAmount = $usedAmount->plus($consumed);
-
-            $targetBase = $usedAmount->isEqualTo(BigDecimal::of((string) $payment->amount))
-                ? BigDecimal::of((string) $payment->amount_base)
-                : $usedAmount->multipliedBy(BigDecimal::of((string) $payment->exchange_rate))->toScale(6, RoundingMode::HALF_UP);
-
-            $settlement = $targetBase->minus($usedBase);
-
-            if ($book->isZero() || $settlement->isZero()) {
-                throw new VendorPaymentValidationException('purchasing.payment_component_unrepresentable');
-            }
-
-            $delta = $settlement->minus($book); // S - B
-
-            $prepared[] = [
-                'purchase_id' => $purchase->id,
-                'allocated_amount' => (string) $amount->toScale(6), 'payment_currency_amount' => (string) $consumed->toScale(6),
-                'purchase_exchange_rate' => (string) $purchase->exchange_rate,
-                'payment_exchange_rate' => (string) $payment->exchange_rate,
-                'base_amount_applied_to_payable' => (string) $book->toScale(6),
-                'settlement_base_value' => (string) $settlement->toScale(6),
-                'realized_fx_gain_loss_base' => (string) $delta->toScale(6),
-            ];
 
             $usedBase = $targetBase;
             $remaining = $remaining->minus($consumed);
@@ -296,7 +355,7 @@ final class ApplyVendorPaymentCreditAction
     }
 
     /**
-     * @param  list<array{purchase_id: int, allocated_amount: string}>  $intent
+     * @param  list<array{purchase_id?: int, opening_trade_item_id?: int, kind?: string, id?: int, allocated_amount: string, payment_currency_amount?: string}>  $intent
      */
     public static function requestHash(int $companyId, int $paymentId, int $actorId, string $date, array $intent): string
     {

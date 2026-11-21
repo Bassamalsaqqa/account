@@ -50,7 +50,7 @@ final class VendorPaymentApplicationScope
 
     private int $actorId = 0;
 
-    /** @var array<int, array<string, mixed>> */
+    /** @var array<string, array<string, mixed>> */
     private array $pendingAllocations = [];
 
     private bool $hasNonzeroFx = false;
@@ -97,8 +97,10 @@ final class VendorPaymentApplicationScope
         $this->pendingAllocations = [];
         $hasNonzero = false;
         foreach ($preparedAllocations as $alloc) {
-            $purId = (int) ($alloc['purchase_id'] ?? 0);
-            $this->pendingAllocations[$purId] = $alloc;
+            $key = ! empty($alloc['opening_trade_item_id'])
+                ? 'opening:'.((int) $alloc['opening_trade_item_id'])
+                : 'purchase:'.((int) ($alloc['purchase_id'] ?? 0));
+            $this->pendingAllocations[$key] = $alloc;
             if (! BigDecimal::of((string) ($alloc['realized_fx_gain_loss_base'] ?? '0'))->isZero()) {
                 $hasNonzero = true;
             }
@@ -152,17 +154,19 @@ final class VendorPaymentApplicationScope
      */
     public function consumePreparedAllocation(array $values): bool
     {
-        $purId = (int) ($values['purchase_id'] ?? 0);
-        if (! isset($this->pendingAllocations[$purId])) {
+        $key = ! empty($values['opening_trade_item_id'])
+            ? 'opening:'.((int) $values['opening_trade_item_id'])
+            : 'purchase:'.((int) ($values['purchase_id'] ?? 0));
+        if (! isset($this->pendingAllocations[$key])) {
             return false;
         }
 
-        $expected = $this->pendingAllocations[$purId];
+        $expected = $this->pendingAllocations[$key];
         if ($expected !== $values) {
             return false;
         }
 
-        unset($this->pendingAllocations[$purId]);
+        unset($this->pendingAllocations[$key]);
 
         return true;
     }
