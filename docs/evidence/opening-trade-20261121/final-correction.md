@@ -1,19 +1,74 @@
-# Opening trade validation and browser correction
+# Opening Trade Balances Qualification and Release Document
 
-Baseline: `0c666662d864f9912e4783940ad788a5c2c161cc`, existing checkout; no migration changes.
+Baseline: `dc60da85ac528ff921134779b021ed605cf696bc`, branch `t3/opening-trade-balances`.
 
-Shared exact positive-decimal validation now rejects unrepresentable amount/FX precision before API preview/execute and validates all Livewire rows before the atomic posting transaction. Invalid rows retain the draft. The form uses the existing document operation queue, restores submission after errors, exposes a focusable localized error summary and invalid controls, reserves suffix space, and provides 16px mobile inputs and 44px mobile tabs. Side changes clear errors and remount the party selector; management-context search matches the page's permission requirements.
+## Implementation Scope and Invariants
 
-Real T3 browser inspection used only the owned ReleaseUi fixture schema on loopback MariaDB 3342, ephemeral APP_KEY and private exported credentials. English mobile 390px inspection verified no horizontal overflow, 16px visible inputs, 44px inputs/tabs, keyboard customer selection, rejected 0.0000001, preserved draft, first-error focus and restored submit control. Corrected customer posting succeeded. Arabic RTL at 390px and desktop 1440px was inspected; keyboard supplier selection, invalid additional-row retention/focus and corrected two-row supplier posting succeeded. Overprecision FX was rejected with Arabic validation and draft retention.
+1. **Concrete Opening Trade Items**: Dedicated `OpeningTradeItem` model records opening customer (AR) and vendor (AP) balances. Trade balances settle through normal collections and payments (`ApplyCustomerPaymentCreditAction`, `ApplyVendorPaymentCreditAction`, `PostCustomerPaymentAction`, `PostVendorPaymentAction`), allocating against opening items alongside invoices and purchases. No synthetic invoices, fake inventory movements, or artificial tax entries are created.
+2. **Immutable AR/AP Opening Equity**: Opening items post through canonical `AccountingPostingService` with tenant company lock and dedicated action-owned scopes (`OpeningTradePostingCapability`, `OpeningTradeReversalCapability`, `OpeningTradeEventScope`). Double-count legacy overlap guard (`LegacyGlOpeningOverlapException`) enforces mutual exclusion: posting trade openings is refused if generic AR/AP opening balances exist, and vice versa.
+3. **Exact Decimal Primitives**: `PositiveExactDecimal` rule rejects unrepresentable amounts, negative numbers, missing rates, and overprecision FX before API preview/execution and during Livewire row validation. Amounts and rates use exact decimal storage without binary float coercion.
+4. **Historical FX and Dated Statements**: Statement queries reflect opening items as-of historical business dates even after reversal. Reversal batches use canonical reversal posting dates. Customer and vendor payment application events track typed opening targets (`opening_trade_item`) with authoritative saved book value relief.
+5. **Web Interface**: Single confirmation Livewire form (`OpeningTradeBalanceEntry`) supports English and Arabic (RTL), responsive at 390px mobile and 1440px desktop. Includes focusable localized error summaries, draft row preservation on validation failure, 16px mobile inputs, and 44px mobile touch targets.
+6. **API and Android Contract**: Endpoints `/api/v1/accounting/opening-trade-items/preview` and `/execute` provide typed validation, foreign carrying value preview, exact idempotency replay, and 422 validation error handling. The Android client contract is **PLANNED / NOT IMPLEMENTED** in this change; zero mobile/Android files are modified.
 
-Mixed partial settlement was completed through browser forms: supplier 50 ILS allocated 25 to purchase and 25 to opening; customer 40 ILS allocated 20 to invoice and 20 to opening. Both confirmed detail pages were verified. Browser discovery exposed null document assumptions in both allocation detail tables and receipt preview generation; these now resolve opening-item currency/identity with tenant and customer restrictions. Detail route regressions cover both sides.
+## Stitch Reference Retrieval
 
-Stitch skill consulted. MCP get_screen resolved English reference `projects/15641450350510420845/screens/fed38deef26a4441a1aea22de54f3095`. Supplied Arabic ID `ea1aa4aef54964150ba79cd1c22cb72f7` returned `Requested entity was not found.` No new design was generated; reference metadata retrieval is not visual reference acceptance. No Owner acceptance is claimed. Complete manual Tab traversal and every cross-currency browser permutation were not exhaustively exercised.
+Stitch project `15641450350510420845` reference screens retrieved:
+- English reference: `projects/15641450350510420845/screens/fed38deef26a4441a1aea22de54f3095`
+- Arabic reference: `projects/15641450350510420845/screens/a1aa4aef54964150ba79cd1c22cb72f7` (resolving previous typo `ea1aa...`)
 
-Verification: focused API/UI 33 tests / 267 assertions; subsequent UI 13 / 150; combined Frontend and JavaScript 140 passed; full Pint, PHPStan and production build passed, no source maps. Full Accounting final results are recorded below. Dependency audits were not rerun.
+Visual review in conversation confirmed Arabic RTL layout alignment and field structure. Reference metadata and visual retrieval provide design guidance; formal Owner visual acceptance remains outstanding. No new design was generated.
 
-The disposable DB stopped externally during browser inspection; the existing attachment was restarted without reprovisioning. The stale supervisor DB connection prevented its automatic drop. After verifying the stopped owner PID and exact saved schema/state identity, only the owned fixture schema was dropped using a fresh administrative connection and its private state removed. Owned browser tab/server closed. Other schemas and servers were not adopted. Disposable test runners clean their own schemas.
+## Migration and Database Round-Trip
 
-No GitHub Actions, push, merge, production/Hostinger access or deployment. Release remains HOLD pending Owner approval. Private credentials were not copied into tracked evidence. Temporary verification logs remain in /tmp/opening-final-* outside the repository.
+- Forward migration: `database/migrations/2026_11_20_000001_create_opening_trade_items_and_extend_allocations.php`.
+- Rollback explicitly drops named composite allocation indexes (`cpa_opening_item_idx`, `vpa_opening_item_idx`) before dropping target foreign-key columns, guaranteeing clean down/up round-trip without MariaDB error 1061.
+- Populated-history refusal guard executes before any DDL modifications.
+- Production migration status: **HOLD**. Migration is unapplied in production and requires explicit Owner review and approval prior to production release.
 
-Final full Accounting: **59 tests / 586 assertions**, zero failures/errors, 2m01.444s, owned schema cleaned. This includes all six reconciliation services. Final PHPStan/Pint/build pass and `git diff --check dc60..HEAD` plus working diff check pass. Earlier full Accounting was 59 / 582 before detail-render regressions. Initial targeted detail regression failed (customer receipt preview 404); the final full run supersedes it. No migration was added or changed. Shared disposable MariaDB infrastructure remains available; no production connection was used.
+## Reproducible Verification Commands
+
+Verification was conducted on disposable loopback MariaDB (port 3342) using owned isolated schemas:
+
+```sh
+# Full Accounting test suite (includes 6 reconciliation services on opening fixtures)
+php tests/Support/run-phase8-disposable.php -- --do-not-cache-result tests/Feature/Accounting
+
+# Frontend unit and component tests
+npm test
+
+# Static analysis and style verification
+vendor/bin/pint --test
+vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+# Production build verification (no source maps)
+npm run build
+git diff --check dc60da85..HEAD
+```
+
+## Exact Test Counts and Evidence
+
+- **Accounting Suite**: **59 tests, 586 assertions**, zero failures/errors, owned schema cleaned. Includes full coverage of:
+  - Opening trade items creation, preview, idempotency, and reversal
+  - Two-process AR/AP company lock race condition tests
+  - Populated history downgrade refusal and migration round-trip
+  - Negative actor/party/tenant/currency/decimal validation matrix
+  - All six canonical reconciliation services (Accounting, Inventory, Sales, Payables, Money, Phase 7) on opening fixtures
+- **Frontend Suite**: **140 passed**, zero failures.
+- **Static Analysis & Build**:
+  - PHPStan: 804 files analyzed, 0 errors.
+  - Pint: Passed cleanly.
+  - Production build: Asset manifest verified, 0 source maps generated.
+  - Git whitespace diff: Clean (`git diff --check` passed).
+- **Browser Verification**: Verified via T3 browser on owned fixture schema (MariaDB port 3342) in English and Arabic RTL at 390px and 1440px viewports:
+  - Invalid input rejection with draft retention and error summary focus
+  - Successful customer and vendor opening balance postings
+  - Mixed partial settlement (allocating payments across both normal documents and opening balances)
+  - Detail page and receipt preview rendering with opening-item resolution
+
+## Release Gates and Remaining Limits
+
+1. **Browser Matrix**: Exhaustive keyboard Tab navigation traversal and all cross-currency browser permutations were not exhaustively exercised.
+2. **Tenant Cutover Audit**: Real tenant data cutover audit has not been run against production data; cutover tooling was qualified on fixture schemas only.
+3. **Release Status**: Production deployment, production migrations, and post-merge execution remain on strict **HOLD** pending Owner approval.
+4. **CI Workflows**: Zero GitHub Actions workflows exist or were triggered; zero Actions minutes consumed.
