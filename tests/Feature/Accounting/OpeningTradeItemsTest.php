@@ -558,6 +558,37 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $revResp->assertJsonPath('data.status', 'reversed');
     }
 
+    public function test_api_preview_is_read_only_and_confirmation_replay_is_payload_bound(): void
+    {
+        $url = "/api/v1/companies/{$this->company->id}/accounting/opening-trade-items";
+        $headers = ['X-CSRF-TOKEN' => $this->deviceSession['token']];
+        $payload = ['side' => 'customer', 'party_id' => $this->customer->id,
+            'opening_date' => '2026-01-01', 'amount' => '100.00', 'currency_code' => 'USD',
+            'exchange_rate' => '3.5', 'idempotency_key' => 'api-negative-replay'];
+        $snapshot = function (): array {
+            $rows = [];
+            foreach (['opening_trade_items', 'posting_batches', 'posting_lines', 'audit_events', 'document_sequences'] as $table) {
+                $rows[$table] = DB::table($table)->orderBy('id')->get()->toJson();
+            }
+
+            return $rows;
+        };
+        $before = $snapshot();
+        $this->withCredentials()->withCookie(config('session.cookie'), $this->deviceSession['id'])
+            ->postJson($url.'/preview', $payload, $headers)->assertOk()->assertJsonPath('data.base_carrying_value', '350.000000');
+        $this->assertSame($before, $snapshot());
+        $first = $this->postJson($url.'/execute', $payload, $headers)->assertCreated();
+        $posted = $snapshot();
+        $this->postJson($url.'/execute', $payload, $headers)->assertCreated()->assertJsonPath('data.public_id', $first->json('data.public_id'));
+        $this->assertSame($posted, $snapshot());
+        $this->postJson($url.'/execute', array_replace($payload, ['amount' => '101']), $headers)->assertStatus(409);
+        $this->assertSame($posted, $snapshot());
+        foreach (['invalid', '0', '-1', '0.0000001', 1.25] as $amount) {
+            $this->postJson($url.'/execute', array_replace($payload, ['amount' => $amount, 'idempotency_key' => 'invalid-api-'.$amount]), $headers)->assertStatus(422);
+            $this->assertSame($posted, $snapshot());
+        }
+    }
+
     public function test_failure_after_persisted_audit_rolls_back_journal_and_all_provenance(): void
     {
         $tables = ['opening_trade_items', 'posting_batches', 'posting_lines', 'audit_events', 'document_sequences'];

@@ -15,6 +15,7 @@ use App\Services\Accounting\OpeningTradeCutoverAuditService;
 use App\Services\Security\CommandSessionGuard;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -41,6 +42,12 @@ final class OpeningTradeItemApiController extends ApiController
         $actor = auth()->user();
 
         $payload = $request->json()->all();
+
+        foreach (['amount', 'exchange_rate'] as $field) {
+            if (isset($payload[$field]) && ! is_string($payload[$field])) {
+                return $this->problem('Unprocessable Content', 422, "Field [{$field}] requires an exact decimal string.", $traceId);
+            }
+        }
 
         $side = (string) ($payload['side'] ?? '');
         if (! in_array($side, [OpeningTradeItem::SIDE_CUSTOMER, OpeningTradeItem::SIDE_VENDOR], true)) {
@@ -126,6 +133,12 @@ final class OpeningTradeItemApiController extends ApiController
 
         $payload = $request->json()->all();
 
+        foreach (['amount', 'exchange_rate'] as $field) {
+            if (isset($payload[$field]) && ! is_string($payload[$field])) {
+                return $this->problem('Unprocessable Content', 422, "Field [{$field}] requires an exact decimal string.", $traceId);
+            }
+        }
+
         $side = (string) ($payload['side'] ?? '');
         $partyId = (int) ($payload['party_id'] ?? ($side === OpeningTradeItem::SIDE_CUSTOMER ? ($payload['customer_id'] ?? 0) : ($payload['vendor_id'] ?? 0)));
         $openingDate = (string) ($payload['opening_date'] ?? '');
@@ -174,7 +187,7 @@ final class OpeningTradeItemApiController extends ApiController
             return $this->problem('Forbidden', 403, $e->getMessage(), $traceId);
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Authentication required.', $traceId);
-        } catch (InvalidArgumentException $e) {
+        } catch (InvalidArgumentException|MathException $e) {
             return $this->problem('Unprocessable Content', 422, $e->getMessage(), $traceId);
         } catch (Throwable $e) {
             Log::error(get_class($e).': '.$e->getMessage(), ['trace_id' => $traceId]);
@@ -226,7 +239,7 @@ final class OpeningTradeItemApiController extends ApiController
             return $this->problem('Not Found', 404, "Opening trade item [{$publicId}] not found.", $traceId);
         } catch (AuthorizationException $e) {
             return $this->problem('Forbidden', 403, $e->getMessage(), $traceId);
-        } catch (InvalidArgumentException $e) {
+        } catch (InvalidArgumentException|MathException $e) {
             return $this->problem('Unprocessable Content', 422, $e->getMessage(), $traceId);
         } catch (Throwable $e) {
             Log::error(get_class($e).': '.$e->getMessage(), ['trace_id' => $traceId]);
