@@ -1,0 +1,32 @@
+{
+  "request": {
+    "challenge_id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+    "nonce": "9f834928abceef761234509876abcdef1234567890abcdef1234567890abcdef",
+    "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+    "device_name": "Samsung Galaxy Tab A8",
+    "email": "cashier@smalltrader.example",
+    "password": "CorrectHorseBatteryStaple123!",
+    "mfa_code": null,
+    "recovery_code": null
+  },
+  "response": {
+    "token": "sanctum_1092837465_mobile_token_982347109238471092384710",
+    "token_type": "Bearer",
+    "expires_at": "2026-11-17T12:00:00Z",
+    "actor": {
+      "id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+      "name": "Ahmad Cashier",
+      "email": "cashier@smalltrader.example",
+      "role": "cashier",
+      "password_epoch": "epoch-20261101-v1"
+    },
+    "companies": [
+      {
+        "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+        "name": "Al-Amal Retail Company",
+        "base_currency": "ILS",
+        "is_default": true
+      }
+    ]
+  }
+}

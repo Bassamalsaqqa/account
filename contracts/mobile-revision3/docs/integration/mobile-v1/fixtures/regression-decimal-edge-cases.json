@@ -1,0 +1,83 @@
+{
+  "scenario": "Exact arbitrary-precision decimal strings must preserve scales, reject binary floating point, and follow Laravel SalesLineCalculator RoundingMode::HALF_UP policy and TaxPercentage 0..100 (commit f8a0cf7012c4875bec7320d42e0f8dde58593b52)",
+  "source_authorities": [
+    "app/Domain/Sales/Calculators/SalesLineCalculator.php",
+    "app/Domain/Sales/Calculators/TaxPercentage.php",
+    "app/Domain/Sales/Calculators/SalesDocumentTotalsCalculator.php",
+    "docs/adr/0002-money-and-accounting-primitives.md"
+  ],
+  "test_cases": [
+    {
+      "name": "sales_line_calculator_exclusive_16_percent",
+      "quantity": "0.333000",
+      "unit_price": "19.990000",
+      "tax_rate": "16.000000",
+      "tax_inclusive": false,
+      "subtotal": "6.660000",
+      "tax_amount": "1.070000",
+      "line_total": "7.730000",
+      "rounding_policy": "ROUND_HALF_UP (Laravel canonical)",
+      "rounding_sequence": "1. raw subtotal 0.333 * 19.99 = 6.65667 rounded to 2 minor units = 6.66; 2. tax = 6.66 * (16 / 100) = 1.0656 rounded to 2 minor units = 1.07; 3. line total = 6.66 + 1.07 = 7.73, stored as 6-decimal scale"
+    },
+    {
+      "name": "sales_line_calculator_inclusive_16_percent",
+      "quantity": "0.333000",
+      "unit_price": "19.990000",
+      "tax_rate": "16.000000",
+      "tax_inclusive": true,
+      "subtotal": "6.660000",
+      "net_before_tax": "5.740000",
+      "tax_amount": "0.920000",
+      "line_total": "6.660000",
+      "rounding_policy": "ROUND_HALF_UP (Laravel canonical inclusive)",
+      "rounding_sequence": "1. raw subtotal 6.65667 rounded to 2 minor units = 6.66; 2. net = 6.66 / 1.16 = 5.741379... rounded to 2 minor units = 5.74; 3. tax = 6.66 - 5.74 = 0.92; total = 6.66"
+    },
+    {
+      "name": "trailing_zero_quantity_support",
+      "quantity": "0.100000",
+      "unit_price": "25.000000",
+      "tax_rate": "16.000000",
+      "tax_inclusive": false,
+      "subtotal": "2.500000",
+      "tax_amount": "0.400000",
+      "line_total": "2.900000",
+      "description": "Verifies positive quantities with trailing zeros like 0.100000 are valid and accurately computed"
+    },
+    {
+      "name": "half_up_vs_half_even_parity",
+      "description": "Demonstrates critical divergence between unverified Banker's rounding (HALF_EVEN) and verified Laravel policy (HALF_UP)",
+      "amount": "2.505000",
+      "scale": 2,
+      "expected_half_up": "2.510000",
+      "bankers_half_even_divergence": "2.500000",
+      "policy_source": "SalesLineCalculator.php line 27: toScale($minorUnits, RoundingMode::HALF_UP)"
+    },
+    {
+      "name": "exact_three_cent_sum",
+      "line_1": "0.100000",
+      "line_2": "0.200000",
+      "exact_sum": "0.300000",
+      "float_corrupted_sum": "0.30000000000000004"
+    },
+    {
+      "name": "canonical_tax_example_ils_gross_50_incl_16",
+      "quantity": "2.000000",
+      "unit_price": "25.000000",
+      "tax_rate": "16.000000",
+      "tax_inclusive": true,
+      "subtotal": "50.000000",
+      "net_before_tax": "43.100000",
+      "tax_amount": "6.900000",
+      "line_total": "50.000000",
+      "unrounded_tax_divergence": "6.896552",
+      "rounding_policy": "ROUND_HALF_UP (Laravel SalesLineCalculator.php parity)",
+      "description": "ILS gross 50.000000 with 16% inclusive tax yields net 43.100000 and tax 6.900000 (sub - net), NOT floating/unrounded 6.896552"
+    },
+    {
+      "name": "max_magnitude_boundaries",
+      "max_quantity": "99999999999999.999999",
+      "max_money": "99999999999999.999999",
+      "description": "Matches exact Quantity and MoneyAmount DECIMAL(20,6) boundaries (14 integer digits, 6 scale)"
+    }
+  ]
+}

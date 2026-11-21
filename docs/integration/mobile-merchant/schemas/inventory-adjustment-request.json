@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InventoryAdjustmentRequest",
+  "type": "object",
+  "required": ["product_id", "quantity_delta", "reason"],
+  "properties": {
+    "product_id": { "type": "string" },
+    "quantity_delta": { "type": "string", "pattern": "^-?\\d+(\\.\\d{1,4})?$" },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "warehouse_id": { "type": ["string", "null"] }
+  }
+}

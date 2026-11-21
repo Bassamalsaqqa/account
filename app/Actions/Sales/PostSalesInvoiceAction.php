@@ -143,8 +143,8 @@ class PostSalesInvoiceAction implements StockEventOwner
                     throw new InvalidArgumentException('Warehouse is required to post stock-bearing sales invoice.');
                 }
                 $warehouse = Warehouse::where('company_id', $company->id)->where('id', $lockedInvoice->warehouse_id)->lockForUpdate()->firstOrFail();
-                if (! $warehouse->active) {
-                    throw new InvalidArgumentException("Warehouse [{$warehouse->id}] is inactive.");
+                if (! $warehouse->active || $warehouse->is_transit) {
+                    throw new InvalidArgumentException("Warehouse [{$warehouse->id}] cannot be used for sales (must be active and non-transit).");
                 }
             }
 

@@ -26,8 +26,10 @@ use App\Models\InventoryLotBalance;
 use App\Models\InventoryOperation;
 use App\Models\Product;
 use App\Models\ProductUnit;
+use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\Warehouse;
+use App\Services\Purchasing\GoodsReceiptScope;
 use App\Services\Purchasing\HistoricalPurchaseReceiptValue;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReceiptCapability;
@@ -407,6 +409,28 @@ class InventoryMovementService
             foreach ($lockedWarehouses as $wh) {
                 if (! $wh->active) {
                     throw InvalidInventoryMovementException::inactiveWarehouse($wh->id);
+                }
+
+                if ($wh->is_transit) {
+                    if ($command->movementType === StockMovement::TYPE_SALE || $command->movementType === StockMovement::TYPE_SALE_RETURN) {
+                        throw new InvalidInventoryMovementException("In-transit warehouse [{$wh->id}] cannot be used for sales or sales returns.");
+                    }
+                    if (in_array($command->movementType, [
+                        StockMovement::TYPE_ADJUSTMENT_INCREASE,
+                        StockMovement::TYPE_ADJUSTMENT_DECREASE,
+                        StockMovement::TYPE_DAMAGE,
+                        StockMovement::TYPE_LOSS,
+                        StockMovement::TYPE_DAMAGE_OR_LOSS,
+                        StockMovement::TYPE_EXPIRY_DISPOSAL,
+                    ], true)) {
+                        throw new InvalidInventoryMovementException("In-transit warehouse [{$wh->id}] cannot be manually adjusted.");
+                    }
+                    if ($command->movementType === StockMovement::TYPE_PURCHASE && $command->sourceType === 'purchase') {
+                        $purchase = Purchase::where('company_id', $company->id)->find($command->sourceId);
+                        if ($purchase !== null && ! $purchase->is_staged) {
+                            throw new InvalidInventoryMovementException("Direct-receipt purchase bills cannot use in-transit warehouse [{$wh->id}].");
+                        }
+                    }
                 }
             }
 
@@ -1130,6 +1154,15 @@ class InventoryMovementService
             /** @var Warehouse $destWarehouse */
             $destWarehouse = $lockedWarehouses->get($command->destinationWarehouseId);
 
+            if ($sourceWarehouse->is_transit || $destWarehouse->is_transit) {
+                app(GoodsReceiptScope::class)->assertTransferAuthorized(
+                    (int) $company->id,
+                    $sourceWarehouse,
+                    $destWarehouse,
+                    $command->capability
+                );
+            }
+
             // 8. Lock Warehouse Balances in sorted (warehouse_id, product_id) order
             $existingBalances = InventoryBalance::where('company_id', $company->id)
                 ->whereIn('product_id', $productIds)
@@ -1334,7 +1367,7 @@ class InventoryMovementService
                     'conversion_to_base' => (string) $conversionToBase->toScale(6, RoundingMode::HALF_UP),
                     'source_type' => $command->sourceType,
                     'source_id' => $command->sourceId,
-                    'source_line_id' => null,
+                    'source_line_id' => $line->sourceLineId,
                     'idempotency_key' => $childKeyOut,
                     'reason' => $command->reason,
                     'created_by' => $command->createdBy,
@@ -1361,7 +1394,7 @@ class InventoryMovementService
                     'conversion_to_base' => (string) $conversionToBase->toScale(6, RoundingMode::HALF_UP),
                     'source_type' => $command->sourceType,
                     'source_id' => $command->sourceId,
-                    'source_line_id' => null,
+                    'source_line_id' => $line->sourceLineId,
                     'idempotency_key' => $childKeyIn,
                     'reason' => $command->reason,
                     'created_by' => $command->createdBy,
@@ -1371,6 +1404,10 @@ class InventoryMovementService
 
                 $createdMovements[] = $movementOut;
                 $createdMovements[] = $movementIn;
+            }
+
+            if ($command->capability !== null) {
+                app(GoodsReceiptScope::class)->recordTransferCompleted($command->capability);
             }
 
             return $createdMovements;

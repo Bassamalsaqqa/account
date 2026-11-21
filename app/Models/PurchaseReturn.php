@@ -86,6 +86,7 @@ class PurchaseReturn extends Model
         'tax_total_base', 'grand_total_base', 'reason', 'notes', 'document_locale',
         'vendor_snapshot', 'company_snapshot', 'posting_batch_id', 'posted_at', 'posted_by',
         'void_business_date', 'voided_at', 'voided_by', 'void_reason', 'void_posting_batch_id',
+        'origin_warehouse_id', 'origin_goods_receipt_note_id',
         'created_by', 'updated_by',
     ];
 

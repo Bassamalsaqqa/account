@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PurchaseCreateRequest",
+  "type": "object",
+  "required": [
+    "supplier_id",
+    "lines"
+  ],
+  "properties": {
+    "supplier_id": { "type": "string", "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "bill_number": { "type": ["string", "null"] },
+    "paid_now": { "type": ["string", "null"], "pattern": "^\\d+(\\.\\d{1,4})?$" },
+    "account_id": { "type": ["string", "null"], "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "lines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["product_id", "quantity"],
+        "properties": {
+          "product_id": { "type": "string", "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+          "quantity": { "type": ["string", "number"] },
+          "unit_cost_ils": { "type": ["string", "number", "null"] },
+          "lots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "lot_number": { "type": ["string", "null"] },
+                "expiry_date": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+                "quantity": { "type": ["string", "number"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReceiptCapability;
 use App\Services\Purchasing\PurchaseVoidCapability;
 use App\Services\Purchasing\PurchaseVoidScope;
+use App\Services\Purchasing\StagedPurchaseFreezeCapability;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
@@ -53,6 +54,7 @@ use Illuminate\Support\Str;
  * @property int|null $void_posting_batch_id
  * @property array<string, mixed>|null $vendor_snapshot
  * @property array<string, mixed>|null $company_snapshot
+ * @property array<string, mixed>|null $response_snapshot
  * @property string $exchange_rate
  */
 class Purchase extends Model
@@ -75,6 +77,7 @@ class Purchase extends Model
         'exchange_rate', 'document_locale', 'subtotal_currency', 'discount_total_currency',
         'tax_total_currency', 'grand_total_currency', 'subtotal_base', 'discount_total_base',
         'tax_total_base', 'grand_total_base', 'notes', 'vendor_snapshot', 'company_snapshot',
+        'is_staged', 'idempotency_key', 'request_hash', 'response_snapshot',
         'posting_batch_id', 'posted_at', 'posted_by', 'void_business_date', 'voided_at', 'voided_by', 'void_reason',
         'void_posting_batch_id', 'created_by', 'updated_by',
     ];
@@ -89,6 +92,8 @@ class Purchase extends Model
             'vendor_snapshot' => 'array', 'company_snapshot' => 'array',
             'posted_at' => 'datetime', 'void_business_date' => 'date', 'voided_at' => 'datetime',
             'exchange_rate' => 'string',
+            'is_staged' => 'boolean',
+            'response_snapshot' => 'array',
         ];
     }
 
@@ -196,18 +201,62 @@ class Purchase extends Model
         $this->attributes['due_date'] = $value;
     }
 
+    private bool $freezingSnapshot = false;
+
+    /**
+     * @param  array<string, mixed>  $snapshot
+     */
+    public function freezeResponseSnapshot(array $snapshot, ?StagedPurchaseFreezeCapability $capability = null): void
+    {
+        if ($capability === null) {
+            throw new ImmutableRecordException('Response snapshot can only be frozen by an active canonical staged purchase bill action.');
+        }
+
+        $capability->assertValidFor($this);
+
+        if (! $this->isPosted() && ! $this->isDraft()) {
+            throw new ImmutableRecordException('Response snapshot can only be frozen on valid purchase records.');
+        }
+
+        if ($this->response_snapshot !== null || $this->getOriginal('response_snapshot') !== null) {
+            throw new ImmutableRecordException('Purchase response snapshot is immutable and already frozen.');
+        }
+
+        $capability->consume();
+        $this->freezingSnapshot = true;
+        try {
+            $this->response_snapshot = $snapshot;
+            $this->save();
+        } finally {
+            $this->freezingSnapshot = false;
+        }
+    }
+
     protected static function booted(): void
     {
         static::saving(function (self $purchase): void {
             if ($purchase->exists) {
                 if ($purchase->completingVoid) {
                     $purchase->assertMutableVoid();
+                } elseif ($purchase->freezingSnapshot) {
+                    if (array_diff(array_keys($purchase->getDirty()), ['response_snapshot', 'updated_at']) !== []) {
+                        throw new ImmutableRecordException('Only response_snapshot may be updated during snapshot freeze.');
+                    }
+                    if ($purchase->getOriginal('response_snapshot') !== null) {
+                        throw new ImmutableRecordException('Purchase response snapshot is immutable and cannot be overwritten.');
+                    }
                 } else {
+                    if ($purchase->isDirty('response_snapshot')) {
+                        throw new ImmutableRecordException('Purchase response snapshot cannot be modified outside canonical freeze.');
+                    }
                     $purchase->assertMutableDraft();
                 }
                 if ($purchase->isDirty(['company_id', 'public_id', 'created_by'])) {
                     throw new ImmutableRecordException('Purchase ownership and identity are immutable.');
                 }
+            }
+            if ($purchase->freezingSnapshot) {
+                return;
             }
             if ($purchase->completingVoid) {
                 if ($purchase->status !== self::STATUS_VOID
@@ -337,6 +386,17 @@ class Purchase extends Model
     public function landedCostAllocations(): HasMany
     {
         return $this->hasMany(LandedCostAllocation::class)->orderBy('id');
+    }
+
+    /** @return HasMany<GoodsReceiptNote, $this> */
+    public function goodsReceiptNotes(): HasMany
+    {
+        return $this->hasMany(GoodsReceiptNote::class)->orderBy('id');
+    }
+
+    public function isStaged(): bool
+    {
+        return (bool) $this->is_staged;
     }
 
     public function payablePosition(): PurchasePayablePosition

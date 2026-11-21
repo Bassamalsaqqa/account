@@ -1,0 +1,1047 @@
+{
+  "contract_version": "2026-11-18.2",
+  "title": "Small Trader Native Mobile Backend Authoritative Capabilities Contract",
+  "description": "Comprehensive native contract tying each surface to actual route registration, request/response DTO schemas, server-authoritative decimal precision, and test coverage.",
+  "base_path_v1": "/api/mobile/v1",
+  "base_path_v2": "/api/mobile/v2",
+  "auth_mechanism": "Bearer token via Authorization header (MobileAccessToken)",
+  "boundaries": {
+    "v1": "App\\Http\\Middleware\\MobileApiBoundary + App\\Http\\Middleware\\MobileAuthenticate",
+    "v2": "App\\Http\\Middleware\\MobileV2ApiBoundary + App\\Http\\Middleware\\MobileV2Authenticate"
+  },
+  "global_invariants": {
+    "currency_minor_units": "Server authoritative integer via CurrencyMinorUnitsResolver. Android clients MUST NOT use fallback-2 or assume ILS/USD.",
+    "actor_permissions": "Evaluated per request using setPermissionsTeamId($company->id). Android clients must NOT invent role or grant assumptions.",
+    "pricing_and_costs": "Nullable decimal strings. When unpriced or cost-unauthorized, values are NULL; clients MUST NOT coerce null to 0.00.",
+    "quantities": "Exact string decimals up to 4-6 digits. Fractional quantities (e.g., 1.2500 kg) MUST NEVER be truncated or cast to integer.",
+    "tenant_isolation": "Strict cross-company isolation enforced by route boundary. Unowned or cross-tenant IDs return 404 or 403.",
+    "durability_and_idempotency": "V2 transactions require client_event_id and server digest acknowledgement before terminal state."
+  },
+  "capabilities": [
+    {
+      "id": "auth.challenge",
+      "domain": "auth",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/auth/challenge",
+      "route_name": "mobile.v1.auth.challenge",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\AuthController::challenge",
+      "permissions_required": [],
+      "tested_in": "Tests\\Feature\\Mobile\\AuthChallengeTest",
+      "request_schema": {
+        "device_id": { "type": "string", "format": "uuid", "required": true }
+      },
+      "request_example": {
+        "device_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+      },
+      "response_schema": {
+        "challenge": { "type": "string", "length": 64 },
+        "expires_at": { "type": "string", "format": "iso8601" }
+      },
+      "response_example": {
+        "challenge": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "expires_at": "2026-11-18T13:35:00Z"
+      }
+    },
+    {
+      "id": "auth.login",
+      "domain": "auth",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/auth/login",
+      "route_name": "mobile.v1.auth.login",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\AuthController::login",
+      "permissions_required": [],
+      "tested_in": "Tests\\Feature\\Mobile\\AuthLoginTest",
+      "request_schema": {
+        "email": { "type": "string", "format": "email", "required": true },
+        "signature": { "type": "string", "required": true },
+        "challenge": { "type": "string", "required": true },
+        "device_id": { "type": "string", "format": "uuid", "required": true },
+        "device_name": { "type": "string", "required": true }
+      },
+      "request_example": {
+        "email": "cashier@smalltrader.ps",
+        "signature": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "challenge": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "device_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "device_name": "POS Terminal 01"
+      },
+      "response_schema": {
+        "token": { "type": "string", "prefix": "st_m_" },
+        "user": { "type": "object" },
+        "companies": { "type": "array" }
+      },
+      "response_example": {
+        "token": "st_m_9f834abcde1234567890abcdef1234567890abcdef1234567890abcdef123456",
+        "user": {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "أحمد المحاسب",
+          "email": "cashier@smalltrader.ps"
+        },
+        "companies": [
+          {
+            "id": "01JCV8X9M2NQW3TYZ4R5S6789B",
+            "name": "بقالة الهدى",
+            "base_currency": "ILS",
+            "base_currency_minor_units": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "session.current",
+      "domain": "settings",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/session",
+      "route_name": "mobile.v1.session.current",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SessionController::current",
+      "permissions_required": [],
+      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest::test_session_controller_returns_fresh_permissions_and_authoritative_currency",
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": {
+        "user": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "permissions": { "type": "array", "items": { "type": "string" } }
+        },
+        "device": { "type": ["object", "null"] },
+        "active_company": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "base_currency": { "type": "string" },
+          "base_currency_minor_units": { "type": "integer" }
+        }
+      },
+      "response_example": {
+        "user": {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+          "name": "محمود الكاشير",
+          "email": "cashier@store.ps",
+          "roles": ["Cashier"],
+          "permissions": ["sales.invoice.create", "sales.invoice.view", "customers.view", "product.viewAny"]
+        },
+        "device": {
+          "device_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+          "device_name": "Android POS",
+          "platform": "android"
+        },
+        "active_company_id": "01JCV8X9M2NQW3TYZ4R5S6789B",
+        "active_company": {
+          "id": "01JCV8X9M2NQW3TYZ4R5S6789B",
+          "name": "شركة التجزئة المعتمدة",
+          "base_currency": "ILS",
+          "base_currency_minor_units": 2
+        }
+      }
+    },
+    {
+      "id": "home.dashboard",
+      "domain": "home",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/home",
+      "route_name": "mobile.v1.home",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\HomeController::show",
+      "permissions_required": [],
+      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest::test_home_dashboard_structure_and_types",
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": { "$ref": "contract/schemas/home-response.json" },
+      "response_example": {
+        "company_id": "01JCV8X9M2NQW3TYZ4R5S6789B",
+        "today": "2026-11-18",
+        "sales_today_count": 14,
+        "sales_today_total": "1250.50",
+        "cash_in_drawer": "4320.00",
+        "low_stock_count": 3,
+        "total_receivables": "8450.00",
+        "total_payables": "3200.00",
+        "recent_invoices": [
+          {
+            "id": "01JCV8X9ME7890123456789ABC",
+            "invoice_number": "INV-2026-00102",
+            "customer_name": "سوبرماركت النور",
+            "date": "2026-11-18",
+            "total": "120.00",
+            "paid": "120.00",
+            "remaining": "0.00",
+            "currency": "ILS",
+            "payment_status": "PAID_CASH"
+          }
+        ],
+        "business_info": {
+          "name_ar": "شركة التجزئة الحديثة",
+          "name_en": "Modern Retail Co",
+          "city_ar": "رام الله",
+          "city_en": "Ramallah",
+          "phone": "+970599000000",
+          "tax_number": "900123456",
+          "default_currency": "ILS",
+          "default_currency_minor_units": 2
+        }
+      }
+    },
+    {
+      "id": "settings.business",
+      "domain": "settings",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/settings/business",
+      "route_name": "mobile.v1.settings.business",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\BusinessSettingsController::show",
+      "permissions_required": [],
+      "tested_in": "Tests\\Feature\\Mobile\\MerchantReadHttpTest::test_read_ready_settings_preserve_precision_and_hide_merchant_mapping",
+      "release_projection": {
+        "merchant_off": "sales.invoice.create required; profile fields and authoritative base precision only; operational mappings, taxes and currencies absent",
+        "merchant_on": "Existing full response schema below; existing authentication and permission behavior preserved",
+        "master_mobile_gate": "required for both projections"
+      },
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": {
+        "company_id": { "type": "string" },
+        "name_ar": { "type": "string" },
+        "name_en": { "type": "string" },
+        "default_currency": { "type": "string" },
+        "default_currency_minor_units": { "type": "integer" },
+        "default_warehouse": { "type": ["object", "null"] },
+        "approved_cash_account": { "type": ["object", "null"] },
+        "walk_in_customer": { "type": ["object", "null"] },
+        "currencies": { "type": "array" },
+        "taxes": { "type": "array" }
+      },
+      "response_example": {
+        "company_id": "01JCV8X9M2NQW3TYZ4R5S6789B",
+        "name_ar": "شركة التجارة العامة",
+        "name_en": "General Trading Co",
+        "city_ar": "نابلس",
+        "city_en": "Nablus",
+        "phone": "+97092300000",
+        "tax_number": "900987654",
+        "default_currency": "ILS",
+        "default_currency_minor_units": 2,
+        "default_tax_percent": "0.160000",
+        "default_warehouse": {
+          "id": "01JCV8X9MW123456789ABCDEF0",
+          "code": "WH-MAIN",
+          "name": "المستودع الرئيسي"
+        },
+        "approved_cash_account": {
+          "id": "01JCV8X9MCA123456789ABCDEF0",
+          "code": "CASH-MAIN",
+          "name": "صندوق الكاشير 1",
+          "currency": "ILS",
+          "currency_minor_units": 2
+        },
+        "walk_in_customer": {
+          "id": "01JCV8X9MCUST123456789ABCD",
+          "code": "CUST-WALK-IN",
+          "name": "عميل نقدي عام"
+        },
+        "currencies": [
+          { "code": "ILS", "name": "شيكل إسرائيلي جديد", "symbol": "₪", "minor_units": 2, "is_base": true },
+          { "code": "JOD", "name": "دينار أردني", "symbol": "د.أ", "minor_units": 3, "is_base": false },
+          { "code": "USD", "name": "دولار أمريكي", "symbol": "$", "minor_units": 2, "is_base": false }
+        ],
+        "taxes": [
+          { "id": "01JCV8X9MTAX123456789ABCD", "code": "VAT16", "name": "ضريبة القيمة المضافة 16%", "rate": "0.160000", "calculation": "exclusive", "is_default": true }
+        ],
+        "laravel_sync_status": "جاهز للمزامنة مع نظام الحسابات (Laravel API v1/v2)"
+      }
+    },
+    {
+      "id": "products.show",
+      "domain": "products",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/products/{productId}",
+      "route_name": "mobile.v1.products.show",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\ProductController::show",
+      "permissions_required": ["product.view"],
+      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest::test_product_detail_returns_nullable_prices_and_units",
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": {
+        "id": { "type": "string" },
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "currency": { "type": "string" },
+        "currency_minor_units": { "type": "integer" },
+        "sale_price": { "type": ["string", "null"] },
+        "purchase_cost": { "type": ["string", "null"] },
+        "available_quantity": { "type": "string", "pattern": "^\\d+\\.\\d{4}$" },
+        "base_unit": { "type": ["object", "null"] },
+        "units": { "type": "array" }
+      },
+      "response_example": {
+        "id": "01JCV8X9MPROD123456789ABCD",
+        "sku": "SKU-BEV-001",
+        "name": "عصير برتقال طبيعي 1 لتر",
+        "name_ar": "عصير برتقال طبيعي 1 لتر",
+        "name_en": "Natural Orange Juice 1L",
+        "barcode": "6251234567890",
+        "currency": "ILS",
+        "currency_minor_units": 2,
+        "sale_price": "7.50",
+        "purchase_cost": null,
+        "base_unit": {
+          "id": "01JCV8X9MUNIT123456789ABC",
+          "code": "PCS",
+          "name": "حبة",
+          "symbol": "حبة",
+          "allows_fraction": false,
+          "decimal_places": 0
+        },
+        "units": [
+          {
+            "id": "01JCV8X9MPU123456789ABCD0",
+            "unit_id": "01JCV8X9MUNIT123456789ABC",
+            "unit_code": "PCS",
+            "unit_name": "حبة",
+            "conversion_factor": "1.000000",
+            "sale_price": "7.50",
+            "barcode": "6251234567890"
+          },
+          {
+            "id": "01JCV8X9MPU123456789ABCD1",
+            "unit_id": "01JCV8X9MUNIT123456789DEF",
+            "unit_code": "CTN12",
+            "unit_name": "كرتونة 12 حبة",
+            "conversion_factor": "12.000000",
+            "sale_price": "85.00",
+            "barcode": "6251234567891"
+          }
+        ],
+        "available_quantity": "48.0000",
+        "stock_count": "48.0000",
+        "min_stock_threshold": "12.0000",
+        "is_stock_tracked": true,
+        "is_weighted": false,
+        "active": true
+      }
+    },
+    {
+      "id": "sales.invoices.index",
+      "domain": "sales",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/sales/invoices",
+      "route_name": "mobile.v1.sales.invoices.index",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::index",
+      "permissions_required": ["sales.invoice.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\SalesInvoiceReadRegressionTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/sales-invoice-index-response.json",
+      "pagination": {
+        "style": "opaque_keyset_cursor",
+        "cursor_param": "cursor",
+        "next_cursor_field": "next_cursor",
+        "has_more_field": "has_more",
+        "ordering": "public_id desc",
+        "bounded_limit_range": [1, 100],
+        "default_limit": 30
+      },
+      "query_parameters": {
+        "limit": { "type": "integer", "required": false, "minimum": 1, "maximum": 100, "default": 30 },
+        "cursor": { "type": "string", "required": false, "maxLength": 255, "description": "Opaque tenant- and filter-bound HMAC signed pagination cursor. Omit for first page." },
+        "status": { "type": "string", "required": false, "enum": ["DRAFT", "POSTED", "VOID", "PAID_CASH", "PAID", "PARTIAL", "ON_CREDIT"] },
+        "search": { "type": "string", "required": false, "maxLength": 100 },
+        "customer_id": { "type": "string", "required": false, "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "date_from": { "type": "string", "required": false, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "date_to": { "type": "string", "required": false, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+      }
+    },
+    {
+      "id": "sales.invoices.show",
+      "domain": "sales",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/sales/invoices/{publicId}",
+      "route_name": "mobile.v1.sales.invoices.show",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::show",
+      "permissions_required": ["sales.invoice.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\SalesInvoiceReadRegressionTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/sales-invoice-detail-response.json"
+    },
+    {
+      "id": "sales.preview",
+      "domain": "sales",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/sales/invoices/preview",
+      "route_name": "mobile.v1.sales.invoices.preview",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::preview",
+      "permissions_required": ["sales.invoice.create"],
+      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest::test_sales_invoice_preview_arithmetic",
+      "request_schema": { "$ref": "contract/schemas/sales-invoice-preview-request.json" },
+      "request_example": {
+        "customer_id": "01JCV8X9MCUST123456789ABCD",
+        "currency_code": "ILS",
+        "lines": [
+          {
+            "product_id": "01JCV8X9MPROD123456789ABCD",
+            "quantity": "2.0000",
+            "unit_price": "7.50",
+            "tax_rate": "0.160000",
+            "is_tax_inclusive": false,
+            "discount_amount": "0.00"
+          }
+        ]
+      },
+      "response_schema": { "$ref": "contract/schemas/sales-invoice-preview-response.json" },
+      "response_example": {
+        "currency": "ILS",
+        "currency_minor_units": 2,
+        "subtotal": "15.00",
+        "tax_total": "2.40",
+        "discount_total": "0.00",
+        "grand_total": "17.40",
+        "lines": [
+          {
+            "product_id": "01JCV8X9MPROD123456789ABCD",
+            "product_name": "عصير برتقال طبيعي 1 لتر",
+            "unit_id": null,
+            "quantity": "2.0000",
+            "unit_price": "7.50",
+            "line_subtotal": "15.00",
+            "tax_amount": "2.40",
+            "line_total": "17.40"
+          }
+        ]
+      }
+    },
+    {
+        "id": "sales.execute",
+        "domain": "sales",
+        "status": "retired",
+        "method": "POST",
+        "path": "/api/mobile/v1/companies/{companyId}/sales/invoices/{publicId}/execute",
+        "route_name": "mobile.v1.sales.invoices.execute",
+        "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SalesInvoiceController::execute",
+        "permissions_required": [
+          "sales.invoice.post"
+        ],
+        "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest",
+        "request_schema": {
+          "settlement_mode": {
+            "type": "string",
+            "enum": [
+              "full",
+              "partial",
+              "unpaid"
+            ],
+            "required": true
+          },
+          "payment_method": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "cash",
+              "card",
+              "bank_transfer",
+              null
+            ]
+          },
+          "cash_account_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "paid_amount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d+(\\.\\d{1,4})?$"
+          }
+        },
+        "request_example": {
+          "settlement_mode": "full",
+          "payment_method": "cash",
+          "cash_account_id": "01JCV8X9MCA123456789ABCDEF0",
+          "paid_amount": "17.40"
+        },
+        "response_schema": {
+          "error": {
+            "code": "DURABLE_EVENT_REQUIRED"
+          }
+        },
+        "response_example": {
+          "error": {
+            "code": "DURABLE_EVENT_REQUIRED",
+            "message": "Submit the original sale intent through the native V2 event endpoint."
+          }
+        },
+        "release_note": "HTTP 410: use durable V2 sale intent and scoped event status; legacy draft execution cannot post."
+      },
+    {
+      "id": "sales_v2.online_cash",
+      "domain": "sales_v2",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v2/companies/{companyId}/sales/online-cash",
+      "route_name": "mobile.v2.sales.online-cash",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V2\\OnlineCashSaleController::store",
+      "permissions_required": [
+        "sales.invoice.create",
+        "sales.invoice.post"
+      ],
+      "conditional_permissions": {
+        "money.receipt.create": "Required when settlement_mode is 'full' or 'partial'; not required for 'unpaid'.",
+        "money.receipt.allocate": "Required when settlement_mode is 'full' or 'partial'; not required for 'unpaid'."
+      },
+      "compatibility_instructions": "Root exact wire confirmation: Android client still issues non-null payment cash-only transactions ('full' 100% cash). Backend now natively admits and executes bounded typed 'full', 'partial', and 'unpaid' modes in a single atomic transaction. Android clients sending full cash with non-null payment receive backward-compatible posted commit DTOs. Android clients adopting partial or unpaid must observe: unpaid requires explicit null payment_id and amount_paid '0.00' (no cash account locked or fake cash record); partial requires 0 < amount < grand_total fully allocated to the invoice.",
+      "tested_in": "Tests\\Feature\\Mobile\\V2\\OnlineCashSaleQualificationTest",
+      "request_schema": {
+        "client_event_id": { "type": "string", "format": "uuid", "required": true },
+        "intent_profile": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "company_id": { "type": "string" },
+            "currency": { "type": "string" },
+            "payment": {
+              "type": "object",
+              "required": true,
+              "properties": {
+                "settlement_mode": { "type": "string", "enum": ["full", "partial", "unpaid"] },
+                "payment_method": { "type": "string", "enum": ["cash"] },
+                "cash_account_id": { "type": ["string", "null"] },
+                "amount": { "type": "string" }
+              }
+            },
+            "lines": { "type": "array" }
+          }
+        }
+      },
+      "request_example": {
+        "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "intent_profile": {
+          "company_id": "01JCV8X9M2NQW3TYZ4R5S6789B",
+          "currency": "ILS",
+          "payment": {
+            "settlement_mode": "full",
+            "payment_method": "cash",
+            "cash_account_id": "01JCV8X9MCA123456789ABCDEF0",
+            "amount": "50.00"
+          },
+          "lines": [
+            {
+              "line_id": "1",
+              "product_id": "01JCV8X9MPROD123456789ABCD",
+              "quantity": "2.0000",
+              "unit_price": "25.00",
+              "tax_rate_id": null
+            }
+          ]
+        }
+      },
+      "response_schema": {
+        "client_event_id": { "type": "string", "format": "uuid" },
+        "status": { "type": "string", "enum": ["posted"] },
+        "invoice_id": { "type": "string" },
+        "invoice_number": { "type": "string" },
+        "payment_id": { "type": ["string", "null"] },
+        "payment_receipt_number": { "type": ["string", "null"] },
+        "grand_total": { "type": "string" },
+        "amount_paid": { "type": "string" },
+        "change_returned": { "type": "string" },
+        "posted_at": { "type": "string", "format": "iso8601" }
+      },
+      "response_example": {
+        "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "status": "posted",
+        "invoice_id": "01JCV8X9ME7890123456789ABC",
+        "invoice_number": "INV-2026-00042",
+        "payment_id": "01JCV8X9MPAY123456789ABCD",
+        "payment_receipt_number": "RCT-2026-00042",
+        "grand_total": "50.00",
+        "amount_paid": "50.00",
+        "change_returned": "0.00",
+        "posted_at": "2026-11-18T13:30:00Z"
+      }
+    },
+    {
+      "id": "customers.show",
+      "domain": "customers",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/customers/{customerId}",
+      "route_name": "mobile.v1.customers.show",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\CustomerController::show",
+      "permissions_required": ["customers.view"],
+      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest",
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "currency": { "type": "string" },
+        "currency_minor_units": { "type": "integer" },
+        "balance": { "type": ["string", "null"] },
+        "credit_limit": { "type": ["string", "null"] }
+      },
+      "response_example": {
+        "id": "01JCV8X9MCUST123456789ABCD",
+        "code": "CUST-00102",
+        "name": "سوبرماركت طارق",
+        "name_ar": "سوبرماركت طارق",
+        "name_en": "Tariq Supermarket",
+        "phone": "+970599123456",
+        "whatsapp": "+970599123456",
+        "email": null,
+        "tax_number": "900555666",
+        "address": "شارع القدس، البيرة",
+        "currency": "ILS",
+        "currency_minor_units": 2,
+        "balance": "350.00",
+        "credit_limit": "2000.00",
+        "status": "active"
+      }
+    },
+    {
+      "id": "customers.payments",
+      "domain": "customers",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/customers/{customerId}/payments",
+      "route_name": "mobile.v1.customers.payments",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\CustomerController::recordPayment",
+      "canonical_service": "App\\Actions\\Sales\\PostCustomerPaymentAction",
+      "permissions_required": ["money.receipt.create"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\NativeEconomicWritesQualificationTest",
+      "request_schema": {
+        "cash_account_id": { "type": ["string", "null"] },
+        "amount": { "type": "string", "pattern": "^\\d+(\\.\\d{1,6})?$", "required": true },
+        "payment_date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "reference": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] },
+        "allocations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "invoice_id": { "type": "string" },
+              "amount": { "type": "string" }
+            },
+            "required": ["invoice_id", "amount"]
+          }
+        }
+      },
+      "request_example": {
+        "cash_account_id": "01JCV8X9MCA123456789ABCDEF0",
+        "amount": "150.00",
+        "payment_date": "2026-11-18",
+        "reference": "REC-00109",
+        "notes": "دفعة نقدية على الحساب",
+        "allocations": []
+      },
+      "response_schema": {
+        "id": { "type": "string" },
+        "receipt_id": { "type": "string" },
+        "payment_number": { "type": "string" },
+        "receipt_number": { "type": "string" },
+        "amount": { "type": "string" },
+        "currency": { "type": "string" },
+        "posted_at": { "type": "string", "format": "iso8601" },
+        "customer_id": { "type": "string" },
+        "success": { "type": "boolean" }
+      },
+      "response_example": {
+        "id": "01JCV8X9MRCT123456789ABCDE",
+        "receipt_id": "01JCV8X9MRCT123456789ABCDE",
+        "payment_number": "RCT-2026-00046",
+        "receipt_number": "RCT-2026-00046",
+        "amount": "150.00",
+        "currency": "ILS",
+        "posted_at": "2026-11-18T10:00:00Z",
+        "customer_id": "01JCV8X9MCUST123456789ABC",
+        "success": true
+      }
+    },
+    {
+      "id": "suppliers.show",
+      "domain": "suppliers",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/suppliers/{supplierId}",
+      "route_name": "mobile.v1.suppliers.show",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SupplierController::show",
+      "permissions_required": ["vendors.view"],
+      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest",
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "currency": { "type": "string" },
+        "currency_minor_units": { "type": "integer" },
+        "balance_owed": { "type": ["string", "null"] }
+      },
+      "response_example": {
+        "id": "01JCV8X9MSUPP123456789ABCD",
+        "code": "SUPP-00021",
+        "name": "شركة المشروبات الوطنية",
+        "name_ar": "شركة المشروبات الوطنية",
+        "name_en": "National Beverage Co",
+        "phone": "+97022987654",
+        "whatsapp": "+97022987654",
+        "email": "orders@nbc.ps",
+        "tax_number": "900333222",
+        "address": "المنطقة الصناعية، بيتونيا",
+        "currency": "ILS",
+        "currency_minor_units": 2,
+        "balance_owed": "1800.00",
+        "status": "active"
+      }
+    },
+    {
+      "id": "suppliers.payments",
+      "domain": "suppliers",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/suppliers/{supplierId}/payments",
+      "route_name": "mobile.v1.suppliers.payments",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\SupplierController::recordPayment",
+      "canonical_service": "App\\Actions\\Purchasing\\PostVendorPaymentAction",
+      "permissions_required": ["money.vendor_payment.create", "purchasing.cost.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\NativeEconomicWritesQualificationTest",
+      "request_schema": {
+        "cash_account_id": { "type": ["string", "null"] },
+        "amount": { "type": "string", "pattern": "^\\d+(\\.\\d{1,6})?$", "required": true },
+        "payment_date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "reference": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] },
+        "allocations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "bill_id": { "type": "string" },
+              "amount": { "type": "string" }
+            },
+            "required": ["bill_id", "amount"]
+          }
+        }
+      },
+      "request_example": {
+        "cash_account_id": "01JCV8X9MCA123456789ABCDEF0",
+        "amount": "500.00",
+        "payment_date": "2026-11-18",
+        "reference": "VOUCH-00088",
+        "notes": "سداد دفعة من فاتورة المشروبات",
+        "allocations": []
+      },
+      "response_schema": {
+        "id": { "type": "string" },
+        "voucher_id": { "type": "string" },
+        "voucher_number": { "type": "string" },
+        "amount": { "type": "string" },
+        "currency": { "type": "string" },
+        "posted_at": { "type": "string", "format": "iso8601" },
+        "supplier_id": { "type": "string" },
+        "success": { "type": "boolean" }
+      },
+      "response_example": {
+        "id": "01JCV8X9MVCH123456789ABCDE",
+        "voucher_id": "01JCV8X9MVCH123456789ABCDE",
+        "voucher_number": "VPAY-2026-00012",
+        "amount": "500.00",
+        "currency": "ILS",
+        "posted_at": "2026-11-18T10:00:00Z",
+        "supplier_id": "01JCV8X9MSUPP123456789ABCD",
+        "success": true
+      }
+    },
+    {
+      "id": "inventory.adjustments",
+      "domain": "inventory",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/inventory/adjustments",
+      "route_name": "mobile.v1.inventory.adjust",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\InventoryController::adjust",
+      "canonical_service": "App\\Actions\\Inventory\\AdjustStockAction",
+      "permissions_required": ["inventory.stock.adjust"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\NativeEconomicWritesQualificationTest",
+      "request_schema": {
+        "product_id": { "type": "string", "required": true },
+        "delta": { "type": "string", "pattern": "^-?\\d+(\\.\\d{1,6})?$", "required": true },
+        "reason": { "type": "string", "required": true },
+        "warehouse_id": { "type": ["string", "null"] },
+        "unit_cost": { "type": ["string", "null"] },
+        "unit_id": { "type": ["string", "null"] },
+        "lot_id": { "type": ["string", "null"] },
+        "lot_number": { "type": ["string", "null"] },
+        "expiry_date": { "type": ["string", "null"] },
+        "movement_date": { "type": ["string", "null"] }
+      },
+      "request_example": {
+        "product_id": "01JCV8X9MPROD123456789ABCD",
+        "delta": "-2.000000",
+        "reason": "تلف أثناء التخزين",
+        "warehouse_id": "01JCV8X9MW123456789ABCDEF0"
+      },
+      "response_schema": {
+        "id": { "type": "string" },
+        "product_id": { "type": "string" },
+        "movement_type": { "type": "string" },
+        "delta": { "type": "string" },
+        "resulting_stock": { "type": "string" },
+        "posted_at": { "type": "string", "format": "iso8601" },
+        "idempotency_key": { "type": "string" }
+      },
+      "response_example": {
+        "id": "01JCV8X9MMOV123456789ABCDE",
+        "product_id": "01JCV8X9MPROD123456789ABCD",
+        "movement_type": "adjustment_decrease",
+        "delta": "-2.000000",
+        "resulting_stock": "46.0000",
+        "posted_at": "2026-11-18T10:00:00Z",
+        "idempotency_key": "adj-idem-001"
+      }
+    },
+    {
+      "id": "expenses.store",
+      "domain": "expenses",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/expenses",
+      "route_name": "mobile.v1.expenses.store",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\ExpenseController::store",
+      "canonical_service": "App\\Actions\\Expenses\\PostExpenseAction",
+      "permissions_required": ["money.expense.manage"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\NativeEconomicWritesQualificationTest",
+      "request_schema": {
+        "expense_category_id": { "type": "string", "required": true },
+        "amount": { "type": "string", "pattern": "^\\d+(\\.\\d{1,6})?$", "required": true },
+        "description": { "type": "string", "required": true },
+        "cash_account_id": { "type": ["string", "null"] },
+        "expense_date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "reference": { "type": ["string", "null"] }
+      },
+      "request_example": {
+        "expense_category_id": "01JCV8X9MCAT123456789ABCDE",
+        "amount": "45.00",
+        "description": "فواتير كهرباء المحل",
+        "cash_account_id": "01JCV8X9MCA123456789ABCDEF0",
+        "expense_date": "2026-11-18",
+        "reference": "ELEC-2026-11"
+      },
+      "response_schema": {
+        "id": { "type": "string" },
+        "expense_number": { "type": "string" },
+        "amount": { "type": "string" },
+        "currency": { "type": "string" },
+        "expense_category_id": { "type": "string" },
+        "category_name": { "type": "string" },
+        "posted_at": { "type": "string", "format": "iso8601" },
+        "success": { "type": "boolean" }
+      },
+      "response_example": {
+        "id": "01JCV8X9MEXP123456789ABCDE",
+        "expense_number": "EXP-2026-00033",
+        "amount": "45.00",
+        "currency": "ILS",
+        "expense_category_id": "01JCV8X9MCAT123456789ABCDE",
+        "category_name": "مرافق وكهرباء",
+        "posted_at": "2026-11-18T10:00:00Z",
+        "success": true
+      }
+    },
+    {
+      "id": "receipts.status",
+      "domain": "receipts",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/receipts/{idempotencyKey}/status",
+      "route_name": "mobile.v1.receipts.status",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\ReceiptStatusController::show",
+      "canonical_service": "App\\Support\\Mobile\\Receipt\\NativeCommandReceiptManager",
+      "permissions_required": ["money.receipt.create", "money.vendor_payment.create", "inventory.stock.adjust", "money.expense.manage"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\NativeEconomicWritesQualificationTest",
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": {
+        "status": { "type": "string", "enum": ["completed"] },
+        "idempotency_key": { "type": "string" },
+        "command_type": { "type": "string" },
+        "outcome": { "type": "string", "enum": ["replay"] },
+        "response_snapshot": { "type": "object" },
+        "created_at": { "type": "string", "format": "iso8601" }
+      },
+      "response_example": {
+        "status": "completed",
+        "idempotency_key": "01JCV8X9MIDEM123456789ABC",
+        "command_type": "customer_payment",
+        "outcome": "replay",
+        "response_snapshot": {
+          "id": "01JCV8X9MRCT123456789ABCDE",
+          "amount": "150.00",
+          "currency": "ILS",
+          "success": true
+        },
+        "created_at": "2026-11-18T10:00:00Z"
+      }
+    },
+    {
+      "id": "reports.shift_summary",
+      "domain": "reports",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/reports/shift-summary",
+      "route_name": "mobile.v1.reports.shift_summary",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\ReportController::shiftSummary",
+      "permissions_required": ["reports.financial"],
+      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest",
+      "request_schema": {},
+      "request_example": {},
+      "response_schema": {
+        "company_id": { "type": "string" },
+        "shift_date": { "type": "string" },
+        "currency": { "type": "string" },
+        "currency_minor_units": { "type": "integer" },
+        "opening_float": { "type": "string" },
+        "cash_sales": { "type": "string" },
+        "cash_collections": { "type": "string" },
+        "cash_disbursements": { "type": "string" },
+        "operating_expenses": { "type": "string" },
+        "expected_cash": { "type": "string" },
+        "sales_count": { "type": "integer" }
+      },
+      "response_example": {
+        "company_id": "01JCV8X9M2NQW3TYZ4R5S6789B",
+        "shift_date": "2026-11-18",
+        "currency": "ILS",
+        "currency_minor_units": 2,
+        "opening_float": "200.00",
+        "cash_sales": "1250.50",
+        "cash_collections": "150.00",
+        "cash_disbursements": "500.00",
+        "operating_expenses": "45.00",
+        "expected_cash": "1055.50",
+        "sales_count": 14
+      }
+    },
+    {
+      "id": "reports.shift_close",
+      "domain": "reports",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/reports/shift-close",
+      "route_name": "mobile.v1.reports.shift_close",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\ReportController::shiftClose",
+      "permissions_required": ["reports.financial"],
+      "tested_in": "Tests\\Feature\\Mobile\\MerchantReportHttpTest",
+      "request_schema": {
+        "counted_cash": { "type": "string", "pattern": "^\\d+(\\.\\d{1,4})?$", "required": true },
+        "notes": { "type": ["string", "null"], "maxLength": 1000 },
+        "cash_account_id": { "type": ["string", "null"], "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" }
+      },
+      "request_example": {
+        "counted_cash": "1055.50",
+        "notes": "إغلاق وردية المساء - مطابقة تامة"
+      },
+      "response_schema": {
+        "success": { "type": "boolean" },
+        "observation_recorded": { "type": "boolean" },
+        "is_shift_closed": { "type": "boolean" },
+        "id": { "type": "string" },
+        "shift_closure_id": { "type": "string" },
+        "shift_date": { "type": "string" },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "currency_minor_units": { "type": "integer" },
+        "expected_cash": { "type": ["string", "null"] },
+        "counted_cash": { "type": "string" },
+        "variance": { "type": ["string", "null"] },
+        "variance_status": { "type": "string", "enum": ["EXACT", "SHORTAGE", "OVERAGE"] },
+        "closed_at": { "type": "string", "format": "iso8601" }
+      },
+      "response_example": {
+        "success": true,
+        "observation_recorded": true,
+        "is_shift_closed": false,
+        "id": "01JM78V5T4G894HZXA0B42M9NQ",
+        "shift_closure_id": "01JM78V5T4G894HZXA0B42M9NQ",
+        "shift_date": "2026-11-18",
+        "currency": "ILS",
+        "currency_minor_units": 2,
+        "expected_cash": "1055.50",
+        "counted_cash": "1055.50",
+        "variance": "0.00",
+        "variance_status": "EXACT",
+        "closed_at": "2026-11-18T22:00:00Z"
+      }
+    },
+    {
+      "id": "purchases.index",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases",
+      "route_name": "mobile.v1.purchases.index",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::index",
+      "permissions_required": ["purchasing.purchase.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-index-response.json"
+    },
+    {
+      "id": "purchases.show",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "GET",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases/{purchaseId}",
+      "route_name": "mobile.v1.purchases.show",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::show",
+      "permissions_required": ["purchasing.purchase.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-detail-response.json"
+    },
+    {
+      "id": "purchases.store",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases",
+      "route_name": "mobile.v1.purchases.store",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::store",
+      "permissions_required": ["purchasing.purchase.create", "purchasing.purchase.post"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "request_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-create-request.json",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-create-response.json"
+    },
+    {
+      "id": "purchases.grn",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases/{purchaseId}/grn",
+      "route_name": "mobile.v1.purchases.grn",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::receiveGoods",
+      "permissions_required": ["inventory.stock.transfer", "purchasing.purchase.view"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "request_schema_ref": "docs/integration/mobile-merchant/schemas/goods-receipt-request.json",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/goods-receipt-response.json"
+    },
+    {
+      "id": "purchases.returns.store",
+      "domain": "purchasing",
+      "status": "implemented",
+      "method": "POST",
+      "path": "/api/mobile/v1/companies/{companyId}/purchases/returns",
+      "route_name": "mobile.v1.purchases.returns.store",
+      "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\PurchaseController::storeReturn",
+      "permissions_required": ["purchasing.return.manage"],
+      "tested_in": "Tests\\Feature\\Mobile\\V1\\PurchaseGoodsReceiptWorkflowTest",
+      "request_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-return-request.json",
+      "response_schema_ref": "docs/integration/mobile-merchant/schemas/purchase-return-response.json"
+    }
+  ]
+}

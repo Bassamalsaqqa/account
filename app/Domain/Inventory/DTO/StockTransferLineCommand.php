@@ -14,6 +14,7 @@ final readonly class StockTransferLineCommand
         public Quantity $quantity,
         public ?int $unitId = null,
         public ?int $lotId = null,
+        public ?int $sourceLineId = null,
     ) {
         if ($this->productId <= 0) {
             throw new InvalidArgumentException("Product ID must be a positive integer. Given [{$this->productId}].");
@@ -29,6 +30,10 @@ final readonly class StockTransferLineCommand
 
         if ($this->lotId !== null && $this->lotId <= 0) {
             throw new InvalidArgumentException("Lot ID must be a positive integer. Given [{$this->lotId}].");
+        }
+
+        if ($this->sourceLineId !== null && $this->sourceLineId <= 0) {
+            throw new InvalidArgumentException("Source line ID must be a positive integer. Given [{$this->sourceLineId}].");
         }
     }
 }

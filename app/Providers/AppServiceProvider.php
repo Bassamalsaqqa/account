@@ -13,8 +13,10 @@ use App\Policies\CompanyUserPolicy;
 use App\Policies\RolePolicy;
 use App\Services\Audit\AuditService;
 use App\Services\Inventory\StockEventScope;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\MoneyEventScope;
 use App\Services\Phase7\Phase7EventScope;
+use App\Services\Purchasing\GoodsReceiptScope;
 use App\Services\Purchasing\PurchasePostingScope;
 use App\Services\Purchasing\PurchaseReturnPostingScope;
 use App\Services\Purchasing\PurchaseReturnVoidScope;
@@ -22,6 +24,8 @@ use App\Services\Purchasing\PurchaseVoidScope;
 use App\Services\Purchasing\VendorPaymentApplicationScope;
 use App\Services\Purchasing\VendorPaymentPostingScope;
 use App\Services\Purchasing\VendorPaymentReversalScope;
+use App\Support\Mobile\Receipt\FinancialExecutionAdapterInterface;
+use App\Support\Mobile\Receipt\NativeOnlineCashFinancialExecutionAdapter;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Events\TransactionCommitting;
@@ -45,6 +49,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(AiProviderDeadline::class, fn () => new AiProviderDeadline);
         $this->app->singleton(CompanyContext::class, fn () => new CompanyContext);
         $this->app->singleton(AuditService::class, fn () => new AuditService);
+        $this->app->scoped(GoodsReceiptScope::class, fn () => new GoodsReceiptScope);
         $this->app->scoped(PurchasePostingScope::class, fn () => new PurchasePostingScope);
         $this->app->scoped(PurchaseReturnPostingScope::class, fn () => new PurchaseReturnPostingScope);
         $this->app->scoped(PurchaseVoidScope::class, fn () => new PurchaseVoidScope);
@@ -55,6 +60,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(StockEventScope::class, fn () => new StockEventScope);
         $this->app->scoped(MoneyEventScope::class, fn () => new MoneyEventScope);
         $this->app->scoped(Phase7EventScope::class, fn () => new Phase7EventScope);
+        $this->app->scoped(CurrencyMinorUnitsResolver::class);
+        $this->app->bind(
+            FinancialExecutionAdapterInterface::class,
+            NativeOnlineCashFinancialExecutionAdapter::class
+        );
     }
 
     /**

@@ -1,0 +1,22 @@
+{
+  "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+  "generated_at": "2026-11-10T12:00:00Z",
+  "next_cursor": null,
+  "has_more": false,
+  "customers": [
+    {
+      "id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "code": "CUST-WALK-IN",
+      "name": "Walk-in Customer / عميل نقدي",
+      "phone": null,
+      "is_walk_in": true
+    },
+    {
+      "id": "01JCV8X9M5T2V3V4W5X6Y7Z890",
+      "code": "CUST-00102",
+      "name": "Tariq Supermarket",
+      "phone": "+970599123456",
+      "is_walk_in": false
+    }
+  ]
+}

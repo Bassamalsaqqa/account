@@ -1,0 +1,59 @@
+{
+  "request": {
+    "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+    "captured_at": "2026-11-10T12:00:00Z",
+    "payload_digest": "sha256:d442ce49a7609a9a42bb5165990d481d1c7c563cb8030403487099a9919728d9",
+    "event": {
+      "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "event_version": 1,
+      "company_id": "01JCV8X9M2NQW3TYZ4R5S6789A",
+      "actor_id": "01JCV8X9M8T1V2W3X4Y5Z67890",
+      "device_id": "8e2b8bc6-f80c-4034-8c88-59368d1f2e10",
+      "device_lease_id": "7c1e5a2b-3d4f-5678-90ab-cdef12345678",
+      "captured_at": "2026-11-10T12:00:00Z",
+      "customer_id": "01JCV8X9M4K1P2Q3R4S5T6V7W8",
+      "currency": "ILS",
+      "warehouse_id": "01JCV8X9M9A2B3C4D5E6F7G8H9",
+      "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+      "catalog_snapshot_version": "snap-20261110-v1",
+      "local_receipt_number": "REC-OFF-00042",
+      "lines": [
+        {
+          "product_id": "01JCV8X9M6A1B2C3D4E5F6G7H8",
+          "product_unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "unit_id": "01JCV8X9MBV4W5X6Y7Z8012345",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate": "16.000000",
+          "tax_amount": "8.000000",
+          "line_total": "58.000000"
+        }
+      ],
+      "payment": {
+        "mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01JCV8X9MAJ3K4M5N6P7Q8R9S0",
+        "amount_tendered": "100.000000",
+        "amount_settled": "58.000000",
+        "change_returned": "42.000000"
+      }
+    }
+  },
+  "response": {
+    "client_event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "status": "posted",
+    "payload_digest": "sha256:d442ce49a7609a9a42bb5165990d481d1c7c563cb8030403487099a9919728d9",
+    "outcome": {
+      "action": "posted_canonically",
+      "invoice_id": "01JCV8X9ME7890123456789ABC",
+      "invoice_number": "INV-2026-00042",
+      "payment_id": "01JCV8X9MFGHJKMNPQRSTVWXYZ",
+      "grand_total": "58.000000",
+      "conflict_code": null,
+      "conflict_reason": null,
+      "resolution_instructions": null
+    },
+    "processed_at": "2026-11-10T12:02:10Z"
+  }
+}

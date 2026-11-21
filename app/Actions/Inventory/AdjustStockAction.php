@@ -69,6 +69,10 @@ class AdjustStockAction implements StockEventOwner
             throw new InvalidInventoryMovementException('Reason is mandatory for stock adjustment operations.');
         }
 
+        if ($warehouse->is_transit) {
+            throw new InvalidInventoryMovementException('In-transit warehouses cannot be manually adjusted.');
+        }
+
         // 1. Require matching company context — no auto-activation
         $context = app(CompanyContext::class);
         if (! $context->hasCompany() || $context->companyId() !== $company->id) {

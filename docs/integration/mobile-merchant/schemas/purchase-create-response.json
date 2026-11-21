@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PurchaseCreateResponse",
+  "type": "object",
+  "required": [
+    "id",
+    "bill_number",
+    "status",
+    "total_ils",
+    "posted_at"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "bill_number": { "type": "string" },
+    "status": { "type": "string" },
+    "total_ils": { "type": "string" },
+    "posted_at": { "type": "string", "format": "iso8601" }
+  }
+}

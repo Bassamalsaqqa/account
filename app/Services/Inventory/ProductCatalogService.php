@@ -285,6 +285,10 @@ class ProductCatalogService
             $resultingDefault = array_key_exists('is_default', $data) ? (bool) $data['is_default'] : (bool) $lockedWarehouse->is_default;
             $resultingActive = array_key_exists('active', $data) ? (bool) $data['active'] : (bool) $lockedWarehouse->active;
 
+            if ($resultingDefault && ($lockedWarehouse->is_transit || ($data['is_transit'] ?? false))) {
+                throw new InvalidInventoryMovementException('In-transit warehouse cannot be set as default warehouse.');
+            }
+
             // 1. Inactive warehouse can NEVER be or become a default warehouse
             if ($resultingDefault && ! $resultingActive) {
                 throw new InvalidInventoryMovementException(__('inventory.cannot_deactivate_default_warehouse'));

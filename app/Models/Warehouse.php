@@ -29,6 +29,7 @@ class Warehouse extends Model
         'address_ar',
         'address_en',
         'is_default',
+        'is_transit',
         'active',
         'created_by',
     ];
@@ -40,6 +41,7 @@ class Warehouse extends Model
     {
         return [
             'is_default' => 'boolean',
+            'is_transit' => 'boolean',
             'active' => 'boolean',
         ];
     }

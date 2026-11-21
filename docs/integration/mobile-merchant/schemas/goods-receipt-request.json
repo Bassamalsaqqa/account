@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GoodsReceiptRequest",
+  "type": "object",
+  "properties": {
+    "destination_warehouse_id": { "type": ["string", "null"], "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+    "receipt_date": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "notes": { "type": ["string", "null"] },
+    "received_lines": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/grnLine" }
+    },
+    "lines": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/grnLine" }
+    }
+  },
+  "$defs": {
+    "grnLine": {
+      "type": "object",
+      "required": ["purchase_line_id", "quantity"],
+      "properties": {
+        "purchase_line_id": { "type": "string", "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$" },
+        "quantity": { "type": ["string", "number"] },
+        "lot_number": { "type": ["string", "null"] },
+        "expiry_date": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+      }
+    }
+  }
+}

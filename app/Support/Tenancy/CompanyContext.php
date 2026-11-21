@@ -92,9 +92,16 @@ class CompanyContext
 
     /**
      * Clear the company context and reset Spatie team ID.
+     * When $sessionless is true, clears without invoking lazy guard authentication.
      */
-    public function clear(): void
+    public function clear(bool $sessionless = false): void
     {
+        if ($sessionless) {
+            $this->clearSessionless();
+
+            return;
+        }
+
         $user = $this->user();
 
         $this->activeCompany = null;
@@ -106,6 +113,36 @@ class CompanyContext
         if ($user) {
             $user->unsetRelation('roles')->unsetRelation('permissions');
         }
+    }
+
+    /**
+     * Clear the company context and reset Spatie team ID without invoking lazy guard authentication.
+     */
+    public function clearSessionless(): void
+    {
+        $explicit = $this->explicitUser;
+        $guard = auth()->guard();
+        $guardUser = $guard->hasUser() ? $guard->user() : null;
+
+        $this->activeCompany = null;
+        $this->explicitUser = null;
+
+        setPermissionsTeamId(null);
+        app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+
+        if ($explicit instanceof User) {
+            $explicit->unsetRelation('roles')->unsetRelation('permissions');
+        }
+        if ($guardUser instanceof User && $guardUser !== $explicit) {
+            $guardUser->unsetRelation('roles')->unsetRelation('permissions');
+        }
+    }
+
+    /** Restore an already established ambient context without reauthorizing mutable history. */
+    public function restoreSessionless(self $snapshot): void
+    {
+        $this->activeCompany = $snapshot->activeCompany;
+        $this->explicitUser = $snapshot->explicitUser;
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Fortify\UpdateUserPassword;
 use App\Actions\Fortify\UpdateUserProfileInformation;
 use App\Application\Platform\PlatformSessionProof;
+use App\Http\Controllers\Auth\LockedTwoFactorSessionController;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -17,6 +18,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Actions\RedirectIfTwoFactorAuthenticatable;
 use Laravel\Fortify\Fortify;
+use Laravel\Fortify\Http\Controllers\TwoFactorAuthenticatedSessionController;
 
 class FortifyServiceProvider extends ServiceProvider
 {
@@ -25,7 +27,7 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(TwoFactorAuthenticatedSessionController::class, LockedTwoFactorSessionController::class);
     }
 
     /**

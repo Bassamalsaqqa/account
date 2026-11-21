@@ -30,15 +30,15 @@ class EnsureDefaultWarehouseAction
                 ->lockForUpdate()
                 ->get();
 
-            $activeDefaults = $defaultWarehouses->filter(fn (Warehouse $w) => $w->active);
-            $inactiveDefaults = $defaultWarehouses->filter(fn (Warehouse $w) => ! $w->active);
+            $activeDefaults = $defaultWarehouses->filter(fn (Warehouse $w) => $w->active && ! $w->is_transit);
+            $invalidDefaults = $defaultWarehouses->filter(fn (Warehouse $w) => ! $w->active || $w->is_transit);
 
-            // Clean up inactive default flags
-            foreach ($inactiveDefaults as $inact) {
+            // Clean up invalid or in-transit default flags
+            foreach ($invalidDefaults as $inact) {
                 $inact->update(['is_default' => false]);
             }
 
-            // Case A: Exactly one active default exists
+            // Case A: Exactly one active non-transit default exists
             if ($activeDefaults->count() === 1) {
                 /** @var Warehouse $activeDefault */
                 $activeDefault = $activeDefaults->first();
@@ -47,7 +47,7 @@ class EnsureDefaultWarehouseAction
                 return $activeDefault;
             }
 
-            // Case B: Multiple active defaults exist — keep the first, demote the rest
+            // Case B: Multiple active non-transit defaults exist — keep the first, demote the rest
             if ($activeDefaults->count() > 1) {
                 /** @var Warehouse $chosenDefault */
                 $chosenDefault = $activeDefaults->sortBy('id')->first();
@@ -61,10 +61,11 @@ class EnsureDefaultWarehouseAction
                 return $chosenDefault;
             }
 
-            // Case C: Zero active defaults exist — try promoting an existing active warehouse
+            // Case C: Zero active non-transit defaults exist — try promoting an existing active non-transit warehouse
             /** @var Warehouse|null $existingActive */
             $existingActive = Warehouse::where('company_id', $lockedCompany->id)
                 ->where('active', true)
+                ->where('is_transit', false)
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->first();

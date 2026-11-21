@@ -1,0 +1,62 @@
+{
+  "request": {
+    "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "device_id": "a0000000-0000-0000-0000-000000000001",
+    "captured_at": "2026-11-11T14:30:00Z",
+    "payload_digest": "sha256:18f0403bbda6e05eab2805eb20c9c9f9e22d86fb922eda1482db85d24dba30a3",
+    "event": {
+      "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "event_version": 2,
+      "company_id": "01J9Z5K3MN0000000000000001",
+      "actor_id": "01J9Z5K3MN0000000000000002",
+      "device_id": "a0000000-0000-0000-0000-000000000001",
+      "device_lease_id": "b0000000-0000-0000-0000-000000000001",
+      "captured_at": "2026-11-11T14:30:00Z",
+      "customer_id": "01J9Z5K3MN0000000000000003",
+      "currency": "ILS",
+      "warehouse_id": "01J9Z5K3MN0000000000000004",
+      "cash_account_id": "01J9Z5K3MN0000000000000005",
+      "catalog_snapshot_version": "v2026.11.11.01",
+      "local_receipt_number": "REC-20261111-0001",
+      "lines": [
+        {
+          "product_id": "01J9Z5K3MN0000000000000010",
+          "product_unit_id": "01J9Z5K3MN0000000000000020",
+          "unit_id": "01J9Z5K3MN0000000000000020",
+          "conversion_to_base": "1.000000",
+          "quantity": "2.000000",
+          "unit_price": "25.000000",
+          "tax_rate_id": "01J9Z5K3MN0000000000000030",
+          "tax_rate": "16.000000",
+          "tax_inclusive": true,
+          "tax_amount": "6.900000",
+          "line_total": "50.000000"
+        }
+      ],
+      "payment": {
+        "mode": "full",
+        "payment_method": "cash",
+        "cash_account_id": "01J9Z5K3MN0000000000000005",
+        "amount_tendered": "50.000000",
+        "amount_settled": "50.000000",
+        "change_returned": "0.000000"
+      }
+    }
+  },
+  "response": {
+    "client_event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "status": "posted",
+    "payload_digest": "sha256:18f0403bbda6e05eab2805eb20c9c9f9e22d86fb922eda1482db85d24dba30a3",
+    "outcome": {
+      "action": "posted_canonically",
+      "invoice_id": "01J9Z5K3MN0000000000000088",
+      "invoice_number": "INV-2026-00099",
+      "payment_id": "01J9Z5K3MN0000000000000099",
+      "grand_total": "50.000000",
+      "conflict_code": null,
+      "conflict_reason": null,
+      "resolution_instructions": null
+    },
+    "processed_at": "2026-11-11T14:32:00Z"
+  }
+}

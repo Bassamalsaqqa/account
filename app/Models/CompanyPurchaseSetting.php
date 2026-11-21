@@ -31,6 +31,7 @@ class CompanyPurchaseSetting extends Model
         'company_id',
         'default_payment_terms_days',
         'default_receiving_warehouse_id',
+        'in_transit_warehouse_id',
         'warn_duplicate_vendor_invoice',
     ];
 
@@ -39,6 +40,7 @@ class CompanyPurchaseSetting extends Model
         return [
             'warn_duplicate_vendor_invoice' => 'boolean',
             'default_payment_terms_days' => 'integer',
+            'in_transit_warehouse_id' => 'integer',
         ];
     }
 
@@ -56,5 +58,13 @@ class CompanyPurchaseSetting extends Model
     public function defaultReceivingWarehouse(): BelongsTo
     {
         return $this->belongsTo(Warehouse::class, 'default_receiving_warehouse_id');
+    }
+
+    /**
+     * @return BelongsTo<Warehouse, $this>
+     */
+    public function inTransitWarehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class, 'in_transit_warehouse_id');
     }
 }

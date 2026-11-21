@@ -74,6 +74,11 @@ class Unit extends Model
             : $this->name_ar;
     }
 
+    public function displayName(): string
+    {
+        return $this->name();
+    }
+
     public function symbol(): ?string
     {
         return (app()->getLocale() === 'en' && ! empty($this->symbol_en))
