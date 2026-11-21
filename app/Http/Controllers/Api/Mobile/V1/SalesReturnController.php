@@ -21,6 +21,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 final class SalesReturnController extends Controller
@@ -61,33 +62,6 @@ final class SalesReturnController extends Controller
             );
         }
 
-        $invoice = SalesInvoice::where('company_id', $company->id)
-            ->where('public_id', $invoicePublicId)
-            ->with(['lines.product', 'warehouse'])
-            ->first();
-
-        if ($invoice === null) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'NOT_FOUND',
-                message: 'The original sales invoice was not found.',
-                status: 404
-            );
-        }
-
-        if (! $user->hasPermissionTo('sales.return.view')) {
-            $hasPriorReturns = SalesReturnLine::where('company_id', $company->id)
-                ->whereIn('sales_invoice_line_id', $invoice->lines->pluck('id'))
-                ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))
-                ->exists();
-            if ($hasPriorReturns) {
-                return MobileApiBoundary::buildErrorResponse(
-                    code: 'FORBIDDEN',
-                    message: 'Action is unauthorized. Missing required sales.return.view permission to inspect return history.',
-                    status: 403
-                );
-            }
-        }
-
         $requestedLines = $request->input('lines', []);
         if (! is_array($requestedLines) || empty($requestedLines)) {
             return MobileApiBoundary::buildErrorResponse(
@@ -97,57 +71,89 @@ final class SalesReturnController extends Controller
             );
         }
 
-        $restockItems = [];
-        $totalReturnAmount = BigDecimal::zero();
-        $restockWarehouseId = $invoice->warehouse ? (string) $invoice->warehouse->public_id : (string) $invoice->warehouse_id;
-
         try {
-            if (! $invoice->isPosted()) {
-                throw new \InvalidArgumentException('Original invoice must be posted.');
-            }
-            $seen = [];
-            foreach (SalesReturnInput::normalize($requestedLines) as $input) {
-                $original = SalesReturnInput::resolveLine($invoice, $input);
-                if (isset($seen[$original->id])) {
-                    throw new \InvalidArgumentException('Repeated original invoice line.');
+            return DB::transaction(function () use ($company, $user, $invoicePublicId, $requestedLines): JsonResponse {
+                $invoice = SalesInvoice::where('company_id', $company->id)
+                    ->where('public_id', $invoicePublicId)
+                    ->with(['lines.product', 'warehouse'])
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($invoice === null) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'NOT_FOUND',
+                        message: 'The original sales invoice was not found.',
+                        status: 404
+                    );
                 }
-                $seen[$original->id] = true;
-                $prior = SalesReturnLine::where('company_id', $company->id)->where('sales_invoice_line_id', $original->id)
-                    ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))->get();
-                $quantity = BigDecimal::of($input['quantity']);
-                $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
-                $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
+
+                if (! $invoice->isPosted()) {
+                    throw new \InvalidArgumentException('Original invoice must be posted.');
+                }
+
+                // Fresh-only return history authorization check and calculation share the EXACT same snapshot under lock
+                $invoiceLineIds = $invoice->lines->pluck('id');
+                $priorReturns = SalesReturnLine::where('company_id', $company->id)
+                    ->whereIn('sales_invoice_line_id', $invoiceLineIds)
+                    ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))
+                    ->get()
+                    ->groupBy('sales_invoice_line_id');
+
+                if (! $user->hasPermissionTo('sales.return.view') && $priorReturns->isNotEmpty()) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'FORBIDDEN',
+                        message: 'Action is unauthorized. Missing required sales.return.view permission to inspect return history.',
+                        status: 403
+                    );
+                }
+
+                $restockItems = [];
+                $totalReturnAmount = BigDecimal::zero();
+                $restockWarehouseId = $invoice->warehouse ? (string) $invoice->warehouse->public_id : (string) $invoice->warehouse_id;
+
+                $seen = [];
+                foreach (SalesReturnInput::normalize($requestedLines) as $input) {
+                    $original = SalesReturnInput::resolveLine($invoice, $input);
+                    if (isset($seen[$original->id])) {
+                        throw new \InvalidArgumentException('Repeated original invoice line.');
+                    }
+                    $seen[$original->id] = true;
+                    $prior = $priorReturns->get($original->id, collect());
+                    $quantity = BigDecimal::of($input['quantity']);
+                    $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
+                    $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
+                    $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
+                    $restockItems[] = [
+                        'sales_invoice_line_id' => (string) $original->public_id,
+                        'product_id' => $original->product?->public_id,
+                        'product_name' => $original->product ? (string) $original->product->displayName() : (string) $original->item_description,
+                        'quantity_returned' => (string) $quantity,
+                        'unit_price' => (string) BigDecimal::of((string) $original->unit_price)->toScale($cmu, RoundingMode::HALF_UP),
+                        'unit_price_exact' => (string) BigDecimal::of((string) $original->unit_price),
+                        'line_total' => (string) $amounts['total']->toScale($cmu, RoundingMode::HALF_UP),
+                        'line_total_exact' => (string) $amounts['total'],
+                        'restock_warehouse_id' => $restockWarehouseId,
+                    ];
+                }
+
                 $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
-                $restockItems[] = [
-                    'sales_invoice_line_id' => (string) $original->public_id,
-                    'product_id' => $original->product?->public_id,
-                    'product_name' => $original->product ? (string) $original->product->displayName() : (string) $original->item_description,
-                    'quantity_returned' => (string) $quantity,
-                    'unit_price' => (string) BigDecimal::of((string) $original->unit_price)->toScale($cmu, RoundingMode::HALF_UP),
-                    'unit_price_exact' => (string) BigDecimal::of((string) $original->unit_price),
-                    'line_total' => (string) $amounts['total']->toScale($cmu, RoundingMode::HALF_UP),
-                    'line_total_exact' => (string) $amounts['total'],
-                    'restock_warehouse_id' => $restockWarehouseId,
-                ];
-            }
+
+                return response()->json([
+                    'sales_invoice_id' => (string) $invoice->public_id,
+                    'invoice_number' => (string) ($invoice->invoice_number ?? $invoice->public_id),
+                    'currency' => (string) $invoice->currency_code,
+                    'currency_minor_units' => $cmu,
+                    'total_return_amount' => (string) $totalReturnAmount->toScale($cmu, RoundingMode::HALF_UP),
+                    'total_return_amount_exact' => (string) $totalReturnAmount,
+                    'lines' => $restockItems,
+                ], 200, [
+                    'Content-Type' => 'application/json',
+                    'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                ]);
+            });
         } catch (\InvalidArgumentException $e) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
         }
-
-        $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
-
-        return response()->json([
-            'sales_invoice_id' => (string) $invoice->public_id,
-            'invoice_number' => (string) ($invoice->invoice_number ?? $invoice->public_id),
-            'currency' => (string) $invoice->currency_code,
-            'currency_minor_units' => $cmu,
-            'total_return_amount' => (string) $totalReturnAmount->toScale($cmu, RoundingMode::HALF_UP),
-            'total_return_amount_exact' => (string) $totalReturnAmount,
-            'lines' => $restockItems,
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Domain\Purchasing\PurchaseCalculator;
+use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Models\Company;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
@@ -164,9 +166,36 @@ final class PurchasePayableAsOf
                 $grandBase = BigDecimal::of((string) $zPurchase->grand_total_base);
                 $grandCurr = BigDecimal::of((string) $zPurchase->grand_total_currency);
                 $taxBase = BigDecimal::of((string) $zPurchase->tax_total_base);
-                $subtotalBase = BigDecimal::of((string) $zPurchase->subtotal_base);
-                if (! $grandBase->isZero() || ! $grandCurr->isZero() || ! $taxBase->isZero() || ! $subtotalBase->isZero()) {
+                if (! $grandBase->isZero() || ! $grandCurr->isZero() || ! $taxBase->isZero()) {
                     throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                }
+                // Validate header against canonical stored lines / calculator / provenance / landed cost
+                $calcResults = [];
+                foreach ($zPurchase->lines as $line) {
+                    $calcResult = app(PurchaseCalculator::class)->line(
+                        $line->quantity,
+                        $line->unit_cost,
+                        $line->discount_type,
+                        $line->discount_value,
+                        $line->tax_rate_snapshot,
+                        $line->tax_inclusive,
+                        $zPurchase->currency_code,
+                        $zPurchase->exchange_rate
+                    );
+                    foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
+                        foreach (['' => $field, '_base' => $field.'Base'] as $suffix => $property) {
+                            if (! $calcResult->{$property}->isEqualTo($line->getAttribute('line_'.$field.$suffix))) {
+                                throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                            }
+                        }
+                    }
+                    $calcResults[] = $calcResult;
+                }
+                $totals = app(SalesDocumentTotalsCalculator::class)->calculate($calcResults);
+                foreach ($totals->toArray() as $field => $expected) {
+                    if (! BigDecimal::of($expected)->isEqualTo($zPurchase->{$field})) {
+                        throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                    }
                 }
                 app(LandedCostIntegrity::class)->validate($zPurchase, true);
                 $actor = $zPurchase->poster ?? User::find($zPurchase->posted_by) ?? new User(['id' => $zPurchase->posted_by]);

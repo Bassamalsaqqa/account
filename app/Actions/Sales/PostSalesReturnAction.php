@@ -348,42 +348,71 @@ class PostSalesReturnAction implements StockEventOwner
                 );
             }
 
-            $taxes = [];
+            $taxComponents = [];
             foreach ($lines as $returnLine) {
                 $tax = BigDecimal::of((string) $returnLine->line_tax);
                 if (! $tax->isZero()) {
                     $original = SalesInvoiceLine::query()->findOrFail($returnLine->sales_invoice_line_id);
                     $account = LedgerAccount::where('company_id', $company->id)->where('id', $original->sales_tax_account_id)->where('active', true)->where('is_control', false)->firstOrFail();
-                    $taxes[$account->id] = ($taxes[$account->id] ?? BigDecimal::zero())->plus($tax);
+                    $taxComponents[$account->id] ??= [
+                        'pos' => BigDecimal::zero(),
+                        'neg' => BigDecimal::zero(),
+                        'net' => BigDecimal::zero(),
+                    ];
+                    if ($tax->isPositive()) {
+                        $taxComponents[$account->id]['pos'] = $taxComponents[$account->id]['pos']->plus($tax);
+                    } else {
+                        $taxComponents[$account->id]['neg'] = $taxComponents[$account->id]['neg']->plus($tax);
+                    }
+                    $taxComponents[$account->id]['net'] = $taxComponents[$account->id]['net']->plus($tax);
                 }
             }
             $taxRemainingBase = $taxTotalBase;
-            $taxRemainingGroups = count($taxes);
-            foreach ($taxes as $accountId => $tax) {
+            $taxRemainingGroups = count($taxComponents);
+            foreach ($taxComponents as $accountId => $comp) {
                 $taxRemainingGroups--;
-                $groupBase = $taxRemainingGroups === 0 ? $taxRemainingBase : $tax->multipliedBy($lockedReturn->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                $netTax = $comp['net'];
+                $groupBase = $taxRemainingGroups === 0 ? $taxRemainingBase : $netTax->multipliedBy($lockedReturn->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 $taxRemainingBase = $taxRemainingBase->minus($groupBase);
 
-                $taxAmount = MoneyAmount::from($tax->abs());
-                $computedBase = $fx->toBase($taxAmount);
-                $isDebit = $tax->isPositive();
+                $computedSignedSum = BigDecimal::zero();
 
-                // 1. Primary transaction currency line in original signed tax direction
-                $postingLines[] = new PostingLineCommand(
-                    lineNumber: count($postingLines) + 1,
-                    ledgerAccountId: $accountId,
-                    debitBase: $isDebit ? $computedBase : MoneyAmount::zero(),
-                    creditBase: $isDebit ? MoneyAmount::zero() : $computedBase,
-                    transactionCurrencyCode: $currency,
-                    transactionAmount: $taxAmount,
-                    exchangeRate: $fx,
-                    description: "Sales Return {$returnNumber} Tax Reversal",
-                );
+                // 1a. Primary transaction currency line for positive tax component (Dr Tax Output)
+                if ($comp['pos']->isPositive()) {
+                    $posAmount = MoneyAmount::from($comp['pos']);
+                    $posBase = $fx->toBase($posAmount);
+                    $computedSignedSum = $computedSignedSum->plus($posBase->getAmount());
+                    $postingLines[] = new PostingLineCommand(
+                        lineNumber: count($postingLines) + 1,
+                        ledgerAccountId: $accountId,
+                        debitBase: $posBase,
+                        creditBase: MoneyAmount::zero(),
+                        transactionCurrencyCode: $currency,
+                        transactionAmount: $posAmount,
+                        exchangeRate: $fx,
+                        description: "Sales Return {$returnNumber} Tax Reversal",
+                    );
+                }
 
-                // 2. Base adjustment line represented separately if groupBase differs from computedBase
-                $targetSigned = $groupBase;
-                $computedSigned = $isDebit ? BigDecimal::of($computedBase->toDecimalString()) : BigDecimal::of($computedBase->toDecimalString())->negated();
-                $baseResidual = $targetSigned->minus($computedSigned);
+                // 1b. Primary transaction currency line for negative tax component (Cr Tax Output)
+                if ($comp['neg']->isNegative()) {
+                    $negAmount = MoneyAmount::from($comp['neg']->abs());
+                    $negBase = $fx->toBase($negAmount);
+                    $computedSignedSum = $computedSignedSum->minus($negBase->getAmount());
+                    $postingLines[] = new PostingLineCommand(
+                        lineNumber: count($postingLines) + 1,
+                        ledgerAccountId: $accountId,
+                        debitBase: MoneyAmount::zero(),
+                        creditBase: $negBase,
+                        transactionCurrencyCode: $currency,
+                        transactionAmount: $negAmount,
+                        exchangeRate: $fx,
+                        description: "Sales Return {$returnNumber} Tax Reversal Adjustment",
+                    );
+                }
+
+                // 2. Base adjustment line represented separately if groupBase differs from computed signed base
+                $baseResidual = $groupBase->minus($computedSignedSum);
 
                 if (! $baseResidual->isZero()) {
                     $residualDebit = $baseResidual->isPositive();

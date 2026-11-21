@@ -28,7 +28,8 @@ final class SalesHistoryAudit
                 $expected = [];
                 $cogs = BigDecimal::zero();
                 $taxGroups = [];
-                foreach (DB::table($lineTable)->where($parentKey, $document->id)->get() as $line) {
+                $docLines = DB::table($lineTable)->where($parentKey, $document->id)->get();
+                foreach ($docLines as $line) {
                     if ((int) $line->company_id !== $companyId) {
                         $errors[] = "$label foreign line.";
                     }
@@ -112,7 +113,23 @@ final class SalesHistoryAudit
                 }
                 $this->add($expected, (int) ($accounts['cogs'] ?? 0), $cogs->multipliedBy($sign));
                 $this->add($expected, (int) ($accounts['inventory'] ?? 0), $cogs->multipliedBy(-$sign));
-                $errors = array_merge($errors, $this->batch($companyId, (int) $document->posting_batch_id, $source, (int) $document->id, $expected));
+
+                $expectedCurrency = [];
+                $grandCurr = BigDecimal::of($document->grand_total_currency);
+                $this->add($expectedCurrency, (int) ($accounts['accounts_receivable'] ?? 0), $grandCurr->multipliedBy($sign));
+                $subtotalCurr = $grandCurr->minus(BigDecimal::of($document->tax_total_currency));
+                $this->add($expectedCurrency, (int) ($accounts[$source === 'sales_invoice' ? 'sales_revenue' : 'sales_returns'] ?? 0), $subtotalCurr->multipliedBy(-$sign));
+                foreach ($docLines as $dLine) {
+                    $t = BigDecimal::of($dLine->line_tax);
+                    if (! $t->isZero()) {
+                        $origLine = $source === 'sales_invoice' ? $dLine : DB::table('sales_invoice_lines')->where('company_id', $companyId)->where('id', $dLine->sales_invoice_line_id)->first();
+                        $taxAccId = $origLine?->sales_tax_account_id;
+                        if ($taxAccId !== null) {
+                            $this->add($expectedCurrency, (int) $taxAccId, $t->multipliedBy(-$sign));
+                        }
+                    }
+                }
+                $errors = array_merge($errors, $this->batch($companyId, (int) $document->posting_batch_id, $source, (int) $document->id, $expected, $expectedCurrency));
                 if ($document->status === 'void') {
                     $errors = array_merge($errors, $this->reversal($companyId, (int) $document->posting_batch_id, (int) $document->void_posting_batch_id));
                 }
@@ -189,10 +206,12 @@ final class SalesHistoryAudit
         $values[$account] = ($values[$account] ?? BigDecimal::zero())->plus($amount);
     }
 
-    /** @param array<int, BigDecimal> $expected
+    /**
+     * @param  array<int, BigDecimal>  $expected
+     * @param  array<int, BigDecimal>  $expectedCurrency
      * @return list<string>
      */
-    public function batch(int $companyId, int $id, string $source, int $sourceId, array $expected): array
+    public function batch(int $companyId, int $id, string $source, int $sourceId, array $expected, array $expectedCurrency = []): array
     {
         $errors = [];
         $batch = DB::table('posting_batches')->where('company_id', $companyId)->where('id', $id)->first();
@@ -200,6 +219,7 @@ final class SalesHistoryAudit
             return ["$source [$sourceId] canonical GL provenance mismatch."];
         }
         $actual = [];
+        $actualCurrency = [];
         foreach (DB::table('posting_lines')->where('posting_batch_id', $id)->get() as $line) {
             if ((int) $line->company_id !== $companyId || ! DB::table('ledger_accounts')->where('company_id', $companyId)->where('id', $line->ledger_account_id)->exists()) {
                 $errors[] = "$source [$sourceId] foreign posting line/account.";
@@ -207,14 +227,33 @@ final class SalesHistoryAudit
             $net = BigDecimal::of($line->debit_base)->minus($line->credit_base);
             $this->add($actual, (int) $line->ledger_account_id, $net);
             if ($line->transaction_currency_code !== null) {
-                if ($line->transaction_amount === null || $line->exchange_rate === null || ! $net->abs()->isEqualTo(BigDecimal::of($line->transaction_amount)->multipliedBy($line->exchange_rate)->toScale(6, RoundingMode::HALF_UP))) {
+                if ($line->transaction_amount === null || $line->exchange_rate === null) {
                     $errors[] = "$source [$sourceId] posting currency metadata mismatch.";
+                } else {
+                    $amt = BigDecimal::of($line->transaction_amount);
+                    if ($amt->isNegative() || $amt->isZero()) {
+                        $errors[] = "$source [$sourceId] non-positive transaction amount.";
+                    }
+                    $debit = BigDecimal::of($line->debit_base);
+                    $signedTx = $debit->isPositive() ? $amt : $amt->negated();
+                    $this->add($actualCurrency, (int) $line->ledger_account_id, $signedTx);
+
+                    if (! $net->abs()->isEqualTo($amt->multipliedBy($line->exchange_rate)->toScale(6, RoundingMode::HALF_UP))) {
+                        $errors[] = "$source [$sourceId] posting currency metadata mismatch.";
+                    }
                 }
             }
         }
         foreach (array_unique(array_merge(array_keys($expected), array_keys($actual))) as $account) {
             if (! ($expected[$account] ?? BigDecimal::zero())->isEqualTo($actual[$account] ?? BigDecimal::zero())) {
                 $errors[] = "$source [$sourceId] GL account [$account] amount mismatch.";
+            }
+        }
+        if (! empty($expectedCurrency)) {
+            foreach (array_unique(array_merge(array_keys($expectedCurrency), array_keys($actualCurrency))) as $account) {
+                if (! ($expectedCurrency[$account] ?? BigDecimal::zero())->isEqualTo($actualCurrency[$account] ?? BigDecimal::zero())) {
+                    $errors[] = "$source [$sourceId] GL account [$account] transaction currency mismatch.";
+                }
             }
         }
 
@@ -230,10 +269,16 @@ final class SalesHistoryAudit
             return ['Canonical accounting reversal linkage mismatch.'];
         }
         $expected = [];
+        $expectedCurrency = [];
         foreach (DB::table('posting_lines')->where('posting_batch_id', $originalId)->get() as $line) {
             $this->add($expected, (int) $line->ledger_account_id, BigDecimal::of($line->credit_base)->minus($line->debit_base));
+            if ($line->transaction_currency_code !== null && $line->transaction_amount !== null) {
+                $amt = BigDecimal::of($line->transaction_amount);
+                $signedTx = BigDecimal::of($line->debit_base)->isPositive() ? $amt->negated() : $amt;
+                $this->add($expectedCurrency, (int) $line->ledger_account_id, $signedTx);
+            }
         }
 
-        return $this->batch($companyId, $reversalId, $reversal->source_type, (int) $reversal->source_id, $expected);
+        return $this->batch($companyId, $reversalId, $reversal->source_type, (int) $reversal->source_id, $expected, $expectedCurrency);
     }
 }

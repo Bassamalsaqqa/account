@@ -11,11 +11,20 @@ use App\Models\Customer;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\NativeCommandReceipt;
+use App\Models\Product;
+use App\Models\ProductUnit;
+use App\Models\Purchase;
+use App\Models\PurchaseLine;
+use App\Models\StockMovement;
+use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\Warehouse;
+use App\Services\Purchasing\PurchasePayableAsOf;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Tenancy\CompanyContext;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -1085,27 +1094,32 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         $idempotencyKey = 'HIST-SUPP-'.Str::uuid();
         $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers";
 
-        // 1. Historical supplier receipt recorded with company_name
+        // 1. Historical supplier receipt recorded with company_name using ACTUAL pinned 598c handler
         $historicalPayload = [
             'company_name' => 'Historical Industrial Supplies',
             'phone' => '+970599114477',
         ];
-        $normalizedHist = [
-            'name_ar' => 'Historical Industrial Supplies',
-            'phone' => '+970599114477',
-        ];
-        ksort($normalizedHist);
+        // 598c handler: alias-expanded, sorted, includes BOTH company_name AND business_name_ar
+        $h598cPayload = $historicalPayload;
+        if (empty($h598cPayload['name_ar']) && ! empty($h598cPayload['name'])) {
+            $h598cPayload['name_ar'] = $h598cPayload['name'];
+        }
+        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+            $h598cPayload['address_ar'] = $h598cPayload['address'];
+        }
+        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+        }
+        ksort($h598cPayload);
 
         $canonicalHist = [
             'actor_id' => (int) $this->user->id,
             'device_id' => (string) MobileDevice::where('user_id', $this->user->id)->firstOrFail()->device_id,
             'company_id' => (string) $this->company->public_id,
             'command' => 'supplier_create',
-            'payload' => $normalizedHist,
+            'payload' => $h598cPayload,
         ];
-        $rawCanonical = $canonicalHist;
-        $rawCanonical['payload'] = $historicalPayload;
-        $storedHash = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
+        $storedHash = hash('sha256', json_encode($canonicalHist, JSON_THROW_ON_ERROR));
 
         $snapshot = [
             'id' => (string) Str::ulid(),
@@ -1158,5 +1172,216 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         $freshAddrResp->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
         $this->assertStringContainsString('address_line_1_ar', (string) $freshAddrResp->json('error.message'));
+    }
+
+    public function test_historical_supplier_update_replay_with_company_name_and_fresh_rejection(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'مورد التحديث الأصلي',
+            'status' => 'active',
+        ]);
+
+        $idempotencyKey = 'HIST-SUPP-UPD-'.Str::uuid();
+        $endpoint = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$vendor->public_id}";
+
+        $updatePayload = [
+            'company_name' => 'Updated Historical Supplier',
+            'phone' => '+970599223344',
+        ];
+
+        // 598c update handler: alias-expanded, sorted, includes both company_name AND business_name_ar
+        $h598cPayload = $updatePayload;
+        if (array_key_exists('name', $h598cPayload) && ! array_key_exists('name_ar', $h598cPayload)) {
+            $h598cPayload['name_ar'] = $h598cPayload['name'];
+        }
+        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+            $h598cPayload['address_ar'] = $h598cPayload['address'];
+        }
+        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+        }
+        ksort($h598cPayload);
+
+        $canonicalHist = [
+            'actor_id' => (int) $this->user->id,
+            'device_id' => (string) MobileDevice::where('user_id', $this->user->id)->firstOrFail()->device_id,
+            'company_id' => (string) $this->company->public_id,
+            'supplier_id' => $vendor->public_id,
+            'command' => 'supplier_update',
+            'payload' => $h598cPayload,
+        ];
+        $storedHash = hash('sha256', json_encode($canonicalHist, JSON_THROW_ON_ERROR));
+
+        $snapshot = [
+            'id' => (string) $vendor->public_id,
+            'name' => 'Updated Historical Supplier',
+            'phone' => '+970599223344',
+        ];
+
+        NativeCommandReceipt::create([
+            'company_id' => $this->company->id,
+            'command_type' => 'supplier_update',
+            'idempotency_key' => $idempotencyKey,
+            'actor_id' => $this->user->id,
+            'device_id' => $canonicalHist['device_id'],
+            'request_hash' => $storedHash,
+            'payload' => $canonicalHist,
+            'response_snapshot' => $snapshot,
+            'status' => 'completed',
+        ]);
+
+        // Replay of exact old update body recovers the receipt
+        $replayResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $idempotencyKey,
+        ])->putJson($endpoint, $updatePayload);
+
+        $replayResp->assertStatus(200)
+            ->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame($snapshot['id'], $replayResp->json('id'));
+
+        // Fresh update with company_name (no existing receipt) MUST reject with 422
+        $freshKey = 'FRESH-UPD-'.Str::uuid();
+        $freshResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $freshKey,
+        ])->putJson($endpoint, [
+            'company_name' => 'Fresh Unauthorized Supplier Update',
+        ]);
+        $freshResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('company_name', (string) $freshResp->json('error.message'));
+    }
+
+    public function test_valid_100_percent_discount_purchase_canonical_read_and_tampered_negative_rejection(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->user);
+        $warehouse = Warehouse::create([
+            'company_id' => $this->company->id,
+            'code' => 'WH-DISC-'.Str::random(4),
+            'name' => 'Warehouse Discount',
+            'active' => true,
+        ]);
+        $unit = Unit::firstOrCreate([
+            'company_id' => $this->company->id,
+            'code' => 'PCS',
+        ], [
+            'name' => 'Piece',
+            'symbol' => 'pc',
+        ]);
+        $product = Product::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'منتج مجاني بالكامل',
+            'item_type' => 'inventory',
+            'track_stock' => true,
+            'status' => 'active',
+        ]);
+        $productUnit = ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $unit->id,
+            'conversion_factor' => '1.000000',
+            'is_base' => true,
+        ]);
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'مورد العينات المجانية',
+            'status' => 'active',
+        ]);
+
+        $companyToday = Carbon::now($this->company->timezone ?? 'UTC')->toDateString();
+
+        // 1. Valid 100% discount purchase: subtotal 10.00, discount 10.00, tax 0.00, grand total 0.00 (null journal)
+        $purchase = Purchase::create([
+            'company_id' => $this->company->id,
+            'vendor_id' => $vendor->id,
+            'warehouse_id' => $warehouse->id,
+            'purchase_number' => 'PO-DISC-100',
+            'purchase_date' => $companyToday,
+            'currency_code' => $this->company->base_currency_code,
+            'base_currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1.0000000000',
+            'subtotal_currency' => '10.000000',
+            'subtotal_base' => '10.000000',
+            'discount_total_currency' => '10.000000',
+            'discount_total_base' => '10.000000',
+            'tax_total_currency' => '0.000000',
+            'tax_total_base' => '0.000000',
+            'grand_total_currency' => '0.000000',
+            'grand_total_base' => '0.000000',
+            'status' => 'posted',
+            'posted_at' => now(),
+            'posted_by' => $this->user->id,
+            'created_by' => $this->user->id,
+        ]);
+
+        $line = PurchaseLine::create([
+            'company_id' => $this->company->id,
+            'purchase_id' => $purchase->id,
+            'product_id' => $product->id,
+            'product_unit_id' => $productUnit->id,
+            'item_description' => 'Free Sample Item',
+            'quantity' => '1.000000',
+            'quantity_base' => '1.000000',
+            'unit_cost' => '10.000000',
+            'unit_cost_base' => '10.000000',
+            'discount_type' => 'fixed',
+            'discount_value' => '10.000000',
+            'line_subtotal' => '10.000000',
+            'line_subtotal_base' => '10.000000',
+            'line_discount' => '10.000000',
+            'line_discount_base' => '10.000000',
+            'line_tax' => '0.000000',
+            'line_tax_base' => '0.000000',
+            'line_total' => '0.000000',
+            'line_total_base' => '0.000000',
+            'inventory_unit_cost_base' => '0.000000',
+        ]);
+
+        $movement = StockMovement::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'warehouse_id' => $warehouse->id,
+            'source_type' => 'purchase',
+            'source_id' => $purchase->id,
+            'source_line_id' => $line->id,
+            'movement_type' => 'purchase',
+            'quantity_delta_base' => '1.000000',
+            'value_delta_base' => '0.000000',
+            'unit_cost_base' => '0.000000',
+            'movement_date' => $purchase->purchase_date,
+            'created_by' => $this->user->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $line->update(['stock_movement_id' => $movement->id]);
+
+        // PurchasePayableAsOf components evaluates cleanly and yields zero payable
+        $asOf = Carbon::now($this->company->timezone ?? 'UTC');
+        $positions = app(PurchasePayableAsOf::class)->components([$purchase], $asOf);
+        $this->assertArrayHasKey($purchase->id, $positions);
+        $this->assertSame('0.000000', (string) $positions[$purchase->id]['outstanding']);
+
+        // HTTP Index returns the 100% discount purchase cleanly
+        $indexResp = $this->withHeader('Authorization', "Bearer {$this->rawToken}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases");
+        $indexResp->assertStatus(200);
+        $found = collect((array) $indexResp->json('purchases'))->firstWhere('id', $purchase->public_id);
+        $this->assertNotNull($found);
+        $this->assertSame('0.000000', $found['remaining_exact']);
+
+        // HTTP Detail returns the purchase cleanly
+        $detailResp = $this->withHeader('Authorization', "Bearer {$this->rawToken}")
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/purchases/{$purchase->public_id}");
+        $detailResp->assertStatus(200);
+        $this->assertSame('0.000000', $detailResp->json('remaining_exact'));
+
+        // 2. Tampered fixture: negative grand total or mismatched header must be rejected
+        $purchase->update(['grand_total_currency' => '-1.000000']);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Incoherent historical Purchase posting provenance.');
+        app(PurchasePayableAsOf::class)->components([$purchase->fresh()], $asOf);
     }
 }

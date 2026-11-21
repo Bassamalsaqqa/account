@@ -324,6 +324,27 @@ final class SupplierController extends Controller
         ];
 
         $legacyHashes = [];
+        // Pinned 598c handler: alias-expanded, sorted, includes both company_name AND business_name_ar
+        $h598cPayload = $payload;
+        if (empty($h598cPayload['name_ar']) && ! empty($h598cPayload['name'])) {
+            $h598cPayload['name_ar'] = $h598cPayload['name'];
+        }
+        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+            $h598cPayload['address_ar'] = $h598cPayload['address'];
+        }
+        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+        }
+        ksort($h598cPayload);
+        $h598cCanonical = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'command' => 'supplier_create',
+            'payload' => $h598cPayload,
+        ];
+        $legacyHashes[] = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+
         if ($normalizedPayload !== $payload) {
             $rawCanonical = $canonicalPayload;
             $rawCanonical['payload'] = $payload;
@@ -458,19 +479,30 @@ final class SupplierController extends Controller
             );
         }
 
+        $existingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+
         $payload = $request->json()->all();
         $unknown = array_diff(array_keys($payload), self::ALLOWED_SUPPLIER_FIELDS);
         if (! empty($unknown)) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'VALIDATION_FAILED',
-                message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
-                status: 422
-            );
+            $isLegacyCompanyNameOnly = count($unknown) === 1 && in_array('company_name', $unknown, true);
+            if (! ($isLegacyCompanyNameOnly && $existingReceipt !== null)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
+                    status: 422
+                );
+            }
         }
         $normalizedPayload = $payload;
         if (array_key_exists('name', $normalizedPayload) && ! array_key_exists('name_ar', $normalizedPayload)) {
             $normalizedPayload['name_ar'] = $normalizedPayload['name'];
         }
+        if (array_key_exists('company_name', $normalizedPayload) && ! array_key_exists('business_name_ar', $normalizedPayload)) {
+            $normalizedPayload['business_name_ar'] = $normalizedPayload['company_name'];
+        }
+        unset($normalizedPayload['company_name'], $normalizedPayload['address_line_1_ar'], $normalizedPayload['address_line_1_en']);
         if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
             $normalizedPayload['address_ar'] = $normalizedPayload['address'];
         }
@@ -486,6 +518,28 @@ final class SupplierController extends Controller
         ];
 
         $legacyHashes = [];
+        // Pinned 598c handler: alias-expanded, sorted, includes both company_name AND business_name_ar
+        $h598cPayload = $payload;
+        if (array_key_exists('name', $h598cPayload) && ! array_key_exists('name_ar', $h598cPayload)) {
+            $h598cPayload['name_ar'] = $h598cPayload['name'];
+        }
+        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+            $h598cPayload['address_ar'] = $h598cPayload['address'];
+        }
+        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+        }
+        ksort($h598cPayload);
+        $h598cCanonical = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'supplier_id' => $supplierId,
+            'command' => 'supplier_update',
+            'payload' => $h598cPayload,
+        ];
+        $legacyHashes[] = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+
         if ($normalizedPayload !== $payload) {
             $rawCanonical = $canonicalPayload;
             $rawCanonical['payload'] = $payload;
