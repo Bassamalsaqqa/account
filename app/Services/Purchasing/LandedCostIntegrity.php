@@ -16,7 +16,9 @@ final class LandedCostIntegrity
     public function validate(Purchase $purchase, bool $posted): void
     {
         $cid = (int) $purchase->company_id;
-        $lines = $purchase->lines()->withoutGlobalScopes()->with('product')->get()->keyBy('id');
+        $lines = ($purchase->relationLoaded('lines') && ($purchase->lines->isEmpty() || $purchase->lines->first()->relationLoaded('product')))
+            ? $purchase->lines->keyBy('id')
+            : $purchase->lines()->withoutGlobalScopes()->with('product')->get()->keyBy('id');
         $rows = LandedCostAllocation::withoutGlobalScopes()->where('purchase_id', $purchase->id)
             ->whereIn('status', ['draft', 'locked'])->get();
         $totals = [];

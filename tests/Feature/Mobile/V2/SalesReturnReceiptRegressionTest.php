@@ -2088,120 +2088,346 @@ final class SalesReturnReceiptRegressionTest extends TestCase
     {
         $this->restoreStaffPermissions();
 
-        // 1. Create an unpaid invoice
-        $salePayload = $this->validSalePayload(
-            eventId: (string) Str::uuid(),
-            amount: '0.000000',
-            unitPrice: '50.000000',
-            settlementMode: 'unpaid'
-        );
-        $sale = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $salePayload);
-        $sale->assertStatus(201);
-        $invoicePublicId = (string) $sale->json('invoice_id');
+        $tz = $this->company->timezone ?? 'Asia/Hebron';
+        $day1 = Carbon::parse('2026-11-20 10:00:00', $tz);
+        $day2 = Carbon::parse('2026-11-21 10:00:00', $tz);
+        $day3 = Carbon::parse('2026-11-22 10:00:00', $tz);
 
-        // Invoice initially unpaid
-        $detail1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
-        $detail1->assertStatus(200);
-        $this->assertSame('ON_CREDIT', $detail1->json('payment_status'));
+        try {
+            // 1. Set business clock BEFORE canonical invoice creation
+            Carbon::setTestNow($day1);
 
-        // 2. Allocate a future cash payment (dated 2 days ahead)
+            $salePayload = $this->validSalePayload(
+                eventId: (string) Str::uuid(),
+                amount: '0.000000',
+                unitPrice: '50.000000',
+                settlementMode: 'unpaid'
+            );
+            $sale = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/sales/online-cash", $salePayload);
+            $sale->assertStatus(201);
+            $invoicePublicId = (string) $sale->json('invoice_id');
+
+            // Invoice initially unpaid
+            $detail1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
+            $detail1->assertStatus(200);
+            $this->assertSame('ON_CREDIT', $detail1->json('payment_status'));
+
+            // 2. Post canonical cash payment dated Day 2 while business clock is Day 1
+            $this->actingAs($this->owner);
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $this->owner->givePermissionTo('money.receipt.create');
+            $invoice = SalesInvoice::where('public_id', $invoicePublicId)->firstOrFail();
+
+            $payment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+                'customer_id' => $this->customer->id,
+                'money_account_id' => $this->cashAccount->id,
+                'payment_date' => $day2->toDateString(),
+                'payment_method' => CustomerPayment::METHOD_CASH,
+                'amount' => '58.000000',
+                'exchange_rate' => '1.0000000000',
+                'idempotency_key' => 'cp-dated-'.Str::random(8),
+                'allocations' => [
+                    [
+                        'sales_invoice_id' => $invoice->id,
+                        'allocated_amount' => '58.000000',
+                    ],
+                ],
+            ]);
+            $paymentId = $payment->id;
+
+            auth()->forgetUser();
+            app(CompanyContext::class)->clearSessionless();
+
+            // As of Day 1: payment is future-dated -> invoice payment_status is ON_CREDIT
+            $detail2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
+            $detail2->assertStatus(200);
+            $this->assertSame('ON_CREDIT', $detail2->json('payment_status'));
+
+            // Filter payment_status=PAID_CASH does NOT list it as of Day 1
+            $listResp1 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?payment_status=PAID_CASH");
+            $listResp1->assertStatus(200);
+            $this->assertNull(collect((array) $listResp1->json('invoices'))->firstWhere('id', $invoicePublicId));
+
+            // 3. Advance business clock to Day 2 (payment effective date)
+            Carbon::setTestNow($day2);
+
+            $detail3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
+            $detail3->assertStatus(200);
+            $this->assertSame('PAID_CASH', $detail3->json('payment_status'));
+
+            $listResp2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?payment_status=PAID_CASH");
+            $listResp2->assertStatus(200);
+            $this->assertNotNull(collect((array) $listResp2->json('invoices'))->firstWhere('id', $invoicePublicId));
+
+            // 4. Advance business clock to Day 3 and call canonical ReverseCustomerPaymentAction on distinct date
+            Carbon::setTestNow($day3);
+            $this->actingAs($this->owner);
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $this->owner->givePermissionTo('money.receipt.reverse');
+            $paymentModel = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->where('id', $paymentId)->firstOrFail();
+            app(ReverseCustomerPaymentAction::class)->execute($paymentModel, $this->owner, 'Canonical dated payment reversal', $day3->toDateString());
+
+            auth()->forgetUser();
+            app(CompanyContext::class)->clearSessionless();
+
+            // 5. Verify list/detail BEFORE effective cutoff (Day 2) still preserves PAID_CASH
+            Carbon::setTestNow($day2);
+            $detailPreCutoff = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
+            $detailPreCutoff->assertStatus(200);
+            $this->assertSame('PAID_CASH', $detailPreCutoff->json('payment_status'));
+
+            $listPreCutoff = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?payment_status=PAID_CASH");
+            $listPreCutoff->assertStatus(200);
+            $this->assertNotNull(collect((array) $listPreCutoff->json('invoices'))->firstWhere('id', $invoicePublicId));
+
+            // 6. Verify list/detail AT reversal cutoff (Day 3) returns to ON_CREDIT
+            Carbon::setTestNow($day3);
+            $detailAtCutoff = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
+            $detailAtCutoff->assertStatus(200);
+            $this->assertSame('ON_CREDIT', $detailAtCutoff->json('payment_status'));
+
+            $listAtCutoff = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+                ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?payment_status=PAID_CASH");
+            $listAtCutoff->assertStatus(200);
+            $this->assertNull(collect((array) $listAtCutoff->json('invoices'))->firstWhere('id', $invoicePublicId));
+
+            // 7. Reconciliations pass cleanly across dated payment and reversal history
+            $this->assertAllSixReconciliationsPass();
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_sales_history_audit_accepts_canonical_receivable_and_revenue_rounding_adjustments(): void
+    {
+        $this->restoreStaffPermissions();
         $this->actingAs($this->owner);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
-        $this->owner->givePermissionTo('money.receipt.create');
-        $invoice = SalesInvoice::where('public_id', $invoicePublicId)->firstOrFail();
-        $tomorrow = Carbon::now($this->company->timezone ?? 'Asia/Hebron')->addDays(2)->toDateString();
+        $this->baseUnit->update(['allows_fraction' => true, 'decimal_places' => 6]);
 
-        $payment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+        Currency::updateOrCreate(['code' => 'JPY'], ['name' => 'Japanese Yen', 'symbol' => '¥', 'minor_units' => 0, 'active' => true]);
+        CompanyCurrency::firstOrCreate(['company_id' => $this->company->id, 'currency_code' => 'JPY'], ['enabled' => true, 'is_base' => false]);
+
+        $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+
+        // 2 JPY invoice at FX 0.3333333333 books 0.666667 base
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
-            'money_account_id' => $this->cashAccount->id,
-            'payment_date' => $tomorrow,
-            'payment_method' => CustomerPayment::METHOD_CASH,
-            'amount' => '58.000000',
-            'exchange_rate' => '1.0000000000',
-            'idempotency_key' => 'cp-future-'.Str::random(8),
-            'allocations' => [
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'JPY',
+            'exchange_rate' => '0.3333333333',
+            'issue_date' => now()->format('Y-m-d'),
+            'lines' => [
                 [
-                    'sales_invoice_id' => $invoice->id,
-                    'allocated_amount' => '58.000000',
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => '2 JPY Fractional Line',
+                    'quantity' => '2.000000',
+                    'unit_price' => '1.000000',
+                    'tax_rate_id' => null,
                 ],
             ],
         ]);
-        $paymentId = $payment->id;
-        $batchId = $payment->posting_batch_id;
+        $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $this->assertSame('0.666667', (string) $invoice->grand_total_base);
 
-        auth()->forgetUser();
-        app(CompanyContext::class)->clearSessionless();
-
-        // Today cutoff: invoice payment_status is NOT paid_cash because payment is in the future!
-        $detail2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
-        $detail2->assertStatus(200);
-        $this->assertSame('ON_CREDIT', $detail2->json('payment_status'));
-
-        // Filter payment_status=PAID_CASH does NOT list it as of today
-        $listResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?payment_status=PAID_CASH");
-        $listResp->assertStatus(200);
-        $found = collect((array) $listResp->json('invoices'))->firstWhere('id', $invoicePublicId);
-        $this->assertNull($found);
-
-        // 3. Settle a payment dated TODAY: invoice becomes PAID_CASH
-        $today = Carbon::now($this->company->timezone ?? 'Asia/Hebron')->toDateString();
-        $todayRequestHash = hash('sha256', json_encode([
-            'company_id' => (int) $this->company->id,
-            'actor_id' => (int) $this->owner->id,
-            'customer_id' => (int) $this->customer->id,
-            'money_account_id' => (int) $this->cashAccount->id,
-            'payment_date' => $today,
-            'payment_method' => 'cash',
-            'amount' => '58.000000',
-            'exchange_rate' => '1.0000000000',
-            'reference_number' => null,
-            'notes' => null,
-            'allocations' => [
+        // First return: 1 JPY relieves 0.333333
+        $invLine = $invoice->lines->first();
+        $draft1 = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $invoice->id,
+            'issue_date' => now()->format('Y-m-d'),
+            'reason' => 'First 1 JPY return',
+            'lines' => [
                 [
-                    'sales_invoice_id' => (int) $invoice->id,
-                    'allocated_amount' => '58.000000',
+                    'sales_invoice_line_id' => $invLine->id,
+                    'quantity' => '1.000000',
                 ],
             ],
-            'document_locale' => null,
-        ], JSON_THROW_ON_ERROR));
-
-        DB::table('customer_payments')->where('id', $paymentId)->update([
-            'payment_date' => $today,
-            'request_hash' => $todayRequestHash,
         ]);
-        DB::table('posting_batches')->where('id', $batchId)->update(['posting_date' => $today]);
+        $return1 = app(PostSalesReturnAction::class)->execute($draft1, $this->owner);
+        $this->assertSame('0.333333', (string) $return1->grand_total_base);
 
-        $detail3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
-        $detail3->assertStatus(200);
-        $this->assertSame('PAID_CASH', $detail3->json('payment_status'));
+        // Final return: 1 JPY relieves remaining base 0.333334
+        // The helper emits 0.333333 currency line and 0.000001 base-only adjustment on both accounts
+        $draft2 = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $invoice->id,
+            'issue_date' => now()->format('Y-m-d'),
+            'reason' => 'Final 1 JPY return with rounding residual',
+            'lines' => [
+                [
+                    'sales_invoice_line_id' => $invLine->id,
+                    'quantity' => '1.000000',
+                ],
+            ],
+        ]);
+        $return2 = app(PostSalesReturnAction::class)->execute($draft2, $this->owner);
+        $this->assertSame('0.333334', (string) $return2->grand_total_base);
 
-        $listResp2 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?payment_status=PAID_CASH");
-        $listResp2->assertStatus(200);
-        $found2 = collect((array) $listResp2->json('invoices'))->firstWhere('id', $invoicePublicId);
-        $this->assertNotNull($found2);
+        // Verify batch lines contain the 0.000001 base-only adjustments
+        $batch2 = PostingBatch::withoutGlobalScopes()->where('company_id', $this->company->id)
+            ->where('source_type', 'sales_return')
+            ->where('source_id', $return2->id)
+            ->firstOrFail();
+        $lines2 = DB::table('posting_lines')->where('posting_batch_id', $batch2->id)->get();
+        $baseOnlyAdjustments = $lines2->filter(fn ($l) => $l->transaction_currency_code === null && (BigDecimal::of((string) $l->debit_base)->isEqualTo('0.000001') || BigDecimal::of((string) $l->credit_base)->isEqualTo('0.000001')));
+        $this->assertGreaterThanOrEqual(2, $baseOnlyAdjustments->count(), 'Both accounts must receive exact rounding adjustments');
 
-        // 4. Reverse canonically using ReverseCustomerPaymentAction (allocations preserved immutably)
+        // Audit MUST accept both receivables and revenue base-only rounding adjustments
+        $audit = app(SalesHistoryAudit::class);
+        $this->assertEmpty($audit->audit((int) $this->company->id));
+
+        $this->assertAllSixReconciliationsPass();
+    }
+
+    public function test_sales_return_below_precision_tax_component_rejected_consistently(): void
+    {
+        $this->restoreStaffPermissions();
         $this->actingAs($this->owner);
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
-        $this->owner->givePermissionTo('money.receipt.reverse');
-        $paymentModel = CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->where('id', $paymentId)->firstOrFail();
-        app(ReverseCustomerPaymentAction::class)->execute($paymentModel, $this->owner, 'Canonical dated payment reversal', $today);
+        $this->baseUnit->update(['allows_fraction' => true, 'decimal_places' => 6]);
 
-        $detail4 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoicePublicId}");
-        $detail4->assertStatus(200);
-        $this->assertSame('ON_CREDIT', $detail4->json('payment_status'));
+        Currency::updateOrCreate(['code' => 'JPY'], ['name' => 'Japanese Yen', 'symbol' => '¥', 'minor_units' => 0, 'active' => true]);
+        CompanyCurrency::firstOrCreate(['company_id' => $this->company->id, 'currency_code' => 'JPY'], ['enabled' => true, 'is_base' => false]);
 
-        $listResp3 = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
-            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices?payment_status=PAID_CASH");
-        $listResp3->assertStatus(200);
-        $found3 = collect((array) $listResp3->json('invoices'))->firstWhere('id', $invoicePublicId);
-        $this->assertNull($found3);
+        $tax10 = TaxRate::create([
+            'company_id' => $this->company->id,
+            'code' => 'VAT10-MICRO',
+            'name_ar' => 'ضريبة 10%',
+            'name_en' => 'VAT 10%',
+            'rate' => '10.000000',
+            'calculation' => 'exclusive',
+            'active' => true,
+        ]);
+
+        $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+        // 4 JPY with 10% tax = 0.40 JPY tax. At FX 0.000001, tax 0.40 * 0.000001 = 0.000000 base
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'JPY',
+            'exchange_rate' => '0.0000010000',
+            'issue_date' => now()->format('Y-m-d'),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => 'Below precision tax line',
+                    'quantity' => '1.000000',
+                    'unit_price' => '4.000000',
+                    'tax_rate_id' => $tax10->id,
+                ],
+            ],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $invLine = $invoice->lines->first();
+
+        // 1. Preview MUST reject unrepresentable tax component with 422 before draft creation or side effects
+        $previewResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns/preview", [
+                'sales_invoice_id' => $invoice->public_id,
+                'lines' => [
+                    [
+                        'sales_invoice_line_id' => $invLine->public_id,
+                        'quantity' => '1.000000',
+                    ],
+                ],
+            ]);
+        $previewResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $previewResp->json('error.message'));
+
+        // 2. Post endpoint MUST reject unrepresentable tax component before sequence numbering or stock movements
+        $postResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'RET-MICRO-'.Str::uuid())
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
+                'sales_invoice_id' => $invoice->public_id,
+                'reason' => 'Below precision tax return',
+                'lines' => [
+                    [
+                        'sales_invoice_line_id' => $invLine->public_id,
+                        'quantity' => '1.000000',
+                    ],
+                ],
+            ]);
+        $postResp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $postResp->json('error.message'));
+
+        // 3. Domain action directly throws InvalidArgumentException before side effects
+        $draft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $invoice->id,
+            'issue_date' => now()->format('Y-m-d'),
+            'reason' => 'Action test',
+            'lines' => [
+                [
+                    'sales_invoice_line_id' => $invLine->id,
+                    'quantity' => '1.000000',
+                ],
+            ],
+        ]);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Sales return tax component cannot be represented at the current exchange rate.');
+        app(PostSalesReturnAction::class)->execute($draft, $this->owner);
+    }
+
+    public function test_sales_history_audit_validates_all_or_none_currency_metadata(): void
+    {
+        $this->restoreStaffPermissions();
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        // Create standard invoice
+        $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => now()->format('Y-m-d'),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => 'Metadata validation line',
+                    'quantity' => '1.000000',
+                    'unit_price' => '10.000000',
+                    'tax_rate_id' => null,
+                ],
+            ],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+
+        $batch = PostingBatch::where('id', $invoice->posting_batch_id)->firstOrFail();
+        $firstLine = DB::table('posting_lines')->where('posting_batch_id', $batch->id)->first();
+        $this->assertNotNull($firstLine);
+
+        // Deliberate corruption: null currency code but non-null transaction amount
+        DB::table('posting_lines')->where('id', $firstLine->id)->update([
+            'transaction_currency_code' => null,
+            'transaction_amount' => '10.000000',
+            'exchange_rate' => '1.0000000000',
+        ]);
+
+        $audit = app(SalesHistoryAudit::class);
+        $errors = $audit->audit((int) $this->company->id);
+        $this->assertNotEmpty($errors);
+        $hasMetadataError = collect($errors)->contains(fn ($e) => str_contains((string) $e, 'posting currency metadata mismatch.'));
+        $this->assertTrue($hasMetadataError, 'Audit must fail when transaction_currency_code is null but amount/rate are present');
+
+        // Restore clean line
+        DB::table('posting_lines')->where('id', $firstLine->id)->update([
+            'transaction_currency_code' => $firstLine->transaction_currency_code,
+            'transaction_amount' => $firstLine->transaction_amount,
+            'exchange_rate' => $firstLine->exchange_rate,
+        ]);
     }
 }

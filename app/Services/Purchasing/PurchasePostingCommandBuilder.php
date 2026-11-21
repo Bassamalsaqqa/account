@@ -27,12 +27,16 @@ final class PurchasePostingCommandBuilder
         $inventoryCurrency = BigDecimal::zero();
         $taxes = [];
         $movementCount = 0;
-        $purchase->setRelation('lines', $purchase->lines()->withoutGlobalScopes()->get());
+        if (! $purchase->relationLoaded('lines')) {
+            $purchase->setRelation('lines', $purchase->lines()->withoutGlobalScopes()->get());
+        }
         foreach ($purchase->lines as $line) {
             if ((int) $line->company_id !== (int) $purchase->company_id) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
             }
-            $line->setRelation('lots', $line->lots()->withoutGlobalScopes()->get());
+            if (! $line->relationLoaded('lots')) {
+                $line->setRelation('lots', $line->lots()->withoutGlobalScopes()->get());
+            }
             foreach ($line->lots as $lot) {
                 if ((int) $lot->company_id !== (int) $purchase->company_id) {
                     throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));

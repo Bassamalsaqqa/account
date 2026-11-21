@@ -121,6 +121,30 @@ class PostSalesReturnAction implements StockEventOwner
             $issueDate = (string) $lockedReturn->issue_date->format('Y-m-d');
             $year = (int) substr($issueDate, 0, 4);
 
+            $fx = ExchangeRate::from($lockedReturn->exchange_rate);
+            $taxCheck = [];
+            foreach ($lines as $returnLine) {
+                $t = BigDecimal::of((string) $returnLine->line_tax);
+                if (! $t->isZero()) {
+                    $origLine = SalesInvoiceLine::query()->findOrFail($returnLine->sales_invoice_line_id);
+                    $taxAcc = (int) $origLine->sales_tax_account_id;
+                    $taxCheck[$taxAcc] ??= ['pos' => BigDecimal::zero(), 'neg' => BigDecimal::zero()];
+                    if ($t->isPositive()) {
+                        $taxCheck[$taxAcc]['pos'] = $taxCheck[$taxAcc]['pos']->plus($t);
+                    } else {
+                        $taxCheck[$taxAcc]['neg'] = $taxCheck[$taxAcc]['neg']->plus($t);
+                    }
+                }
+            }
+            foreach ($taxCheck as $comp) {
+                if ($comp['pos']->isPositive() && $fx->toBase(MoneyAmount::from($comp['pos']))->isZero()) {
+                    throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
+                }
+                if ($comp['neg']->isNegative() && $fx->toBase(MoneyAmount::from($comp['neg']->abs()))->isZero()) {
+                    throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
+                }
+            }
+
             // 5. Stock restoration at exact original historical sale cost
             $totalCogsBase = BigDecimal::zero();
             $stockLineCommands = [];

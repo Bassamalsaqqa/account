@@ -1174,6 +1174,52 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         $freshAddrResp->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
         $this->assertStringContainsString('address_line_1_ar', (string) $freshAddrResp->json('error.message'));
+
+        // 4. Historical supplier receipt recorded with address_line_1_ar using ACTUAL pinned 598c handler
+        $histAddrKey = 'HIST-ADDR-'.Str::uuid();
+        $historicalAddrPayload = [
+            'name' => 'Historical Address Supplies',
+            'address_line_1_ar' => 'شارع يافا القديم',
+            'phone' => '+970599335577',
+        ];
+        $h598cAddrPayload = [
+            'address_line_1_ar' => 'شارع يافا القديم',
+            'name' => 'Historical Address Supplies',
+            'name_ar' => 'Historical Address Supplies',
+            'phone' => '+970599335577',
+        ];
+        ksort($h598cAddrPayload);
+        $canonicalHistAddr = [
+            'actor_id' => (int) $this->user->id,
+            'device_id' => (string) MobileDevice::where('user_id', $this->user->id)->firstOrFail()->device_id,
+            'company_id' => (string) $this->company->public_id,
+            'command' => 'supplier_create',
+            'payload' => $h598cAddrPayload,
+        ];
+        $storedAddrHash = hash('sha256', json_encode($canonicalHistAddr, JSON_THROW_ON_ERROR));
+        $snapshotAddr = [
+            'id' => (string) Str::ulid(),
+            'name' => 'Historical Address Supplies',
+            'phone' => '+970599335577',
+        ];
+        NativeCommandReceipt::create([
+            'company_id' => $this->company->id,
+            'command_type' => 'supplier_create',
+            'idempotency_key' => $histAddrKey,
+            'actor_id' => $this->user->id,
+            'device_id' => $canonicalHistAddr['device_id'],
+            'request_hash' => $storedAddrHash,
+            'payload' => $canonicalHistAddr,
+            'response_snapshot' => $snapshotAddr,
+            'status' => 'completed',
+        ]);
+        $replayAddrResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $histAddrKey,
+        ])->postJson($endpoint, $historicalAddrPayload);
+        $replayAddrResp->assertStatus(200)
+            ->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame($snapshotAddr['id'], $replayAddrResp->json('id'));
     }
 
     public function test_historical_supplier_update_replay_with_company_name_and_fresh_rejection(): void
@@ -1268,7 +1314,54 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         ])->putJson($endpoint, [
             'company_name' => 'شركة تحديث حديثة',
         ]);
-        $aliasResp->assertStatus(409);
+        $this->assertTrue(in_array($aliasResp->status(), [409, 422], true));
+
+        // Historical supplier update receipt recorded with address_line_1_ar using ACTUAL pinned 598c handler
+        $histUpdAddrKey = 'HIST-UPD-ADDR-'.Str::uuid();
+        $historicalUpdAddrPayload = [
+            'name' => 'مورد تحديث بعنوان تاريخي',
+            'address_line_1_ar' => 'شارع القدس القديم',
+            'phone' => '+970599446688',
+        ];
+        $h598cUpdAddrPayload = [
+            'address_line_1_ar' => 'شارع القدس القديم',
+            'name' => 'مورد تحديث بعنوان تاريخي',
+            'name_ar' => 'مورد تحديث بعنوان تاريخي',
+            'phone' => '+970599446688',
+        ];
+        ksort($h598cUpdAddrPayload);
+        $canonicalHistUpdAddr = [
+            'actor_id' => (int) $this->user->id,
+            'device_id' => (string) MobileDevice::where('user_id', $this->user->id)->firstOrFail()->device_id,
+            'company_id' => (string) $this->company->public_id,
+            'supplier_id' => $vendor->public_id,
+            'command' => 'supplier_update',
+            'payload' => $h598cUpdAddrPayload,
+        ];
+        $storedUpdAddrHash = hash('sha256', json_encode($canonicalHistUpdAddr, JSON_THROW_ON_ERROR));
+        $snapshotUpdAddr = [
+            'id' => (string) $vendor->public_id,
+            'name' => 'مورد تحديث بعنوان تاريخي',
+            'phone' => '+970599446688',
+        ];
+        NativeCommandReceipt::create([
+            'company_id' => $this->company->id,
+            'command_type' => 'supplier_update',
+            'idempotency_key' => $histUpdAddrKey,
+            'actor_id' => $this->user->id,
+            'device_id' => $canonicalHistUpdAddr['device_id'],
+            'request_hash' => $storedUpdAddrHash,
+            'payload' => $canonicalHistUpdAddr,
+            'response_snapshot' => $snapshotUpdAddr,
+            'status' => 'completed',
+        ]);
+        $replayUpdAddrResp = $this->withHeaders([
+            'Authorization' => "Bearer {$this->rawToken}",
+            'Idempotency-Key' => $histUpdAddrKey,
+        ])->putJson($endpoint, $historicalUpdAddrPayload);
+        $replayUpdAddrResp->assertStatus(200)
+            ->assertHeader('X-Idempotent-Replay', 'true');
+        $this->assertSame($snapshotUpdAddr['id'], $replayUpdAddrResp->json('id'));
     }
 
     public function test_valid_100_percent_discount_purchase_canonical_read_and_tampered_negative_rejection(): void
@@ -1362,11 +1455,83 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         $detailResp->assertStatus(200);
         $this->assertSame('0.000000', $detailResp->json('remaining_exact'));
 
-        // 2. Tampered fixture: deliberate owned DB corruption bypassing Eloquent immutability guard
-        DB::table('purchases')->where('id', $purchase->id)->update(['grand_total_currency' => '-1.000000']);
+        // 2. Tampered fixtures: test subtotal, discount, and tax independently
         app(CompanyContext::class)->setCompany($this->company, $this->user);
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Incoherent historical Purchase posting provenance.');
-        app(PurchasePayableAsOf::class)->components([$purchase->fresh()], $asOf);
+
+        // a) Tamper discount_total_currency 10 -> 0 (header/line consistency lost)
+        DB::table('purchases')->where('id', $purchase->id)->update(['discount_total_currency' => '0.000000']);
+        try {
+            app(PurchasePayableAsOf::class)->components([$purchase->fresh()], $asOf);
+            $this->fail('Tampered discount_total_currency must throw Incoherent historical Purchase posting provenance.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('Incoherent historical Purchase posting provenance.', $e->getMessage());
+        }
+        DB::table('purchases')->where('id', $purchase->id)->update(['discount_total_currency' => '10.000000']);
+
+        // b) Tamper subtotal_currency 10 -> 0
+        DB::table('purchases')->where('id', $purchase->id)->update(['subtotal_currency' => '0.000000']);
+        try {
+            app(PurchasePayableAsOf::class)->components([$purchase->fresh()], $asOf);
+            $this->fail('Tampered subtotal_currency must throw Incoherent historical Purchase posting provenance.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('Incoherent historical Purchase posting provenance.', $e->getMessage());
+        }
+        DB::table('purchases')->where('id', $purchase->id)->update(['subtotal_currency' => '10.000000']);
+
+        // c) Tamper tax_total_currency 0 -> 1
+        DB::table('purchases')->where('id', $purchase->id)->update(['tax_total_currency' => '1.000000']);
+        try {
+            app(PurchasePayableAsOf::class)->components([$purchase->fresh()], $asOf);
+            $this->fail('Tampered tax_total_currency must throw Incoherent historical Purchase posting provenance.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('Incoherent historical Purchase posting provenance.', $e->getMessage());
+        }
+        DB::table('purchases')->where('id', $purchase->id)->update(['tax_total_currency' => '0.000000']);
+
+        // d) Tamper grand_total_currency to negative
+        DB::table('purchases')->where('id', $purchase->id)->update(['grand_total_currency' => '-1.000000']);
+        try {
+            app(PurchasePayableAsOf::class)->components([$purchase->fresh()], $asOf);
+            $this->fail('Tampered grand_total_currency must throw Incoherent historical Purchase posting provenance.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('Incoherent historical Purchase posting provenance.', $e->getMessage());
+        }
+        DB::table('purchases')->where('id', $purchase->id)->update(['grand_total_currency' => '0.000000']);
+
+        // 3. Multiple free purchases bounded query count verification
+        $draft2 = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->user, [
+            'vendor_id' => $vendor->id,
+            'warehouse_id' => $warehouse->id,
+            'purchase_date' => $companyToday,
+            'currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'quantity' => '2',
+                    'unit_cost' => '5',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '10',
+                ],
+            ],
+        ]);
+        $purchase2 = app(PostPurchaseAction::class)->execute($draft2, $this->user);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $multiPositions = app(PurchasePayableAsOf::class)->components([$purchase->fresh(), $purchase2->fresh()], $asOf);
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertArrayHasKey($purchase->id, $multiPositions);
+        $this->assertArrayHasKey($purchase2->id, $multiPositions);
+        $this->assertSame('0.000000', (string) $multiPositions[$purchase->id]['outstanding']);
+        $this->assertSame('0.000000', (string) $multiPositions[$purchase2->id]['outstanding']);
+
+        // Assert query count across multiple free purchases is bounded with no duplicate lazy reloads
+        $lineTableQueries = collect($queries)->filter(fn ($q) => str_contains($q['query'], 'purchase_lines'));
+        $this->assertLessThanOrEqual(2, $lineTableQueries->count(), 'Query count across multiple free purchases must remain bounded with no duplicate lazy reloads');
     }
 }

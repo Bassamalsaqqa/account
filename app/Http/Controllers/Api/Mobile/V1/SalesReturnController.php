@@ -7,6 +7,8 @@ namespace App\Http\Controllers\Api\Mobile\V1;
 use App\Actions\Sales\ExecuteNativeSalesReturnAction;
 use App\Actions\Sales\SalesReturnInput;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
+use App\Domain\Money\ValueObjects\ExchangeRate;
+use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
@@ -121,6 +123,13 @@ final class SalesReturnController extends Controller
                     $prior = $priorReturns->get($original->id, collect());
                     $quantity = BigDecimal::of($input['quantity']);
                     $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
+                    $fx = ExchangeRate::from($invoice->exchange_rate);
+                    if ($amounts['tax']->isPositive() && $fx->toBase(MoneyAmount::from($amounts['tax']))->isZero()) {
+                        throw new \InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
+                    }
+                    if ($amounts['total']->isPositive() && $fx->toBase(MoneyAmount::from($amounts['total']))->isZero()) {
+                        throw new \InvalidArgumentException('Sales return total component cannot be represented at the current exchange rate.');
+                    }
                     $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
                     $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
                     $restockItems[] = [
