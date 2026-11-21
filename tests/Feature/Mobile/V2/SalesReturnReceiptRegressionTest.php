@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Spatie\Permission\PermissionRegistrar;
 use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
 use Tests\Support\EnforcesDisposableDatabaseOwnership;
@@ -517,6 +518,8 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $payload['lines'][0]['sales_invoice_line_id'] = $invoice->lines->first()->public_id;
         $payload['lines'][] = ['sales_invoice_line_id' => $invoice->lines->last()->public_id, 'product_id' => $this->product->public_id, 'quantity' => '1'];
         $preview = $this->postJson($path.'/preview', $payload)->assertStatus(200);
+        $this->assertSame((string) $invoice->lines->first()->public_id, (string) $preview->json('lines.0.sales_invoice_line_id'));
+        $this->assertSame((string) $invoice->lines->last()->public_id, (string) $preview->json('lines.1.sales_invoice_line_id'));
         $posted = $this->withHeader('Idempotency-Key', 'specific')->postJson($path, $payload)->assertStatus(201);
         $this->assertSame('104.40', $preview->json('total_return_amount'));
         $this->assertSame($preview->json('total_return_amount'), $posted->json('total_amount'));
@@ -531,7 +534,11 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         // Projection-only fixture: do not alter economic history through a public runtime path.
         DB::table('stock_movements')->where('id', $movement->id)->update(['quantity_delta_base' => '0.000001', 'quantity_after_product_company' => '0.000001']);
         $response = $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products/{$this->product->public_id}/movements")->assertStatus(200);
-        $entry = collect($response->json('movements'))->firstWhere('id', $movement->public_id);
+        $movements = $response->json('movements');
+        $this->assertIsArray($movements);
+        /** @var array<int, array<string, mixed>> $movements */
+        $entry = collect($movements)->firstWhere('id', $movement->public_id);
+        $this->assertIsArray($entry);
         $this->assertSame('0.000001', $entry['delta']);
         $this->assertSame('0.000001', $entry['resulting_stock']);
     }
@@ -557,6 +564,124 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         }
     }
 
+    public function test_sales_return_receipt_status_lookup_lost_ack_and_security_boundaries(): void
+    {
+        $payload = $this->returnPayload();
+        $path = "/api/mobile/v1/companies/{$this->company->public_id}/sales/returns";
+        $key = 'lost-ack-sales-return-'.(string) Str::uuid();
+
+        // 1. Submit sales return and successfully post
+        $createResp = $this->withHeaders([
+            'Authorization' => 'Bearer '.$this->rawToken,
+            'Idempotency-Key' => $key,
+        ])->postJson($path, $payload);
+        $createResp->assertStatus(201);
+        $returnId = (string) $createResp->json('id');
+        $fingerprintAfterPost = $this->fingerprint();
+
+        // 2. Lost ACK recovery: GET /receipts/{idempotencyKey}/status returns 200 with frozen response
+        $statusUrl = "/api/mobile/v1/companies/{$this->company->public_id}/receipts/{$key}/status";
+        $statusResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson($statusUrl);
+        $statusResp->assertStatus(200);
+        $statusResp->assertJsonPath('command_type', 'sales_return');
+        $statusResp->assertJsonPath('status', 'completed');
+        $statusResp->assertJsonPath('entity_public_id', $returnId);
+        $statusResp->assertJsonPath('result.id', $returnId);
+        $this->assertSame($createResp->json(), $statusResp->json('result'));
+
+        // No economic repeat
+        $this->assertSame($fingerprintAfterPost, $this->fingerprint());
+        $this->assertSame(1, DB::table('sales_returns')->where('company_id', $this->company->id)->count());
+
+        // 3. Foreign company context => 404 NOT_FOUND
+        $foreignCompany = app(CreateCompanyAction::class)->execute($this->owner, [
+            'name_ar' => 'شركة أخرى أجنبية',
+            'name_en' => 'Foreign Company',
+            'base_currency_code' => 'ILS',
+        ]);
+        app(CompanyRoleService::class)->ensurePermissionsExist();
+        app(CompanyRoleService::class)->seedCompanyRoles($foreignCompany);
+        CompanyUser::create([
+            'company_id' => $foreignCompany->id,
+            'user_id' => $this->staff->id,
+            'status' => 'active',
+            'is_owner' => false,
+        ]);
+        setPermissionsTeamId($foreignCompany->id);
+        $this->staff->assignRole('Sales');
+
+        $foreignRawToken = 'st_m_foreign_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $foreignRawToken),
+            'device_id' => $this->device->device_id,
+            'user_id' => $this->staff->id,
+            'company_id' => $foreignCompany->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->staff->password), 0, 16),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$foreignRawToken)
+            ->getJson("/api/mobile/v1/companies/{$foreignCompany->public_id}/receipts/{$key}/status")
+            ->assertStatus(404);
+
+        // 4. Other actor or device context => 403 Forbidden
+        $altDevice = $this->device->replicate();
+        $altDevice->device_id = (string) Str::uuid();
+        $altDevice->user_id = $this->staff->id;
+        $altDevice->save();
+        $altRawToken = 'st_m_test_'.bin2hex(random_bytes(32));
+        $altToken = $this->token->replicate();
+        $altToken->token_hash = hash('sha256', $altRawToken);
+        $altToken->device_id = $altDevice->device_id;
+        $altToken->user_id = $this->staff->id;
+        $altToken->password_epoch = 'epoch-'.substr(hash('sha256', (string) $this->staff->password), 0, 16);
+        $altToken->save();
+
+        $this->withHeader('Authorization', 'Bearer '.$altRawToken)
+            ->getJson($statusUrl)
+            ->assertStatus(403);
+
+        $ownerDevice = MobileDevice::create([
+            'device_id' => (string) Str::uuid(),
+            'user_id' => $this->owner->id,
+            'device_name' => 'Owner Pixel',
+            'platform' => 'android',
+            'app_version' => '2.0.0',
+            'os_version' => '14.0',
+            'status' => 'active',
+        ]);
+        $ownerRawToken = 'st_m_test_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $ownerRawToken),
+            'device_id' => $ownerDevice->device_id,
+            'user_id' => $this->owner->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->owner->password), 0, 16),
+            'expires_at' => now()->addDays(7),
+        ]);
+        $this->withHeader('Authorization', 'Bearer '.$ownerRawToken)
+            ->getJson($statusUrl)
+            ->assertStatus(403);
+
+        // 5. Revoked permission => 403 Forbidden
+        setPermissionsTeamId($this->company->id);
+        app(PermissionRegistrar::class)->setPermissionsTeamId($this->company->id);
+        $this->staff->removeRole('Sales');
+        $this->staff->revokePermissionTo('sales.return.view');
+        $this->staff->unsetRelation('roles')->unsetRelation('permissions');
+
+        $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->getJson($statusUrl)
+            ->assertStatus(403);
+
+        // Restore role for subsequent assertions and recon
+        setPermissionsTeamId($this->company->id);
+        app(PermissionRegistrar::class)->setPermissionsTeamId($this->company->id);
+        $this->staff->assignRole('Sales');
+        $this->assertAllSixReconciliationsPass();
+    }
+
     public function test_audit_failure_rolls_back_return(): void
     {
         $payload = $this->returnPayload();
@@ -565,13 +690,19 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $isolated = clone $dispatcher;
         AuditEvent::setEventDispatcher($isolated);
         AuditEvent::created(function (): void {
-            throw new RuntimeException('Injected audit persistence failure');
+            throw new \RuntimeException('Injected audit persistence failure');
         });
         try {
-            $this->withHeader('Idempotency-Key', 'audit-failure')->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", $payload)->assertStatus(422);
+            $resp = $this->withHeader('Idempotency-Key', 'audit-failure')->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", $payload);
+            $resp->assertStatus(422);
+            $this->assertStringContainsString('Injected audit persistence failure', (string) ($resp->json('error.message') ?? $resp->json('message')));
         } finally {
             AuditEvent::setEventDispatcher($dispatcher);
         }
+        $this->assertSame(0, DB::table('sales_returns')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('sales_return_lines')->where('company_id', $this->company->id)->count());
+        $this->assertSame(0, DB::table('stock_movements')->where('company_id', $this->company->id)->where('source_type', 'sales_return')->count());
+        $this->assertSame(0, DB::table('posting_batches')->where('company_id', $this->company->id)->where('source_type', 'sales_return')->count());
         $this->assertSame($before, $this->fingerprint());
         $this->assertAllSixReconciliationsPass();
     }

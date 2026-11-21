@@ -103,6 +103,7 @@ final class SalesReturnController extends Controller
                 $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
                 $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
                 $restockItems[] = [
+                    'sales_invoice_line_id' => (string) $original->public_id,
                     'product_id' => $original->product?->public_id,
                     'product_name' => $original->product ? (string) $original->product->displayName() : (string) $original->item_description,
                     'quantity_returned' => (string) $quantity,
