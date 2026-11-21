@@ -4,20 +4,22 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
-use App\Actions\Sales\CreateSalesReturnDraftAction;
-use App\Actions\Sales\PostSalesReturnAction;
+use App\Actions\Sales\ExecuteNativeSalesReturnAction;
+use App\Actions\Sales\SalesReturnInput;
+use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\SalesInvoice;
+use App\Models\SalesReturnLine;
 use App\Models\User;
-use App\Support\Tenancy\CompanyContext;
+use App\Services\Sales\SalesReturnAmounts;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
-use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
 final class SalesReturnController extends Controller
@@ -84,29 +86,33 @@ final class SalesReturnController extends Controller
         $totalReturnAmount = BigDecimal::zero();
         $restockWarehouseId = $invoice->warehouse ? (string) $invoice->warehouse->public_id : (string) $invoice->warehouse_id;
 
-        foreach ($requestedLines as $reqLine) {
-            $productId = $reqLine['product_id'] ?? null;
-            $quantity = BigDecimal::of((string) ($reqLine['quantity'] ?? '1'));
-
-            // Find matching original invoice line
-            $origLine = $invoice->lines->first(function ($l) use ($productId) {
-                return $l->product && (string) $l->product->public_id === (string) $productId;
-            });
-
-            if ($origLine !== null) {
-                $unitPrice = BigDecimal::of((string) $origLine->unit_price);
-                $lineTotal = $quantity->multipliedBy($unitPrice);
-                $totalReturnAmount = $totalReturnAmount->plus($lineTotal);
-
+        try {
+            if (! $invoice->isPosted()) {
+                throw new \InvalidArgumentException('Original invoice must be posted.');
+            }
+            $seen = [];
+            foreach (SalesReturnInput::normalize($requestedLines) as $input) {
+                $original = SalesReturnInput::resolveLine($invoice, $input);
+                if (isset($seen[$original->id])) {
+                    throw new \InvalidArgumentException('Repeated original invoice line.');
+                }
+                $seen[$original->id] = true;
+                $prior = SalesReturnLine::where('company_id', $company->id)->where('sales_invoice_line_id', $original->id)
+                    ->whereHas('salesReturn', fn ($q) => $q->where('status', 'posted'))->get();
+                $quantity = BigDecimal::of($input['quantity']);
+                $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
+                $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
                 $restockItems[] = [
-                    'product_id' => $productId,
-                    'product_name' => $origLine->product ? (string) $origLine->product->displayName() : (string) $origLine->item_description,
+                    'product_id' => $original->product?->public_id,
+                    'product_name' => $original->product ? (string) $original->product->displayName() : (string) $original->item_description,
                     'quantity_returned' => (string) $quantity,
-                    'unit_price' => (string) $unitPrice->toScale(2, RoundingMode::HALF_UP),
-                    'line_total' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
+                    'unit_price' => (string) BigDecimal::of((string) $original->unit_price)->toScale(2, RoundingMode::HALF_UP),
+                    'line_total' => (string) $amounts['total']->toScale(2, RoundingMode::HALF_UP),
                     'restock_warehouse_id' => $restockWarehouseId,
                 ];
             }
+        } catch (\InvalidArgumentException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
         }
 
         return response()->json([
@@ -128,8 +134,7 @@ final class SalesReturnController extends Controller
     public function store(
         Request $request,
         string $companyId,
-        CreateSalesReturnDraftAction $createDraftAction,
-        PostSalesReturnAction $postReturnAction
+        ExecuteNativeSalesReturnAction $executeReturnAction
     ): JsonResponse {
         $idempotencyKey = $request->header('Idempotency-Key') ?? $request->header('X-Idempotency-Key');
         if (! is_string($idempotencyKey) || trim($idempotencyKey) === '') {
@@ -193,38 +198,14 @@ final class SalesReturnController extends Controller
         }
 
         try {
-            $postedReturn = DB::transaction(function () use ($company, $user, $invoice, $lines, $createDraftAction, $postReturnAction) {
-                app(CompanyContext::class)->setCompany($company, $user);
-
-                $draftLines = [];
-                foreach ($lines as $lineData) {
-                    $productId = $lineData['product_id'] ?? null;
-                    $origLine = $invoice->lines->first(function ($l) use ($productId) {
-                        return $l->product && (string) $l->product->public_id === (string) $productId;
-                    });
-                    if ($origLine !== null) {
-                        $draftLines[] = [
-                            'sales_invoice_line_id' => (int) $origLine->id,
-                            'quantity' => (string) ($lineData['quantity'] ?? '1'),
-                        ];
-                    }
-                }
-
-                if (empty($draftLines)) {
-                    throw new \InvalidArgumentException('No valid invoice lines matched the return request.');
-                }
-
-                $draftData = [
-                    'sales_invoice_id' => (int) $invoice->id,
-                    'issue_date' => now()->format('Y-m-d'),
-                    'reason' => 'مرتجع مبيعات من تطبيق الجوال',
-                    'lines' => $draftLines,
-                ];
-
-                $draft = $createDraftAction->execute($company, $user, $draftData);
-
-                return $postReturnAction->execute($draft, $user);
-            });
+            $result = $executeReturnAction->execute($company, $user, $invoice, $lines, $idempotencyKey,
+                $request->attributes->get('mobile_token'), $request->attributes->get('mobile_device'));
+        } catch (AuthenticationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
+        } catch (AuthorizationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -233,18 +214,12 @@ final class SalesReturnController extends Controller
             );
         }
 
-        $postedAt = $postedReturn->posted_at instanceof Carbon
-            ? $postedReturn->posted_at->format('Y-m-d\TH:i:s\Z')
-            : ($postedReturn->issue_date instanceof Carbon ? $postedReturn->issue_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'));
+        $headers = ['Idempotency-Key' => trim($idempotencyKey)];
+        if ($result['outcome'] === 'replay') {
+            $headers['X-Idempotent-Replay'] = 'true';
+        }
 
-        return response()->json([
-            'id' => (string) $postedReturn->public_id,
-            'return_number' => (string) ($postedReturn->return_number ?? $postedReturn->public_id),
-            'status' => (string) $postedReturn->status,
-            'total_amount' => (string) BigDecimal::of((string) $postedReturn->grand_total_currency)->toScale(2, RoundingMode::HALF_UP),
-            'currency' => (string) $postedReturn->currency_code,
-            'posted_at' => $postedAt,
-        ], 201, [
+        return response()->json($result['snapshot'], $result['status'], $headers + [
             'Content-Type' => 'application/json',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
         ]);
