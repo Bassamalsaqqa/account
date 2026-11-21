@@ -19,6 +19,7 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Services\Money\ReceivablePositionAsOf;
 use App\Support\Mobile\SalesInvoiceCursorCodec;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -238,6 +239,7 @@ final class SalesInvoiceController extends Controller
         }
 
         $query = SalesInvoice::where('company_id', $company->id)
+            ->withCount(['paymentAllocations as mobile_cash_allocations_count' => fn ($q) => $q->active()->whereHas('customerPayment', fn ($p) => $p->where('payment_method', CustomerPayment::METHOD_CASH))])
             ->with(['customer' => fn ($q) => $q->where('company_id', $company->id)]);
 
         // Filter by invoice status or payment status
@@ -308,6 +310,10 @@ final class SalesInvoiceController extends Controller
             $query->where('public_id', '<', $cursorPosition);
         }
 
+        if ($request->boolean('allocatable')) {
+            $query->where('status', SalesInvoice::STATUS_POSTED)->whereNotNull('posting_batch_id')->where('issue_date', '<=', now()->toDateString());
+        }
+
         $records = $query->orderBy('public_id', 'desc')
             ->limit($limit + 1)
             ->get();
@@ -320,9 +326,10 @@ final class SalesInvoiceController extends Controller
             $nextCursor = null;
         }
 
-        $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver): array {
+        $positions = app(ReceivablePositionAsOf::class)->components($records->filter(fn ($i) => $i->isPosted()), now()->toDateString());
+        $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver, $positions): array {
             $cmu = $minorUnitsResolver->resolve((string) $inv->currency_code, $company);
-            $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($inv);
+            $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($inv, $positions[(int) $inv->id] ?? null);
             $paid = $financialSummary['paid'];
             $grandTotal = $financialSummary['grand_total'];
             $remaining = $financialSummary['remaining'];
@@ -346,6 +353,9 @@ final class SalesInvoiceController extends Controller
                 'tax' => (string) BigDecimal::of((string) ($inv->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
                 'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
                 'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+                'total_exact' => (string) $grandTotal,
+                'paid_exact' => (string) $paid,
+                'remaining_exact' => (string) $remaining,
                 'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
                 'currency' => (string) $inv->currency_code,
                 'currency_minor_units' => $cmu,
@@ -353,6 +363,10 @@ final class SalesInvoiceController extends Controller
                 'created_at' => $inv->created_at?->format('Y-m-d\TH:i:s\Z'),
             ];
         })->values()->all();
+
+        if ($request->boolean('allocatable')) {
+            $invoices = array_values(array_filter($invoices, fn (array $row): bool => BigDecimal::of($row['remaining_exact'])->isPositive()));
+        }
 
         return response()->json([
             'company_id' => $company->public_id,
@@ -395,6 +409,7 @@ final class SalesInvoiceController extends Controller
         }
 
         $invoice = SalesInvoice::where('company_id', $company->id)
+            ->withCount(['paymentAllocations as mobile_cash_allocations_count' => fn ($q) => $q->active()->whereHas('customerPayment', fn ($p) => $p->where('payment_method', CustomerPayment::METHOD_CASH))])
             ->where('public_id', $publicId)
             ->with(['customer', 'poster', 'lines.product', 'lines.productUnit.unit', 'allocations.customerPayment'])
             ->first();
@@ -489,6 +504,9 @@ final class SalesInvoiceController extends Controller
             'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
             'grand_total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
             'paid_amount' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'total_exact' => (string) $grandTotal,
+            'paid_exact' => (string) $paid,
+            'remaining_exact' => (string) $remaining,
             'remaining_balance' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'currency' => (string) $invoice->currency_code,
             'lines' => $linesPayload,
@@ -510,6 +528,9 @@ final class SalesInvoiceController extends Controller
             'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
             'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
             'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'total_exact' => (string) $grandTotal,
+            'paid_exact' => (string) $paid,
+            'remaining_exact' => (string) $remaining,
             'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'lines' => $linesPayload,
             'thermal_receipt' => $thermalReceipt,
@@ -520,9 +541,10 @@ final class SalesInvoiceController extends Controller
     }
 
     /**
+     * @param  array{paid: BigDecimal, returned: BigDecimal, outstanding: BigDecimal}|null  $position
      * @return array{paid: BigDecimal, grand_total: BigDecimal, remaining: BigDecimal, payment_status: string}
      */
-    private function resolveFinancialSummaryAndPaymentStatus(SalesInvoice $invoice): array
+    private function resolveFinancialSummaryAndPaymentStatus(SalesInvoice $invoice, ?array $position = null): array
     {
         if (! $invoice->isPosted()) {
             $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
@@ -535,7 +557,7 @@ final class SalesInvoiceController extends Controller
             ];
         }
 
-        $summary = $invoice->calculateFinancialSummary();
+        $summary = $position ?? app(ReceivablePositionAsOf::class)->components([$invoice], now()->toDateString())[(int) $invoice->id];
         $paid = $summary['paid'];
         $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
         $remaining = $summary['outstanding'];
@@ -544,10 +566,7 @@ final class SalesInvoiceController extends Controller
         $isPartiallyPaid = $paid->isPositive() && $remaining->isPositive();
 
         if ($isPaidInFull) {
-            $hasCashPayment = $invoice->paymentAllocations()
-                ->active()
-                ->whereHas('customerPayment', fn ($q) => $q->where('payment_method', CustomerPayment::METHOD_CASH))
-                ->exists();
+            $hasCashPayment = (int) $invoice->getAttribute('mobile_cash_allocations_count') > 0;
             $paymentStatus = $hasCashPayment ? 'PAID_CASH' : 'PAID';
         } elseif ($isPartiallyPaid) {
             $paymentStatus = 'PARTIAL';

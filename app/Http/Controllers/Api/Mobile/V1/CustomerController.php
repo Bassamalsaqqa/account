@@ -580,6 +580,16 @@ final class CustomerController extends Controller
             );
         }
 
+        $paymentCurrency = $request->input('currency', (string) $company->base_currency_code);
+        if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
+        }
+        try {
+            $paymentRate = NativeWriteContextResolver::validateDecimalString($request->input('exchange_rate', '1'), 'exchange_rate', 10, true);
+        } catch (Throwable $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+        }
+
         $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
         $notes = $request->has('notes') && is_string($request->input('notes')) ? trim($request->input('notes')) : null;
         $reference = $request->has('reference') && is_string($request->input('reference')) ? trim($request->input('reference')) : null;
@@ -614,7 +624,7 @@ final class CustomerController extends Controller
                 }
                 try {
                     $itemAmount = NativeWriteContextResolver::validateDecimalString(
-                        $item['amount'] ?? $item['allocated_amount'] ?? null,
+                        $item['document_currency_amount'] ?? $item['amount'] ?? $item['allocated_amount'] ?? null,
                         'allocated_amount',
                         6,
                         true
@@ -626,10 +636,22 @@ final class CustomerController extends Controller
                         status: 422
                     );
                 }
+                $paymentAmount = null;
+                if (array_key_exists('payment_currency_amount', $item) || array_key_exists('document_currency_amount', $item)) {
+                    try {
+                        $paymentAmount = NativeWriteContextResolver::validateDecimalString($item['payment_currency_amount'] ?? null, 'payment_currency_amount', 6, true);
+                        NativeWriteContextResolver::validateDecimalString($item['document_currency_amount'] ?? null, 'document_currency_amount', 6, true);
+                    } catch (Throwable $e) {
+                        return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+                    }
+                }
                 $canonicalAllocations[] = [
                     'invoice_id' => $invId,
                     'amount' => $itemAmount,
                 ];
+                if ($paymentAmount !== null) {
+                    $canonicalAllocations[array_key_last($canonicalAllocations)]['payment_currency_amount'] = $paymentAmount;
+                }
             }
             usort($canonicalAllocations, fn ($a, $b) => strcmp($a['invoice_id'], $b['invoice_id']));
         }
@@ -640,12 +662,16 @@ final class CustomerController extends Controller
             'customer_id' => $customerId,
             'cash_account_id' => is_string($rawAccountId) ? trim($rawAccountId) : null,
             'amount' => (string) BigDecimal::of($amount)->toScale(6, RoundingMode::HALF_UP),
-            'currency' => (string) $company->base_currency_code,
+            'currency' => $paymentCurrency,
             'payment_date' => $paymentDate,
             'reference' => $reference,
             'notes' => $notes,
             'allocations' => $canonicalAllocations,
         ];
+
+        if ($request->has('exchange_rate') || $request->has('currency')) {
+            $canonicalPayload['exchange_rate'] = (string) BigDecimal::of($paymentRate)->toScale(10);
+        }
 
         try {
             $result = $receiptManager->execute(
@@ -661,6 +687,8 @@ final class CustomerController extends Controller
                     $customerId,
                     $amount,
                     $paymentDate,
+                    $paymentCurrency,
+                    $paymentRate,
                     $rawAccountId,
                     $notes,
                     $reference,
@@ -685,7 +713,8 @@ final class CustomerController extends Controller
 
                     $cashAccount = $contextResolver->resolveCashAccount(
                         $lockedCompany,
-                        is_string($rawAccountId) ? $rawAccountId : null
+                        is_string($rawAccountId) ? $rawAccountId : null,
+                        $paymentCurrency
                     );
 
                     $resolvedAllocations = [];
@@ -704,17 +733,13 @@ final class CustomerController extends Controller
                             throw new InvalidArgumentException("Sales invoice [{$alloc['invoice_id']}] must be in posted status.");
                         }
 
-                        $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
-                        $alreadyPaid = BigDecimal::of((string) ($invoice->paid_amount_currency ?? '0'));
-                        $unpaid = $grandTotal->minus($alreadyPaid);
-                        if (BigDecimal::of($alloc['amount'])->isGreaterThan($unpaid)) {
-                            throw new InvalidArgumentException("Allocation [{$alloc['amount']}] exceeds unpaid balance [{$unpaid}] for invoice [{$alloc['invoice_id']}].");
-                        }
-
                         $resolvedAllocations[] = [
                             'sales_invoice_id' => (int) $invoice->id,
                             'allocated_amount' => $alloc['amount'],
                         ];
+                        if (isset($alloc['payment_currency_amount'])) {
+                            $resolvedAllocations[array_key_last($resolvedAllocations)]['payment_currency_amount'] = $alloc['payment_currency_amount'];
+                        }
                     }
 
                     app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
@@ -722,8 +747,9 @@ final class CustomerController extends Controller
                     $paymentData = [
                         'customer_id' => (int) $customer->id,
                         'money_account_id' => (int) $cashAccount->id,
+                        'currency_code' => $paymentCurrency,
                         'amount' => $amount,
-                        'exchange_rate' => '1.0000000000',
+                        'exchange_rate' => $paymentRate,
                         'payment_date' => $paymentDate,
                         'payment_method' => 'cash',
                         'notes' => $notes,

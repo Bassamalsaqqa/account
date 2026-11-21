@@ -22,7 +22,7 @@ final class PurchasePayableAsOf
      */
     public function forPurchases(iterable $purchases, Carbon $asOf): array
     {
-        return $this->positions($purchases, $asOf, true);
+        return array_map(fn (array $row): BigDecimal => $row['outstanding'], $this->components($purchases, $asOf, true));
     }
 
     /**
@@ -35,12 +35,12 @@ final class PurchasePayableAsOf
      */
     public function forHistory(iterable $purchases, Carbon $asOf): array
     {
-        return $this->positions($purchases, $asOf, false);
+        return array_map(fn (array $row): BigDecimal => $row['outstanding'], $this->components($purchases, $asOf));
     }
 
     /** @param iterable<Purchase> $purchases
-     * @return array<int, BigDecimal> */
-    private function positions(iterable $purchases, Carbon $asOf, bool $deep): array
+     * @return array<int, array{paid: BigDecimal, returned: BigDecimal, outstanding: BigDecimal}> */
+    public function components(iterable $purchases, Carbon $asOf, bool $deep = false): array
     {
         $purchases = collect($purchases);
         if ($purchases->isEmpty()) {
@@ -59,6 +59,8 @@ final class PurchasePayableAsOf
         // Reversal batches persist the Company-local business date at execution.
         // Do not reinterpret historical reversal instants in today's timezone.
         $result = [];
+        $paidAmounts = [];
+        $returnedAmounts = [];
         foreach ($purchases as $purchase) {
             $isVoidAfterCutoff = $purchase->isVoid()
                 && $purchase->void_business_date !== null
@@ -85,6 +87,7 @@ final class PurchasePayableAsOf
                 app(PurchaseReturnPostingCommandBuilder::class)->validatePosted($return);
                 $id = (int) $return->purchase_id;
                 $result[$id] = $result[$id]->minus($return->grand_total_currency);
+                $returnedAmounts[$id] = ($returnedAmounts[$id] ?? BigDecimal::zero())->plus($return->grand_total_currency);
             }
         } else {
             $returns = DB::table('purchase_returns as r')
@@ -96,6 +99,7 @@ final class PurchasePayableAsOf
             foreach ($returns as $return) {
                 $id = (int) $return->purchase_id;
                 $result[$id] = $result[$id]->minus((string) $return->relief);
+                $returnedAmounts[$id] = BigDecimal::of((string) $return->relief);
             }
         }
         $allocations = VendorPaymentAllocation::query()
@@ -124,12 +128,14 @@ final class PurchasePayableAsOf
         foreach ($allocations as $row) {
             $id = (int) $row->purchase_id;
             $result[$id] = $result[$id]->minus((string) $row->getAttribute('relief'));
+            $paidAmounts[$id] = BigDecimal::of((string) $row->getAttribute('relief'));
         }
+        $components = [];
         foreach ($result as $id => $position) {
-            $result[$id] = ($position->isPositive() ? $position : BigDecimal::zero())->toScale(6);
+            $components[$id] = ['outstanding' => ($position->isPositive() ? $position : BigDecimal::zero())->toScale(6), 'paid' => $paidAmounts[$id] ?? BigDecimal::zero(), 'returned' => $returnedAmounts[$id] ?? BigDecimal::zero()];
         }
 
-        return $result;
+        return $components;
     }
 
     /** @param list<int> $ids */

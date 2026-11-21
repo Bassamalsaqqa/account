@@ -10,10 +10,12 @@ use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Models\Company;
+use App\Models\CompanyCurrency;
 use App\Models\CompanyMobileSetting;
 use App\Models\Currency;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
+use App\Models\CustomerPaymentAllocation;
 use App\Models\ExpenseCategory;
 use App\Models\GoodsReceiptNote;
 use App\Models\LedgerAccount;
@@ -39,6 +41,7 @@ use App\Services\Sales\CustomerCatalogService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -379,11 +382,70 @@ final class NativeEconomicWritesQualificationTest extends TestCase
         $resValid->assertStatus(201);
         $this->assertTrue($resValid->json('success'));
 
+        $readUrl = "/api/mobile/v1/companies/{$this->company->public_id}/sales/invoices/{$invoice->public_id}";
+        $read = $this->withHeaders($this->authHeaders('read'))->getJson($readUrl)->assertOk();
+        $this->assertTrue(BigDecimal::of($read->json('remaining_exact'))->isEqualTo('50'));
+        $this->assertTrue(BigDecimal::of($read->json('paid_exact'))->isEqualTo('150'));
+
+        $explicitKey = 'alloc-explicit-'.(string) Str::uuid();
+        $explicit = ['amount' => '25.000000', 'allocations' => [[
+            'invoice_id' => $invoice->public_id,
+            'document_currency_amount' => '25.000000',
+            'payment_currency_amount' => '25.000000',
+        ]]];
+        $this->withHeaders($this->authHeaders($explicitKey))->postJson($url, $explicit)->assertCreated();
+        $this->withHeaders($this->authHeaders($explicitKey))->postJson($url, $explicit)->assertOk();
+        $explicit['allocations'][0]['payment_currency_amount'] = '24.999999';
+        $this->withHeaders($this->authHeaders($explicitKey))->postJson($url, $explicit)->assertStatus(409);
+
         // Verify invoice allocation recorded
         $this->assertDatabaseHas('customer_payment_allocations', [
             'sales_invoice_id' => $invoice->id,
             'allocated_amount' => '150.000000',
         ]);
+    }
+
+    public function test_cross_currency_http_allocation_requires_both_amounts_and_uses_canonical_fx(): void
+    {
+        $this->rebindContext();
+        Currency::updateOrCreate(['code' => 'USD'], ['name' => 'Dollar', 'symbol' => '$', 'minor_units' => 2, 'active' => true]);
+        CompanyCurrency::updateOrCreate(['company_id' => $this->company->id, 'currency_code' => 'USD'], ['enabled' => true]);
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->user, [
+            'customer_id' => $this->customer->id, 'currency_code' => 'USD', 'exchange_rate' => '3.5', 'issue_date' => now()->toDateString(),
+            'lines' => [['product_id' => null, 'item_description' => 'Service', 'quantity' => '1', 'unit_price' => '100']],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($draft, $this->user);
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+        $key = 'cross-http-'.Str::uuid();
+        $payload = ['amount' => '330', 'allocations' => [['invoice_id' => $invoice->public_id, 'amount' => '100']]];
+        $this->withHeaders($this->authHeaders($key))->postJson($url, $payload)->assertStatus(422);
+        $payload['allocations'][0] = ['invoice_id' => $invoice->public_id, 'document_currency_amount' => '100', 'payment_currency_amount' => '330'];
+        $this->withHeaders($this->authHeaders($key))->postJson($url, $payload)->assertCreated();
+        $this->rebindContext();
+        $allocation = CustomerPaymentAllocation::where('sales_invoice_id', $invoice->id)->sole();
+        $this->assertSame('-20.000000', $allocation->realized_fx_gain_loss_base);
+        $this->assertSame('330.000000', $allocation->payment_currency_amount);
+        $this->assertTrue($invoice->fresh()->calculateOutstanding()->isZero());
+    }
+
+    public function test_purchase_http_reads_actual_partial_payment_and_exact_currency(): void
+    {
+        $this->rebindContext();
+        $result = app(RecordStagedPurchaseBillAction::class)->execute(
+            company: $this->company, actor: $this->user, supplierPublicId: $this->vendor->public_id,
+            billNumber: 'EXACT-100', linesInput: [['product_id' => $this->product->public_id, 'quantity' => '1', 'unit_cost_ils' => '100']],
+            idempotencyKey: 'exact-bill', mobileToken: MobileAccessToken::where('token_hash', hash('sha256', $this->rawToken))->first(), mobileDevice: $this->device,
+        );
+        $id = $result['snapshot']['id'];
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}";
+        $this->withHeaders($this->authHeaders('exact-pay'))->postJson($url."/suppliers/{$this->vendor->public_id}/payments", [
+            'amount' => '25', 'allocations' => [['bill_id' => $id, 'document_currency_amount' => '25', 'payment_currency_amount' => '25']],
+        ])->assertCreated();
+        $read = $this->withHeaders($this->authHeaders('read'))->getJson($url."/purchases/{$id}")->assertOk()->assertJsonPath('currency', 'ILS');
+        $this->assertTrue(BigDecimal::of($read->json('paid_exact'))->isEqualTo('25'));
+        $this->assertTrue(BigDecimal::of($read->json('remaining_exact'))->isEqualTo('75'));
+        $list = $this->withHeaders($this->authHeaders('read'))->getJson($url."/purchases?allocatable=1&supplier_id={$this->vendor->public_id}")->assertOk();
+        $this->assertTrue(BigDecimal::of($list->json('purchases.0.remaining_exact'))->isEqualTo('75'));
     }
 
     public function test_supplier_payment_lifecycle_replay_and_conflict(): void

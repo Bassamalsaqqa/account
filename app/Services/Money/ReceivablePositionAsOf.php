@@ -26,6 +26,15 @@ final class ReceivablePositionAsOf
      */
     public function forInvoices(iterable $invoices, string $date): array
     {
+        return array_map(fn (array $row): BigDecimal => $row['outstanding'], $this->components($invoices, $date));
+    }
+
+    /**
+     * @param  iterable<SalesInvoice>  $invoices
+     * @return array<int, array{paid: BigDecimal, returned: BigDecimal, outstanding: BigDecimal}>
+     */
+    public function components(iterable $invoices, string $date): array
+    {
         $invoices = collect($invoices);
         if ($invoices->isEmpty()) {
             return [];
@@ -66,7 +75,11 @@ final class ReceivablePositionAsOf
             $position = BigDecimal::of($invoice->grand_total_currency)
                 ->minus((string) ($paid->get($id)->relief ?? '0'))
                 ->minus((string) ($returned->get($id)->relief ?? '0'));
-            $result[$id] = $position->isPositive() ? $position : BigDecimal::zero();
+            $result[$id] = [
+                'paid' => BigDecimal::of((string) ($paid->get($id)->relief ?? '0')),
+                'returned' => BigDecimal::of((string) ($returned->get($id)->relief ?? '0')),
+                'outstanding' => $position->isPositive() ? $position : BigDecimal::zero(),
+            ];
         }
 
         return $result;

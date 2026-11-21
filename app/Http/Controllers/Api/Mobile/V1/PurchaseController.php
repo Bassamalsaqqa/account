@@ -25,6 +25,7 @@ use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnAllocation;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Purchasing\PurchasePayableAsOf;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -55,7 +56,7 @@ final class PurchaseController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        if (! $user->hasPermissionTo('purchasing.purchase.view')) {
+        if (! $user->hasPermissionTo('purchasing.purchase.view') || ! $user->hasPermissionTo('purchasing.cost.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required purchasing.purchase.view permission.',
@@ -69,7 +70,7 @@ final class PurchaseController extends Controller
         }
 
         $query = Purchase::where('company_id', $company->id)
-            ->with(['vendor' => fn ($q) => $q->where('company_id', $company->id), 'lines']);
+            ->with(['vendor' => fn ($q) => $q->where('company_id', $company->id), 'lines.product']);
 
         $search = $request->query('search');
         if ($search !== null && is_string($search) && trim($search) !== '') {
@@ -84,7 +85,18 @@ final class PurchaseController extends Controller
             });
         }
 
-        $records = $query->orderBy('id', 'desc')
+        if ($request->filled('supplier_id')) {
+            $query->whereHas('vendor', fn ($q) => $q->where('company_id', $company->id)->where('public_id', (string) $request->query('supplier_id')));
+        }
+        if ($request->boolean('allocatable')) {
+            $query->where('status', Purchase::STATUS_POSTED)->whereNotNull('posting_batch_id')
+                ->where('purchase_date', '<=', now()->toDateString());
+        }
+        if ($request->filled('before_id')) {
+            $query->where('public_id', '<', (string) $request->query('before_id'));
+        }
+
+        $records = $query->orderBy('public_id', 'desc')
             ->limit($limit + 1)
             ->get();
 
@@ -93,10 +105,15 @@ final class PurchaseController extends Controller
             $records = $records->slice(0, $limit);
         }
 
-        $bills = $records->map(function (Purchase $p) use ($company): array {
+        $receivedByLine = GoodsReceiptNoteLine::where('company_id', $company->id)
+            ->whereIn('purchase_line_id', $records->flatMap(fn ($p) => $p->lines->pluck('id')))
+            ->selectRaw('purchase_line_id, SUM(quantity_base) AS received')
+            ->groupBy('purchase_line_id')->pluck('received', 'purchase_line_id');
+        $positions = app(PurchasePayableAsOf::class)->components($records->filter(fn ($p) => $p->isPosted() && $p->purchase_date->format('Y-m-d') <= now()->toDateString()), now());
+        $bills = $records->map(function (Purchase $p) use ($positions, $receivedByLine): array {
             $grandTotal = BigDecimal::of((string) $p->grand_total_currency);
-            $paid = BigDecimal::zero();
-            $remaining = $grandTotal->minus($paid);
+            $paid = ($positions[(int) $p->id]['paid'] ?? BigDecimal::zero());
+            $remaining = ($positions[(int) $p->id]['outstanding'] ?? BigDecimal::zero());
 
             if ($p->is_staged) {
                 $allReceived = true;
@@ -104,9 +121,7 @@ final class PurchaseController extends Controller
                     $allReceived = false;
                 } else {
                     foreach ($p->lines as $line) {
-                        $totRec = GoodsReceiptNoteLine::where('company_id', $company->id)
-                            ->where('purchase_line_id', $line->id)
-                            ->sum('quantity_base');
+                        $totRec = $receivedByLine->get($line->id, '0');
                         $lineRem = BigDecimal::of((string) $line->quantity_base)
                             ->minus(BigDecimal::of((string) $totRec));
                         if ($lineRem->isPositive()) {
@@ -130,6 +145,11 @@ final class PurchaseController extends Controller
                 'supplier_id' => $p->vendor ? (string) $p->vendor->public_id : null,
                 'supplier_name' => $p->vendor ? (string) $p->vendor->displayName() : 'مورد عام',
                 'date' => $p->purchase_date->format('Y-m-d'),
+                'currency' => (string) $p->currency_code,
+                'total_exact' => (string) $grandTotal,
+                'paid_exact' => (string) $paid,
+                'remaining_exact' => (string) $remaining,
+                'returned_exact' => (string) ($positions[(int) $p->id]['returned'] ?? BigDecimal::zero()),
                 'total' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
                 'total_ils' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
                 'paid' => (string) $paid->toScale(2, RoundingMode::HALF_UP),
@@ -142,10 +162,15 @@ final class PurchaseController extends Controller
             ];
         })->values()->all();
 
+        if ($request->boolean('allocatable')) {
+            $bills = array_values(array_filter($bills, fn (array $row): bool => BigDecimal::of($row['remaining_exact'])->isPositive()));
+        }
+
         return response()->json([
             'company_id' => $company->public_id,
             'count' => count($bills),
             'has_more' => $hasMore,
+            'next_before_id' => $hasMore ? (string) $records->last()?->public_id : null,
             'data' => $bills,
             'purchases' => $bills,
         ], 200, [
@@ -180,7 +205,7 @@ final class PurchaseController extends Controller
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
 
-        if (! $user->hasPermissionTo('purchasing.purchase.view')) {
+        if (! $user->hasPermissionTo('purchasing.purchase.view') || ! $user->hasPermissionTo('purchasing.cost.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required purchasing.purchase.view permission.',
@@ -201,28 +226,35 @@ final class PurchaseController extends Controller
             );
         }
 
+        $position = $purchase->isPosted() && $purchase->purchase_date->format('Y-m-d') <= now()->toDateString() ? app(PurchasePayableAsOf::class)->components([$purchase], now())[(int) $purchase->id] : [];
         $grandTotal = BigDecimal::of((string) $purchase->grand_total_currency);
         $allComplete = true;
         $anyReceived = false;
 
-        $linesPayload = $purchase->lines->map(function (PurchaseLine $line) use ($company, $purchase, &$allComplete, &$anyReceived): array {
+        $receivedByLine = GoodsReceiptNoteLine::where('company_id', $company->id)
+            ->whereIn('purchase_line_id', $purchase->lines->pluck('id'))
+            ->selectRaw('purchase_line_id, SUM(quantity_base) AS received')
+            ->groupBy('purchase_line_id')->pluck('received', 'purchase_line_id');
+        $returnedByLine = PurchaseReturnAllocation::query()
+            ->join('purchase_return_lines as line', 'line.id', '=', 'purchase_return_allocations.purchase_return_line_id')
+            ->where('purchase_return_allocations.company_id', $company->id)
+            ->whereIn('line.purchase_line_id', $purchase->lines->pluck('id'))
+            ->whereHas('purchaseReturn', fn ($q) => $q->where('warehouse_id', $purchase->warehouse_id)
+                ->where('status', PurchaseReturn::STATUS_POSTED)
+                ->where(fn ($wq) => $wq->whereNull('origin_warehouse_id')->orWhere('origin_warehouse_id', $purchase->warehouse_id)))
+            ->selectRaw('line.purchase_line_id, SUM(purchase_return_allocations.quantity_base) AS returned')
+            ->groupBy('line.purchase_line_id')->pluck('returned', 'line.purchase_line_id');
+
+        $linesPayload = $purchase->lines->map(function (PurchaseLine $line) use ($purchase, $receivedByLine, $returnedByLine, &$allComplete, &$anyReceived): array {
             $qty = BigDecimal::of((string) $line->quantity_base);
             $cost = BigDecimal::of((string) $line->unit_cost);
             $unitName = $line->productUnit?->unit?->displayName() ?? 'وحدة';
 
             if ($purchase->is_staged) {
-                $totRec = GoodsReceiptNoteLine::where('company_id', $company->id)
-                    ->where('purchase_line_id', $line->id)
-                    ->sum('quantity_base');
+                $totRec = $receivedByLine->get($line->id, '0');
                 $prevReceivedBd = BigDecimal::of((string) $totRec);
 
-                $preReturnedRaw = PurchaseReturnAllocation::where('company_id', $company->id)
-                    ->whereHas('purchaseReturnLine', fn ($q) => $q->where('purchase_line_id', $line->id))
-                    ->whereHas('purchaseReturn', fn ($q) => $q->where('warehouse_id', $purchase->warehouse_id)
-                        ->where('status', PurchaseReturn::STATUS_POSTED)
-                        ->where(fn ($wq) => $wq->whereNull('origin_warehouse_id')->orWhere('origin_warehouse_id', $purchase->warehouse_id))
-                    )
-                    ->sum('quantity_base');
+                $preReturnedRaw = $returnedByLine->get($line->id, '0');
                 $preReturnedBd = BigDecimal::of((string) $preReturnedRaw);
 
                 $remBd = $qty->minus($prevReceivedBd)->minus($preReturnedBd);
@@ -282,6 +314,11 @@ final class PurchaseController extends Controller
             'supplier_id' => $purchase->vendor ? (string) $purchase->vendor->public_id : null,
             'supplier_name' => $purchase->vendor ? (string) $purchase->vendor->displayName() : 'مورد عام',
             'date' => $purchase->purchase_date->format('Y-m-d'),
+            'currency' => (string) $purchase->currency_code,
+            'total_exact' => (string) $grandTotal,
+            'paid_exact' => (string) ($position['paid'] ?? BigDecimal::zero()),
+            'remaining_exact' => (string) ($position['outstanding'] ?? BigDecimal::zero()),
+            'returned_exact' => (string) ($position['returned'] ?? BigDecimal::zero()),
             'total_ils' => (string) $grandTotal->toScale(2, RoundingMode::HALF_UP),
             'status' => (string) $purchase->status,
             'receiving_status' => $receivingStatus,
