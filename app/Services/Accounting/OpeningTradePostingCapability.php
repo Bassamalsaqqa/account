@@ -14,6 +14,9 @@ final class OpeningTradePostingCapability
     /** @var array<int, int> */
     private array $authorizedBatches = [];
 
+    /** @var array<int, bool> */
+    private array $authorizedSourceItemIds = [];
+
     public function __construct(
         public readonly int $companyId,
         public readonly int $actorId,
@@ -27,6 +30,19 @@ final class OpeningTradePostingCapability
         if (! empty($item->public_id)) {
             $this->authorizedItems[$item->public_id] = true;
         }
+        if ($item->exists) {
+            $this->authorizedSourceItemIds[(int) $item->id] = true;
+        }
+    }
+
+    public function authorizeSourceItemId(int $itemId): void
+    {
+        $this->authorizedSourceItemIds[$itemId] = true;
+    }
+
+    public function isSourceItemAuthorized(int $sourceId): bool
+    {
+        return isset($this->authorizedSourceItemIds[$sourceId]);
     }
 
     public function authorizeBatchLink(int $itemId, int $batchId): void

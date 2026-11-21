@@ -138,12 +138,29 @@ class OpeningTradeItem extends Model
      * @param  Builder<static>  $query
      * @return bool
      */
+    protected function performInsert(Builder $query)
+    {
+        $this->assertCanonicalPersistenceAuthority();
+
+        if ($query instanceof OpeningTradeItemBuilder) {
+            $token = app(OpeningTradeEventScope::class)->authorizeModelInsert($this);
+            $query->bindAuthorizedInsert($this, $token);
+        }
+
+        return parent::performInsert($query);
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return bool
+     */
     protected function performUpdate(Builder $query)
     {
         $this->assertCanonicalPersistenceAuthority();
 
         if ($query instanceof OpeningTradeItemBuilder) {
-            $query->allowModelSave($this);
+            $token = app(OpeningTradeEventScope::class)->authorizeModelUpdate($this);
+            $query->bindAuthorizedUpdate($this, $token);
         }
 
         return parent::performUpdate($query);

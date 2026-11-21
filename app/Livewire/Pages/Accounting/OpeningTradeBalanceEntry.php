@@ -187,15 +187,7 @@ class OpeningTradeBalanceEntry extends Component
             $rules[$prefix.'notes'] = 'nullable|string|max:500';
         }
 
-        $existingMain = OpeningTradeItem::where('company_id', $company->id)
-            ->where(function ($q): void {
-                $q->where('idempotency_key', $this->formIdempotencyKey)
-                    ->orWhere('idempotency_key', 'like', $this->formIdempotencyKey.':%')
-                    ->orWhere('control_route->form->form_key', $this->formIdempotencyKey);
-            })
-            ->first();
-
-        if ($existingMain === null) {
+        if (! PostOpeningTradeItemAction::hasCommittedForm((int) $company->id, $this->formIdempotencyKey)) {
             $this->validate($rules);
         } else {
             // Authorized canonical replay: validate structural fields without blocking on fresh currency disablement

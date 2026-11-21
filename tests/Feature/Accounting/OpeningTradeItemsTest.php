@@ -1461,6 +1461,76 @@ final class OpeningTradeItemsTest extends TradeTestCase
         } catch (ImmutableRecordException $e) {
             $this->assertStringContainsString('cannot be deleted', $e->getMessage());
         }
+
+        // 6. Bulk inserts and upserts throw
+        try {
+            OpeningTradeItem::query()->insert([
+                'public_id' => (string) Str::ulid(),
+                'company_id' => $this->company->id,
+                'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                'customer_id' => $this->customer->id,
+                'opening_date' => '2026-01-01',
+                'currency_code' => 'ILS',
+                'amount_currency' => '100.00',
+                'exchange_rate' => '1.0000000000',
+                'carrying_value_base' => '100.00',
+                'status' => OpeningTradeItem::STATUS_POSTED,
+                'created_by' => $this->owner->id,
+                'source_identity' => 'test',
+                'idempotency_key' => 'bulk-insert',
+                'idempotency_payload_hash' => hash('sha256', 'bulk-insert'),
+            ]);
+            $this->fail('Bulk insert must throw ImmutableRecordException.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Direct bulk inserts on opening trade items are prohibited', $e->getMessage());
+        }
+
+        try {
+            OpeningTradeItem::query()->upsert([
+                [
+                    'public_id' => (string) Str::ulid(),
+                    'company_id' => $this->company->id,
+                    'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                    'customer_id' => $this->customer->id,
+                    'opening_date' => '2026-01-01',
+                    'currency_code' => 'ILS',
+                    'amount_currency' => '100.00',
+                    'exchange_rate' => '1.0000000000',
+                    'carrying_value_base' => '100.00',
+                    'status' => OpeningTradeItem::STATUS_POSTED,
+                    'created_by' => $this->owner->id,
+                    'source_identity' => 'test',
+                    'idempotency_key' => 'bulk-upsert',
+                    'idempotency_payload_hash' => hash('sha256', 'bulk-upsert'),
+                ],
+            ], ['idempotency_key']);
+            $this->fail('Bulk upsert must throw ImmutableRecordException.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Direct bulk upserts on opening trade items are prohibited', $e->getMessage());
+        }
+
+        // 7. Increment and decrement throw
+        try {
+            OpeningTradeItem::where('id', $item->id)->increment('amount_currency', 10);
+            $this->fail('Increment must throw ImmutableRecordException.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Direct increments on opening trade items are prohibited', $e->getMessage());
+        }
+
+        try {
+            OpeningTradeItem::where('id', $item->id)->decrement('amount_currency', 10);
+            $this->fail('Decrement must throw ImmutableRecordException.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('Direct decrements on opening trade items are prohibited', $e->getMessage());
+        }
+
+        // 8. Truncate throws
+        try {
+            OpeningTradeItem::truncate();
+            $this->fail('Truncate must throw ImmutableRecordException.');
+        } catch (ImmutableRecordException $e) {
+            $this->assertStringContainsString('cannot be truncated', $e->getMessage());
+        }
     }
 
     public function test_capability_requires_exact_item_and_journal_binding(): void
@@ -1479,7 +1549,7 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $refProp->setValue($action, $eventScope);
 
         try {
-            // Attempting to create an item without capability->authorizeItem throws
+            // 1. Attempting to create an item without capability->authorizeItem throws
             $eventScope->withPostingCapability($action, $capability, function () {
                 $item = new OpeningTradeItem([
                     'company_id' => $this->company->id,
@@ -1503,6 +1573,91 @@ final class OpeningTradeItemsTest extends TradeTestCase
                     $this->fail('Item not authorized by capability must throw.');
                 } catch (ImmutableRecordException $e) {
                     $this->assertStringContainsString('not authorized by the active posting capability', $e->getMessage());
+                }
+            });
+
+            // 2. Journal PostingCommand with cross-item source ID throws
+            $eventScope->withPostingCapability($action, $capability, function () use ($eventScope) {
+                $cmd = new PostingCommand(
+                    company: $this->company,
+                    postingDate: now(),
+                    sourceType: 'opening_trade_item',
+                    sourceId: 999999, // Unassigned cross-item sourceId
+                    transactionCurrencyCode: 'ILS',
+                    baseCurrencyCode: 'ILS',
+                    exchangeRate: ExchangeRate::one(),
+                    idempotencyKey: 'cmd-cross-item-test',
+                    postedBy: $this->owner,
+                    lines: [
+                        PostingLineCommand::debit(1, $this->ilsCashAccount->ledger_account_id, MoneyAmount::from('10.00')),
+                        PostingLineCommand::credit(2, $this->ilsCashAccount->ledger_account_id, MoneyAmount::from('10.00')),
+                    ],
+                );
+
+                try {
+                    $eventScope->assertPosting($cmd);
+                    $this->fail('PostingCommand with cross-item source ID must throw.');
+                } catch (ImmutableRecordException $e) {
+                    $this->assertStringContainsString('is not authorized by the active posting capability', $e->getMessage());
+                }
+            });
+
+            // 3. Journal PostingCommand with cross-actor throws
+            $otherUser = User::factory()->create();
+            $eventScope->withPostingCapability($action, $capability, function () use ($eventScope, $otherUser) {
+                $cmd = new PostingCommand(
+                    company: $this->company,
+                    postingDate: now(),
+                    sourceType: 'opening_trade_item',
+                    sourceId: 1,
+                    transactionCurrencyCode: 'ILS',
+                    baseCurrencyCode: 'ILS',
+                    exchangeRate: ExchangeRate::one(),
+                    idempotencyKey: 'cmd-cross-actor-test',
+                    postedBy: $otherUser,
+                    lines: [
+                        PostingLineCommand::debit(1, $this->ilsCashAccount->ledger_account_id, MoneyAmount::from('10.00')),
+                        PostingLineCommand::credit(2, $this->ilsCashAccount->ledger_account_id, MoneyAmount::from('10.00')),
+                    ],
+                );
+
+                try {
+                    $eventScope->assertPosting($cmd);
+                    $this->fail('PostingCommand with cross-actor must throw.');
+                } catch (ImmutableRecordException $e) {
+                    $this->assertStringContainsString('Posting command actor does not match', $e->getMessage());
+                }
+            });
+
+            // 4. Query update broadening inside active callback throws
+            $item = app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company,
+                side: OpeningTradeItem::SIDE_CUSTOMER,
+                partyId: $this->customer->id,
+                openingDate: '2026-01-01',
+                amount: '300.00',
+                currencyCode: 'ILS',
+                actor: $this->owner,
+                idempotencyKey: 'scope-broaden-test-'.Str::ulid(),
+            );
+
+            $eventScope->withPostingCapability($action, $capability, function () use ($item) {
+                // Attempting to call update() with forged/missing token throws
+                try {
+                    OpeningTradeItem::where('id', $item->id)->update(['posting_batch_id' => 999]);
+                    $this->fail('Update without valid binding token must throw.');
+                } catch (ImmutableRecordException $e) {
+                    $this->assertStringContainsString('prohibited', $e->getMessage());
+                }
+
+                // Attempting to call update() with broadened where throws
+                $builder = OpeningTradeItem::query();
+                $builder->bindAuthorizedUpdate($item, 'invalid-token');
+                try {
+                    $builder->where('id', '!=', $item->id)->update(['posting_batch_id' => 999]);
+                    $this->fail('Update with invalid token must throw.');
+                } catch (ImmutableRecordException $e) {
+                    $this->assertStringContainsString('Invalid or expired model update token', $e->getMessage());
                 }
             });
         } finally {
@@ -1733,5 +1888,83 @@ final class OpeningTradeItemsTest extends TradeTestCase
         );
         $itemsAfter = collect($openPositionsAfter['rows'] ?? []);
         $this->assertFalse($itemsAfter->contains('opening_trade_item_id', $item->id));
+
+        // 3. Incoherent legacy reversal link on posted item:
+        // Create an item, set reversal_posting_batch_id while keeping status 'posted' directly in DB
+        $legacyItem = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '750.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: 'legacy-incoherent-'.Str::ulid(),
+        );
+        // Link to an existing reversal batch in DB directly
+        DB::table('opening_trade_items')->where('id', $legacyItem->id)->update([
+            'reversal_posting_batch_id' => $item->reversal_posting_batch_id,
+        ]);
+        // Neither statement nor open positions should treat this as canonically reversed
+        $legacyStmt = (new CustomerStatementQuery)->execute($this->customer, toDate: '2026-01-15');
+        $legacyEntries = collect($legacyStmt['currencies']['ILS']['entries'] ?? []);
+        $this->assertTrue($legacyEntries->contains('type', 'opening_balance'));
+        $this->assertFalse($legacyEntries->contains('number', 'REV-'.$legacyItem->public_id));
+
+        $legacyOpen = TradeOpenPositions::read(
+            $this->company,
+            new ReportFilters(period: ReportPeriod::custom('2026-01-01', '2026-01-15', $this->company)),
+            vendor: false,
+            aging: false,
+            overdue: false,
+        );
+        $legacyOpenRows = collect($legacyOpen['rows'] ?? []);
+        $this->assertTrue($legacyOpenRows->contains('opening_trade_item_id', $legacyItem->id));
+    }
+
+    public function test_standalone_api_key_and_web_form_key_collision_refuses_adoption(): void
+    {
+        $action = app(PostOpeningTradeItemAction::class);
+        $sharedKey = 'shared-key-'.Str::ulid();
+
+        // 1. Post a standalone single item via execute() with $sharedKey
+        $singleItem = $action->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '150.00',
+            currencyCode: 'ILS',
+            actor: $this->owner,
+            idempotencyKey: $sharedKey,
+            sourceIdentity: 'manual_api',
+        );
+        $this->assertNotNull($singleItem->id);
+
+        // 2. Post a 1-row web form with the same key
+        try {
+            $action->executeForm(
+                company: $this->company,
+                side: OpeningTradeItem::SIDE_CUSTOMER,
+                partyId: $this->customer->id,
+                openingDate: '2026-01-01',
+                currencyCode: 'ILS',
+                exchangeRate: null,
+                rows: [
+                    [
+                        'amount' => '150.00',
+                        'original_reference' => null,
+                        'due_date' => null,
+                        'notes' => null,
+                    ],
+                ],
+                actor: $this->owner,
+                formIdempotencyKey: $sharedKey,
+                sourceIdentity: 'manual_web',
+            );
+            $this->fail('Web form reusing standalone API key must not adopt existing item and must throw IdempotencyConflictException.');
+        } catch (IdempotencyConflictException $e) {
+            $this->assertStringContainsString('conflicts with an existing standalone opening trade item', $e->getMessage());
+        }
     }
 }

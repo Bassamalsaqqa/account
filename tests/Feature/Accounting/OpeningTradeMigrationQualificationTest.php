@@ -6,6 +6,7 @@ namespace Tests\Feature\Accounting;
 
 use App\Models\OpeningTradeItem;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -152,5 +153,78 @@ final class OpeningTradeMigrationQualificationTest extends TradeTestCase
         // Clean up incompatible record and migrate up cleanly
         DB::table('opening_trade_items')->where('idempotency_key', 'migration-incompatible-test')->delete();
         $this->migration->up();
+    }
+
+    public function test_migration_case_insensitive_status_refuses_prevalidation_and_enforces_binary_constraint(): void
+    {
+        DB::table('opening_trade_items')->delete();
+
+        // 1. Put schema into prior state
+        $this->migration->down();
+
+        // Insert uppercase POSTED record
+        DB::table('opening_trade_items')->insert([
+            'public_id' => (string) Str::ulid(),
+            'company_id' => $this->company->id,
+            'side' => OpeningTradeItem::SIDE_CUSTOMER,
+            'customer_id' => $this->defaultCustomer->id,
+            'opening_date' => '2026-01-01',
+            'currency_code' => 'ILS',
+            'amount_currency' => '100.000000',
+            'exchange_rate' => '1.0000000000',
+            'carrying_value_base' => '100.000000',
+            'status' => 'POSTED',
+            'party_snapshot' => json_encode(['id' => $this->defaultCustomer->id]),
+            'company_snapshot' => json_encode(['id' => $this->company->id]),
+            'control_route' => json_encode([]),
+            'created_by' => $this->owner->id,
+            'source_identity' => 'test',
+            'idempotency_key' => 'migration-uppercase-test',
+            'idempotency_payload_hash' => hash('sha256', 'uppercase'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        try {
+            $this->migration->up();
+            $this->fail('Up on case-insensitive POSTED status must throw RuntimeException.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('incompatible record(s) found. Prior schema preserved.', $e->getMessage());
+        }
+
+        // Clean up incompatible record and migrate up cleanly
+        DB::table('opening_trade_items')->where('idempotency_key', 'migration-uppercase-test')->delete();
+        $this->migration->up();
+
+        // After migration, attempting to insert uppercase 'POSTED' must fail CHECK constraint in MariaDB/MySQL
+        $driver = DB::getDriverName();
+        if ($driver === 'mysql' || $driver === 'mariadb') {
+            try {
+                DB::table('opening_trade_items')->insert([
+                    'public_id' => (string) Str::ulid(),
+                    'company_id' => $this->company->id,
+                    'side' => OpeningTradeItem::SIDE_CUSTOMER,
+                    'customer_id' => $this->defaultCustomer->id,
+                    'opening_date' => '2026-01-01',
+                    'currency_code' => 'ILS',
+                    'amount_currency' => '100.000000',
+                    'exchange_rate' => '1.0000000000',
+                    'carrying_value_base' => '100.000000',
+                    'status' => 'POSTED',
+                    'party_snapshot' => json_encode(['id' => $this->defaultCustomer->id]),
+                    'company_snapshot' => json_encode(['id' => $this->company->id]),
+                    'control_route' => json_encode([]),
+                    'created_by' => $this->owner->id,
+                    'source_identity' => 'test',
+                    'idempotency_key' => 'migration-post-constraint-test',
+                    'idempotency_payload_hash' => hash('sha256', 'post-constraint'),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                $this->fail('Inserting uppercase POSTED status must be rejected by check constraint.');
+            } catch (QueryException $e) {
+                $this->assertStringContainsString('oti_status_valid', $e->getMessage());
+            }
+        }
     }
 }

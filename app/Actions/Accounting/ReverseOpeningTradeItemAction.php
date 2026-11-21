@@ -145,6 +145,7 @@ final class ReverseOpeningTradeItemAction
                 throw new InvalidArgumentException('Reversal date cannot be in the future.');
             }
 
+            $maxPrerequisiteDate = null;
             foreach ($allocations as $alloc) {
                 $eventReversed = $alloc->application_event_id !== null && ($alloc->application_reversed_at !== null || $alloc->application_reversal_posting_date !== null);
                 $isAllocationActive = ! $alloc->payment_is_reversed && ! $eventReversed;
@@ -165,6 +166,9 @@ final class ReverseOpeningTradeItemAction
                 }
                 $latestReversalDate = empty($reversalDateCandidates) ? $settlementDate : max($reversalDateCandidates);
                 $prerequisiteDate = max($settlementDate, $latestReversalDate);
+                if ($maxPrerequisiteDate === null || $prerequisiteDate > $maxPrerequisiteDate) {
+                    $maxPrerequisiteDate = $prerequisiteDate;
+                }
 
                 if ($revDateStr < $prerequisiteDate) {
                     throw new InvalidArgumentException("Opening trade balance reversal date [{$revDateStr}] cannot precede prerequisite settlement reversal date [{$prerequisiteDate}].");
@@ -185,7 +189,7 @@ final class ReverseOpeningTradeItemAction
                 $reversalBatch = $this->eventScope->withReversalCapability(
                     $this,
                     $capability,
-                    function () use ($originalBatch, $actor, $cleanReason, $revDateStr, $lockedItem, $capability): PostingBatch {
+                    function () use ($originalBatch, $actor, $cleanReason, $revDateStr, $lockedItem, $capability, $maxPrerequisiteDate): PostingBatch {
                         $reversalBatch = $this->postingService->reverse(
                             original: $originalBatch,
                             actingUser: $actor,
@@ -199,6 +203,19 @@ final class ReverseOpeningTradeItemAction
                         if ($originalBatch->source_type !== 'opening_trade_item' || (int) $originalBatch->source_id !== (int) $lockedItem->id) {
                             throw new InvalidArgumentException('Original journal source identity must match opening trade item.');
                         }
+                        if ((int) $reversalBatch->company_id !== (int) $originalBatch->company_id) {
+                            throw new InvalidArgumentException('Reversal journal company must match opening trade item.');
+                        }
+
+                        $actualEffectiveDate = $reversalBatch->posting_date->format('Y-m-d');
+                        $openingDateStr = $lockedItem->opening_date->format('Y-m-d');
+                        if ($actualEffectiveDate < $openingDateStr) {
+                            throw new InvalidArgumentException("Opening trade balance reversal batch effective date [{$actualEffectiveDate}] cannot precede opening date [{$openingDateStr}].");
+                        }
+                        if ($maxPrerequisiteDate !== null && $actualEffectiveDate < $maxPrerequisiteDate) {
+                            throw new InvalidArgumentException("Opening trade balance reversal batch effective date [{$actualEffectiveDate}] cannot precede prerequisite settlement reversal date [{$maxPrerequisiteDate}].");
+                        }
+
                         $freshOriginal = PostingBatch::withoutGlobalScopes()->find($originalBatch->id);
                         if ($freshOriginal === null || (int) $freshOriginal->reversed_by_batch_id !== (int) $reversalBatch->id) {
                             throw new InvalidArgumentException('Original posting batch must reciprocally link to reversal batch.');

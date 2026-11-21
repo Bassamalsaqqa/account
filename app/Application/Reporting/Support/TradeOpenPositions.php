@@ -124,25 +124,9 @@ final class TradeOpenPositions
         $openingQuery = OpeningTradeItem::query()
             ->where('company_id', $company->id)
             ->where('side', $side)
+            ->whereNotNull('posting_batch_id')
             ->where('opening_date', '<=', $cutoff)
-            ->where(function ($q) use ($cutoff): void {
-                $q->where(function ($posted): void {
-                    $posted->where('status', OpeningTradeItem::STATUS_POSTED)
-                        ->whereNull('reversal_posting_batch_id');
-                })->orWhere(function ($rev) use ($cutoff): void {
-                    $rev->where(function ($r): void {
-                        $r->where('status', OpeningTradeItem::STATUS_REVERSED)
-                            ->orWhereNotNull('reversal_posting_batch_id');
-                    })->where(function ($sub) use ($cutoff): void {
-                        $sub->whereHas('reversalPostingBatch', function ($b) use ($cutoff): void {
-                            $b->where('status', 'posted')
-                                ->where('posting_date', '>', $cutoff);
-                        })->orWhereDoesntHave('reversalPostingBatch', function ($b): void {
-                            $b->where('status', 'posted');
-                        });
-                    });
-                });
-            });
+            ->with(['postingBatch', 'reversalPostingBatch']);
 
         if ($partyId !== null) {
             $openingQuery->where($party.'_id', $partyId);

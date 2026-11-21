@@ -75,8 +75,6 @@ final class PostOpeningTradeItemAction
 
     /**
      * Post a single opening trade item (used by standalone API or individual calls).
-     *
-     * @param  array<string, mixed>|null  $rowsetContext
      */
     public function execute(
         Company $company,
@@ -92,7 +90,6 @@ final class PostOpeningTradeItemAction
         DateTimeInterface|string|null $dueDate = null,
         ?string $notes = null,
         string $sourceIdentity = 'manual',
-        ?array $rowsetContext = null,
     ): OpeningTradeItem {
         $context = app(CompanyContext::class);
 
@@ -183,9 +180,6 @@ final class PostOpeningTradeItemAction
             'original_reference' => $cleanRef,
             'due_date' => $dueDateStr,
         ];
-        if ($rowsetContext !== null) {
-            $payloadForHash['rowset'] = $rowsetContext;
-        }
         $payloadHash = hash('sha256', json_encode($payloadForHash, JSON_THROW_ON_ERROR));
 
         return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use (
@@ -204,7 +198,6 @@ final class PostOpeningTradeItemAction
             $payloadHash,
             $sourceIdentity,
             $notes,
-            $rowsetContext,
         ): OpeningTradeItem {
             /** @var Company $lockedCompany */
             $lockedCompany = Company::where('id', $company->id)->lockForUpdate()->firstOrFail();
@@ -232,27 +225,6 @@ final class PostOpeningTradeItemAction
                 }
 
                 return $existing;
-            }
-
-            if ($rowsetContext !== null) {
-                $formKey = (string) ($rowsetContext['form_key'] ?? '');
-                $expectedRowsetHash = (string) ($rowsetContext['rowset_hash'] ?? '');
-                if ($formKey !== '' && $expectedRowsetHash !== '') {
-                    $divergentItem = OpeningTradeItem::where('company_id', $lockedCompany->id)
-                        ->where(function ($q) use ($formKey): void {
-                            $q->where('idempotency_key', $formKey)
-                                ->orWhere('idempotency_key', 'like', $formKey.':%');
-                        })
-                        ->where(function ($q) use ($expectedRowsetHash): void {
-                            $q->whereNull('control_route->rowset->rowset_hash')
-                                ->orWhere('control_route->rowset->rowset_hash', '!=', $expectedRowsetHash);
-                        })
-                        ->first();
-
-                    if ($divergentItem !== null) {
-                        throw new IdempotencyConflictException("Opening trade form [{$formKey}] has committed items with a different row set identity.");
-                    }
-                }
             }
 
             try {
@@ -344,9 +316,6 @@ final class PostOpeningTradeItemAction
                 'offset_account_id' => $obeAccount->id,
                 'offset_account_key' => $obeAccount->system_key,
             ];
-            if ($rowsetContext !== null) {
-                $controlRoute['rowset'] = $rowsetContext;
-            }
 
             $lines = [];
             $lineCurrency = $currencyCode;
@@ -450,6 +419,7 @@ final class PostOpeningTradeItemAction
                         ]);
                         $capability->authorizeItem($item);
                         $item->save();
+                        $capability->authorizeSourceItemId((int) $item->id);
 
                         $postingCommand = new PostingCommand(
                             company: $lockedCompany,
@@ -609,62 +579,23 @@ final class PostOpeningTradeItemAction
             $lineFx = ExchangeRate::from($rateStr);
             $totalRows = count($rows);
 
-            // Check existing items committed under this form key (lost-ack replay)
-            $existingItems = OpeningTradeItem::where('company_id', $lockedCompany->id)
+            // If an existing record was already committed under this form key, resolve scale historically
+            // to allow canonical replay / conflict verification even if the currency was subsequently disabled.
+            $hasExistingRecord = OpeningTradeItem::where('company_id', $lockedCompany->id)
                 ->where(function ($q) use ($formIdempotencyKey): void {
-                    $q->where('idempotency_key', $formIdempotencyKey)
-                        ->orWhere('idempotency_key', 'like', $formIdempotencyKey.':line:%')
-                        ->orWhere('control_route->form->form_key', $formIdempotencyKey);
+                    $q->where('control_route->form->form_key', $formIdempotencyKey)
+                        ->orWhere('idempotency_key', $formIdempotencyKey)
+                        ->orWhere('idempotency_key', 'like', "{$formIdempotencyKey}:line:%");
                 })
-                ->lockForUpdate()
-                ->get();
+                ->exists();
 
-            if ($existingItems->isNotEmpty()) {
-                if ($existingItems->count() !== $totalRows) {
-                    throw new IdempotencyConflictException("Form idempotency key [{$formIdempotencyKey}] was already used with a different row set count: committed {$existingItems->count()} rows, received {$totalRows}.");
-                }
-
-                $sortedExisting = $existingItems->sortBy(function (OpeningTradeItem $item): int {
-                    return (int) ($item->control_route['form']['row_index'] ?? 0);
-                })->values();
-
-                foreach ($rows as $index => $row) {
-                    $childKey = $index === 0 ? $formIdempotencyKey : "{$formIdempotencyKey}:line:".($index - 1);
-                    /** @var OpeningTradeItem|null $exItem */
-                    $exItem = $sortedExisting->firstWhere('idempotency_key', $childKey);
-                    if ($exItem === null) {
-                        throw new IdempotencyConflictException("Opening trade item idempotency key [{$childKey}] was already used with a different economic payload.");
-                    }
-
-                    $rawAmt = (string) $row['amount'];
-                    $amtDec = BigDecimal::of($rawAmt);
-                    $rawRef = $row['original_reference'] ?? null;
-                    $cleanRef = $rawRef !== null && trim((string) $rawRef) !== '' ? trim((string) $rawRef) : null;
-                    $rawDue = $row['due_date'] ?? null;
-                    $dueDateStr = $rawDue !== null && trim((string) $rawDue) !== '' ? trim((string) $rawDue) : null;
-                    $rawNotes = $row['notes'] ?? null;
-                    $cleanNotes = $rawNotes !== null && trim((string) $rawNotes) !== '' ? trim((string) $rawNotes) : null;
-
-                    $matches = $exItem->side === $side
-                        && (int) ($exItem->customer_id ?? $exItem->vendor_id) === $partyId
-                        && $exItem->opening_date->toDateString() === $openingDateStr
-                        && $exItem->currency_code === $cleanCurrency
-                        && BigDecimal::of($exItem->amount_currency)->isEqualTo($amtDec)
-                        && BigDecimal::of($exItem->exchange_rate)->isEqualTo($rateDec)
-                        && ($exItem->original_reference ?: null) === ($cleanRef ?: null)
-                        && ($exItem->due_date?->toDateString() ?: null) === ($dueDateStr ?: null)
-                        && ($exItem->notes ?: null) === ($cleanNotes ?: null);
-
-                    if (! $matches) {
-                        throw new IdempotencyConflictException("Opening trade item idempotency key [{$childKey}] was already used with a different economic payload.");
-                    }
-                }
-
-                return $sortedExisting->all();
+            $resolver = app(CurrencyMinorUnitsResolver::class);
+            if ($hasExistingRecord) {
+                $scale = $resolver->resolveHistorical($cleanCurrency);
+            } else {
+                $scale = $resolver->resolveFreshForCompany($lockedCompany, $cleanCurrency, lockForUpdate: true);
             }
 
-            // Validate and normalize all rows using locked minor unit scale
-            $scale = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($lockedCompany, $cleanCurrency, lockForUpdate: true);
             $normalizedRows = [];
             foreach ($rows as $index => $row) {
                 $rawAmt = (string) $row['amount'];
@@ -702,7 +633,7 @@ final class PostOpeningTradeItemAction
 
                 $carryingBaseStr = (string) BigDecimal::of($amountStr)->multipliedBy($rateDec)->toScale(6, RoundingMode::HALF_UP);
 
-                $normalizedRows[] = [
+                $rowPayload = [
                     'row_index' => $index,
                     'amount' => $amountStr,
                     'carrying_value_base' => $carryingBaseStr,
@@ -710,6 +641,9 @@ final class PostOpeningTradeItemAction
                     'due_date' => $dueDateStr,
                     'notes' => $cleanNotes,
                 ];
+                $rowPayload['member_hash'] = hash('sha256', json_encode($rowPayload, JSON_THROW_ON_ERROR));
+
+                $normalizedRows[] = $rowPayload;
             }
 
             $formPayloadHash = hash('sha256', json_encode([
@@ -722,6 +656,79 @@ final class PostOpeningTradeItemAction
                 'total_rows' => $totalRows,
                 'rows' => $normalizedRows,
             ], JSON_THROW_ON_ERROR));
+
+            // 1. Standalone collision check: key must not adopt an existing standalone single item
+            $existingDirect = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                ->where('idempotency_key', $formIdempotencyKey)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingDirect !== null) {
+                $formKeyOnItem = $existingDirect->control_route['form']['form_key'] ?? null;
+                if ($formKeyOnItem === null || $formKeyOnItem !== $formIdempotencyKey) {
+                    throw new IdempotencyConflictException("Form idempotency key [{$formIdempotencyKey}] conflicts with an existing standalone opening trade item.");
+                }
+            }
+
+            // 2. Check existing form items committed under this form key (lost-ack replay)
+            $existingItems = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                ->where(function ($q) use ($formIdempotencyKey): void {
+                    $q->where('control_route->form->form_key', $formIdempotencyKey)
+                        ->orWhere('idempotency_key', $formIdempotencyKey)
+                        ->orWhere('idempotency_key', 'like', "{$formIdempotencyKey}:line:%");
+                })
+                ->lockForUpdate()
+                ->get();
+
+            if ($existingItems->isNotEmpty()) {
+                if ($existingItems->count() !== $totalRows) {
+                    throw new IdempotencyConflictException("Form idempotency key [{$formIdempotencyKey}] was already used with a different row set count: committed {$existingItems->count()} rows, received {$totalRows}.");
+                }
+
+                $sortedExisting = $existingItems->sortBy(function (OpeningTradeItem $item): int {
+                    return (int) ($item->control_route['form']['row_index'] ?? 0);
+                })->values();
+
+                foreach ($normalizedRows as $index => $nRow) {
+                    $childKey = $index === 0 ? $formIdempotencyKey : "{$formIdempotencyKey}:line:".($index - 1);
+                    /** @var OpeningTradeItem|null $exItem */
+                    $exItem = $sortedExisting->first(function (OpeningTradeItem $item) use ($index, $childKey): bool {
+                        return (int) ($item->control_route['form']['row_index'] ?? -1) === $index
+                            || $item->idempotency_key === $childKey;
+                    });
+                    if ($exItem === null) {
+                        throw new IdempotencyConflictException("Opening trade form item [{$index}] was already used with a different row set structure.");
+                    }
+
+                    $itemFormKey = $exItem->control_route['form']['form_key'] ?? null;
+                    $itemMemberHash = $exItem->control_route['form']['member_hash'] ?? null;
+
+                    if ($itemFormKey !== $formIdempotencyKey || $itemMemberHash !== $nRow['member_hash']) {
+                        throw new IdempotencyConflictException("Opening trade item idempotency key [{$childKey}] was already used with a different economic payload.");
+                    }
+
+                    $matches = $exItem->side === $side
+                        && (int) ($exItem->customer_id ?? $exItem->vendor_id) === $partyId
+                        && $exItem->opening_date->toDateString() === $openingDateStr
+                        && $exItem->currency_code === $cleanCurrency
+                        && BigDecimal::of($exItem->amount_currency)->isEqualTo(BigDecimal::of($nRow['amount']))
+                        && BigDecimal::of($exItem->exchange_rate)->isEqualTo($rateDec)
+                        && ($exItem->original_reference ?: null) === ($nRow['original_reference'] ?: null)
+                        && ($exItem->due_date?->toDateString() ?: null) === ($nRow['due_date'] ?: null)
+                        && ($exItem->notes ?: null) === ($nRow['notes'] ?: null);
+
+                    if (! $matches) {
+                        throw new IdempotencyConflictException("Opening trade item idempotency key [{$childKey}] was already used with a different economic payload.");
+                    }
+                }
+
+                $firstItemFormHash = $sortedExisting->first()?->control_route['form']['form_hash'] ?? null;
+                if ($firstItemFormHash !== $formPayloadHash) {
+                    throw new IdempotencyConflictException("Form idempotency key [{$formIdempotencyKey}] was already used with a different economic payload.");
+                }
+
+                return $sortedExisting->all();
+            }
 
             // Party validation
             if ($side === OpeningTradeItem::SIDE_CUSTOMER) {
@@ -843,7 +850,8 @@ final class PostOpeningTradeItemAction
                                     'form_key' => $formIdempotencyKey,
                                     'row_index' => $idx,
                                     'total_rows' => $totalRows,
-                                    'form_payload_hash' => $formPayloadHash,
+                                    'form_hash' => $formPayloadHash,
+                                    'member_hash' => $nRow['member_hash'],
                                 ],
                             ];
 
@@ -866,13 +874,14 @@ final class PostOpeningTradeItemAction
                                 'created_by' => $actor->id,
                                 'source_identity' => $sourceIdentity,
                                 'idempotency_key' => $childKey,
-                                'idempotency_payload_hash' => hash('sha256', json_encode($nRow, JSON_THROW_ON_ERROR)),
+                                'idempotency_payload_hash' => $nRow['member_hash'],
                                 'status' => OpeningTradeItem::STATUS_POSTED,
                                 'notes' => $nRow['notes'],
                             ]);
 
                             $capability->authorizeItem($item);
                             $item->save();
+                            $capability->authorizeSourceItemId((int) $item->id);
 
                             $lines = [];
                             $lineAmount = MoneyAmount::from($nRow['amount']);
@@ -974,5 +983,18 @@ final class PostOpeningTradeItemAction
 
             return $postedItems;
         });
+    }
+
+    public static function hasCommittedForm(int $companyId, string $formKey): bool
+    {
+        return OpeningTradeItem::where('company_id', $companyId)
+            ->where(function ($q) use ($formKey): void {
+                $q->where('control_route->form->form_key', $formKey)
+                    ->orWhere(function ($q2) use ($formKey): void {
+                        $q2->where('idempotency_key', $formKey)
+                            ->whereNotNull('control_route->form->form_key');
+                    });
+            })
+            ->exists();
     }
 }

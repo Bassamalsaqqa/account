@@ -38,6 +38,7 @@ use App\Services\Money\CustomerPaymentHistory;
 use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Purchasing\VendorPaymentHistoryCommands;
+use App\Services\Sales\SalesHistoryAudit;
 use App\Services\Sales\SalesReconciliationService;
 use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
@@ -1138,6 +1139,162 @@ final class OpeningTradeSettlementTest extends TradeTestCase
         $reversedVend = app(ReverseOpeningTradeItemAction::class)->execute($vendOpening->fresh(), $this->owner, 'Valid reversal', '2026-02-11');
         $this->assertTrue($reversedVend->isReversed());
 
+        $this->assertAllSixReconciliations();
+    }
+
+    public function test_real_initial_customer_payment_allocation_to_opening_with_fx_collision_reversal_and_six_reconciliations(): void
+    {
+        $this->activateUser($this->owner);
+
+        // 1. Create a posted sales invoice for the customer to establish invoice flow and potential ID collision
+        $invoice = $this->createAndPostSalesInvoice([
+            'customer' => $this->customer,
+            'issue_date' => '2026-01-01',
+            'due_date' => '2026-01-15',
+            'lines' => [
+                [
+                    'product_id' => null,
+                    'item_description' => 'Service for Collision',
+                    'quantity' => '1.000000',
+                    'unit_price' => '100.000000',
+                ],
+            ],
+        ]);
+        $this->assertTrue($invoice->isPosted());
+
+        // 2. Create customer opening trade items: one foreign currency (USD) and one base currency (ILS)
+        $usdOpening = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '100.00',
+            currencyCode: 'USD',
+            exchangeRate: '3.5000000000',
+            actor: $this->owner,
+            idempotencyKey: 'cust-usd-open-init-'.Str::ulid(),
+        );
+
+        $ilsOpening = app(PostOpeningTradeItemAction::class)->execute(
+            company: $this->company,
+            side: OpeningTradeItem::SIDE_CUSTOMER,
+            partyId: $this->customer->id,
+            openingDate: '2026-01-01',
+            amount: '200.00',
+            currencyCode: 'ILS',
+            exchangeRate: '1.0000000000',
+            actor: $this->owner,
+            idempotencyKey: 'cust-ils-open-init-'.Str::ulid(),
+        );
+
+        // 3. Payment 1: Initial allocation combining partial FX (USD 50.00 = 175.00 ILS) and same currency (ILS 200.00)
+        $initPayment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-10',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '375.00',
+            'idempotency_key' => 'pmt-init-alloc-multi-'.Str::ulid(),
+            'allocations' => [
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $usdOpening->id,
+                    'allocated_amount' => '50.00',
+                    'payment_currency_amount' => '175.00',
+                ],
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $ilsOpening->id,
+                    'allocated_amount' => '200.00',
+                    'payment_currency_amount' => '200.00',
+                ],
+            ],
+        ]);
+        $this->assertFalse((bool) $initPayment->is_reversed);
+        $this->assertCount(2, $initPayment->allocations);
+
+        // 4. Payment 2: Initial allocation targeting invoice (verifying distinct ID handling and provenance isolation)
+        $invPayment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-11',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '100.00',
+            'idempotency_key' => 'pmt-inv-target-'.Str::ulid(),
+            'allocations' => [
+                [
+                    'sales_invoice_id' => $invoice->id,
+                    'allocated_amount' => '100.00',
+                ],
+            ],
+        ]);
+        $this->assertFalse((bool) $invPayment->is_reversed);
+
+        // 5. Payment 3: Final allocation consuming remaining USD balance (USD 50.00 = 175.00 ILS)
+        $finalPayment = app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-01-12',
+            'payment_method' => CustomerPayment::METHOD_CASH,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'amount' => '175.00',
+            'idempotency_key' => 'pmt-final-usd-alloc-'.Str::ulid(),
+            'allocations' => [
+                [
+                    'kind' => 'opening_trade_item',
+                    'opening_trade_item_id' => $usdOpening->id,
+                    'allocated_amount' => '50.00',
+                    'payment_currency_amount' => '175.00',
+                ],
+            ],
+        ]);
+        $this->assertFalse((bool) $finalPayment->is_reversed);
+
+        // Both opening items are now fully allocated
+        $this->assertTrue(BigDecimal::zero()->isEqualTo($usdOpening->calculateOutstanding()));
+        $this->assertTrue(BigDecimal::zero()->isEqualTo($ilsOpening->calculateOutstanding()));
+
+        // 6. Reverse parent payments lawfully
+        app(ReverseCustomerPaymentAction::class)->execute($finalPayment->fresh(), $this->owner, 'Reverse final payment', '2026-02-01');
+        app(ReverseCustomerPaymentAction::class)->execute($initPayment->fresh(), $this->owner, 'Reverse initial payment', '2026-02-05');
+
+        $this->assertTrue($finalPayment->fresh()->is_reversed);
+        $this->assertTrue($initPayment->fresh()->is_reversed);
+
+        // 7. Chronology enforcement: Attempt opening reversal before prerequisite date 2026-02-05 must fail
+        try {
+            app(ReverseOpeningTradeItemAction::class)->execute($usdOpening->fresh(), $this->owner, 'Early reversal', '2026-02-03');
+            $this->fail('Opening reversal on 2026-02-03 must be rejected when payment reversal took effect 2026-02-05');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('cannot precede prerequisite settlement reversal date [2026-02-05]', $e->getMessage());
+        }
+
+        // 8. Lawful opening reversals on or after prerequisite date 2026-02-05 succeed
+        $revUsd = app(ReverseOpeningTradeItemAction::class)->execute($usdOpening->fresh(), $this->owner, 'Valid USD reversal', '2026-02-05');
+        $revIls = app(ReverseOpeningTradeItemAction::class)->execute($ilsOpening->fresh(), $this->owner, 'Valid ILS reversal', '2026-02-06');
+
+        $this->assertTrue($revUsd->isReversed());
+        $this->assertTrue($revIls->isReversed());
+
+        // Invoice flows and its payment remain active and intact (immutable provenance)
+        $this->assertTrue($invoice->fresh()->isPosted());
+        $this->assertFalse((bool) $invPayment->fresh()->is_reversed);
+
+        // History validation passes on reversed payments
+        app(CustomerPaymentHistory::class)->validate($initPayment->fresh());
+        app(CustomerPaymentHistory::class)->validate($finalPayment->fresh());
+        app(CustomerPaymentHistory::class)->validate($invPayment->fresh());
+
+        // SalesHistoryAudit must have zero errors
+        $auditErrors = app(SalesHistoryAudit::class)->audit((int) $this->company->id);
+        $this->assertSame([], $auditErrors, 'SalesHistoryAudit failed with: '.json_encode($auditErrors));
+
+        // 9. Assert all six canonical reconciliation services pass
         $this->assertAllSixReconciliations();
     }
 }
