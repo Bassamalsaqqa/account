@@ -23,13 +23,21 @@ use App\Models\CustomerPayment;
 use App\Models\CustomerPaymentAllocation;
 use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
+use App\Models\Purchase;
+use App\Models\SalesInvoice;
 use App\Models\Vendor;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentAllocation;
+use App\Services\Accounting\AccountingReconciliationService;
+use App\Services\Accounting\Phase7ReconciliationService;
+use App\Services\Inventory\InventoryReconciliationService;
 use App\Services\Money\CustomerApplicationHistory;
-use App\Services\Money\PaymentAllocationIntent;
+use App\Services\Money\MoneyReconciliationService;
+use App\Services\Purchasing\PayablesReconciliationService;
+use App\Services\Sales\SalesReconciliationService;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Feature\Phase8\TradeTestCase;
 
 final class OpeningTradeSettlementTest extends TradeTestCase
@@ -45,6 +53,30 @@ final class OpeningTradeSettlementTest extends TradeTestCase
         $this->activateUser($this->owner);
         $this->customer = $this->defaultCustomer;
         $this->testVendor = $this->vendor;
+    }
+
+    public function test_new_opening_fixtures_pass_all_six_reconciliations(): void
+    {
+        foreach (['customer', 'vendor'] as $side) {
+            app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: $side,
+                partyId: $side === 'customer' ? $this->customer->id : $this->testVendor->id,
+                openingDate: '2026-01-01', amount: '123.45', currencyCode: 'ILS',
+                actor: $this->owner, idempotencyKey: 'six-reconcile-'.$side,
+            );
+        }
+        foreach ([
+            AccountingReconciliationService::class,
+            SalesReconciliationService::class,
+            PayablesReconciliationService::class,
+            MoneyReconciliationService::class,
+            Phase7ReconciliationService::class,
+        ] as $service) {
+            $report = app($service)->reconcile($this->company);
+            $this->assertTrue($report->isHealthy, $service.': '.json_encode($report));
+        }
+        $report = app(InventoryReconciliationService::class)->auditCompany($this->company);
+        $this->assertTrue($report->isHealthy, json_encode($report));
     }
 
     public function test_customer_payment_can_allocate_to_opening_trade_item(): void
@@ -638,9 +670,22 @@ final class OpeningTradeSettlementTest extends TradeTestCase
         }
     }
 
-    public function test_typed_id_42_collision_on_both_sides(): void
+    public static function collisionSides(): array
     {
-        foreach (['customer', 'vendor'] as $side) {
+        return [['customer'], ['vendor']];
+    }
+
+    #[DataProvider('collisionSides')]
+    public function test_typed_id_42_collision_on_both_sides(string $side): void
+    {
+        $dispatcher = OpeningTradeItem::getEventDispatcher();
+        OpeningTradeItem::setEventDispatcher(clone $dispatcher);
+        foreach ([OpeningTradeItem::class, SalesInvoice::class, Purchase::class] as $model) {
+            $model::creating(static function ($record): void {
+                $record->id = 42;
+            });
+        }
+        try {
             $customerSide = $side === 'customer';
             $party = $customerSide ? $this->customer : $this->testVendor;
             $post = app($customerSide ? PostCustomerPaymentAction::class : PostVendorPaymentAction::class);
@@ -664,13 +709,8 @@ final class OpeningTradeSettlementTest extends TradeTestCase
                 actor: $this->owner, idempotencyKey: 'typed-open-'.$side,
             );
 
-            // Test composite key normalization with simulated collision ID 42
-            $testIntent = [
-                ['kind' => $customerSide ? 'invoice' : 'purchase', 'id' => 42, 'allocated_amount' => '50.00'],
-                ['kind' => 'opening_trade_item', 'id' => 42, 'allocated_amount' => '70.00'],
-            ];
-            $normalized = PaymentAllocationIntent::normalize($testIntent, $customerSide ? 'sales_invoice_id' : 'purchase_id');
-            $this->assertCount(2, $normalized);
+            $this->assertSame(42, $doc->id);
+            $this->assertSame(42, $opening->id);
 
             // Post payment allocating to BOTH real document and opening item simultaneously
             $payment = $post->execute($this->company, $this->owner, [
@@ -707,6 +747,8 @@ final class OpeningTradeSettlementTest extends TradeTestCase
             $this->assertNull($openingAlloc->{$customerSide ? 'sales_invoice_id' : 'purchase_id'});
             $this->assertTrue(BigDecimal::of($docAlloc->allocated_amount)->isEqualTo('50.00'));
             $this->assertTrue(BigDecimal::of($openingAlloc->allocated_amount)->isEqualTo('100.00'));
+        } finally {
+            OpeningTradeItem::setEventDispatcher($dispatcher);
         }
     }
 

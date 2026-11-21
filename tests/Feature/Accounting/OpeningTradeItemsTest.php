@@ -17,6 +17,7 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Domain\Posting\Exceptions\IdempotencyConflictException;
+use App\Models\AuditEvent;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
@@ -557,6 +558,37 @@ final class OpeningTradeItemsTest extends TradeTestCase
         $revResp->assertJsonPath('data.status', 'reversed');
     }
 
+    public function test_failure_after_persisted_audit_rolls_back_journal_and_all_provenance(): void
+    {
+        $tables = ['opening_trade_items', 'posting_batches', 'posting_lines', 'audit_events', 'document_sequences'];
+        // Include complete rows: a consumed number is also a partial business event.
+        $tables = array_values(array_filter($tables, fn ($table) => Schema::hasTable($table)));
+        $snapshot = fn () => collect($tables)->mapWithKeys(fn ($table) => [$table => DB::table($table)->orderBy('id')->get()->toJson()])->all();
+        $before = $snapshot();
+        $dispatcher = OpeningTradeItem::getEventDispatcher();
+        OpeningTradeItem::setEventDispatcher(clone $dispatcher);
+        AuditEvent::created(function ($event): void {
+            if ($event->event_key === 'accounting.opening_trade_item.posted') {
+                $this->assertTrue(DB::table('posting_lines')->exists());
+                $this->assertTrue(DB::table('audit_events')->where('id', $event->id)->exists());
+                throw new \RuntimeException('Injected after persisted opening audit');
+            }
+        });
+        try {
+            app(PostOpeningTradeItemAction::class)->execute(
+                company: $this->company, side: 'customer', partyId: $this->customer->id,
+                openingDate: '2026-01-01', amount: '12.34', currencyCode: 'ILS',
+                actor: $this->owner, idempotencyKey: 'fault-after-audit',
+            );
+            $this->fail('Injected fault must escape.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Injected after persisted opening audit', $e->getMessage());
+        } finally {
+            OpeningTradeItem::setEventDispatcher($dispatcher);
+        }
+        $this->assertSame($before, $snapshot());
+    }
+
     public function test_populated_opening_history_refuses_downgrade_before_ddl(): void
     {
         $item = app(PostOpeningTradeItemAction::class)->execute(
@@ -565,12 +597,19 @@ final class OpeningTradeItemsTest extends TradeTestCase
             actor: $this->owner, idempotencyKey: 'downgrade-refusal',
         );
         $migration = require database_path('migrations/2026_11_20_000001_create_opening_trade_items_and_extend_allocations.php');
+        $tables = ['opening_trade_items', 'customer_payment_allocations', 'vendor_payment_allocations', 'posting_batches', 'posting_lines', 'audit_events'];
+        $snapshot = fn () => collect($tables)->mapWithKeys(fn ($table) => [$table => [
+            DB::table($table)->orderBy('id')->get()->toJson(),
+            DB::select('SHOW CREATE TABLE '.$table)[0]->{'Create Table'},
+        ]])->all();
+        $before = $snapshot();
         try {
             $migration->down();
             $this->fail('Populated financial history must refuse downgrade.');
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('Cannot downgrade populated', $e->getMessage());
         }
+        $this->assertSame($before, $snapshot());
         $this->assertDatabaseHas('opening_trade_items', ['id' => $item->id, 'posting_batch_id' => $item->posting_batch_id]);
         $this->assertTrue(Schema::hasColumn('customer_payment_allocations', 'opening_trade_item_id'));
     }

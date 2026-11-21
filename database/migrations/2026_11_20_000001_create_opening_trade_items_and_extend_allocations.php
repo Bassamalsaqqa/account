@@ -85,11 +85,13 @@ return new class extends Migration
         DB::statement('ALTER TABLE vendor_payment_allocations DROP CONSTRAINT vpa_exactly_one_target');
 
         Schema::table('vendor_payment_allocations', function (Blueprint $table): void {
+            $table->dropIndex('vpa_opening_item_idx');
             $table->dropConstrainedForeignId('opening_trade_item_id');
             $table->foreignId('purchase_id')->nullable(false)->change();
         });
 
         Schema::table('customer_payment_allocations', function (Blueprint $table): void {
+            $table->dropIndex('cpa_opening_item_idx');
             $table->dropConstrainedForeignId('opening_trade_item_id');
             $table->foreignId('sales_invoice_id')->nullable(false)->change();
         });
