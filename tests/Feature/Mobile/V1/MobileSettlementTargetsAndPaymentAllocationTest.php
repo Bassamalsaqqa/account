@@ -36,6 +36,7 @@ use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Services\Sales\CustomerCatalogService;
 use App\Services\Sales\SalesReconciliationService;
+use App\Support\Mobile\SettlementTargetsCursorCodec;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -966,6 +967,407 @@ final class MobileSettlementTargetsAndPaymentAllocationTest extends TestCase
         ]);
         $resConflict->assertStatus(409);
         $resConflict->assertJsonPath('error.code', 'IDEMPOTENCY_KEY_CONFLICT');
+    }
+
+    public function test_customer_payment_rejects_intra_alias_conflicts(): void
+    {
+        $invoice = $this->createPostedSalesInvoice('100.00', 'ILS');
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+
+        // 1. target_type vs kind conflict
+        $resType = $this->withHeaders($this->authHeaders('type-kind-conflict'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_type' => 'invoice',
+                    'kind' => 'opening_trade_item',
+                    'target_id' => $invoice->public_id,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $resType->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_type/kind aliases', $resType->json('error.message'));
+
+        // 2. target_id vs id conflict
+        $resId = $this->withHeaders($this->authHeaders('targetid-id-conflict'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_type' => 'invoice',
+                    'target_id' => $invoice->public_id,
+                    'id' => (string) Str::ulid(),
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $resId->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_id/id aliases', $resId->json('error.message'));
+
+        // 3. invoice_id vs sales_invoice_id conflict
+        $resInv = $this->withHeaders($this->authHeaders('inv-salesinv-conflict'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'invoice_id' => $invoice->public_id,
+                    'sales_invoice_id' => (string) Str::ulid(),
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $resInv->assertStatus(422);
+        $this->assertStringContainsString('conflicting invoice_id/sales_invoice_id aliases', $resInv->json('error.message'));
+
+        // 4. opening_trade_item_id vs opening_balance_id conflict
+        $resOpen = $this->withHeaders($this->authHeaders('open-alias-conflict'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'opening_trade_item_id' => (string) Str::ulid(),
+                    'opening_balance_id' => (string) Str::ulid(),
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $resOpen->assertStatus(422);
+        $this->assertStringContainsString('conflicting opening_trade_item_id aliases', $resOpen->json('error.message'));
+    }
+
+    public function test_customer_payment_rejects_generic_target_id_contradictions_both_target_type_present_and_absent(): void
+    {
+        $invoice = $this->createPostedSalesInvoice('100.00', 'ILS');
+        $opening = $this->createPostedCustomerOpeningItem('100.00', 'ILS');
+        $otherUlid = (string) Str::ulid();
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+
+        // 1. target_type present ('invoice'): target_id contradicts invoice_id
+        $res1 = $this->withHeaders($this->authHeaders('contra-pres-inv'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_type' => 'invoice',
+                    'target_id' => $invoice->public_id,
+                    'invoice_id' => $otherUlid,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $res1->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_id', $res1->json('error.message'));
+
+        // 2. target_type present ('opening_trade_item'): target_id contradicts opening_trade_item_id
+        $res2 = $this->withHeaders($this->authHeaders('contra-pres-open'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_type' => 'opening_trade_item',
+                    'target_id' => $opening->public_id,
+                    'opening_trade_item_id' => $otherUlid,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $res2->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_id', $res2->json('error.message'));
+
+        // 3. target_type absent: target_id contradicts invoice_id
+        $res3 = $this->withHeaders($this->authHeaders('contra-abs-inv'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_id' => $invoice->public_id,
+                    'invoice_id' => $otherUlid,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $res3->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_id', $res3->json('error.message'));
+
+        // 4. target_type absent: target_id contradicts opening_trade_item_id
+        $res4 = $this->withHeaders($this->authHeaders('contra-abs-open'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_id' => $opening->public_id,
+                    'opening_trade_item_id' => $otherUlid,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $res4->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_id', $res4->json('error.message'));
+    }
+
+    public function test_customer_payment_accepts_consistent_matching_aliases(): void
+    {
+        $invoice = $this->createPostedSalesInvoice('150.00', 'ILS');
+        $opening = $this->createPostedCustomerOpeningItem('200.00', 'ILS');
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+
+        // Matching aliases: target_type present with target_id == invoice_id, and opening with target_id == opening_trade_item_id
+        $key = 'cust-matching-aliases-'.(string) Str::uuid();
+        $res = $this->withHeaders($this->authHeaders($key))->postJson($url, [
+            'amount' => '350.000000',
+            'allocations' => [
+                [
+                    'target_type' => 'invoice',
+                    'target_id' => $invoice->public_id,
+                    'invoice_id' => $invoice->public_id,
+                    'sales_invoice_id' => $invoice->public_id,
+                    'id' => $invoice->public_id,
+                    'kind' => 'invoice',
+                    'amount' => '150.000000',
+                ],
+                [
+                    'target_type' => 'opening_trade_item',
+                    'target_id' => $opening->public_id,
+                    'opening_trade_item_id' => $opening->public_id,
+                    'opening_balance_id' => $opening->public_id,
+                    'id' => $opening->public_id,
+                    'amount' => '200.000000',
+                ],
+            ],
+        ]);
+
+        $res->assertStatus(201);
+        $json = $res->json();
+        $this->assertTrue($json['success']);
+        $this->assertSame('350.00', $json['allocated_amount']);
+    }
+
+    public function test_customer_payment_rejects_normalized_duplicate_targets_across_different_syntaxes(): void
+    {
+        $invoice = $this->createPostedSalesInvoice('200.00', 'ILS');
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments";
+
+        // Row 1 uses legacy invoice_id, Row 2 uses typed target_type + target_id
+        $res = $this->withHeaders($this->authHeaders('dup-syntax-1'))->postJson($url, [
+            'amount' => '200.000000',
+            'allocations' => [
+                [
+                    'invoice_id' => $invoice->public_id,
+                    'amount' => '100.000000',
+                ],
+                [
+                    'target_type' => 'invoice',
+                    'target_id' => $invoice->public_id,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+
+        $res->assertStatus(422);
+        $this->assertStringContainsString('Duplicate allocation target', $res->json('error.message'));
+    }
+
+    public function test_supplier_payment_rejects_intra_alias_and_generic_target_id_contradictions(): void
+    {
+        $purchase = $this->createPostedPurchaseBill('100.00', 'ILS');
+        $otherUlid = (string) Str::ulid();
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$this->vendor->public_id}/payments";
+
+        // 1. bill_id vs purchase_id conflict
+        $res1 = $this->withHeaders($this->authHeaders('bill-pur-conflict'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'bill_id' => $purchase->public_id,
+                    'purchase_id' => $otherUlid,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $res1->assertStatus(422);
+        $this->assertStringContainsString('conflicting bill_id/purchase_id aliases', $res1->json('error.message'));
+
+        // 2. target_type present ('purchase'): target_id contradicts bill_id
+        $res2 = $this->withHeaders($this->authHeaders('supp-contra-pres-bill'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_type' => 'purchase',
+                    'target_id' => $purchase->public_id,
+                    'bill_id' => $otherUlid,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $res2->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_id', $res2->json('error.message'));
+
+        // 3. target_type absent: target_id contradicts bill_id
+        $res3 = $this->withHeaders($this->authHeaders('supp-contra-abs-bill'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                [
+                    'target_id' => $purchase->public_id,
+                    'bill_id' => $otherUlid,
+                    'amount' => '100.000000',
+                ],
+            ],
+        ]);
+        $res3->assertStatus(422);
+        $this->assertStringContainsString('conflicting target_id', $res3->json('error.message'));
+
+        // 4. Duplicate across syntaxes (Row 1 bill_id, Row 2 target_type purchase)
+        $res4 = $this->withHeaders($this->authHeaders('supp-dup-syntax'))->postJson($url, [
+            'amount' => '100.000000',
+            'allocations' => [
+                ['bill_id' => $purchase->public_id, 'amount' => '50.000000'],
+                ['target_type' => 'purchase', 'target_id' => $purchase->public_id, 'amount' => '50.000000'],
+            ],
+        ]);
+        $res4->assertStatus(422);
+        $this->assertStringContainsString('Duplicate allocation target', $res4->json('error.message'));
+    }
+
+    public function test_supplier_payment_accepts_consistent_matching_aliases(): void
+    {
+        $purchase = $this->createPostedPurchaseBill('120.00', 'ILS');
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$this->vendor->public_id}/payments";
+
+        $key = 'supp-matching-aliases-'.(string) Str::uuid();
+        $res = $this->withHeaders($this->authHeaders($key))->postJson($url, [
+            'amount' => '120.000000',
+            'allocations' => [
+                [
+                    'target_type' => 'purchase',
+                    'target_id' => $purchase->public_id,
+                    'bill_id' => $purchase->public_id,
+                    'purchase_id' => $purchase->public_id,
+                    'id' => $purchase->public_id,
+                    'kind' => 'purchase',
+                    'amount' => '120.000000',
+                ],
+            ],
+        ]);
+
+        $res->assertStatus(201);
+        $this->assertTrue($res->json('success'));
+        $this->assertSame('120.00', $res->json('allocated_amount'));
+    }
+
+    public function test_settlement_targets_cursor_pagination_navigation_and_truthful_totals(): void
+    {
+        // Create 3 open items on distinct dates
+        $open1 = $this->createPostedCustomerOpeningItem('100.00', 'ILS', '2026-01-10');
+        $inv1 = $this->createPostedSalesInvoice('200.00', 'ILS', '2026-01-20');
+        $inv2 = $this->createPostedSalesInvoice('300.00', 'ILS', '2026-02-01');
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // Page 1: limit=1
+        $res1 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1');
+        $res1->assertStatus(200);
+        $p1 = $res1->json('pagination');
+        $this->assertSame(1, $p1['limit']);
+        $this->assertTrue($p1['has_more']);
+        $this->assertNotNull($p1['next_cursor']);
+        $targets1 = $res1->json('targets');
+        $this->assertCount(1, $targets1);
+        $this->assertSame($open1->public_id, $targets1[0]['target_id']);
+        $this->assertSame('100.00', $res1->json('totals.remaining_by_currency.ILS.amount'));
+
+        // Page 2: limit=1, cursor from page 1
+        $res2 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($p1['next_cursor']));
+        $res2->assertStatus(200);
+        $p2 = $res2->json('pagination');
+        $this->assertTrue($p2['has_more']);
+        $this->assertNotNull($p2['next_cursor']);
+        $targets2 = $res2->json('targets');
+        $this->assertCount(1, $targets2);
+        $this->assertSame($inv1->public_id, $targets2[0]['target_id']);
+        $this->assertSame('200.00', $res2->json('totals.remaining_by_currency.ILS.amount'));
+
+        // Page 3: limit=1, cursor from page 2
+        $res3 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($p2['next_cursor']));
+        $res3->assertStatus(200);
+        $p3 = $res3->json('pagination');
+        $this->assertFalse($p3['has_more']);
+        $this->assertNull($p3['next_cursor']);
+        $targets3 = $res2->json('targets');
+        $targets3Actual = $res3->json('targets');
+        $this->assertCount(1, $targets3Actual);
+        $this->assertSame($inv2->public_id, $targets3Actual[0]['target_id']);
+        $this->assertSame('300.00', $res3->json('totals.remaining_by_currency.ILS.amount'));
+    }
+
+    public function test_settlement_targets_sparse_closed_items_do_not_truncate_page(): void
+    {
+        // Create an invoice on 2026-01-05 and fully pay it (closed)
+        $closedInv = $this->createPostedSalesInvoice('150.00', 'ILS', '2026-01-05');
+        $payKey = 'sparse-closed-pay-'.(string) Str::uuid();
+        $this->withHeaders($this->authHeaders($payKey))->postJson(
+            "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/payments",
+            [
+                'amount' => '150.000000',
+                'allocations' => [
+                    ['invoice_id' => $closedInv->public_id, 'amount' => '150.000000'],
+                ],
+            ]
+        )->assertStatus(201);
+
+        // Create 2 open items on later dates
+        $open1 = $this->createPostedSalesInvoice('100.00', 'ILS', '2026-01-15');
+        $open2 = $this->createPostedSalesInvoice('200.00', 'ILS', '2026-01-20');
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets?limit=2";
+        $res = $this->withHeaders($this->authHeaders())->getJson($url);
+        $res->assertStatus(200);
+
+        $targets = $res->json('targets');
+        // The closed item must be skipped without truncating the page to 1
+        $this->assertCount(2, $targets);
+        $this->assertSame($open1->public_id, $targets[0]['target_id']);
+        $this->assertSame($open2->public_id, $targets[1]['target_id']);
+    }
+
+    public function test_settlement_targets_limit_validation(): void
+    {
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        foreach (['0', '251', '-5', 'abc'] as $badLimit) {
+            $res = $this->withHeaders($this->authHeaders())->getJson($url.'?limit='.$badLimit);
+            $res->assertStatus(422);
+            $res->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        }
+    }
+
+    public function test_settlement_targets_cursor_tamper_and_cross_tenant_rejection(): void
+    {
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // 1. Malformed cursor
+        $resMalformed = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor=not-a-valid-cursor');
+        $resMalformed->assertStatus(422);
+        $resMalformed->assertJsonPath('error.code', 'VALIDATION_FAILED');
+
+        // 2. Tampered cursor
+        $validCursor = SettlementTargetsCursorCodec::encode(
+            (string) $this->company->public_id,
+            (string) $this->customer->public_id,
+            null,
+            '2026-01-01',
+            'invoice',
+            (string) Str::ulid()
+        );
+        $tamperedCursor = $validCursor.'X';
+        $resTampered = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor='.$tamperedCursor);
+        $resTampered->assertStatus(422);
+
+        // 3. Cross-tenant cursor: cursor created for a different company
+        $crossTenantCursor = SettlementTargetsCursorCodec::encode(
+            (string) Str::ulid(), // foreign company
+            (string) $this->customer->public_id,
+            null,
+            '2026-01-01',
+            'invoice',
+            (string) Str::ulid()
+        );
+        $resCross = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor='.$crossTenantCursor);
+        $resCross->assertStatus(422);
+        $this->assertStringContainsString('Cross-tenant', $resCross->json('error.message'));
     }
 
     // =========================================================================

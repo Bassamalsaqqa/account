@@ -21,10 +21,10 @@ use App\Services\Purchasing\VendorCatalogService;
 use App\Services\Purchasing\VendorFinancialRead;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Mobile\Receipt\NativeWriteContextResolver;
+use App\Support\Mobile\SettlementTargetsReader;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
-use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
@@ -427,178 +427,7 @@ final class SupplierController extends Controller
             );
         }
 
-        $currencyFilter = $request->query('currency');
-        $currencyCode = is_string($currencyFilter) && trim($currencyFilter) !== ''
-            ? strtoupper(trim($currencyFilter))
-            : null;
-
-        $tz = (string) ($company->timezone ?: 'UTC');
-        $today = now($tz)->toDateString();
-
-        // 1. Read posted open purchases (purchase bills)
-        $purchaseQuery = Purchase::query()
-            ->where('company_id', $company->id)
-            ->where('vendor_id', $vendor->id)
-            ->where('status', Purchase::STATUS_POSTED);
-
-        if ($currencyCode !== null) {
-            $purchaseQuery->where('currency_code', $currencyCode);
-        }
-
-        $targets = [];
-        $totalRemainingByCurrency = [];
-        $totalOriginalByCurrency = [];
-
-        $purchases = $purchaseQuery->orderBy('purchase_date', 'asc')->orderBy('id', 'asc')->get();
-        foreach ($purchases as $purchase) {
-            $remaining = $purchase->calculateOutstanding();
-            if (! $remaining->isPositive()) {
-                continue;
-            }
-
-            $purCurr = (string) $purchase->currency_code;
-            $cmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $purCurr);
-            $grandTotal = BigDecimal::of((string) $purchase->grand_total_currency);
-            $allocated = $grandTotal->minus($remaining);
-            if ($allocated->isNegative()) {
-                $allocated = BigDecimal::zero();
-            }
-
-            $purchaseDate = Carbon::parse($purchase->purchase_date, $tz)->toDateString();
-            $dueDate = $purchase->due_date ? Carbon::parse($purchase->due_date, $tz)->toDateString() : null;
-            $daysOverdue = ($dueDate === null || $dueDate >= $today)
-                ? 0
-                : max(0, (int) Carbon::parse($dueDate, $tz)->diffInDays(now($tz), false));
-
-            $targets[] = [
-                'target_type' => 'purchase',
-                'target_id' => (string) $purchase->public_id,
-                'target_number' => (string) ($purchase->purchase_number ?? $purchase->public_id),
-                'business_date' => $purchaseDate,
-                'purchase_date' => $purchaseDate,
-                'due_date' => $dueDate,
-                'days_overdue' => $daysOverdue,
-                'currency' => $purCurr,
-                'currency_minor_units' => $cmu,
-                'original_amount' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
-                'original_amount_exact' => (string) $grandTotal->toScale(6),
-                'allocated_amount' => (string) $allocated->toScale($cmu, RoundingMode::HALF_UP),
-                'allocated_amount_exact' => (string) $allocated->toScale(6),
-                'remaining_amount' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
-                'remaining_amount_exact' => (string) $remaining->toScale(6),
-            ];
-
-            $totalRemainingByCurrency[$purCurr] = ($totalRemainingByCurrency[$purCurr] ?? BigDecimal::zero())->plus($remaining);
-            $totalOriginalByCurrency[$purCurr] = ($totalOriginalByCurrency[$purCurr] ?? BigDecimal::zero())->plus($grandTotal);
-        }
-
-        // 2. Read posted open vendor opening trade items
-        $openingQuery = OpeningTradeItem::query()
-            ->where('company_id', $company->id)
-            ->where('vendor_id', $vendor->id)
-            ->where('side', OpeningTradeItem::SIDE_VENDOR)
-            ->where('status', OpeningTradeItem::STATUS_POSTED)
-            ->whereNotNull('posting_batch_id')
-            ->with(['postingBatch', 'reversalPostingBatch']);
-
-        if ($currencyCode !== null) {
-            $openingQuery->where('currency_code', $currencyCode);
-        }
-
-        $openingItems = $openingQuery->orderBy('opening_date', 'asc')->orderBy('id', 'asc')->get();
-        foreach ($openingItems as $item) {
-            $remaining = $item->calculateOutstanding();
-            if (! $remaining->isPositive()) {
-                continue;
-            }
-
-            $itemCurr = (string) $item->currency_code;
-            $cmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $itemCurr);
-            $original = BigDecimal::of((string) $item->amount_currency);
-            $allocated = $original->minus($remaining);
-            if ($allocated->isNegative()) {
-                $allocated = BigDecimal::zero();
-            }
-
-            $openDate = Carbon::parse($item->opening_date, $tz)->toDateString();
-            $dueDate = $item->due_date ? Carbon::parse($item->due_date, $tz)->toDateString() : null;
-            $daysOverdue = ($dueDate === null || $dueDate >= $today)
-                ? 0
-                : max(0, (int) Carbon::parse($dueDate, $tz)->diffInDays(now($tz), false));
-
-            $refNum = $item->original_reference ?: ('OPEN-'.$item->public_id);
-
-            $targets[] = [
-                'target_type' => 'opening_trade_item',
-                'target_id' => (string) $item->public_id,
-                'target_number' => (string) $refNum,
-                'business_date' => $openDate,
-                'opening_date' => $openDate,
-                'due_date' => $dueDate,
-                'days_overdue' => $daysOverdue,
-                'currency' => $itemCurr,
-                'currency_minor_units' => $cmu,
-                'original_amount' => (string) $original->toScale($cmu, RoundingMode::HALF_UP),
-                'original_amount_exact' => (string) $original->toScale(6),
-                'allocated_amount' => (string) $allocated->toScale($cmu, RoundingMode::HALF_UP),
-                'allocated_amount_exact' => (string) $allocated->toScale(6),
-                'remaining_amount' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
-                'remaining_amount_exact' => (string) $remaining->toScale(6),
-            ];
-
-            $totalRemainingByCurrency[$itemCurr] = ($totalRemainingByCurrency[$itemCurr] ?? BigDecimal::zero())->plus($remaining);
-            $totalOriginalByCurrency[$itemCurr] = ($totalOriginalByCurrency[$itemCurr] ?? BigDecimal::zero())->plus($original);
-        }
-
-        // Sort combined targets chronologically: business_date asc, then target_type, then target_id
-        usort($targets, function (array $a, array $b): int {
-            $cmpDate = strcmp($a['business_date'], $b['business_date']);
-            if ($cmpDate !== 0) {
-                return $cmpDate;
-            }
-            $cmpType = strcmp($a['target_type'], $b['target_type']);
-            if ($cmpType !== 0) {
-                return $cmpType;
-            }
-
-            return strcmp($a['target_id'], $b['target_id']);
-        });
-
-        $baseCurr = (string) $company->base_currency_code;
-        $baseCmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $baseCurr);
-
-        $formattedRemainingTotals = [];
-        $formattedOriginalTotals = [];
-        foreach ($totalRemainingByCurrency as $curr => $total) {
-            $cmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $curr);
-            $formattedRemainingTotals[$curr] = [
-                'amount' => (string) $total->toScale($cmu, RoundingMode::HALF_UP),
-                'amount_exact' => (string) $total->toScale(6),
-                'minor_units' => $cmu,
-            ];
-            $origTotal = $totalOriginalByCurrency[$curr] ?? BigDecimal::zero();
-            $formattedOriginalTotals[$curr] = [
-                'amount' => (string) $origTotal->toScale($cmu, RoundingMode::HALF_UP),
-                'amount_exact' => (string) $origTotal->toScale(6),
-                'minor_units' => $cmu,
-            ];
-        }
-
-        return response()->json([
-            'supplier_id' => (string) $vendor->public_id,
-            'supplier_name' => (string) $vendor->displayName(),
-            'currency' => $currencyCode ?? $baseCurr,
-            'currency_minor_units' => $currencyCode ? $minorUnitsResolver->resolveForCompany((int) $company->id, $currencyCode) : $baseCmu,
-            'total_targets' => count($targets),
-            'targets' => $targets,
-            'totals' => [
-                'remaining_by_currency' => $formattedRemainingTotals,
-                'original_by_currency' => $formattedOriginalTotals,
-            ],
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
+        return app(SettlementTargetsReader::class)->readSupplierTargets($request, $company, $vendor, $minorUnitsResolver);
     }
 
     /**
@@ -739,10 +568,60 @@ final class SupplierController extends Controller
                     );
                 }
 
-                $rawTargetType = $item['target_type'] ?? $item['kind'] ?? null;
-                $billKey = $item['bill_id'] ?? $item['purchase_id'] ?? null;
-                $openingKey = $item['opening_trade_item_id'] ?? $item['opening_balance_id'] ?? $item['opening_item_id'] ?? null;
-                $genericTargetId = $item['target_id'] ?? $item['id'] ?? null;
+                // Intra-alias consistency: reject conflicting aliases for the same field
+                $typeAliases = array_values(array_filter([
+                    $item['target_type'] ?? null,
+                    $item['kind'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map(fn ($v) => strtolower(trim((string) $v)), $typeAliases))) > 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} has conflicting target_type/kind aliases.",
+                        status: 422
+                    );
+                }
+
+                $genericIdAliases = array_values(array_filter([
+                    $item['target_id'] ?? null,
+                    $item['id'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map('strval', $genericIdAliases))) > 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} has conflicting target_id/id aliases.",
+                        status: 422
+                    );
+                }
+
+                $billAliases = array_values(array_filter([
+                    $item['bill_id'] ?? null,
+                    $item['purchase_id'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map('strval', $billAliases))) > 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} has conflicting bill_id/purchase_id aliases.",
+                        status: 422
+                    );
+                }
+
+                $openingAliases = array_values(array_filter([
+                    $item['opening_trade_item_id'] ?? null,
+                    $item['opening_balance_id'] ?? null,
+                    $item['opening_item_id'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map('strval', $openingAliases))) > 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} has conflicting opening_trade_item_id aliases.",
+                        status: 422
+                    );
+                }
+
+                $rawTargetType = ! empty($typeAliases) ? (string) $typeAliases[0] : null;
+                $genericTargetId = ! empty($genericIdAliases) ? (string) $genericIdAliases[0] : null;
+                $billKey = ! empty($billAliases) ? (string) $billAliases[0] : null;
+                $openingKey = ! empty($openingAliases) ? (string) $openingAliases[0] : null;
 
                 // Ambiguity detection: multiple contradictory identifier keys
                 if ($billKey !== null && $openingKey !== null) {
@@ -757,7 +636,7 @@ final class SupplierController extends Controller
                 $targetId = null;
 
                 if ($rawTargetType !== null) {
-                    $normType = strtolower(trim((string) $rawTargetType));
+                    $normType = strtolower(trim($rawTargetType));
                     $targetType = match ($normType) {
                         'purchase', 'bill', 'purchase_bill' => 'purchase',
                         'opening_trade_item', 'opening_balance', 'opening_item' => 'opening_trade_item',
@@ -772,31 +651,79 @@ final class SupplierController extends Controller
                         );
                     }
 
-                    if ($targetType === 'purchase' && $openingKey !== null) {
-                        return MobileApiBoundary::buildErrorResponse(
-                            code: 'VALIDATION_FAILED',
-                            message: "Allocation item at index {$index} has conflicting target_type 'purchase' and opening identifier.",
-                            status: 422
-                        );
+                    if ($targetType === 'purchase') {
+                        if ($openingKey !== null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_type 'purchase' and opening identifier.",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId !== null && $billKey !== null && $genericTargetId !== $billKey) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and bill_id [{$billKey}].",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId === null && $billKey === null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} must identify a target (target_id or bill_id).",
+                                status: 422
+                            );
+                        }
+                        $targetId = $genericTargetId ?? $billKey;
+                    } else {
+                        // $targetType === 'opening_trade_item'
+                        if ($billKey !== null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_type 'opening_trade_item' and purchase bill identifier.",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId !== null && $openingKey !== null && $genericTargetId !== $openingKey) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and opening_trade_item_id [{$openingKey}].",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId === null && $openingKey === null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} must identify a target (target_id or opening_trade_item_id).",
+                                status: 422
+                            );
+                        }
+                        $targetId = $genericTargetId ?? $openingKey;
                     }
-
-                    if ($targetType === 'opening_trade_item' && $billKey !== null) {
-                        return MobileApiBoundary::buildErrorResponse(
-                            code: 'VALIDATION_FAILED',
-                            message: "Allocation item at index {$index} has conflicting target_type 'opening_trade_item' and purchase bill identifier.",
-                            status: 422
-                        );
-                    }
-
-                    $targetId = $genericTargetId ?? ($targetType === 'opening_trade_item' ? $openingKey : $billKey);
                     $isPureLegacyWire = false;
                 } elseif ($openingKey !== null) {
                     $targetType = 'opening_trade_item';
+                    if ($genericTargetId !== null && $genericTargetId !== $openingKey) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and opening_trade_item_id [{$openingKey}].",
+                            status: 422
+                        );
+                    }
                     $targetId = $openingKey;
                     $isPureLegacyWire = false;
                 } elseif ($billKey !== null) {
                     $targetType = 'purchase';
+                    if ($genericTargetId !== null && $genericTargetId !== $billKey) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and bill_id [{$billKey}].",
+                            status: 422
+                        );
+                    }
                     $targetId = $billKey;
+                    if ($genericTargetId !== null) {
+                        $isPureLegacyWire = false;
+                    }
                 } elseif ($genericTargetId !== null) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
@@ -811,7 +738,7 @@ final class SupplierController extends Controller
                     );
                 }
 
-                if (! is_string($targetId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $targetId) !== 1) {
+                if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $targetId) !== 1) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
                         message: "Valid target public ID (ULID) is required for allocation item at index {$index}.",

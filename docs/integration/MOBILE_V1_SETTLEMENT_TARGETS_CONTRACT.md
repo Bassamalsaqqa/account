@@ -60,6 +60,8 @@ Reads all posted, open sales invoices and active customer opening trade balance 
 
 #### Query Parameters:
 - `currency` (Optional, string): Filter targets by ISO-4217 currency code (e.g., `ILS`, `USD`). When omitted, all open targets across all currencies are returned.
+- `limit` (Optional, integer, default `50`, maximum `250`): Maximum number of open targets to return in a single page. Non-integer values or values outside `1`..`250` return `422 VALIDATION_FAILED`.
+- `cursor` (Optional, string): Opaque base64url keyset cursor obtained from `pagination.next_cursor` of a previous response. The token is HMAC-SHA256 integrity-protected and cryptographically bound to the authenticated `company_id`, `customer_id`, and requested `currency`. Tampered cursors, malformed cursors, or cross-tenant/cross-customer/cross-currency cursor reuse return `422 VALIDATION_FAILED`.
 
 #### Response Schema (`200 OK`):
 ```json
@@ -105,6 +107,11 @@ Reads all posted, open sales invoices and active customer opening trade balance 
       "remaining_amount_exact": "500.000000"
     }
   ],
+  "pagination": {
+    "limit": 50,
+    "has_more": false,
+    "next_cursor": null
+  },
   "totals": {
     "remaining_by_currency": {
       "ILS": {
@@ -142,6 +149,11 @@ Reads all posted, open purchase bills and active vendor opening trade balance it
     }
   }
   ```
+
+#### Query Parameters:
+- `currency` (Optional, string): Filter targets by ISO-4217 currency code (e.g., `ILS`, `USD`). When omitted, all open targets across all currencies are returned.
+- `limit` (Optional, integer, default `50`, maximum `250`): Maximum number of open targets to return in a single page. Non-integer values or values outside `1`..`250` return `422 VALIDATION_FAILED`.
+- `cursor` (Optional, string): Opaque base64url keyset cursor obtained from `pagination.next_cursor` of a previous response. The token is HMAC-SHA256 integrity-protected and cryptographically bound to the authenticated `company_id`, `supplier_id`, and requested `currency`. Tampered cursors, malformed cursors, or cross-tenant/cross-supplier/cross-currency cursor reuse return `422 VALIDATION_FAILED`.
 
 #### Response Schema (`200 OK`):
 ```json
@@ -187,6 +199,11 @@ Reads all posted, open purchase bills and active vendor opening trade balance it
       "remaining_amount_exact": "600.000000"
     }
   ],
+  "pagination": {
+    "limit": 50,
+    "has_more": false,
+    "next_cursor": null
+  },
   "totals": {
     "remaining_by_currency": {
       "ILS": {
@@ -220,6 +237,13 @@ The payment recording endpoints accept payments with:
 #### Supported Target Types:
 - Customer: `'invoice'` | `'sales_invoice'` | `'opening_trade_item'` | `'opening_balance'`
 - Supplier: `'purchase'` | `'bill'` | `'purchase_bill'` | `'opening_trade_item'` | `'opening_balance'`
+
+#### Alias Resolution, Contradiction Prevention & Duplicate Invariants:
+1. **Intra-Alias Consistency**: Providing multiple aliases for the same field with conflicting values (e.g. `target_type` vs `kind`, `target_id` vs `id`, `invoice_id` vs `sales_invoice_id`, `bill_id` vs `purchase_id`, or multiple opening trade item alias keys) returns `422 VALIDATION_FAILED` before any effects.
+2. **Matching Aliases Accepted**: When multiple aliases are supplied with identical values (e.g. `{"target_type": "invoice", "target_id": "01...", "invoice_id": "01..."}` or `{"bill_id": "01...", "purchase_id": "01..."}`), the request is accepted as consistent matching aliases.
+3. **Cross-Alias Contradiction Rejection**: Supplying a generic `target_id` that contradicts a type-specific identifier (`invoice_id`, `bill_id`, or `opening_trade_item_id`)—regardless of whether `target_type` is present or absent—returns `422 VALIDATION_FAILED` immediately.
+4. **Normalized Duplicate Rejection**: Every allocation row normalizes to a canonical key `{$targetType}:{$targetId}`. Passing the same economic target more than once in the same payment (even if one row used `invoice_id` and another used `target_type: invoice` with `target_id`) is rejected with `422 VALIDATION_FAILED` (`Duplicate allocation target [...]`).
+5. **No Silently Ignored Identifiers**: All provided identifier fields are strictly evaluated. Zero identifiers are silently ignored or bypassed.
 
 #### Request Payload Examples:
 
