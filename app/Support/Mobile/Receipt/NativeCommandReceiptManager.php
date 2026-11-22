@@ -33,6 +33,7 @@ final class NativeCommandReceiptManager
      * @param  list<string>  $requiredPermissions
      * @param  array<string, mixed>  $canonicalPayload
      * @param  Closure(Company, User, MobileDevice, MobileAccessToken): array{snapshot: array<string, mixed>, entity_type?: string|null, entity_id?: int|null, entity_public_id?: string|null}  $executor
+     * @param  list<string>  $legacyHashes
      * @return array{outcome: 'created'|'replay', status: int, snapshot: array<string, mixed>, receipt: NativeCommandReceipt}
      */
     public function execute(
@@ -44,7 +45,8 @@ final class NativeCommandReceiptManager
         string $idempotencyKey,
         array $canonicalPayload,
         array $requiredPermissions,
-        Closure $executor
+        Closure $executor,
+        array $legacyHashes = []
     ): array {
         if ($token === null || $device === null) {
             throw new AuthenticationException('Native bearer token and mobile device are mandatory.');
@@ -71,7 +73,8 @@ final class NativeCommandReceiptManager
             $canonicalPayload,
             $requestHash,
             $requiredPermissions,
-            $executor
+            $executor,
+            $legacyHashes
         ): array {
             // 1. Mandatory NativeAdmissionGuard: Company -> Membership -> User -> Device -> Token + Fresh Permissions
             $admission = $this->admissionGuard->lockAndAuthorize(
@@ -97,7 +100,7 @@ final class NativeCommandReceiptManager
                 ->first();
 
             if ($existing !== null) {
-                return $this->handleExistingReceipt($existing, $commandType, $lockedActor, $lockedDevice, $requestHash, $trimmedKey);
+                return $this->handleExistingReceipt($existing, $commandType, $lockedActor, $lockedDevice, $requestHash, $trimmedKey, $legacyHashes);
             }
 
             // 3. Fresh execution: invoke domain executor closure under active lock and transaction
@@ -134,6 +137,7 @@ final class NativeCommandReceiptManager
     }
 
     /**
+     * @param  list<string>  $legacyHashes
      * @return array{outcome: 'replay', status: int, snapshot: array<string, mixed>, receipt: NativeCommandReceipt}
      */
     private function handleExistingReceipt(
@@ -142,7 +146,8 @@ final class NativeCommandReceiptManager
         User $lockedActor,
         MobileDevice $lockedDevice,
         string $requestHash,
-        string $trimmedKey
+        string $trimmedKey,
+        array $legacyHashes = []
     ): array {
         if ($existing->command_type !== $commandType) {
             throw new IdempotencyConflictException("Idempotency key [{$trimmedKey}] was previously committed for a different command type.");
@@ -154,7 +159,17 @@ final class NativeCommandReceiptManager
         }
 
         // Payload mismatch => 409 Conflict
-        if (! hash_equals((string) $existing->request_hash, $requestHash)) {
+        $matches = hash_equals((string) $existing->request_hash, $requestHash);
+        if (! $matches) {
+            foreach ($legacyHashes as $legacyHash) {
+                if (hash_equals((string) $existing->request_hash, $legacyHash)) {
+                    $matches = true;
+                    break;
+                }
+            }
+        }
+
+        if (! $matches) {
             throw new IdempotencyConflictException("Idempotency key [{$trimmedKey}] was previously committed with different parameters.");
         }
 

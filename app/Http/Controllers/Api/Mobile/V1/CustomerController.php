@@ -15,6 +15,7 @@ use App\Models\CompanyMobileSetting;
 use App\Models\Customer;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
+use App\Models\OpeningTradeItem;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
@@ -25,6 +26,7 @@ use App\Support\Mobile\WireResponse;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -507,6 +509,232 @@ final class CustomerController extends Controller
     }
 
     /**
+     * GET /api/mobile/v1/companies/{companyId}/customers/{customerId}/settlement-targets
+     * Authoritative outstanding settlement target reads (invoices and opening trade items)
+     */
+    public function settlementTargets(
+        Request $request,
+        string $companyId,
+        string $customerId,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $customerId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
+        /** @var Company|null $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User|null $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if ($company === null || $user === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
+
+        setPermissionsTeamId($company->id);
+        if (! $user->hasPermissionTo('customers.view')) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required customers.view permission.',
+                status: 403
+            );
+        }
+
+        $customer = Customer::where('company_id', $company->id)
+            ->where('public_id', $customerId)
+            ->first();
+
+        if ($customer === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested customer was not found.',
+                status: 404
+            );
+        }
+
+        $currencyFilter = $request->query('currency');
+        $currencyCode = is_string($currencyFilter) && trim($currencyFilter) !== ''
+            ? strtoupper(trim($currencyFilter))
+            : null;
+
+        $tz = (string) ($company->timezone ?: 'UTC');
+        $today = now($tz)->toDateString();
+
+        // 1. Read posted open invoices
+        $invoiceQuery = SalesInvoice::query()
+            ->where('company_id', $company->id)
+            ->where('customer_id', $customer->id)
+            ->where('status', SalesInvoice::STATUS_POSTED);
+
+        if ($currencyCode !== null) {
+            $invoiceQuery->where('currency_code', $currencyCode);
+        }
+
+        $targets = [];
+        $totalRemainingByCurrency = [];
+        $totalOriginalByCurrency = [];
+
+        $invoices = $invoiceQuery->orderBy('issue_date', 'asc')->orderBy('id', 'asc')->get();
+        foreach ($invoices as $invoice) {
+            $remaining = $invoice->calculateOutstanding();
+            if (! $remaining->isPositive()) {
+                continue;
+            }
+
+            $invCurr = (string) $invoice->currency_code;
+            $cmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $invCurr);
+            $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
+            $allocated = $grandTotal->minus($remaining);
+            if ($allocated->isNegative()) {
+                $allocated = BigDecimal::zero();
+            }
+
+            $issueDate = Carbon::parse($invoice->issue_date, $tz)->toDateString();
+            $dueDate = $invoice->due_date ? Carbon::parse($invoice->due_date, $tz)->toDateString() : null;
+            $daysOverdue = ($dueDate === null || $dueDate >= $today)
+                ? 0
+                : max(0, (int) Carbon::parse($dueDate, $tz)->diffInDays(now($tz), false));
+
+            $targets[] = [
+                'target_type' => 'invoice',
+                'target_id' => (string) $invoice->public_id,
+                'target_number' => (string) ($invoice->invoice_number ?? $invoice->public_id),
+                'business_date' => $issueDate,
+                'issue_date' => $issueDate,
+                'due_date' => $dueDate,
+                'days_overdue' => $daysOverdue,
+                'currency' => $invCurr,
+                'currency_minor_units' => $cmu,
+                'original_amount' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
+                'original_amount_exact' => (string) $grandTotal->toScale(6),
+                'allocated_amount' => (string) $allocated->toScale($cmu, RoundingMode::HALF_UP),
+                'allocated_amount_exact' => (string) $allocated->toScale(6),
+                'remaining_amount' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
+                'remaining_amount_exact' => (string) $remaining->toScale(6),
+            ];
+
+            $totalRemainingByCurrency[$invCurr] = ($totalRemainingByCurrency[$invCurr] ?? BigDecimal::zero())->plus($remaining);
+            $totalOriginalByCurrency[$invCurr] = ($totalOriginalByCurrency[$invCurr] ?? BigDecimal::zero())->plus($grandTotal);
+        }
+
+        // 2. Read posted open customer opening trade items
+        $openingQuery = OpeningTradeItem::query()
+            ->where('company_id', $company->id)
+            ->where('customer_id', $customer->id)
+            ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
+            ->where('status', OpeningTradeItem::STATUS_POSTED)
+            ->whereNotNull('posting_batch_id')
+            ->with(['postingBatch', 'reversalPostingBatch']);
+
+        if ($currencyCode !== null) {
+            $openingQuery->where('currency_code', $currencyCode);
+        }
+
+        $openingItems = $openingQuery->orderBy('opening_date', 'asc')->orderBy('id', 'asc')->get();
+        foreach ($openingItems as $item) {
+            $remaining = $item->calculateOutstanding();
+            if (! $remaining->isPositive()) {
+                continue;
+            }
+
+            $itemCurr = (string) $item->currency_code;
+            $cmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $itemCurr);
+            $original = BigDecimal::of((string) $item->amount_currency);
+            $allocated = $original->minus($remaining);
+            if ($allocated->isNegative()) {
+                $allocated = BigDecimal::zero();
+            }
+
+            $openDate = Carbon::parse($item->opening_date, $tz)->toDateString();
+            $dueDate = $item->due_date ? Carbon::parse($item->due_date, $tz)->toDateString() : null;
+            $daysOverdue = ($dueDate === null || $dueDate >= $today)
+                ? 0
+                : max(0, (int) Carbon::parse($dueDate, $tz)->diffInDays(now($tz), false));
+
+            $refNum = $item->original_reference ?: ('OPEN-'.$item->public_id);
+
+            $targets[] = [
+                'target_type' => 'opening_trade_item',
+                'target_id' => (string) $item->public_id,
+                'target_number' => (string) $refNum,
+                'business_date' => $openDate,
+                'opening_date' => $openDate,
+                'due_date' => $dueDate,
+                'days_overdue' => $daysOverdue,
+                'currency' => $itemCurr,
+                'currency_minor_units' => $cmu,
+                'original_amount' => (string) $original->toScale($cmu, RoundingMode::HALF_UP),
+                'original_amount_exact' => (string) $original->toScale(6),
+                'allocated_amount' => (string) $allocated->toScale($cmu, RoundingMode::HALF_UP),
+                'allocated_amount_exact' => (string) $allocated->toScale(6),
+                'remaining_amount' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
+                'remaining_amount_exact' => (string) $remaining->toScale(6),
+            ];
+
+            $totalRemainingByCurrency[$itemCurr] = ($totalRemainingByCurrency[$itemCurr] ?? BigDecimal::zero())->plus($remaining);
+            $totalOriginalByCurrency[$itemCurr] = ($totalOriginalByCurrency[$itemCurr] ?? BigDecimal::zero())->plus($original);
+        }
+
+        // Sort combined targets chronologically: business_date asc, then target_type, then target_id
+        usort($targets, function (array $a, array $b): int {
+            $cmpDate = strcmp($a['business_date'], $b['business_date']);
+            if ($cmpDate !== 0) {
+                return $cmpDate;
+            }
+            $cmpType = strcmp($a['target_type'], $b['target_type']);
+            if ($cmpType !== 0) {
+                return $cmpType;
+            }
+
+            return strcmp($a['target_id'], $b['target_id']);
+        });
+
+        $baseCurr = (string) $company->base_currency_code;
+        $baseCmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $baseCurr);
+
+        $formattedRemainingTotals = [];
+        $formattedOriginalTotals = [];
+        foreach ($totalRemainingByCurrency as $curr => $total) {
+            $cmu = $minorUnitsResolver->resolveForCompany((int) $company->id, $curr);
+            $formattedRemainingTotals[$curr] = [
+                'amount' => (string) $total->toScale($cmu, RoundingMode::HALF_UP),
+                'amount_exact' => (string) $total->toScale(6),
+                'minor_units' => $cmu,
+            ];
+            $origTotal = $totalOriginalByCurrency[$curr] ?? BigDecimal::zero();
+            $formattedOriginalTotals[$curr] = [
+                'amount' => (string) $origTotal->toScale($cmu, RoundingMode::HALF_UP),
+                'amount_exact' => (string) $origTotal->toScale(6),
+                'minor_units' => $cmu,
+            ];
+        }
+
+        return response()->json([
+            'customer_id' => (string) $customer->public_id,
+            'customer_name' => (string) $customer->displayName(),
+            'currency' => $currencyCode ?? $baseCurr,
+            'currency_minor_units' => $currencyCode ? $minorUnitsResolver->resolveForCompany((int) $company->id, $currencyCode) : $baseCmu,
+            'total_targets' => count($targets),
+            'targets' => $targets,
+            'totals' => [
+                'remaining_by_currency' => $formattedRemainingTotals,
+                'original_by_currency' => $formattedOriginalTotals,
+            ],
+        ], 200, [
+            'Content-Type' => 'application/json',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+        ]);
+    }
+
+    /**
      * POST /api/mobile/v1/companies/{companyId}/customers/{customerId}/payments
      * Customer debt collection voucher
      */
@@ -580,6 +808,42 @@ final class CustomerController extends Controller
             );
         }
 
+        $paymentCurrency = $request->has('currency') && is_string($request->input('currency')) && trim($request->input('currency')) !== ''
+            ? strtoupper(trim($request->input('currency')))
+            : (string) $company->base_currency_code;
+
+        $rawRate = $request->input('exchange_rate');
+        if ($paymentCurrency === (string) $company->base_currency_code) {
+            $paymentRate = '1.0000000000';
+            if ($rawRate !== null && trim((string) $rawRate) !== '') {
+                try {
+                    $parsedRate = NativeWriteContextResolver::validateDecimalString($rawRate, 'exchange_rate', 10, true);
+                    if (BigDecimal::of($parsedRate)->compareTo(1) !== 0) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'Base currency exchange rate must equal exactly 1.0000000000.',
+                            status: 422
+                        );
+                    }
+                } catch (Throwable $e) {
+                    return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+                }
+            }
+        } else {
+            if ($rawRate === null || trim((string) $rawRate) === '') {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Explicit exchange_rate is required for foreign currency payment.',
+                    status: 422
+                );
+            }
+            try {
+                $paymentRate = NativeWriteContextResolver::validateDecimalString($rawRate, 'exchange_rate', 10, true);
+            } catch (Throwable $e) {
+                return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+            }
+        }
+
         $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
         $notes = $request->has('notes') && is_string($request->input('notes')) ? trim($request->input('notes')) : null;
         $reference = $request->has('reference') && is_string($request->input('reference')) ? trim($request->input('reference')) : null;
@@ -595,26 +859,114 @@ final class CustomerController extends Controller
 
         // Canonical payload construction
         $canonicalAllocations = [];
+        $legacyAllocations = [];
+        $isPureLegacyWire = true;
         if (is_array($allocationsInput)) {
-            foreach ($allocationsInput as $item) {
+            $seenTargets = [];
+            foreach ($allocationsInput as $index => $item) {
                 if (! is_array($item)) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
-                        message: 'Each allocation item must be an object.',
+                        message: "Allocation item at index {$index} must be an object.",
                         status: 422
                     );
                 }
-                $invId = $item['invoice_id'] ?? $item['sales_invoice_id'] ?? null;
-                if (! is_string($invId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $invId) !== 1) {
+
+                $rawTargetType = $item['target_type'] ?? $item['kind'] ?? null;
+                $invKey = $item['invoice_id'] ?? $item['sales_invoice_id'] ?? null;
+                $openingKey = $item['opening_trade_item_id'] ?? $item['opening_balance_id'] ?? $item['opening_item_id'] ?? null;
+                $genericTargetId = $item['target_id'] ?? $item['id'] ?? null;
+
+                // Ambiguity detection: multiple contradictory identifier keys
+                if ($invKey !== null && $openingKey !== null) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
-                        message: 'Valid sales invoice public ID is required for each allocation.',
+                        message: "Allocation item at index {$index} is ambiguous: specifies both invoice_id and opening_trade_item_id.",
                         status: 422
                     );
                 }
+
+                $targetType = null;
+                $targetId = null;
+
+                if ($rawTargetType !== null) {
+                    $normType = strtolower(trim((string) $rawTargetType));
+                    $targetType = match ($normType) {
+                        'invoice', 'sales_invoice' => 'invoice',
+                        'opening_trade_item', 'opening_balance', 'opening_item' => 'opening_trade_item',
+                        default => null,
+                    };
+
+                    if ($targetType === null) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has invalid target_type [{$rawTargetType}]. Must be 'invoice' or 'opening_trade_item'.",
+                            status: 422
+                        );
+                    }
+
+                    if ($targetType === 'invoice' && $openingKey !== null) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has conflicting target_type 'invoice' and opening identifier.",
+                            status: 422
+                        );
+                    }
+
+                    if ($targetType === 'opening_trade_item' && $invKey !== null) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has conflicting target_type 'opening_trade_item' and invoice identifier.",
+                            status: 422
+                        );
+                    }
+
+                    $targetId = $genericTargetId ?? ($targetType === 'opening_trade_item' ? $openingKey : $invKey);
+                    $isPureLegacyWire = false;
+                } elseif ($openingKey !== null) {
+                    $targetType = 'opening_trade_item';
+                    $targetId = $openingKey;
+                    $isPureLegacyWire = false;
+                } elseif ($invKey !== null) {
+                    $targetType = 'invoice';
+                    $targetId = $invKey;
+                } elseif ($genericTargetId !== null) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} specifies target_id without target_type.",
+                        status: 422
+                    );
+                } else {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} must identify a target (target_type and target_id, or invoice_id, or opening_trade_item_id).",
+                        status: 422
+                    );
+                }
+
+                if (! is_string($targetId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $targetId) !== 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Valid target public ID (ULID) is required for allocation item at index {$index}.",
+                        status: 422
+                    );
+                }
+
+                // Duplicate target detection
+                $compositeKey = "{$targetType}:{$targetId}";
+                if (isset($seenTargets[$compositeKey])) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Duplicate allocation target [{$compositeKey}]. Each target may only be allocated once per payment.",
+                        status: 422
+                    );
+                }
+                $seenTargets[$compositeKey] = true;
+
+                // Validate allocated amount
                 try {
                     $itemAmount = NativeWriteContextResolver::validateDecimalString(
-                        $item['amount'] ?? $item['allocated_amount'] ?? null,
+                        $item['amount'] ?? $item['allocated_amount'] ?? $item['document_currency_amount'] ?? null,
                         'allocated_amount',
                         6,
                         true
@@ -626,12 +978,52 @@ final class CustomerController extends Controller
                         status: 422
                     );
                 }
-                $canonicalAllocations[] = [
-                    'invoice_id' => $invId,
+
+                $paymentAmount = null;
+                if (array_key_exists('payment_currency_amount', $item)) {
+                    try {
+                        $paymentAmount = NativeWriteContextResolver::validateDecimalString(
+                            $item['payment_currency_amount'],
+                            'payment_currency_amount',
+                            6,
+                            true
+                        );
+                    } catch (Throwable $e) {
+                        return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+                    }
+                }
+
+                $allocRow = [
+                    'target_type' => $targetType,
+                    'target_id' => $targetId,
                     'amount' => $itemAmount,
                 ];
+                if ($targetType === 'opening_trade_item') {
+                    $allocRow['opening_trade_item_id'] = $targetId;
+                } else {
+                    $allocRow['invoice_id'] = $targetId;
+                }
+                if ($paymentAmount !== null) {
+                    $allocRow['payment_currency_amount'] = $paymentAmount;
+                }
+                $canonicalAllocations[] = $allocRow;
+
+                if ($targetType === 'invoice') {
+                    $legacyAllocRow = [
+                        'invoice_id' => $targetId,
+                        'amount' => $itemAmount,
+                    ];
+                    if ($paymentAmount !== null) {
+                        $legacyAllocRow['payment_currency_amount'] = $paymentAmount;
+                    }
+                    $legacyAllocations[] = $legacyAllocRow;
+                }
             }
-            usort($canonicalAllocations, fn ($a, $b) => strcmp($a['invoice_id'], $b['invoice_id']));
+
+            usort($canonicalAllocations, fn ($a, $b) => strcmp($a['target_type'].':'.$a['target_id'], $b['target_type'].':'.$b['target_id']));
+            if (! empty($legacyAllocations)) {
+                usort($legacyAllocations, fn ($a, $b) => strcmp($a['invoice_id'], $b['invoice_id']));
+            }
         }
 
         $canonicalPayload = [
@@ -640,12 +1032,23 @@ final class CustomerController extends Controller
             'customer_id' => $customerId,
             'cash_account_id' => is_string($rawAccountId) ? trim($rawAccountId) : null,
             'amount' => (string) BigDecimal::of($amount)->toScale(6, RoundingMode::HALF_UP),
-            'currency' => (string) $company->base_currency_code,
+            'currency' => $paymentCurrency,
             'payment_date' => $paymentDate,
             'reference' => $reference,
             'notes' => $notes,
             'allocations' => $canonicalAllocations,
         ];
+
+        if ($request->has('exchange_rate') || $request->has('currency')) {
+            $canonicalPayload['exchange_rate'] = (string) BigDecimal::of($paymentRate)->toScale(10);
+        }
+
+        $legacyHashes = [];
+        if ($isPureLegacyWire && ! empty($legacyAllocations)) {
+            $legacyPayload = $canonicalPayload;
+            $legacyPayload['allocations'] = $legacyAllocations;
+            $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+        }
 
         try {
             $result = $receiptManager->execute(
@@ -661,6 +1064,10 @@ final class CustomerController extends Controller
                     $customerId,
                     $amount,
                     $paymentDate,
+                    $paymentCurrency,
+                    $paymentRate,
+                    $rawRate,
+                    $request,
                     $rawAccountId,
                     $notes,
                     $reference,
@@ -669,6 +1076,10 @@ final class CustomerController extends Controller
                     $postPaymentAction,
                     $contextResolver
                 ): array {
+                    if ($paymentCurrency !== (string) $lockedCompany->base_currency_code && (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '')) {
+                        throw new InvalidArgumentException('Explicit exchange_rate is required for foreign currency payment.');
+                    }
+
                     /** @var Customer|null $customer */
                     $customer = Customer::where('company_id', $lockedCompany->id)
                         ->where('public_id', $customerId)
@@ -685,36 +1096,81 @@ final class CustomerController extends Controller
 
                     $cashAccount = $contextResolver->resolveCashAccount(
                         $lockedCompany,
-                        is_string($rawAccountId) ? $rawAccountId : null
+                        is_string($rawAccountId) ? $rawAccountId : null,
+                        $paymentCurrency
                     );
 
                     $resolvedAllocations = [];
+                    $totalAllocatedPayment = BigDecimal::zero();
+
                     foreach ($canonicalAllocations as $alloc) {
-                        /** @var SalesInvoice|null $invoice */
-                        $invoice = SalesInvoice::where('company_id', $lockedCompany->id)
-                            ->where('public_id', $alloc['invoice_id'])
-                            ->lockForUpdate()
-                            ->first();
+                        if ($alloc['target_type'] === 'opening_trade_item') {
+                            /** @var OpeningTradeItem|null $openingItem */
+                            $openingItem = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                                ->where('public_id', $alloc['target_id'])
+                                ->lockForUpdate()
+                                ->first();
 
-                        if ($invoice === null || (int) $invoice->customer_id !== (int) $customer->id) {
-                            throw new InvalidArgumentException("Sales invoice [{$alloc['invoice_id']}] not found or does not belong to target customer.");
+                            if ($openingItem === null || (int) $openingItem->customer_id !== (int) $customer->id || $openingItem->side !== OpeningTradeItem::SIDE_CUSTOMER) {
+                                throw new InvalidArgumentException("Opening trade item [{$alloc['target_id']}] not found or does not belong to target customer.");
+                            }
+
+                            if (! $openingItem->isPosted() || $openingItem->isReversed()) {
+                                throw new InvalidArgumentException("Opening trade item [{$alloc['target_id']}] must be in posted status.");
+                            }
+
+                            $remaining = $openingItem->calculateOutstanding();
+                            if (BigDecimal::of($alloc['amount'])->isGreaterThan($remaining)) {
+                                throw new InvalidArgumentException("Allocation [{$alloc['amount']}] exceeds unpaid balance [{$remaining}] for opening trade item [{$alloc['target_id']}].");
+                            }
+
+                            $resolvedRow = [
+                                'opening_trade_item_id' => (int) $openingItem->id,
+                                'allocated_amount' => $alloc['amount'],
+                            ];
+                            if (isset($alloc['payment_currency_amount'])) {
+                                $resolvedRow['payment_currency_amount'] = $alloc['payment_currency_amount'];
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['payment_currency_amount']));
+                            } else {
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['amount']));
+                            }
+                            $resolvedAllocations[] = $resolvedRow;
+                        } else {
+                            /** @var SalesInvoice|null $invoice */
+                            $invoice = SalesInvoice::where('company_id', $lockedCompany->id)
+                                ->where('public_id', $alloc['target_id'])
+                                ->lockForUpdate()
+                                ->first();
+
+                            if ($invoice === null || (int) $invoice->customer_id !== (int) $customer->id) {
+                                throw new InvalidArgumentException("Sales invoice [{$alloc['target_id']}] not found or does not belong to target customer.");
+                            }
+
+                            if ($invoice->status !== SalesInvoice::STATUS_POSTED) {
+                                throw new InvalidArgumentException("Sales invoice [{$alloc['target_id']}] must be in posted status.");
+                            }
+
+                            $remaining = $invoice->calculateOutstanding();
+                            if (BigDecimal::of($alloc['amount'])->isGreaterThan($remaining)) {
+                                throw new InvalidArgumentException("Allocation [{$alloc['amount']}] exceeds unpaid balance [{$remaining}] for invoice [{$alloc['target_id']}].");
+                            }
+
+                            $resolvedRow = [
+                                'sales_invoice_id' => (int) $invoice->id,
+                                'allocated_amount' => $alloc['amount'],
+                            ];
+                            if (isset($alloc['payment_currency_amount'])) {
+                                $resolvedRow['payment_currency_amount'] = $alloc['payment_currency_amount'];
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['payment_currency_amount']));
+                            } else {
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['amount']));
+                            }
+                            $resolvedAllocations[] = $resolvedRow;
                         }
+                    }
 
-                        if ($invoice->status !== SalesInvoice::STATUS_POSTED) {
-                            throw new InvalidArgumentException("Sales invoice [{$alloc['invoice_id']}] must be in posted status.");
-                        }
-
-                        $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
-                        $alreadyPaid = BigDecimal::of((string) ($invoice->paid_amount_currency ?? '0'));
-                        $unpaid = $grandTotal->minus($alreadyPaid);
-                        if (BigDecimal::of($alloc['amount'])->isGreaterThan($unpaid)) {
-                            throw new InvalidArgumentException("Allocation [{$alloc['amount']}] exceeds unpaid balance [{$unpaid}] for invoice [{$alloc['invoice_id']}].");
-                        }
-
-                        $resolvedAllocations[] = [
-                            'sales_invoice_id' => (int) $invoice->id,
-                            'allocated_amount' => $alloc['amount'],
-                        ];
+                    if ($totalAllocatedPayment->isGreaterThan(BigDecimal::of($amount))) {
+                        throw new InvalidArgumentException("Total allocated amount [{$totalAllocatedPayment}] exceeds payment amount [{$amount}].");
                     }
 
                     app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
@@ -722,8 +1178,9 @@ final class CustomerController extends Controller
                     $paymentData = [
                         'customer_id' => (int) $customer->id,
                         'money_account_id' => (int) $cashAccount->id,
+                        'currency_code' => $paymentCurrency,
+                        'exchange_rate' => $paymentRate,
                         'amount' => $amount,
-                        'exchange_rate' => '1.0000000000',
                         'payment_date' => $paymentDate,
                         'payment_method' => 'cash',
                         'notes' => $notes,
@@ -739,15 +1196,38 @@ final class CustomerController extends Controller
                         (string) $payment->currency_code
                     );
 
+                    $isAdvance = empty($resolvedAllocations);
+                    $unallocated = BigDecimal::of((string) ($payment->unallocated_amount ?? $payment->amount));
+                    $allocated = BigDecimal::of((string) $payment->amount)->minus($unallocated);
+                    if ($allocated->isNegative()) {
+                        $allocated = BigDecimal::zero();
+                    }
+
                     $snapshot = [
                         'id' => (string) $payment->public_id,
                         'receipt_id' => (string) $payment->public_id,
                         'payment_number' => (string) ($payment->payment_number ?? $payment->public_id),
                         'receipt_number' => (string) ($payment->payment_number ?? $payment->public_id),
                         'amount' => (string) BigDecimal::of((string) $payment->amount)->toScale($minorUnits, RoundingMode::HALF_UP),
+                        'amount_exact' => (string) BigDecimal::of((string) $payment->amount)->toScale(6),
                         'currency' => (string) $payment->currency_code,
                         'posted_at' => $payment->payment_date ? $payment->payment_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
                         'customer_id' => (string) $customer->public_id,
+                        'is_advance' => $isAdvance,
+                        'unallocated_amount' => (string) $unallocated->toScale($minorUnits, RoundingMode::HALF_UP),
+                        'unallocated_amount_exact' => (string) $unallocated->toScale(6),
+                        'allocated_amount' => (string) $allocated->toScale($minorUnits, RoundingMode::HALF_UP),
+                        'allocated_amount_exact' => (string) $allocated->toScale(6),
+                        'allocations' => array_map(function (array $alloc) use ($minorUnits): array {
+                            return [
+                                'target_type' => $alloc['target_type'],
+                                'target_id' => $alloc['target_id'],
+                                'amount' => (string) BigDecimal::of($alloc['amount'])->toScale($minorUnits, RoundingMode::HALF_UP),
+                                'allocated_amount' => (string) BigDecimal::of($alloc['amount'])->toScale($minorUnits, RoundingMode::HALF_UP),
+                                'amount_exact' => (string) BigDecimal::of($alloc['amount'])->toScale(6),
+                                'allocated_amount_exact' => (string) BigDecimal::of($alloc['amount'])->toScale(6),
+                            ];
+                        }, $canonicalAllocations),
                         'success' => true,
                     ];
 
@@ -757,7 +1237,8 @@ final class CustomerController extends Controller
                         'entity_id' => (int) $payment->id,
                         'entity_public_id' => (string) $payment->public_id,
                     ];
-                }
+                },
+                legacyHashes: $legacyHashes
             );
 
             $headers = [

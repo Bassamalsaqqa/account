@@ -77,6 +77,8 @@ Route::prefix('companies/{companyId}')
         Route::post('/customers', [CustomerController::class, 'store'])->middleware('mobile.auth:customers.manage')->name('mobile.v1.customers.store');
         Route::put('/customers/{customerId}', [CustomerController::class, 'update'])->middleware('mobile.auth:customers.manage')->name('mobile.v1.customers.update');
         Route::get('/customers/{customerId}/statement', [CustomerController::class, 'statement'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.statement');
+        Route::get('/customers/{customerId}/settlement-targets', [CustomerController::class, 'settlementTargets'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.settlement_targets');
+        Route::get('/customers/{customerId}/outstanding', [CustomerController::class, 'settlementTargets'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.outstanding');
         Route::post('/customers/{customerId}/payments', [CustomerController::class, 'recordPayment'])->middleware('mobile.auth:money.receipt.create')->name('mobile.v1.customers.payments');
 
         // Suppliers
@@ -84,6 +86,8 @@ Route::prefix('companies/{companyId}')
         Route::get('/suppliers/{supplierId}', [SupplierController::class, 'show'])->middleware('mobile.auth:vendors.view')->name('mobile.v1.suppliers.show');
         Route::post('/suppliers', [SupplierController::class, 'store'])->middleware('mobile.auth:vendors.manage')->name('mobile.v1.suppliers.store');
         Route::put('/suppliers/{supplierId}', [SupplierController::class, 'update'])->middleware('mobile.auth:vendors.manage')->name('mobile.v1.suppliers.update');
+        Route::get('/suppliers/{supplierId}/settlement-targets', [SupplierController::class, 'settlementTargets'])->middleware('mobile.auth:vendors.view')->name('mobile.v1.suppliers.settlement_targets');
+        Route::get('/suppliers/{supplierId}/outstanding', [SupplierController::class, 'settlementTargets'])->middleware('mobile.auth:vendors.view')->name('mobile.v1.suppliers.outstanding');
         Route::post('/suppliers/{supplierId}/payments', [SupplierController::class, 'recordPayment'])->middleware('mobile.auth:money.vendor_payment.create')->name('mobile.v1.suppliers.payments');
 
         // Sales Invoices & Execution
