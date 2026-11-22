@@ -71,6 +71,14 @@ final class SettlementTargetsReader
                     status: 422
                 );
             }
+
+            if ($cursorData !== null && ! in_array($cursorData['target_type'], ['invoice', 'opening_trade_item'], true)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Invalid pagination cursor: target_type ['.$cursorData['target_type'].'] is not valid for customer settlement targets.',
+                    status: 422
+                );
+            }
         }
 
         $tz = (string) ($company->timezone ?: 'UTC');
@@ -90,7 +98,8 @@ final class SettlementTargetsReader
             $currencyCode,
             &$lastInvoiceKeyset,
             &$invoiceExhausted,
-            $cursorData
+            $cursorData,
+            $tz
         ): array {
             if ($invoiceExhausted) {
                 return [];
@@ -135,15 +144,17 @@ final class SettlementTargetsReader
                 ->limit(self::STREAM_CHUNK_SIZE)
                 ->get();
 
-            if ($items->isEmpty()) {
+            if ($items->count() < self::STREAM_CHUNK_SIZE) {
                 $invoiceExhausted = true;
+            }
 
+            if ($items->isEmpty()) {
                 return [];
             }
 
             $last = $items->last();
             $lastInvoiceKeyset = [
-                'date' => Carbon::parse($last->issue_date)->toDateString(),
+                'date' => Carbon::parse($last->issue_date, $tz)->toDateString(),
                 'id' => (string) $last->public_id,
             ];
 
@@ -156,7 +167,8 @@ final class SettlementTargetsReader
             $currencyCode,
             &$lastOpeningKeyset,
             &$openingExhausted,
-            $cursorData
+            $cursorData,
+            $tz
         ): array {
             if ($openingExhausted) {
                 return [];
@@ -204,15 +216,17 @@ final class SettlementTargetsReader
                 ->limit(self::STREAM_CHUNK_SIZE)
                 ->get();
 
-            if ($items->isEmpty()) {
+            if ($items->count() < self::STREAM_CHUNK_SIZE) {
                 $openingExhausted = true;
+            }
 
+            if ($items->isEmpty()) {
                 return [];
             }
 
             $last = $items->last();
             $lastOpeningKeyset = [
-                'date' => Carbon::parse($last->opening_date)->toDateString(),
+                'date' => Carbon::parse($last->opening_date, $tz)->toDateString(),
                 'id' => (string) $last->public_id,
             ];
 
@@ -220,23 +234,27 @@ final class SettlementTargetsReader
         };
 
         $openTargets = [];
+        /** @var int $candidatesScanned */
         $candidatesScanned = 0;
+        $lastEvaluatedCandidate = null;
 
         while (count($openTargets) < $limit + 1 && $candidatesScanned < self::MAX_CANDIDATES_SCAN) {
-            if (empty($invoiceBuffer) && ! $invoiceExhausted) {
-                $invoiceBuffer = $fetchInvoiceChunk();
-            }
-            if (empty($openingBuffer) && ! $openingExhausted) {
-                $openingBuffer = $fetchOpeningChunk();
-            }
+            $batchBudget = min(50, self::MAX_CANDIDATES_SCAN - $candidatesScanned);
 
-            if (empty($invoiceBuffer) && empty($openingBuffer)) {
-                break;
-            }
-
-            // Assemble a batch of up to 50 candidates in strict chronological order
+            // Assemble a batch of candidates in strict chronological order within scan budget
             $candidateBatch = [];
-            while (count($candidateBatch) < 50 && (! empty($invoiceBuffer) || ! empty($openingBuffer))) {
+            while (count($candidateBatch) < $batchBudget) {
+                if (empty($invoiceBuffer) && ! $invoiceExhausted) {
+                    $invoiceBuffer = $fetchInvoiceChunk();
+                }
+                if (empty($openingBuffer) && ! $openingExhausted) {
+                    $openingBuffer = $fetchOpeningChunk();
+                }
+
+                if (empty($invoiceBuffer) && empty($openingBuffer)) {
+                    break;
+                }
+
                 if (! empty($invoiceBuffer) && ! empty($openingBuffer)) {
                     $invDate = Carbon::parse($invoiceBuffer[0]->issue_date, $tz)->toDateString();
                     $openDate = Carbon::parse($openingBuffer[0]->opening_date, $tz)->toDateString();
@@ -254,31 +272,15 @@ final class SettlementTargetsReader
                         $candidateBatch[] = ['type' => 'opening_trade_item', 'model' => array_shift($openingBuffer)];
                     }
                 } elseif (! empty($invoiceBuffer)) {
-                    if ($openingExhausted) {
-                        $candidateBatch[] = ['type' => 'invoice', 'model' => array_shift($invoiceBuffer)];
-                    } else {
-                        $openingBuffer = $fetchOpeningChunk();
-                        if (empty($openingBuffer)) {
-                            $candidateBatch[] = ['type' => 'invoice', 'model' => array_shift($invoiceBuffer)];
-                        }
-                    }
+                    $candidateBatch[] = ['type' => 'invoice', 'model' => array_shift($invoiceBuffer)];
                 } else {
-                    if ($invoiceExhausted) {
-                        $candidateBatch[] = ['type' => 'opening_trade_item', 'model' => array_shift($openingBuffer)];
-                    } else {
-                        $invoiceBuffer = $fetchInvoiceChunk();
-                        if (empty($invoiceBuffer)) {
-                            $candidateBatch[] = ['type' => 'opening_trade_item', 'model' => array_shift($openingBuffer)];
-                        }
-                    }
+                    $candidateBatch[] = ['type' => 'opening_trade_item', 'model' => array_shift($openingBuffer)];
                 }
             }
 
             if (empty($candidateBatch)) {
                 break;
             }
-
-            $candidatesScanned += count($candidateBatch);
 
             // Batch balance resolution
             $invoiceIds = [];
@@ -340,6 +342,18 @@ final class SettlementTargetsReader
             }
 
             foreach ($candidateBatch as $entry) {
+                $candidatesScanned++;
+                $model = $entry['model'];
+                $candidateDate = $entry['type'] === 'invoice'
+                    ? Carbon::parse($model->issue_date, $tz)->toDateString()
+                    : Carbon::parse($model->opening_date, $tz)->toDateString();
+
+                $lastEvaluatedCandidate = [
+                    'date' => $candidateDate,
+                    'type' => $entry['type'],
+                    'id' => (string) $model->public_id,
+                ];
+
                 if ($entry['type'] === 'invoice') {
                     /** @var SalesInvoice $invoice */
                     $invoice = $entry['model'];
@@ -441,20 +455,47 @@ final class SettlementTargetsReader
             }
         }
 
-        $hasMore = count($openTargets) > $limit;
-        $pageTargets = $hasMore ? array_slice($openTargets, 0, $limit) : $openTargets;
-
+        $hasMore = false;
         $nextCursor = null;
-        if ($hasMore) {
-            $lastItem = $pageTargets[$limit - 1];
+
+        if (count($openTargets) > $limit) {
+            $hasMore = true;
+            $pageTargets = array_slice($openTargets, 0, $limit);
+            $lastReturned = $pageTargets[$limit - 1];
             $nextCursor = SettlementTargetsCursorCodec::encode(
                 (string) $company->public_id,
                 (string) $customer->public_id,
                 $currencyCode,
-                (string) $lastItem['business_date'],
-                (string) $lastItem['target_type'],
-                (string) $lastItem['target_id']
+                (string) $lastReturned['business_date'],
+                (string) $lastReturned['target_type'],
+                (string) $lastReturned['target_id']
             );
+        } else {
+            $pageTargets = $openTargets;
+
+            // Ensure we know true exhaustion state of streams if buffers are empty
+            if (empty($invoiceBuffer) && ! $invoiceExhausted) {
+                $invoiceBuffer = $fetchInvoiceChunk();
+            }
+            if (empty($openingBuffer) && ! $openingExhausted) {
+                $openingBuffer = $fetchOpeningChunk();
+            }
+
+            $streamsExhausted = $invoiceExhausted && $openingExhausted && empty($invoiceBuffer) && empty($openingBuffer);
+
+            if ($candidatesScanned >= self::MAX_CANDIDATES_SCAN && ! $streamsExhausted) {
+                $hasMore = true;
+                if ($lastEvaluatedCandidate !== null) {
+                    $nextCursor = SettlementTargetsCursorCodec::encode(
+                        (string) $company->public_id,
+                        (string) $customer->public_id,
+                        $currencyCode,
+                        (string) $lastEvaluatedCandidate['date'],
+                        (string) $lastEvaluatedCandidate['type'],
+                        (string) $lastEvaluatedCandidate['id']
+                    );
+                }
+            }
         }
 
         // Truthful page totals
@@ -556,6 +597,14 @@ final class SettlementTargetsReader
                     status: 422
                 );
             }
+
+            if ($cursorData !== null && ! in_array($cursorData['target_type'], ['purchase', 'opening_trade_item'], true)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Invalid pagination cursor: target_type ['.$cursorData['target_type'].'] is not valid for supplier settlement targets.',
+                    status: 422
+                );
+            }
         }
 
         $tz = (string) ($company->timezone ?: 'UTC');
@@ -576,7 +625,8 @@ final class SettlementTargetsReader
             $currencyCode,
             &$lastOpeningKeyset,
             &$openingExhausted,
-            $cursorData
+            $cursorData,
+            $tz
         ): array {
             if ($openingExhausted) {
                 return [];
@@ -633,7 +683,7 @@ final class SettlementTargetsReader
 
             $last = $items->last();
             $lastOpeningKeyset = [
-                'date' => Carbon::parse($last->opening_date)->toDateString(),
+                'date' => Carbon::parse($last->opening_date, $tz)->toDateString(),
                 'id' => (string) $last->public_id,
             ];
 
@@ -646,7 +696,8 @@ final class SettlementTargetsReader
             $currencyCode,
             &$lastPurchaseKeyset,
             &$purchaseExhausted,
-            $cursorData
+            $cursorData,
+            $tz
         ): array {
             if ($purchaseExhausted) {
                 return [];
@@ -699,7 +750,7 @@ final class SettlementTargetsReader
 
             $last = $items->last();
             $lastPurchaseKeyset = [
-                'date' => Carbon::parse($last->purchase_date)->toDateString(),
+                'date' => Carbon::parse($last->purchase_date, $tz)->toDateString(),
                 'id' => (string) $last->public_id,
             ];
 
@@ -707,23 +758,27 @@ final class SettlementTargetsReader
         };
 
         $openTargets = [];
+        /** @var int $candidatesScanned */
         $candidatesScanned = 0;
+        $lastEvaluatedCandidate = null;
 
         while (count($openTargets) < $limit + 1 && $candidatesScanned < self::MAX_CANDIDATES_SCAN) {
-            if (empty($openingBuffer) && ! $openingExhausted) {
-                $openingBuffer = $fetchOpeningChunk();
-            }
-            if (empty($purchaseBuffer) && ! $purchaseExhausted) {
-                $purchaseBuffer = $fetchPurchaseChunk();
-            }
+            $batchBudget = min(50, self::MAX_CANDIDATES_SCAN - $candidatesScanned);
 
-            if (empty($openingBuffer) && empty($purchaseBuffer)) {
-                break;
-            }
-
-            // Assemble a batch of up to 50 candidates in strict chronological order
+            // Assemble a batch of candidates in strict chronological order within scan budget
             $candidateBatch = [];
-            while (count($candidateBatch) < 50 && (! empty($openingBuffer) || ! empty($purchaseBuffer))) {
+            while (count($candidateBatch) < $batchBudget) {
+                if (empty($openingBuffer) && ! $openingExhausted) {
+                    $openingBuffer = $fetchOpeningChunk();
+                }
+                if (empty($purchaseBuffer) && ! $purchaseExhausted) {
+                    $purchaseBuffer = $fetchPurchaseChunk();
+                }
+
+                if (empty($openingBuffer) && empty($purchaseBuffer)) {
+                    break;
+                }
+
                 if (! empty($openingBuffer) && ! empty($purchaseBuffer)) {
                     $openDate = Carbon::parse($openingBuffer[0]->opening_date, $tz)->toDateString();
                     $purDate = Carbon::parse($purchaseBuffer[0]->purchase_date, $tz)->toDateString();
@@ -741,31 +796,15 @@ final class SettlementTargetsReader
                         $candidateBatch[] = ['type' => 'purchase', 'model' => array_shift($purchaseBuffer)];
                     }
                 } elseif (! empty($openingBuffer)) {
-                    if ($purchaseExhausted) {
-                        $candidateBatch[] = ['type' => 'opening_trade_item', 'model' => array_shift($openingBuffer)];
-                    } else {
-                        $purchaseBuffer = $fetchPurchaseChunk();
-                        if (empty($purchaseBuffer)) {
-                            $candidateBatch[] = ['type' => 'opening_trade_item', 'model' => array_shift($openingBuffer)];
-                        }
-                    }
+                    $candidateBatch[] = ['type' => 'opening_trade_item', 'model' => array_shift($openingBuffer)];
                 } else {
-                    if ($openingExhausted) {
-                        $candidateBatch[] = ['type' => 'purchase', 'model' => array_shift($purchaseBuffer)];
-                    } else {
-                        $openingBuffer = $fetchOpeningChunk();
-                        if (empty($openingBuffer)) {
-                            $candidateBatch[] = ['type' => 'purchase', 'model' => array_shift($purchaseBuffer)];
-                        }
-                    }
+                    $candidateBatch[] = ['type' => 'purchase', 'model' => array_shift($purchaseBuffer)];
                 }
             }
 
             if (empty($candidateBatch)) {
                 break;
             }
-
-            $candidatesScanned += count($candidateBatch);
 
             // Batch balance resolution
             $purchases = [];
@@ -810,6 +849,18 @@ final class SettlementTargetsReader
             }
 
             foreach ($candidateBatch as $entry) {
+                $candidatesScanned++;
+                $model = $entry['model'];
+                $candidateDate = $entry['type'] === 'purchase'
+                    ? Carbon::parse($model->purchase_date, $tz)->toDateString()
+                    : Carbon::parse($model->opening_date, $tz)->toDateString();
+
+                $lastEvaluatedCandidate = [
+                    'date' => $candidateDate,
+                    'type' => $entry['type'],
+                    'id' => (string) $model->public_id,
+                ];
+
                 if ($entry['type'] === 'purchase') {
                     /** @var Purchase $purchase */
                     $purchase = $entry['model'];
@@ -907,20 +958,47 @@ final class SettlementTargetsReader
             }
         }
 
-        $hasMore = count($openTargets) > $limit;
-        $pageTargets = $hasMore ? array_slice($openTargets, 0, $limit) : $openTargets;
-
+        $hasMore = false;
         $nextCursor = null;
-        if ($hasMore) {
-            $lastItem = $pageTargets[$limit - 1];
+
+        if (count($openTargets) > $limit) {
+            $hasMore = true;
+            $pageTargets = array_slice($openTargets, 0, $limit);
+            $lastReturned = $pageTargets[$limit - 1];
             $nextCursor = SettlementTargetsCursorCodec::encode(
                 (string) $company->public_id,
                 (string) $vendor->public_id,
                 $currencyCode,
-                (string) $lastItem['business_date'],
-                (string) $lastItem['target_type'],
-                (string) $lastItem['target_id']
+                (string) $lastReturned['business_date'],
+                (string) $lastReturned['target_type'],
+                (string) $lastReturned['target_id']
             );
+        } else {
+            $pageTargets = $openTargets;
+
+            // Ensure we know true exhaustion state of streams if buffers are empty
+            if (empty($openingBuffer) && ! $openingExhausted) {
+                $openingBuffer = $fetchOpeningChunk();
+            }
+            if (empty($purchaseBuffer) && ! $purchaseExhausted) {
+                $purchaseBuffer = $fetchPurchaseChunk();
+            }
+
+            $streamsExhausted = $openingExhausted && $purchaseExhausted && empty($openingBuffer) && empty($purchaseBuffer);
+
+            if ($candidatesScanned >= self::MAX_CANDIDATES_SCAN && ! $streamsExhausted) {
+                $hasMore = true;
+                if ($lastEvaluatedCandidate !== null) {
+                    $nextCursor = SettlementTargetsCursorCodec::encode(
+                        (string) $company->public_id,
+                        (string) $vendor->public_id,
+                        $currencyCode,
+                        (string) $lastEvaluatedCandidate['date'],
+                        (string) $lastEvaluatedCandidate['type'],
+                        (string) $lastEvaluatedCandidate['id']
+                    );
+                }
+            }
         }
 
         // Truthful page totals

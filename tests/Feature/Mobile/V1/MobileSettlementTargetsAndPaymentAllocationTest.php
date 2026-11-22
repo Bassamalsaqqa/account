@@ -40,6 +40,7 @@ use App\Support\Mobile\SettlementTargetsCursorCodec;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Spatie\Permission\PermissionRegistrar;
@@ -1368,6 +1369,504 @@ final class MobileSettlementTargetsAndPaymentAllocationTest extends TestCase
         $resCross = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor='.$crossTenantCursor);
         $resCross->assertStatus(422);
         $this->assertStringContainsString('Cross-tenant', $resCross->json('error.message'));
+    }
+
+    private function bulkInsertClosedInvoices(int $count, string $date = '2026-01-01'): void
+    {
+        $batch = [];
+        $now = now();
+        for ($i = 0; $i < $count; $i++) {
+            $batch[] = [
+                'public_id' => (string) Str::ulid(),
+                'company_id' => $this->company->id,
+                'customer_id' => $this->customer->id,
+                'invoice_number' => 'INV-CLOSED-'.Str::random(10),
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1.0000000000',
+                'issue_date' => $date,
+                'status' => SalesInvoice::STATUS_POSTED,
+                'subtotal_base' => '0.000000',
+                'discount_total_base' => '0.000000',
+                'tax_total_base' => '0.000000',
+                'grand_total_base' => '0.000000',
+                'cogs_total_base' => '0.000000',
+                'subtotal_currency' => '0.000000',
+                'discount_total_currency' => '0.000000',
+                'tax_total_currency' => '0.000000',
+                'grand_total_currency' => '0.000000',
+                'document_locale' => 'ar',
+                'created_by' => $this->user->id,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+
+            if (count($batch) === 500) {
+                DB::table('sales_invoices')->insert($batch);
+                $batch = [];
+            }
+        }
+
+        if (! empty($batch)) {
+            DB::table('sales_invoices')->insert($batch);
+        }
+    }
+
+    private function bulkInsertClosedPurchases(int $count, string $date = '2026-01-01'): void
+    {
+        $batch = [];
+        $now = now();
+        for ($i = 0; $i < $count; $i++) {
+            $batch[] = [
+                'public_id' => (string) Str::ulid(),
+                'company_id' => $this->company->id,
+                'vendor_id' => $this->vendor->id,
+                'purchase_number' => 'PUR-CLOSED-'.Str::random(10),
+                'warehouse_id' => $this->warehouse->id,
+                'currency_code' => 'ILS',
+                'base_currency_code' => 'ILS',
+                'exchange_rate' => '1.0000000000',
+                'purchase_date' => $date,
+                'status' => Purchase::STATUS_POSTED,
+                'document_locale' => 'ar',
+                'subtotal_currency' => '0.000000',
+                'discount_total_currency' => '0.000000',
+                'tax_total_currency' => '0.000000',
+                'grand_total_currency' => '0.000000',
+                'subtotal_base' => '0.000000',
+                'discount_total_base' => '0.000000',
+                'tax_total_base' => '0.000000',
+                'grand_total_base' => '0.000000',
+                'created_by' => $this->user->id,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+
+            if (count($batch) === 500) {
+                DB::table('purchases')->insert($batch);
+                $batch = [];
+            }
+        }
+
+        if (! empty($batch)) {
+            DB::table('purchases')->insert($batch);
+        }
+    }
+
+    public function test_customer_settlement_targets_sparse_history_exceeding_cap_continues_and_finds_later_open_debt(): void
+    {
+        // 1. Bulk insert 2005 closed invoices on 2026-01-01
+        $this->bulkInsertClosedInvoices(2005, '2026-01-01');
+
+        // 2. Create 2 open posted invoices on 2026-02-01
+        $open1 = $this->createPostedSalesInvoice('150.00', 'ILS', '2026-02-01');
+        $open2 = $this->createPostedSalesInvoice('250.00', 'ILS', '2026-02-02');
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // First request: scans up to 2000 closed invoices.
+        // Cap is hit with unexplored streams remaining -> returns has_more: true with cursor from last evaluated candidate!
+        $res1 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50');
+        $res1->assertStatus(200);
+
+        $json1 = $res1->json();
+        $this->assertSame(0, $json1['total_targets']);
+        $this->assertSame([], $json1['targets']);
+        $this->assertTrue($json1['pagination']['has_more'], 'Must return has_more=true when scan cap is hit with unexplored streams');
+        $this->assertNotNull($json1['pagination']['next_cursor']);
+
+        // Second request: resume from cursor
+        $res2 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50&cursor='.urlencode($json1['pagination']['next_cursor']));
+        $res2->assertStatus(200);
+
+        $json2 = $res2->json();
+        // Remaining 5 closed invoices scanned, then the 2 open invoices are found and returned!
+        $this->assertSame(2, $json2['total_targets']);
+        $this->assertCount(2, $json2['targets']);
+        $this->assertSame($open1->public_id, $json2['targets'][0]['target_id']);
+        $this->assertSame($open2->public_id, $json2['targets'][1]['target_id']);
+        $this->assertFalse($json2['pagination']['has_more']);
+        $this->assertNull($json2['pagination']['next_cursor']);
+    }
+
+    public function test_supplier_settlement_targets_sparse_history_exceeding_cap_continues_and_finds_later_open_debt(): void
+    {
+        // 1. Bulk insert 2005 closed purchases on 2026-01-01
+        $this->bulkInsertClosedPurchases(2005, '2026-01-01');
+
+        // 2. Create 2 open posted purchase bills on 2026-02-01
+        $open1 = $this->createPostedPurchaseBill('180.00', 'ILS', '2026-02-01');
+        $open2 = $this->createPostedPurchaseBill('280.00', 'ILS', '2026-02-02');
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$this->vendor->public_id}/settlement-targets";
+
+        // First request: scans 2000 closed purchases.
+        $res1 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50');
+        $res1->assertStatus(200);
+
+        $json1 = $res1->json();
+        $this->assertSame(0, $json1['total_targets']);
+        $this->assertSame([], $json1['targets']);
+        $this->assertTrue($json1['pagination']['has_more']);
+        $this->assertNotNull($json1['pagination']['next_cursor']);
+
+        // Second request: resume from cursor
+        $res2 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50&cursor='.urlencode($json1['pagination']['next_cursor']));
+        $res2->assertStatus(200);
+
+        $json2 = $res2->json();
+        $this->assertSame(2, $json2['total_targets']);
+        $this->assertCount(2, $json2['targets']);
+        $this->assertSame($open1->public_id, $json2['targets'][0]['target_id']);
+        $this->assertSame($open2->public_id, $json2['targets'][1]['target_id']);
+        $this->assertFalse($json2['pagination']['has_more']);
+        $this->assertNull($json2['pagination']['next_cursor']);
+    }
+
+    public function test_settlement_targets_partial_page_at_scan_cap_with_later_open_debt(): void
+    {
+        // 1 open invoice on 2026-01-01
+        $open1 = $this->createPostedSalesInvoice('100.00', 'ILS', '2026-01-01');
+
+        // 1999 closed invoices on 2026-01-02 (total scanned will be 1 + 1999 = 2000 = MAX_CANDIDATES_SCAN)
+        $this->bulkInsertClosedInvoices(1999, '2026-01-02');
+
+        // 2 open invoices on 2026-02-01
+        $open2 = $this->createPostedSalesInvoice('200.00', 'ILS', '2026-02-01');
+        $open3 = $this->createPostedSalesInvoice('300.00', 'ILS', '2026-02-02');
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // Request 1: limit 50. Returns partial page with 1 target, has_more=true, next_cursor advancing from candidate 2000.
+        $res1 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50');
+        $res1->assertStatus(200);
+
+        $json1 = $res1->json();
+        $this->assertSame(1, $json1['total_targets']);
+        $this->assertCount(1, $json1['targets']);
+        $this->assertSame($open1->public_id, $json1['targets'][0]['target_id']);
+        $this->assertTrue($json1['pagination']['has_more'], 'Partial page at scan cap with unexplored streams must return has_more=true');
+        $this->assertNotNull($json1['pagination']['next_cursor']);
+
+        // Request 2: resume from cursor
+        $res2 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50&cursor='.urlencode($json1['pagination']['next_cursor']));
+        $res2->assertStatus(200);
+
+        $json2 = $res2->json();
+        $this->assertSame(2, $json2['total_targets']);
+        $this->assertCount(2, $json2['targets']);
+        $this->assertSame($open2->public_id, $json2['targets'][0]['target_id']);
+        $this->assertSame($open3->public_id, $json2['targets'][1]['target_id']);
+        $this->assertFalse($json2['pagination']['has_more']);
+        $this->assertNull($json2['pagination']['next_cursor']);
+    }
+
+    public function test_settlement_targets_exhaustion_exactly_at_cap_returns_has_more_false(): void
+    {
+        // Exactly 2000 closed invoices.
+        $this->bulkInsertClosedInvoices(2000, '2026-01-01');
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        $res = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50');
+        $res->assertStatus(200);
+
+        $json = $res->json();
+        $this->assertSame(0, $json['total_targets']);
+        $this->assertSame([], $json['targets']);
+        $this->assertFalse($json['pagination']['has_more'], 'Exhaustion exactly at scan cap must return has_more=false');
+        $this->assertNull($json['pagination']['next_cursor']);
+    }
+
+    public function test_customer_settlement_targets_mixed_streams_equal_dates_and_cursor_progress(): void
+    {
+        $sameDate = '2026-02-15';
+
+        // Create 2 customer opening trade items on $sameDate
+        $openA = $this->createPostedCustomerOpeningItem('100.00', 'ILS', $sameDate);
+        $openB = $this->createPostedCustomerOpeningItem('110.00', 'ILS', $sameDate);
+
+        // Create 2 sales invoices on $sameDate
+        $invA = $this->createPostedSalesInvoice('200.00', 'ILS', $sameDate);
+        $invB = $this->createPostedSalesInvoice('210.00', 'ILS', $sameDate);
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // Query with limit=10 to inspect complete order
+        $resAll = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=10');
+        $resAll->assertStatus(200);
+
+        $targets = $resAll->json('targets');
+        $this->assertCount(4, $targets);
+
+        // On equal date, 'invoice' < 'opening_trade_item' alphabetically:
+        // Invoices come first (ordered by public_id ASC), followed by opening trade items (ordered by public_id ASC)
+        $this->assertSame('invoice', $targets[0]['target_type']);
+        $this->assertSame('invoice', $targets[1]['target_type']);
+        $this->assertSame('opening_trade_item', $targets[2]['target_type']);
+        $this->assertSame('opening_trade_item', $targets[3]['target_type']);
+
+        $expectedIds = array_column($targets, 'target_id');
+
+        // Keyset pagination navigation with limit=1 across the equal-date boundary:
+        // Page 1
+        $r1 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1');
+        $r1->assertStatus(200);
+        $this->assertSame($expectedIds[0], $r1->json('targets.0.target_id'));
+        $this->assertTrue($r1->json('pagination.has_more'));
+        $c1 = $r1->json('pagination.next_cursor');
+
+        // Page 2
+        $r2 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($c1));
+        $r2->assertStatus(200);
+        $this->assertSame($expectedIds[1], $r2->json('targets.0.target_id'));
+        $this->assertTrue($r2->json('pagination.has_more'));
+        $c2 = $r2->json('pagination.next_cursor');
+
+        // Page 3 (crossing into opening_trade_item)
+        $r3 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($c2));
+        $r3->assertStatus(200);
+        $this->assertSame($expectedIds[2], $r3->json('targets.0.target_id'));
+        $this->assertTrue($r3->json('pagination.has_more'));
+        $c3 = $r3->json('pagination.next_cursor');
+
+        // Page 4
+        $r4 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($c3));
+        $r4->assertStatus(200);
+        $this->assertSame($expectedIds[3], $r4->json('targets.0.target_id'));
+        $this->assertFalse($r4->json('pagination.has_more'));
+        $this->assertNull($r4->json('pagination.next_cursor'));
+    }
+
+    public function test_supplier_settlement_targets_mixed_streams_equal_dates_and_cursor_progress(): void
+    {
+        $sameDate = '2026-02-15';
+
+        // Create 2 vendor opening trade items on $sameDate
+        $openA = $this->createPostedVendorOpeningItem('120.00', 'ILS', $sameDate);
+        $openB = $this->createPostedVendorOpeningItem('130.00', 'ILS', $sameDate);
+
+        // Create 2 purchases on $sameDate
+        $purA = $this->createPostedPurchaseBill('220.00', 'ILS', $sameDate);
+        $purB = $this->createPostedPurchaseBill('230.00', 'ILS', $sameDate);
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$this->vendor->public_id}/settlement-targets";
+
+        $resAll = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=10');
+        $resAll->assertStatus(200);
+
+        $targets = $resAll->json('targets');
+        $this->assertCount(4, $targets);
+
+        // On equal date, 'opening_trade_item' < 'purchase' alphabetically:
+        // Opening trade items come first, followed by purchases
+        $this->assertSame('opening_trade_item', $targets[0]['target_type']);
+        $this->assertSame('opening_trade_item', $targets[1]['target_type']);
+        $this->assertSame('purchase', $targets[2]['target_type']);
+        $this->assertSame('purchase', $targets[3]['target_type']);
+
+        $expectedIds = array_column($targets, 'target_id');
+
+        // Keyset pagination navigation with limit=1 across the equal-date boundary:
+        // Page 1
+        $r1 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1');
+        $r1->assertStatus(200);
+        $this->assertSame($expectedIds[0], $r1->json('targets.0.target_id'));
+        $this->assertTrue($r1->json('pagination.has_more'));
+        $c1 = $r1->json('pagination.next_cursor');
+
+        // Page 2
+        $r2 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($c1));
+        $r2->assertStatus(200);
+        $this->assertSame($expectedIds[1], $r2->json('targets.0.target_id'));
+        $this->assertTrue($r2->json('pagination.has_more'));
+        $c2 = $r2->json('pagination.next_cursor');
+
+        // Page 3 (crossing into purchase)
+        $r3 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($c2));
+        $r3->assertStatus(200);
+        $this->assertSame($expectedIds[2], $r3->json('targets.0.target_id'));
+        $this->assertTrue($r3->json('pagination.has_more'));
+        $c3 = $r3->json('pagination.next_cursor');
+
+        // Page 4
+        $r4 = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=1&cursor='.urlencode($c3));
+        $r4->assertStatus(200);
+        $this->assertSame($expectedIds[3], $r4->json('targets.0.target_id'));
+        $this->assertFalse($r4->json('pagination.has_more'));
+        $this->assertNull($r4->json('pagination.next_cursor'));
+    }
+
+    public function test_settlement_targets_cross_party_cursor_reuse_rejected(): void
+    {
+        $this->rebindContext();
+        $otherCustomer = app(CustomerCatalogService::class)->save($this->company, $this->user, [
+            'name_ar' => 'عميل بديل',
+            'name_en' => 'Alternate Customer',
+        ]);
+
+        $validCustomerCursor = SettlementTargetsCursorCodec::encode(
+            (string) $this->company->public_id,
+            (string) $this->customer->public_id,
+            null,
+            '2026-01-01',
+            'invoice',
+            (string) Str::ulid()
+        );
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$otherCustomer->public_id}/settlement-targets";
+        $res = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor='.urlencode($validCustomerCursor));
+
+        $res->assertStatus(422);
+        $res->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('Cross-party', $res->json('error.message'));
+
+        // Supplier side
+        $this->rebindContext();
+        $otherVendor = app(VendorCatalogService::class)->save($this->company, $this->user, [
+            'name_ar' => 'مورد بديل',
+            'name_en' => 'Alternate Supplier',
+            'default_currency_code' => 'ILS',
+        ]);
+
+        $validVendorCursor = SettlementTargetsCursorCodec::encode(
+            (string) $this->company->public_id,
+            (string) $this->vendor->public_id,
+            null,
+            '2026-01-01',
+            'purchase',
+            (string) Str::ulid()
+        );
+
+        $suppUrl = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$otherVendor->public_id}/settlement-targets";
+        $resSupp = $this->withHeaders($this->authHeaders())->getJson($suppUrl.'?cursor='.urlencode($validVendorCursor));
+
+        $resSupp->assertStatus(422);
+        $resSupp->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('Cross-party', $resSupp->json('error.message'));
+    }
+
+    public function test_settlement_targets_cross_currency_cursor_reuse_rejected(): void
+    {
+        $usdCursor = SettlementTargetsCursorCodec::encode(
+            (string) $this->company->public_id,
+            (string) $this->customer->public_id,
+            'USD',
+            '2026-01-01',
+            'invoice',
+            (string) Str::ulid()
+        );
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // Request with currency=ILS but cursor encoded with currency=USD
+        $res1 = $this->withHeaders($this->authHeaders())->getJson($url.'?currency=ILS&cursor='.urlencode($usdCursor));
+        $res1->assertStatus(422);
+        $res1->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('Cross-currency', $res1->json('error.message'));
+
+        // Request without currency filter but cursor encoded with currency=USD
+        $res2 = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor='.urlencode($usdCursor));
+        $res2->assertStatus(422);
+        $res2->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('Cross-currency', $res2->json('error.message'));
+
+        // Request with currency=USD but cursor encoded without currency filter
+        $noCurrencyCursor = SettlementTargetsCursorCodec::encode(
+            (string) $this->company->public_id,
+            (string) $this->customer->public_id,
+            null,
+            '2026-01-01',
+            'invoice',
+            (string) Str::ulid()
+        );
+        $res3 = $this->withHeaders($this->authHeaders())->getJson($url.'?currency=USD&cursor='.urlencode($noCurrencyCursor));
+        $res3->assertStatus(422);
+        $res3->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('Cross-currency', $res3->json('error.message'));
+    }
+
+    public function test_settlement_targets_tampered_and_invalid_target_type_cursor_rejected(): void
+    {
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // 1. Cross-type: supplier purchase cursor sent to customer endpoint
+        $purchaseCursor = SettlementTargetsCursorCodec::encode(
+            (string) $this->company->public_id,
+            (string) $this->customer->public_id,
+            null,
+            '2026-01-01',
+            'purchase',
+            (string) Str::ulid()
+        );
+        $resTypeCust = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor='.urlencode($purchaseCursor));
+        $resTypeCust->assertStatus(422);
+        $resTypeCust->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('not valid for customer', $resTypeCust->json('error.message'));
+
+        // 2. Cross-type: customer invoice cursor sent to supplier endpoint
+        $suppUrl = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$this->vendor->public_id}/settlement-targets";
+        $invoiceCursor = SettlementTargetsCursorCodec::encode(
+            (string) $this->company->public_id,
+            (string) $this->vendor->public_id,
+            null,
+            '2026-01-01',
+            'invoice',
+            (string) Str::ulid()
+        );
+        $resTypeSupp = $this->withHeaders($this->authHeaders())->getJson($suppUrl.'?cursor='.urlencode($invoiceCursor));
+        $resTypeSupp->assertStatus(422);
+        $resTypeSupp->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertStringContainsString('not valid for supplier', $resTypeSupp->json('error.message'));
+
+        // 3. Tampered payload JSON
+        $key = (string) config('app.key');
+        $invalidJson = '{"not_valid_json":';
+        $mac = hash_hmac('sha256', $invalidJson, $key);
+        $badJsonCursor = rtrim(strtr(base64_encode($invalidJson.'.'.$mac), '+/', '-_'), '=');
+
+        $resBadJson = $this->withHeaders($this->authHeaders())->getJson($url.'?cursor='.$badJsonCursor);
+        $resBadJson->assertStatus(422);
+        $resBadJson->assertJsonPath('error.code', 'VALIDATION_FAILED');
+    }
+
+    public function test_settlement_targets_query_budget_bounded_at_50_100_250_and_large_closed_history(): void
+    {
+        // 1. Create a few open invoices
+        for ($i = 0; $i < 5; $i++) {
+            $this->createPostedSalesInvoice('100.00', 'ILS', '2026-01-0'.($i + 1));
+        }
+
+        $url = "/api/mobile/v1/companies/{$this->company->public_id}/customers/{$this->customer->public_id}/settlement-targets";
+
+        // Query count bounds for limit=50, 100, 250 on normal requests
+        foreach ([50, 100, 250] as $testLimit) {
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+
+            $res = $this->withHeaders($this->authHeaders())->getJson($url.'?limit='.$testLimit);
+            $res->assertStatus(200);
+
+            $queries = DB::getQueryLog();
+            DB::disableQueryLog();
+
+            // Total request queries must be bounded and small (<= 20 queries)
+            $this->assertLessThanOrEqual(20, count($queries), 'Query count for limit='.$testLimit.' exceeded bounded request total');
+        }
+
+        // 2. Large sparse closed history: insert 2000 closed invoices
+        $this->bulkInsertClosedInvoices(2000, '2026-01-01');
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        $resSparse = $this->withHeaders($this->authHeaders())->getJson($url.'?limit=50');
+        $resSparse->assertStatus(200);
+
+        $queriesSparse = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        // Total queries scanning 2000 closed candidates in batches of 50 must be bounded by constant cap (<= 130 queries, NOT 2000 N+1 queries)
+        $this->assertLessThanOrEqual(130, count($queriesSparse), 'Query count across 2000 scanned closed items exceeded constant cap');
     }
 
     // =========================================================================

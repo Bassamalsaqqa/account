@@ -32,6 +32,12 @@ This contract specifies the mobile backend contract for authoritative outstandin
    - Supplier settlement targets expose purchase costs and balances; access requires `purchasing.cost.view` in addition to `vendors.view`. Staff lacking `purchasing.cost.view` receive `403 Forbidden`.
 6. **Strict Tenancy & Permission Scoping**:
    - All operations are strictly scoped to the authenticated merchant company. Cross-tenant, cross-customer, and cross-supplier targets fail closed with validation errors (`404 Not Found` or `422 Validation Failed`).
+7. **Bounded Keyset Pagination & Continuation Semantics**:
+   - Settlement target queries enforce a strict per-request candidate scan budget (`MAX_CANDIDATES_SCAN = 2000`) across chronological streams (`business_date ASC, target_type ASC, target_id ASC`).
+   - Sparse historical ledgers (where thousands of older documents are fully closed/settled) do not cause unbounded database scans, N+1 queries, or request timeouts.
+   - **Continuation Semantics (`has_more: true`)**: If the scan budget is reached before finding `limit` open targets and unexplored stream candidates remain, the response returns `pagination.has_more: true` with an advancing `pagination.next_cursor` anchored to the last evaluated candidate.
+   - **CRITICAL CLIENT CONTRACT**: A partial page or empty page (`targets: []`, `total_targets: 0`) accompanied by `pagination.has_more: true` signifies an active continuation search across closed history, **NEVER** that the customer or supplier is debt-free. The client MUST continue following `next_cursor` until `pagination.has_more` evaluates to `false`.
+   - **Lookahead Keyset Integrity**: When open targets exceed `limit`, `next_cursor` is strictly anchored to the last returned target on the page (`pageTargets[limit - 1]`), ensuring no open target lookaheads are omitted. Keyset ordering across mixed streams on equal dates/types/ULIDs guarantees zero omissions and zero duplicates.
 
 ---
 
@@ -61,7 +67,8 @@ Reads all posted, open sales invoices and active customer opening trade balance 
 #### Query Parameters:
 - `currency` (Optional, string): Filter targets by ISO-4217 currency code (e.g., `ILS`, `USD`). When omitted, all open targets across all currencies are returned.
 - `limit` (Optional, integer, default `50`, maximum `250`): Maximum number of open targets to return in a single page. Non-integer values or values outside `1`..`250` return `422 VALIDATION_FAILED`.
-- `cursor` (Optional, string): Opaque base64url keyset cursor obtained from `pagination.next_cursor` of a previous response. The token is HMAC-SHA256 integrity-protected and cryptographically bound to the authenticated `company_id`, `customer_id`, and requested `currency`. Tampered cursors, malformed cursors, or cross-tenant/cross-customer/cross-currency cursor reuse return `422 VALIDATION_FAILED`.
+- `cursor` (Optional, string): Opaque base64url keyset cursor obtained from `pagination.next_cursor` of a previous response. The token is HMAC-SHA256 integrity-protected and cryptographically bound to the authenticated `company_id`, `customer_id`, and requested `currency`. Tampered cursors, malformed cursors, cross-party, cross-tenant, cross-currency cursor reuse, or invalid `target_type` in cursor return `422 VALIDATION_FAILED`.
+- **Continuation Behavior**: When `pagination.has_more` is `true`, `next_cursor` will contain the cursor to fetch the next slice of history. If the scan budget (`2000` candidates) was reached across closed records, `targets` may be empty or contain fewer than `limit` items while `pagination.has_more` remains `true`. The client MUST follow `next_cursor` to retrieve subsequent open debt. When all streams are exhausted, `pagination.has_more` is `false` and `next_cursor` is `null`.
 
 #### Response Schema (`200 OK`):
 ```json
@@ -153,7 +160,8 @@ Reads all posted, open purchase bills and active vendor opening trade balance it
 #### Query Parameters:
 - `currency` (Optional, string): Filter targets by ISO-4217 currency code (e.g., `ILS`, `USD`). When omitted, all open targets across all currencies are returned.
 - `limit` (Optional, integer, default `50`, maximum `250`): Maximum number of open targets to return in a single page. Non-integer values or values outside `1`..`250` return `422 VALIDATION_FAILED`.
-- `cursor` (Optional, string): Opaque base64url keyset cursor obtained from `pagination.next_cursor` of a previous response. The token is HMAC-SHA256 integrity-protected and cryptographically bound to the authenticated `company_id`, `supplier_id`, and requested `currency`. Tampered cursors, malformed cursors, or cross-tenant/cross-supplier/cross-currency cursor reuse return `422 VALIDATION_FAILED`.
+- `cursor` (Optional, string): Opaque base64url keyset cursor obtained from `pagination.next_cursor` of a previous response. The token is HMAC-SHA256 integrity-protected and cryptographically bound to the authenticated `company_id`, `supplier_id`, and requested `currency`. Tampered cursors, malformed cursors, cross-party, cross-tenant, cross-currency cursor reuse, or invalid `target_type` in cursor return `422 VALIDATION_FAILED`.
+- **Continuation Behavior**: Identical continuation semantics apply to supplier targets. When `pagination.has_more` is `true`, `next_cursor` will contain the cursor to fetch the next slice of history. If the scan budget (`2000` candidates) was reached across closed records, `targets` may be empty or contain fewer than `limit` items while `pagination.has_more` remains `true`. The client MUST follow `next_cursor` to retrieve subsequent open debt. When all streams are exhausted, `pagination.has_more` is `false` and `next_cursor` is `null`.
 
 #### Response Schema (`200 OK`):
 ```json
