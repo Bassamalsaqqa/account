@@ -58,7 +58,14 @@ final class ReverseOpeningTradeItemAction
             throw new AuthorizationException("Authenticated user does not match action actor [{$actor->id}].");
         }
 
-        if (! $actor->hasPermissionTo('settings.accounting.manage')) {
+        $freshActor = User::where('id', $actor->id)->first();
+        if ($freshActor === null) {
+            throw new AuthorizationException('Action actor does not exist.');
+        }
+        $freshActor->unsetRelation('permissions');
+        $freshActor->unsetRelation('roles');
+
+        if (! $freshActor->hasPermissionTo('settings.accounting.manage')) {
             throw new AuthorizationException('Reversing opening trade items requires settings.accounting.manage permission.');
         }
 
@@ -91,13 +98,20 @@ final class ReverseOpeningTradeItemAction
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            // Recheck authorization against the freshly locked item
+            // Recheck authorization against fresh actor and the freshly locked item
+            $freshActor = User::where('id', $actor->id)->first();
+            if ($freshActor === null) {
+                throw new AuthorizationException('Action actor does not exist.');
+            }
+            $freshActor->unsetRelation('permissions');
+            $freshActor->unsetRelation('roles');
+
             if ($lockedItem->isCustomerSide()) {
-                if (! $actor->hasPermissionTo('customers.manage')) {
+                if (! $freshActor->hasPermissionTo('customers.manage') || ! $freshActor->hasPermissionTo('settings.accounting.manage')) {
                     throw new AuthorizationException('Reversing opening customer receivables requires customers.manage permission.');
                 }
             } elseif ($lockedItem->isVendorSide()) {
-                if (! $actor->hasPermissionTo('vendors.manage') || ! $actor->hasPermissionTo('purchasing.cost.view')) {
+                if (! $freshActor->hasPermissionTo('vendors.manage') || ! $freshActor->hasPermissionTo('settings.accounting.manage') || ! $freshActor->hasPermissionTo('purchasing.cost.view')) {
                     throw new AuthorizationException('Reversing opening supplier payables requires vendors.manage and purchasing.cost.view permissions.');
                 }
             }
@@ -197,7 +211,10 @@ final class ReverseOpeningTradeItemAction
                             postingDate: $revDateStr,
                         );
 
-                        if ($reversalBatch->status !== PostingBatch::STATUS_POSTED || (int) $reversalBatch->reversal_of_id !== (int) $originalBatch->id) {
+                        if ($reversalBatch->status !== PostingBatch::STATUS_POSTED
+                            || $reversalBatch->source_type !== 'reversal'
+                            || (int) $reversalBatch->source_id !== (int) $originalBatch->id
+                            || (int) $reversalBatch->reversal_of_id !== (int) $originalBatch->id) {
                             throw new InvalidArgumentException('Reversal journal must link to original posting batch.');
                         }
                         if ($originalBatch->source_type !== 'opening_trade_item' || (int) $originalBatch->source_id !== (int) $lockedItem->id) {

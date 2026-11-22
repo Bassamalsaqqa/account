@@ -6,6 +6,9 @@ namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Services\Accounting\OpeningTradeEventScope;
+use Brick\Math\BigDecimal;
+use Carbon\Carbon;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -74,6 +77,11 @@ class OpeningTradeItemBuilder extends Builder
             throw new ImmutableRecordException('Cannot update an unpersisted opening trade item.');
         }
 
+        $tokenInfo = $eventScope->getUpdateTokenInfo($this->boundToken);
+        if ($tokenInfo['item_id'] !== (int) $modelId) {
+            throw new ImmutableRecordException('Model update token does not match target item.');
+        }
+
         $wheres = $this->toBase()->wheres;
         $hasExactIdWhere = false;
         foreach ($wheres as $where) {
@@ -99,23 +107,26 @@ class OpeningTradeItemBuilder extends Builder
             throw new ImmutableRecordException('Query scope must be strictly constrained to the authorized opening trade item ID.');
         }
 
-        // Verify fields and values strictly match the model's authorized dirty state
+        // Verify fields and values strictly match the authorized approved values
+        $approvedValues = $tokenInfo['approved_values'];
         $modelDirty = $this->boundModel->getDirty();
-        $allowedFields = ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'posting_batch_id', 'updated_at'];
 
         foreach ($values as $key => $val) {
             if ($key === 'updated_at' || $key === $this->boundModel->getUpdatedAtColumn()) {
                 continue;
             }
-            if (! in_array($key, $allowedFields, true)) {
-                throw new ImmutableRecordException("Field [{$key}] is immutable on posted opening trade items.");
+            if (! array_key_exists($key, $approvedValues)) {
+                throw new ImmutableRecordException("Field [{$key}] is not an approved update for this canonical transition.");
             }
             if (! array_key_exists($key, $modelDirty)) {
                 throw new ImmutableRecordException("Field [{$key}] was not marked dirty on the authorized model.");
             }
-            $expectedVal = $this->boundModel->getAttribute($key);
+            $expectedVal = $approvedValues[$key];
             if ((string) $val !== (string) $expectedVal) {
-                throw new ImmutableRecordException("Value for field [{$key}] does not match the authorized model attribute.");
+                throw new ImmutableRecordException("Value for field [{$key}] does not match the authorized approved value.");
+            }
+            if ((string) $this->boundModel->getAttribute($key) !== (string) $expectedVal) {
+                throw new ImmutableRecordException("Value for field [{$key}] on model does not match the authorized approved value.");
             }
         }
 
@@ -157,6 +168,61 @@ class OpeningTradeItemBuilder extends Builder
         }
 
         $eventScope->verifyModelInsertToken($this->boundInsertModel, $this->boundInsertToken);
+
+        // Verify inserted values match the bound model attributes
+        $bound = $this->boundInsertModel;
+
+        foreach ($bound->getAttributes() as $attr => $expectedVal) {
+            if ($attr === 'id' || $attr === 'created_at' || $attr === 'updated_at') {
+                continue;
+            }
+            if (! array_key_exists($attr, $values)) {
+                throw new ImmutableRecordException("Inserted values are missing bound attribute [{$attr}].");
+            }
+        }
+
+        foreach ($values as $col => $val) {
+            if ($col === 'created_at' || $col === 'updated_at') {
+                continue;
+            }
+            $expected = $bound->getAttribute($col);
+            if ($expected === null && $val === null) {
+                continue;
+            }
+            if (in_array($col, ['amount_currency', 'exchange_rate', 'carrying_value_base'], true)) {
+                if ($val === null || ! BigDecimal::of((string) $val)->isEqualTo(BigDecimal::of((string) $expected))) {
+                    throw new ImmutableRecordException("Inserted value for [{$col}] does not match the bound model.");
+                }
+            } elseif (in_array($col, ['party_snapshot', 'company_snapshot', 'control_route'], true)) {
+                $decodedVal = is_string($val) ? json_decode($val, true) : $val;
+                $decodedExp = is_string($expected) ? json_decode((string) $expected, true) : $expected;
+                if ($decodedVal != $decodedExp) {
+                    throw new ImmutableRecordException("Inserted value for [{$col}] does not match the bound model.");
+                }
+            } elseif (in_array($col, ['opening_date', 'due_date'], true) || ($bound->hasCast($col) && str_starts_with((string) ($bound->getCasts()[$col] ?? ''), 'date'))) {
+                if ($expected === null || $val === null) {
+                    throw new ImmutableRecordException("Inserted value for [{$col}] does not match the bound model.");
+                }
+                try {
+                    $expectedDate = $expected instanceof DateTimeInterface
+                        ? $expected->format('Y-m-d')
+                        : Carbon::parse((string) $expected)->format('Y-m-d');
+                    $valDate = $val instanceof DateTimeInterface
+                        ? $val->format('Y-m-d')
+                        : Carbon::parse((string) $val)->format('Y-m-d');
+                } catch (\Throwable) {
+                    throw new ImmutableRecordException("Inserted value for [{$col}] does not match the bound model.");
+                }
+
+                if ($valDate !== $expectedDate) {
+                    throw new ImmutableRecordException("Inserted value for [{$col}] does not match the bound model.");
+                }
+            } else {
+                if ((string) $val !== (string) $expected) {
+                    throw new ImmutableRecordException("Inserted value for [{$col}] does not match the bound model.");
+                }
+            }
+        }
 
         $eventScope->consumeModelInsertToken($this->boundInsertToken);
         $this->boundInsertModel = null;
@@ -202,6 +268,32 @@ class OpeningTradeItemBuilder extends Builder
     public function decrement($column, $amount = 1, array $extra = []): int
     {
         throw new ImmutableRecordException('Direct decrements on opening trade items are prohibited. Use canonical actions.');
+    }
+
+    /**
+     * @param  array<string, float|int>  $columns
+     * @param  array<string, mixed>  $extra
+     */
+    public function incrementEach(array $columns, array $extra = []): int
+    {
+        throw new ImmutableRecordException('Direct increments on opening trade items are prohibited. Use canonical actions.');
+    }
+
+    /**
+     * @param  array<string, float|int>  $columns
+     * @param  array<string, mixed>  $extra
+     */
+    public function decrementEach(array $columns, array $extra = []): int
+    {
+        throw new ImmutableRecordException('Direct decrements on opening trade items are prohibited. Use canonical actions.');
+    }
+
+    /**
+     * @param  string|null  $column
+     */
+    public function touch($column = null): int
+    {
+        throw new ImmutableRecordException('Direct updates on opening trade items are prohibited. Use canonical actions.');
     }
 
     /**

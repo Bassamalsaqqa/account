@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Accounting;
 
 use App\Application\Platform\TenantWriteAccess;
+use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Domain\Accounting\Exceptions\LegacyGlOpeningOverlapException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
@@ -111,12 +112,19 @@ final class PostOpeningTradeItemAction
             throw new AuthorizationException("Authenticated user does not match action actor [{$actingUser->id}].");
         }
 
+        $freshActor = User::where('id', $actingUser->id)->first();
+        if ($freshActor === null) {
+            throw new AuthorizationException('Action actor does not exist.');
+        }
+        $freshActor->unsetRelation('permissions');
+        $freshActor->unsetRelation('roles');
+
         if ($side === OpeningTradeItem::SIDE_CUSTOMER) {
-            if (! $actingUser->hasPermissionTo('customers.manage') || ! $actingUser->hasPermissionTo('settings.accounting.manage')) {
+            if (! $freshActor->hasPermissionTo('customers.manage') || ! $freshActor->hasPermissionTo('settings.accounting.manage')) {
                 throw new AuthorizationException('Posting opening customer receivables requires customers.manage and settings.accounting.manage permissions.');
             }
         } elseif ($side === OpeningTradeItem::SIDE_VENDOR) {
-            if (! $actingUser->hasPermissionTo('vendors.manage') || ! $actingUser->hasPermissionTo('settings.accounting.manage') || ! $actingUser->hasPermissionTo('purchasing.cost.view')) {
+            if (! $freshActor->hasPermissionTo('vendors.manage') || ! $freshActor->hasPermissionTo('settings.accounting.manage') || ! $freshActor->hasPermissionTo('purchasing.cost.view')) {
                 throw new AuthorizationException('Posting opening supplier payables requires vendors.manage, settings.accounting.manage, and purchasing.cost.view permissions.');
             }
         } else {
@@ -222,6 +230,22 @@ final class PostOpeningTradeItemAction
             if ($existing !== null) {
                 if ($existing->idempotency_payload_hash !== $payloadHash) {
                     throw new IdempotencyConflictException("Opening trade item idempotency key [{$idempotencyKey}] was already used with a different economic payload.");
+                }
+
+                $freshReplayActor = User::where('id', $actingUser->id)->first();
+                if ($freshReplayActor === null) {
+                    throw new AuthorizationException('Action actor does not exist.');
+                }
+                $freshReplayActor->unsetRelation('permissions');
+                $freshReplayActor->unsetRelation('roles');
+                if ($side === OpeningTradeItem::SIDE_CUSTOMER) {
+                    if (! $freshReplayActor->hasPermissionTo('customers.manage') || ! $freshReplayActor->hasPermissionTo('settings.accounting.manage')) {
+                        throw new AuthorizationException('Posting opening customer receivables requires customers.manage and settings.accounting.manage permissions.');
+                    }
+                } elseif ($side === OpeningTradeItem::SIDE_VENDOR) {
+                    if (! $freshReplayActor->hasPermissionTo('vendors.manage') || ! $freshReplayActor->hasPermissionTo('settings.accounting.manage') || ! $freshReplayActor->hasPermissionTo('purchasing.cost.view')) {
+                        throw new AuthorizationException('Posting opening supplier payables requires vendors.manage, settings.accounting.manage, and purchasing.cost.view permissions.');
+                    }
                 }
 
                 return $existing;
@@ -419,7 +443,10 @@ final class PostOpeningTradeItemAction
                         ]);
                         $capability->authorizeItem($item);
                         $item->save();
-                        $capability->authorizeSourceItemId((int) $item->id);
+                        if (! $item->exists || $item->id <= 0) {
+                            throw new ImmutableRecordException('Opening trade item ID must exist before canonical GL posting.');
+                        }
+                        $capability->authorizeSourceItemId((int) $item->id, $item);
 
                         $postingCommand = new PostingCommand(
                             company: $lockedCompany,
@@ -506,12 +533,19 @@ final class PostOpeningTradeItemAction
             throw new AuthorizationException("Authenticated user does not match action actor [{$actor->id}].");
         }
 
+        $freshActor = User::where('id', $actor->id)->first();
+        if ($freshActor === null) {
+            throw new AuthorizationException('Action actor does not exist.');
+        }
+        $freshActor->unsetRelation('permissions');
+        $freshActor->unsetRelation('roles');
+
         if ($side === OpeningTradeItem::SIDE_CUSTOMER) {
-            if (! $actor->hasPermissionTo('customers.manage') || ! $actor->hasPermissionTo('settings.accounting.manage')) {
+            if (! $freshActor->hasPermissionTo('customers.manage') || ! $freshActor->hasPermissionTo('settings.accounting.manage')) {
                 throw new AuthorizationException('Posting opening customer receivables requires customers.manage and settings.accounting.manage permissions.');
             }
         } elseif ($side === OpeningTradeItem::SIDE_VENDOR) {
-            if (! $actor->hasPermissionTo('vendors.manage') || ! $actor->hasPermissionTo('settings.accounting.manage') || ! $actor->hasPermissionTo('purchasing.cost.view')) {
+            if (! $freshActor->hasPermissionTo('vendors.manage') || ! $freshActor->hasPermissionTo('settings.accounting.manage') || ! $freshActor->hasPermissionTo('purchasing.cost.view')) {
                 throw new AuthorizationException('Posting opening supplier payables requires vendors.manage, settings.accounting.manage, and purchasing.cost.view permissions.');
             }
         } else {
@@ -633,7 +667,7 @@ final class PostOpeningTradeItemAction
 
                 $carryingBaseStr = (string) BigDecimal::of($amountStr)->multipliedBy($rateDec)->toScale(6, RoundingMode::HALF_UP);
 
-                $rowPayload = [
+                $cleanRow = [
                     'row_index' => $index,
                     'amount' => $amountStr,
                     'carrying_value_base' => $carryingBaseStr,
@@ -641,7 +675,9 @@ final class PostOpeningTradeItemAction
                     'due_date' => $dueDateStr,
                     'notes' => $cleanNotes,
                 ];
-                $rowPayload['member_hash'] = hash('sha256', json_encode($rowPayload, JSON_THROW_ON_ERROR));
+                $baselineRows[] = $cleanRow;
+                $rowPayload = $cleanRow;
+                $rowPayload['member_hash'] = hash('sha256', json_encode($cleanRow, JSON_THROW_ON_ERROR));
 
                 $normalizedRows[] = $rowPayload;
             }
@@ -657,6 +693,22 @@ final class PostOpeningTradeItemAction
                 'rows' => $normalizedRows,
             ], JSON_THROW_ON_ERROR));
 
+            $baselineFormPayloadHash = hash('sha256', json_encode([
+                'company_id' => (int) $lockedCompany->id,
+                'side' => $side,
+                'party_id' => $partyId,
+                'opening_date' => $openingDateStr,
+                'currency_code' => $cleanCurrency,
+                'exchange_rate' => $rateStr,
+                'total_rows' => $totalRows,
+                'rows' => $baselineRows,
+            ], JSON_THROW_ON_ERROR));
+
+            $expectedChildKeys = [];
+            for ($i = 0; $i < $totalRows; $i++) {
+                $expectedChildKeys[$i] = $i === 0 ? $formIdempotencyKey : "{$formIdempotencyKey}:line:".($i - 1);
+            }
+
             // 1. Standalone collision check: key must not adopt an existing standalone single item
             $existingDirect = OpeningTradeItem::where('company_id', $lockedCompany->id)
                 ->where('idempotency_key', $formIdempotencyKey)
@@ -670,13 +722,9 @@ final class PostOpeningTradeItemAction
                 }
             }
 
-            // 2. Check existing form items committed under this form key (lost-ack replay)
+            // 2. Check existing form items committed under this explicit durable form key (lost-ack replay)
             $existingItems = OpeningTradeItem::where('company_id', $lockedCompany->id)
-                ->where(function ($q) use ($formIdempotencyKey): void {
-                    $q->where('control_route->form->form_key', $formIdempotencyKey)
-                        ->orWhere('idempotency_key', $formIdempotencyKey)
-                        ->orWhere('idempotency_key', 'like', "{$formIdempotencyKey}:line:%");
-                })
+                ->where('control_route->form->form_key', $formIdempotencyKey)
                 ->lockForUpdate()
                 ->get();
 
@@ -690,20 +738,29 @@ final class PostOpeningTradeItemAction
                 })->values();
 
                 foreach ($normalizedRows as $index => $nRow) {
-                    $childKey = $index === 0 ? $formIdempotencyKey : "{$formIdempotencyKey}:line:".($index - 1);
+                    $childKey = $expectedChildKeys[$index];
                     /** @var OpeningTradeItem|null $exItem */
-                    $exItem = $sortedExisting->first(function (OpeningTradeItem $item) use ($index, $childKey): bool {
-                        return (int) ($item->control_route['form']['row_index'] ?? -1) === $index
-                            || $item->idempotency_key === $childKey;
-                    });
-                    if ($exItem === null) {
+                    $exItem = $sortedExisting->get($index);
+                    if ($exItem === null
+                        || (int) ($exItem->control_route['form']['row_index'] ?? -1) !== $index
+                        || $exItem->idempotency_key !== $childKey) {
                         throw new IdempotencyConflictException("Opening trade form item [{$index}] was already used with a different row set structure.");
                     }
 
                     $itemFormKey = $exItem->control_route['form']['form_key'] ?? null;
-                    $itemMemberHash = $exItem->control_route['form']['member_hash'] ?? null;
+                    if ($itemFormKey !== $formIdempotencyKey) {
+                        throw new IdempotencyConflictException("Opening trade item idempotency key [{$childKey}] does not belong to form [{$formIdempotencyKey}].");
+                    }
 
-                    if ($itemFormKey !== $formIdempotencyKey || $itemMemberHash !== $nRow['member_hash']) {
+                    $itemMemberHash = $exItem->control_route['form']['member_hash'] ?? null;
+                    $itemPayloadHash = $exItem->idempotency_payload_hash;
+                    $baselineMemberHash = hash('sha256', json_encode($baselineRows[$index], JSON_THROW_ON_ERROR));
+
+                    $memberMatches = ($itemMemberHash !== null && $itemMemberHash === $nRow['member_hash'])
+                        || $itemPayloadHash === $nRow['member_hash']
+                        || $itemPayloadHash === $baselineMemberHash;
+
+                    if (! $memberMatches) {
                         throw new IdempotencyConflictException("Opening trade item idempotency key [{$childKey}] was already used with a different economic payload.");
                     }
 
@@ -722,12 +779,41 @@ final class PostOpeningTradeItemAction
                     }
                 }
 
-                $firstItemFormHash = $sortedExisting->first()?->control_route['form']['form_hash'] ?? null;
-                if ($firstItemFormHash !== $formPayloadHash) {
+                $storedFormHash = $sortedExisting->first()?->control_route['form']['form_hash']
+                    ?? $sortedExisting->first()?->control_route['form']['form_payload_hash']
+                    ?? null;
+
+                if ($storedFormHash !== $formPayloadHash && $storedFormHash !== $baselineFormPayloadHash) {
                     throw new IdempotencyConflictException("Form idempotency key [{$formIdempotencyKey}] was already used with a different economic payload.");
                 }
 
+                // Revalidate current permissions with fresh records before returning replay
+                $freshReplayActor = User::where('id', $actor->id)->first();
+                if ($freshReplayActor === null) {
+                    throw new AuthorizationException('Action actor does not exist.');
+                }
+                $freshReplayActor->unsetRelation('permissions');
+                $freshReplayActor->unsetRelation('roles');
+                if ($side === OpeningTradeItem::SIDE_CUSTOMER) {
+                    if (! $freshReplayActor->hasPermissionTo('customers.manage') || ! $freshReplayActor->hasPermissionTo('settings.accounting.manage')) {
+                        throw new AuthorizationException('Posting opening customer receivables requires customers.manage and settings.accounting.manage permissions.');
+                    }
+                } elseif ($side === OpeningTradeItem::SIDE_VENDOR) {
+                    if (! $freshReplayActor->hasPermissionTo('vendors.manage') || ! $freshReplayActor->hasPermissionTo('settings.accounting.manage') || ! $freshReplayActor->hasPermissionTo('purchasing.cost.view')) {
+                        throw new AuthorizationException('Posting opening supplier payables requires vendors.manage, settings.accounting.manage, and purchasing.cost.view permissions.');
+                    }
+                }
+
                 return $sortedExisting->all();
+            }
+
+            // Standalone key collision check across expected child keys
+            $standaloneCollision = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                ->whereIn('idempotency_key', $expectedChildKeys)
+                ->lockForUpdate()
+                ->first();
+            if ($standaloneCollision !== null) {
+                throw new IdempotencyConflictException("Opening trade form item key [{$standaloneCollision->idempotency_key}] conflicts with an existing standalone opening trade item.");
             }
 
             // Party validation
@@ -881,7 +967,10 @@ final class PostOpeningTradeItemAction
 
                             $capability->authorizeItem($item);
                             $item->save();
-                            $capability->authorizeSourceItemId((int) $item->id);
+                            if (! $item->exists || $item->id <= 0) {
+                                throw new ImmutableRecordException('Opening trade item ID must exist before canonical GL posting.');
+                            }
+                            $capability->authorizeSourceItemId((int) $item->id, $item);
 
                             $lines = [];
                             $lineAmount = MoneyAmount::from($nRow['amount']);

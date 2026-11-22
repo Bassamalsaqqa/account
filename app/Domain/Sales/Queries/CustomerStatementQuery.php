@@ -103,7 +103,7 @@ class CustomerStatementQuery
             ->where('customer_id', $customer->id)
             ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
             ->whereNotNull('posting_batch_id')
-            ->with('reversalPostingBatch')
+            ->with(['postingBatch', 'reversalPostingBatch'])
             ->when($toDate !== null, fn ($q) => $q->where('opening_date', '<=', $toDate))
             ->get();
 

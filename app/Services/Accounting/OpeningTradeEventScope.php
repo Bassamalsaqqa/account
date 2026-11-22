@@ -11,6 +11,7 @@ use App\Domain\Posting\DTO\PostingCommand;
 use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\User;
+use Brick\Math\BigDecimal;
 use InvalidArgumentException;
 
 /** Request-local canonical authority for Opening Trade Balances. */
@@ -20,7 +21,7 @@ final class OpeningTradeEventScope
 
     private ?OpeningTradeReversalCapability $activeReversal = null;
 
-    /** @var array<string, array{item_id: int, company_id: int, item_hash: string}> */
+    /** @var array<string, array{item_id: int, company_id: int, actor_id: int, transition: string, approved_values: array<string, mixed>, item_hash: string}> */
     private array $activeUpdateTokens = [];
 
     /** @var array<string, array{company_id: int, actor_id: int, item_hash: string}> */
@@ -82,14 +83,107 @@ final class OpeningTradeEventScope
             throw new ImmutableRecordException('Cannot authorize model update for unpersisted item.');
         }
 
+        $transition = null;
+        $actorId = null;
+        $approvedValues = [];
+
+        if ($this->activePosting !== null) {
+            // Posting capability only authorizes linking the posting batch
+            if (! $item->isDirty('posting_batch_id')) {
+                throw new ImmutableRecordException('Active posting capability only authorizes linking the posting batch.');
+            }
+            if ($item->getOriginal('posting_batch_id') !== null) {
+                throw new ImmutableRecordException('Posting batch cannot be reassigned on a posted opening trade item.');
+            }
+            if ((int) $item->company_id !== $this->activePosting->companyId) {
+                throw new ImmutableRecordException('Item company does not match active posting capability.');
+            }
+            if (! $this->activePosting->isSourceItemAuthorized((int) $itemId)) {
+                throw new ImmutableRecordException("Item ID [{$itemId}] is not authorized by the active posting capability.");
+            }
+            $batchId = (int) $item->posting_batch_id;
+            if (! $this->activePosting->isBatchLinkAuthorized((int) $itemId, $batchId)) {
+                throw new ImmutableRecordException("Linking posting batch [{$batchId}] to opening trade item [{$itemId}] is not authorized by active capability.");
+            }
+
+            // Only posting_batch_id (and updated_at) may be modified
+            $dirty = array_diff(array_keys($item->getDirty()), ['posting_batch_id', 'updated_at']);
+            if (! empty($dirty)) {
+                throw new ImmutableRecordException('Only posting_batch_id can be updated during posting batch link transition.');
+            }
+
+            $transition = 'link_posting_batch';
+            $actorId = $this->activePosting->actorId;
+            $approvedValues = [
+                'posting_batch_id' => $batchId,
+            ];
+        } elseif ($this->activeReversal !== null) {
+            // Reversal capability only authorizes the reverse transition
+            if (! $item->isDirty('status') || $item->status !== OpeningTradeItem::STATUS_REVERSED) {
+                throw new ImmutableRecordException('Active reversal capability only authorizes transition to reversed status.');
+            }
+            if ($item->getOriginal('status') !== OpeningTradeItem::STATUS_POSTED) {
+                throw new ImmutableRecordException('Opening trade item must be in posted status to transition to reversed.');
+            }
+            if ((int) $item->company_id !== $this->activeReversal->companyId) {
+                throw new ImmutableRecordException('Item company does not match active reversal capability.');
+            }
+            if ((int) $itemId !== $this->activeReversal->itemId) {
+                throw new ImmutableRecordException('Item ID does not match active reversal capability.');
+            }
+            if ((int) $item->reversed_by !== $this->activeReversal->actorId) {
+                throw new ImmutableRecordException('Reversal actor does not match active reversal capability.');
+            }
+            if ((int) $item->posting_batch_id !== $this->activeReversal->originalBatchId) {
+                throw new ImmutableRecordException('Original posting batch does not match active reversal capability.');
+            }
+            $revBatchId = (int) $item->reversal_posting_batch_id;
+            if (! $this->activeReversal->isReversalBatchAuthorized($revBatchId)) {
+                throw new ImmutableRecordException("Reversal batch [{$revBatchId}] is not authorized for opening trade item [{$itemId}].");
+            }
+
+            $allowedDirty = ['status', 'reversal_posting_batch_id', 'reversed_at', 'reversed_by', 'correction_reason', 'updated_at'];
+            $disallowedDirty = array_diff(array_keys($item->getDirty()), $allowedDirty);
+            if (! empty($disallowedDirty)) {
+                throw new ImmutableRecordException('Disallowed fields modified during opening trade item reversal.');
+            }
+
+            $transition = 'reverse';
+            $actorId = $this->activeReversal->actorId;
+            $approvedValues = [
+                'status' => OpeningTradeItem::STATUS_REVERSED,
+                'reversal_posting_batch_id' => $revBatchId,
+                'reversed_at' => (string) $item->reversed_at,
+                'reversed_by' => (int) $item->reversed_by,
+                'correction_reason' => (string) $item->correction_reason,
+            ];
+        } else {
+            throw new ImmutableRecordException('Cannot authorize model update without an active canonical capability.');
+        }
+
         $token = bin2hex(random_bytes(16));
         $this->activeUpdateTokens[$token] = [
             'item_id' => (int) $itemId,
             'company_id' => (int) $item->company_id,
+            'actor_id' => $actorId,
+            'transition' => $transition,
+            'approved_values' => $approvedValues,
             'item_hash' => spl_object_hash($item),
         ];
 
         return $token;
+    }
+
+    /**
+     * @return array{item_id: int, company_id: int, actor_id: int, transition: string, approved_values: array<string, mixed>, item_hash: string}
+     */
+    public function getUpdateTokenInfo(string $token): array
+    {
+        if (! isset($this->activeUpdateTokens[$token])) {
+            throw new ImmutableRecordException('Invalid or expired model update token.');
+        }
+
+        return $this->activeUpdateTokens[$token];
     }
 
     public function verifyModelUpdateToken(OpeningTradeItem $item, string $token): void
@@ -168,8 +262,74 @@ final class OpeningTradeEventScope
             throw new ImmutableRecordException('Posting command actor does not match authorized posting capability.');
         }
 
+        if ($command->sourceId <= 0) {
+            throw new ImmutableRecordException('Posting command source item ID must be a strictly positive integer.');
+        }
+
         if (! $this->activePosting->isSourceItemAuthorized($command->sourceId)) {
             throw new ImmutableRecordException("Posting command source item ID [{$command->sourceId}] is not authorized by the active posting capability.");
+        }
+
+        if ($this->activePosting->hasJournalBeenPosted($command->sourceId)) {
+            throw new ImmutableRecordException("A journal command has already been posted for opening trade item [{$command->sourceId}].");
+        }
+
+        $item = $this->activePosting->getAuthorizedItem($command->sourceId);
+        if ($item !== null) {
+            // Verify date matches
+            $commandDate = $command->postingDate->format('Y-m-d');
+            $itemDate = $item->opening_date->format('Y-m-d');
+            if ($commandDate !== $itemDate) {
+                throw new ImmutableRecordException('Posting command date does not match authorized opening trade item.');
+            }
+
+            // Verify currency matches
+            if ($command->transactionCurrencyCode !== $item->currency_code) {
+                throw new ImmutableRecordException('Posting command currency does not match authorized opening trade item.');
+            }
+
+            // Verify exchange rate matches
+            if (! $command->exchangeRate->getValue()->isEqualTo(BigDecimal::of((string) $item->exchange_rate))) {
+                throw new ImmutableRecordException('Posting command exchange rate does not match authorized opening trade item.');
+            }
+
+            // Verify lines: must be exactly 2 lines matching the economic event
+            if (count($command->lines) !== 2) {
+                throw new ImmutableRecordException('Posting command lines must contain exactly two lines for opening trade item.');
+            }
+
+            $line1 = $command->lines[0];
+            $line2 = $command->lines[1];
+
+            $expectedAmount = BigDecimal::of((string) $item->amount_currency);
+            $expectedCarryingBase = BigDecimal::of((string) $item->carrying_value_base);
+
+            // One line debit, one line credit
+            $line1Debit = $line1->debitBase->isPositive();
+            $line2Debit = $line2->debitBase->isPositive();
+            $hasDebit = ($line1Debit && ! $line2Debit) || (! $line1Debit && $line2Debit);
+            if (! $hasDebit) {
+                throw new ImmutableRecordException('Posting command must have one debit line and one credit line.');
+            }
+
+            $debitLine = $line1Debit ? $line1 : $line2;
+            $creditLine = $line1Debit ? $line2 : $line1;
+
+            if (! $debitLine->debitBase->getAmount()->isEqualTo($expectedCarryingBase)
+                || ! $creditLine->creditBase->getAmount()->isEqualTo($expectedCarryingBase)) {
+                throw new ImmutableRecordException('Posting command amounts do not match authorized opening trade item.');
+            }
+
+            if ($debitLine->transactionAmount !== null && ! $debitLine->transactionAmount->getAmount()->isEqualTo($expectedAmount)) {
+                throw new ImmutableRecordException('Posting command amounts do not match authorized opening trade item.');
+            }
+
+            if ($creditLine->transactionAmount !== null && ! $creditLine->transactionAmount->getAmount()->isEqualTo($expectedAmount)) {
+                throw new ImmutableRecordException('Posting command amounts do not match authorized opening trade item.');
+            }
+
+            // Mark journal as posted for this item
+            $this->activePosting->markJournalPosted((int) $command->sourceId);
         }
     }
 

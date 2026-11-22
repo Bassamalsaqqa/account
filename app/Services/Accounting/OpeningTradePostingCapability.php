@@ -17,6 +17,12 @@ final class OpeningTradePostingCapability
     /** @var array<int, bool> */
     private array $authorizedSourceItemIds = [];
 
+    /** @var array<int, OpeningTradeItem> */
+    private array $authorizedItemsBySourceId = [];
+
+    /** @var array<int, bool> */
+    private array $postedSourceItemIds = [];
+
     public function __construct(
         public readonly int $companyId,
         public readonly int $actorId,
@@ -32,12 +38,34 @@ final class OpeningTradePostingCapability
         }
         if ($item->exists) {
             $this->authorizedSourceItemIds[(int) $item->id] = true;
+            $this->authorizedItemsBySourceId[(int) $item->id] = $item;
         }
     }
 
-    public function authorizeSourceItemId(int $itemId): void
+    public function authorizeSourceItemId(int $itemId, ?OpeningTradeItem $item = null): void
     {
+        if ($itemId <= 0) {
+            throw new \InvalidArgumentException('Source item ID must be a strictly positive integer.');
+        }
         $this->authorizedSourceItemIds[$itemId] = true;
+        if ($item !== null) {
+            $this->authorizedItemsBySourceId[$itemId] = $item;
+        }
+    }
+
+    public function getAuthorizedItem(int $sourceId): ?OpeningTradeItem
+    {
+        return $this->authorizedItemsBySourceId[$sourceId] ?? null;
+    }
+
+    public function hasJournalBeenPosted(int $sourceId): bool
+    {
+        return isset($this->postedSourceItemIds[$sourceId]);
+    }
+
+    public function markJournalPosted(int $sourceId): void
+    {
+        $this->postedSourceItemIds[$sourceId] = true;
     }
 
     public function isSourceItemAuthorized(int $sourceId): bool

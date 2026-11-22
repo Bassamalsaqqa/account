@@ -380,6 +380,8 @@ class OpeningTradeItem extends Model
         }
 
         if ($revBatch->status !== 'posted'
+            || $revBatch->source_type !== 'reversal'
+            || (int) $revBatch->source_id !== (int) $this->posting_batch_id
             || (int) $revBatch->company_id !== (int) $this->company_id
             || (int) $revBatch->reversal_of_id !== (int) $this->posting_batch_id) {
             return false;
@@ -387,6 +389,14 @@ class OpeningTradeItem extends Model
 
         $origBatch = $this->postingBatch;
         if ($origBatch === null) {
+            return false;
+        }
+
+        $revDate = $revBatch->posting_date->toDateString();
+        $origDate = $origBatch->posting_date->toDateString();
+        $openDate = $this->opening_date->toDateString();
+
+        if ($revDate < $origDate || $revDate < $openDate) {
             return false;
         }
 

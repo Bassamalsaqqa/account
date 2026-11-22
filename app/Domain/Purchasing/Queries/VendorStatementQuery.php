@@ -133,7 +133,7 @@ class VendorStatementQuery
             ->where('vendor_id', $vendor->id)
             ->where('side', OpeningTradeItem::SIDE_VENDOR)
             ->whereNotNull('posting_batch_id')
-            ->with('reversalPostingBatch')
+            ->with(['postingBatch', 'reversalPostingBatch'])
             ->when($toDate !== null, fn ($q) => $q->where('opening_date', '<=', $toDate))
             ->get();
 
