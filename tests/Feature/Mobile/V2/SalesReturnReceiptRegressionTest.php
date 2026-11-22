@@ -2344,7 +2344,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ]);
         $previewResp->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
-        $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $previewResp->json('error.message'));
+        $this->assertSame(__('sales.return_tax_unrepresentable'), $previewResp->json('error.message'));
 
         // 2. Post endpoint MUST reject unrepresentable tax component before sequence numbering or stock movements
         $returnsBefore = DB::table('sales_returns')->count();
@@ -2367,7 +2367,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ]);
         $postResp->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
-        $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $postResp->json('error.message'));
+        $this->assertSame(__('sales.return_tax_unrepresentable'), $postResp->json('error.message'));
 
         $this->assertSame($returnsBefore, DB::table('sales_returns')->count());
         $this->assertSame($movementsBefore, DB::table('stock_movements')->count());
@@ -2390,7 +2390,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ],
         ]);
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Sales return tax component cannot be represented at the current exchange rate.');
+        $this->expectExceptionMessage(__('sales.return_tax_unrepresentable'));
         app(PostSalesReturnAction::class)->execute($draft, $this->owner);
     }
 
@@ -2427,7 +2427,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
                     'product_id' => $this->product->id,
                     'product_unit_id' => $productUnit->id,
                     'item_description' => 'Tiny Tax Line 1',
-                    'quantity' => '10.000000',
+                    'quantity' => '1.000000',
                     'unit_price' => '1.000000',
                     'tax_rate_id' => $taxRate->id,
                 ],
@@ -2435,7 +2435,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
                     'product_id' => $this->product->id,
                     'product_unit_id' => $productUnit->id,
                     'item_description' => 'Tiny Tax Line 2',
-                    'quantity' => '10.000000',
+                    'quantity' => '1.000000',
                     'unit_price' => '1.000000',
                     'tax_rate_id' => $taxRate->id,
                 ],
@@ -2511,7 +2511,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ]);
         $previewResp->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED');
-        $this->assertStringContainsString('cannot be represented at the current exchange rate', (string) $previewResp->json('error.message'));
+        $this->assertSame(__('sales.return_total_unrepresentable'), $previewResp->json('error.message'));
 
         // 2. Post endpoint rejects before stock movements or numbering
         $postResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
@@ -2577,5 +2577,141 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             'transaction_amount' => $firstLine->transaction_amount,
             'exchange_rate' => $firstLine->exchange_rate,
         ]);
+    }
+
+    public function test_sales_return_cumulative_relief_does_not_mask_unrepresentable_event_gross_or_net(): void
+    {
+        $this->restoreStaffPermissions();
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->baseUnit->update(['allows_fraction' => true, 'decimal_places' => 6]);
+
+        // Tax-free invoice of 100 USD at FX 0.00003
+        $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'USD',
+            'exchange_rate' => '0.0000300000',
+            'issue_date' => now()->format('Y-m-d'),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => 'Multi-return representability invoice',
+                    'quantity' => '100.000000',
+                    'unit_price' => '1.000000',
+                    'tax_rate_id' => null,
+                ],
+            ],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $invLine = $invoice->lines()->firstOrFail();
+
+        // Return 1: USD 0.04 -> 0.04 * 0.00003 = 0.0000012 -> 0.000001 base relief. Expressible!
+        $ret1Resp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'RET-CUMUL-1-'.Str::uuid())
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
+                'sales_invoice_id' => $invoice->public_id,
+                'reason' => 'First return 0.04 USD',
+                'lines' => [
+                    ['sales_invoice_line_id' => $invLine->public_id, 'quantity' => '0.040000'],
+                ],
+            ]);
+        $ret1Resp->assertStatus(201);
+        $this->assertSame('posted', $ret1Resp->json('status'));
+
+        // Return 2: USD 0.01. Cumulative return = 0.05 USD -> 0.05 * 0.00003 = 0.0000015 -> 0.000002 base.
+        // Incremental relief is 0.000001 base. But USD 0.01 own conversion at FX 0.00003 is 0.000000 base!
+        // Both preview and post MUST reject this return as unrepresentable instead of dropping USD metadata to base-only residual!
+        $preview2Resp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns/preview", [
+                'sales_invoice_id' => $invoice->public_id,
+                'lines' => [
+                    ['sales_invoice_line_id' => $invLine->public_id, 'quantity' => '0.010000'],
+                ],
+            ]);
+        $preview2Resp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertSame(__('sales.return_total_unrepresentable'), $preview2Resp->json('error.message'));
+
+        $post2Resp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->withHeader('Idempotency-Key', 'RET-CUMUL-2-'.Str::uuid())
+            ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
+                'sales_invoice_id' => $invoice->public_id,
+                'reason' => 'Second return 0.01 USD',
+                'lines' => [
+                    ['sales_invoice_line_id' => $invLine->public_id, 'quantity' => '0.010000'],
+                ],
+            ]);
+        $post2Resp->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED');
+        $this->assertSame(__('sales.return_total_unrepresentable'), $post2Resp->json('error.message'));
+    }
+
+    public function test_sales_history_audit_rejects_extra_equal_debit_credit_base_residuals_on_same_account(): void
+    {
+        $this->restoreStaffPermissions();
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
+        $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => now()->format('Y-m-d'),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $productUnit->id,
+                    'item_description' => 'Audit DR/CR cancellation test',
+                    'quantity' => '1.000000',
+                    'unit_price' => '20.000000',
+                    'tax_rate_id' => null,
+                ],
+            ],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+
+        $batch = PostingBatch::where('id', $invoice->posting_batch_id)->firstOrFail();
+        $arAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'accounts_receivable')->firstOrFail();
+
+        // Inject extra equal base-only debit and credit of 1.000000 on the same account
+        $line1Id = DB::table('posting_lines')->insertGetId([
+            'company_id' => (int) $this->company->id,
+            'posting_batch_id' => $batch->id,
+            'line_number' => 998,
+            'ledger_account_id' => $arAccount->id,
+            'debit_base' => '1.000000',
+            'credit_base' => '0.000000',
+            'transaction_currency_code' => null,
+            'transaction_amount' => null,
+            'exchange_rate' => null,
+            'description' => 'Bogus equal DR',
+            'created_at' => now(),
+        ]);
+        $line2Id = DB::table('posting_lines')->insertGetId([
+            'company_id' => (int) $this->company->id,
+            'posting_batch_id' => $batch->id,
+            'line_number' => 999,
+            'ledger_account_id' => $arAccount->id,
+            'debit_base' => '0.000000',
+            'credit_base' => '1.000000',
+            'transaction_currency_code' => null,
+            'transaction_amount' => null,
+            'exchange_rate' => null,
+            'description' => 'Bogus equal CR',
+            'created_at' => now(),
+        ]);
+
+        $audit = app(SalesHistoryAudit::class);
+        $errors = $audit->audit((int) $this->company->id);
+
+        // Clean up injected lines
+        DB::table('posting_lines')->whereIn('id', [$line1Id, $line2Id])->delete();
+
+        $this->assertNotEmpty($errors, 'Audit must NOT let equal debit and credit cancel each other out on base-only adjustments');
     }
 }

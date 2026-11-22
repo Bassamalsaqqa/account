@@ -316,4 +316,7 @@ return [
     'return_to_draft' => 'Return to Draft',
     'received_amount' => 'Received Amount',
     'allocated_amount' => 'Allocated Amount',
+    'return_total_unrepresentable' => 'Sales return total component cannot be represented at the current exchange rate.',
+    'return_tax_unrepresentable' => 'Sales return tax component cannot be represented at the current exchange rate.',
+    'return_revenue_unrepresentable' => 'Sales return revenue component cannot be represented at the current exchange rate.',
 ];

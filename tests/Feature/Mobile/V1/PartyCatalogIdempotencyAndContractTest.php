@@ -1535,6 +1535,7 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
         // Assert query count across multiple free purchases is bounded with no duplicate lazy reloads
         $lineTableQueries = collect($queries)->filter(fn ($q) => str_contains($q['query'], 'purchase_lines'));
         $this->assertLessThanOrEqual(2, $lineTableQueries->count(), 'Query count across multiple free purchases must remain bounded with no duplicate lazy reloads');
+        $this->assertLessThanOrEqual(18, count($queries), 'Total query count across multiple free purchases must remain strictly bounded');
     }
 
     public function test_customer_update_snapshot_preserves_six_decimal_credit_limit_exact6(): void

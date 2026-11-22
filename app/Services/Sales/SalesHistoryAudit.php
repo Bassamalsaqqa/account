@@ -8,6 +8,7 @@ use App\Services\Inventory\HistoricalSaleCost;
 use App\Services\Money\PaymentAllocationIntent;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /** Reads immutable posting/movement facts independently of document caches. */
@@ -123,8 +124,10 @@ final class SalesHistoryAudit
                 $debitComponents = [];
                 /** @var array<string, BigDecimal> $creditComponents */
                 $creditComponents = [];
-                /** @var array<int, BigDecimal> $baseAdjustments */
-                $baseAdjustments = [];
+                /** @var array<int, BigDecimal> $baseDebitAdjustments */
+                $baseDebitAdjustments = [];
+                /** @var array<int, BigDecimal> $baseCreditAdjustments */
+                $baseCreditAdjustments = [];
 
                 if ($source === 'sales_invoice') {
                     $arAcc = (int) ($accounts['accounts_receivable'] ?? 0);
@@ -140,14 +143,22 @@ final class SalesHistoryAudit
                             $debitComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
                         if (! $arResidual->isZero()) {
-                            $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
+                            if ($arResidual->isPositive()) {
+                                $baseDebitAdjustments[$arAcc] = ($baseDebitAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
+                            } else {
+                                $baseCreditAdjustments[$arAcc] = ($baseCreditAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual->abs());
+                            }
                         }
                     } elseif ($grandTotalBase->isNegative()) {
                         if ($arComputed->isPositive()) {
                             $creditComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
                         if (! $arResidual->isZero()) {
-                            $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->minus($arResidual);
+                            if ($arResidual->isPositive()) {
+                                $baseCreditAdjustments[$arAcc] = ($baseCreditAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
+                            } else {
+                                $baseDebitAdjustments[$arAcc] = ($baseDebitAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual->abs());
+                            }
                         }
                     }
 
@@ -157,14 +168,22 @@ final class SalesHistoryAudit
                             $creditComponents["{$revAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
                         if (! $revResidual->isZero()) {
-                            $baseAdjustments[$revAcc] = ($baseAdjustments[$revAcc] ?? BigDecimal::zero())->minus($revResidual);
+                            if ($revResidual->isPositive()) {
+                                $baseCreditAdjustments[$revAcc] = ($baseCreditAdjustments[$revAcc] ?? BigDecimal::zero())->plus($revResidual);
+                            } else {
+                                $baseDebitAdjustments[$revAcc] = ($baseDebitAdjustments[$revAcc] ?? BigDecimal::zero())->plus($revResidual->abs());
+                            }
                         }
                     } elseif ($revenueBase->isNegative()) {
                         if ($revComputed->isPositive()) {
                             $debitComponents["{$revAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
                         if (! $revResidual->isZero()) {
-                            $baseAdjustments[$revAcc] = ($baseAdjustments[$revAcc] ?? BigDecimal::zero())->plus($revResidual);
+                            if ($revResidual->isPositive()) {
+                                $baseDebitAdjustments[$revAcc] = ($baseDebitAdjustments[$revAcc] ?? BigDecimal::zero())->plus($revResidual);
+                            } else {
+                                $baseCreditAdjustments[$revAcc] = ($baseCreditAdjustments[$revAcc] ?? BigDecimal::zero())->plus($revResidual->abs());
+                            }
                         }
                     }
 
@@ -180,15 +199,19 @@ final class SalesHistoryAudit
                         }
                         $baseDiff = $taxGroupBase->minus($computedBase);
                         if (! $baseDiff->isZero()) {
-                            $baseAdjustments[(int) $taxAccId] = ($baseAdjustments[(int) $taxAccId] ?? BigDecimal::zero())->minus($baseDiff);
+                            if ($baseDiff->isPositive()) {
+                                $baseCreditAdjustments[(int) $taxAccId] = ($baseCreditAdjustments[(int) $taxAccId] ?? BigDecimal::zero())->plus($baseDiff);
+                            } else {
+                                $baseDebitAdjustments[(int) $taxAccId] = ($baseDebitAdjustments[(int) $taxAccId] ?? BigDecimal::zero())->plus($baseDiff->abs());
+                            }
                         }
                     }
 
                     $cogsAcc = (int) ($accounts['cogs'] ?? 0);
                     $invAcc = (int) ($accounts['inventory'] ?? 0);
                     if ($cogs->isPositive()) {
-                        $baseAdjustments[$cogsAcc] = ($baseAdjustments[$cogsAcc] ?? BigDecimal::zero())->plus($cogs);
-                        $baseAdjustments[$invAcc] = ($baseAdjustments[$invAcc] ?? BigDecimal::zero())->minus($cogs);
+                        $baseDebitAdjustments[$cogsAcc] = ($baseDebitAdjustments[$cogsAcc] ?? BigDecimal::zero())->plus($cogs);
+                        $baseCreditAdjustments[$invAcc] = ($baseCreditAdjustments[$invAcc] ?? BigDecimal::zero())->plus($cogs);
                     }
                 } else {
                     $arAcc = (int) ($accounts['accounts_receivable'] ?? 0);
@@ -204,14 +227,22 @@ final class SalesHistoryAudit
                             $creditComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
                         if (! $arResidual->isZero()) {
-                            $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->minus($arResidual);
+                            if ($arResidual->isPositive()) {
+                                $baseCreditAdjustments[$arAcc] = ($baseCreditAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
+                            } else {
+                                $baseDebitAdjustments[$arAcc] = ($baseDebitAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual->abs());
+                            }
                         }
                     } elseif ($grandTotalBase->isNegative()) {
                         if ($arComputed->isPositive()) {
                             $debitComponents["{$arAcc}:{$curr}:{$rate}"] = $grandCurr->abs();
                         }
                         if (! $arResidual->isZero()) {
-                            $baseAdjustments[$arAcc] = ($baseAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
+                            if ($arResidual->isPositive()) {
+                                $baseDebitAdjustments[$arAcc] = ($baseDebitAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual);
+                            } else {
+                                $baseCreditAdjustments[$arAcc] = ($baseCreditAdjustments[$arAcc] ?? BigDecimal::zero())->plus($arResidual->abs());
+                            }
                         }
                     }
 
@@ -221,14 +252,22 @@ final class SalesHistoryAudit
                             $debitComponents["{$retAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
                         if (! $retResidual->isZero()) {
-                            $baseAdjustments[$retAcc] = ($baseAdjustments[$retAcc] ?? BigDecimal::zero())->plus($retResidual);
+                            if ($retResidual->isPositive()) {
+                                $baseDebitAdjustments[$retAcc] = ($baseDebitAdjustments[$retAcc] ?? BigDecimal::zero())->plus($retResidual);
+                            } else {
+                                $baseCreditAdjustments[$retAcc] = ($baseCreditAdjustments[$retAcc] ?? BigDecimal::zero())->plus($retResidual->abs());
+                            }
                         }
                     } elseif ($returnBase->isNegative()) {
                         if ($retComputed->isPositive()) {
                             $creditComponents["{$retAcc}:{$curr}:{$rate}"] = $subtotalCurr->abs();
                         }
                         if (! $retResidual->isZero()) {
-                            $baseAdjustments[$retAcc] = ($baseAdjustments[$retAcc] ?? BigDecimal::zero())->minus($retResidual);
+                            if ($retResidual->isPositive()) {
+                                $baseCreditAdjustments[$retAcc] = ($baseCreditAdjustments[$retAcc] ?? BigDecimal::zero())->plus($retResidual);
+                            } else {
+                                $baseDebitAdjustments[$retAcc] = ($baseDebitAdjustments[$retAcc] ?? BigDecimal::zero())->plus($retResidual->abs());
+                            }
                         }
                     }
 
@@ -252,6 +291,7 @@ final class SalesHistoryAudit
 
                     $taxRemBase = $tax;
                     $remGroups = count($taxComponents);
+                    $isHistorical = $document->posted_at !== null && Carbon::parse($document->posted_at)->lt(Carbon::parse('2026-11-21 00:00:00+00:00'));
                     foreach ($taxComponents as $tAccId => $tComp) {
                         $remGroups--;
                         $gBase = $remGroups === 0 ? $taxRemBase : $tComp['net']->multipliedBy($document->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
@@ -263,6 +303,8 @@ final class SalesHistoryAudit
                             if ($posBase->isPositive()) {
                                 $debitComponents["{$tAccId}:{$curr}:{$rate}"] = ($debitComponents["{$tAccId}:{$curr}:{$rate}"] ?? BigDecimal::zero())->plus($tComp['pos']);
                                 $signedBaseSum = $signedBaseSum->plus($posBase);
+                            } elseif (! $isHistorical) {
+                                $errors[] = "$label unrepresentable currency tax component with zero base.";
                             }
                         }
                         if ($tComp['neg']->isNegative()) {
@@ -270,26 +312,33 @@ final class SalesHistoryAudit
                             if ($negBase->isPositive()) {
                                 $creditComponents["{$tAccId}:{$curr}:{$rate}"] = ($creditComponents["{$tAccId}:{$curr}:{$rate}"] ?? BigDecimal::zero())->plus($tComp['neg']->abs());
                                 $signedBaseSum = $signedBaseSum->minus($negBase);
+                            } elseif (! $isHistorical) {
+                                $errors[] = "$label unrepresentable currency tax component with zero base.";
                             }
                         }
                         $bResidual = $gBase->minus($signedBaseSum);
                         if (! $bResidual->isZero()) {
-                            $baseAdjustments[$tAccId] = ($baseAdjustments[$tAccId] ?? BigDecimal::zero())->plus($bResidual);
+                            if ($bResidual->isPositive()) {
+                                $baseDebitAdjustments[$tAccId] = ($baseDebitAdjustments[$tAccId] ?? BigDecimal::zero())->plus($bResidual);
+                            } else {
+                                $baseCreditAdjustments[$tAccId] = ($baseCreditAdjustments[$tAccId] ?? BigDecimal::zero())->plus($bResidual->abs());
+                            }
                         }
                     }
 
                     $cogsAcc = (int) ($accounts['cogs'] ?? 0);
                     $invAcc = (int) ($accounts['inventory'] ?? 0);
                     if ($cogs->isPositive()) {
-                        $baseAdjustments[$cogsAcc] = ($baseAdjustments[$cogsAcc] ?? BigDecimal::zero())->minus($cogs);
-                        $baseAdjustments[$invAcc] = ($baseAdjustments[$invAcc] ?? BigDecimal::zero())->plus($cogs);
+                        $baseDebitAdjustments[$invAcc] = ($baseDebitAdjustments[$invAcc] ?? BigDecimal::zero())->plus($cogs);
+                        $baseCreditAdjustments[$cogsAcc] = ($baseCreditAdjustments[$cogsAcc] ?? BigDecimal::zero())->plus($cogs);
                     }
                 }
 
                 $expectedCurrency = [
                     'debit_components' => $debitComponents,
                     'credit_components' => $creditComponents,
-                    'base_adjustments' => $baseAdjustments,
+                    'base_debit_adjustments' => $baseDebitAdjustments,
+                    'base_credit_adjustments' => $baseCreditAdjustments,
                 ];
 
                 $errors = array_merge($errors, $this->batch($companyId, (int) $document->posting_batch_id, $source, (int) $document->id, $expected, $expectedCurrency));
@@ -384,7 +433,8 @@ final class SalesHistoryAudit
         $actual = [];
         $actualDebitComponents = [];
         $actualCreditComponents = [];
-        $actualBaseAdjustments = [];
+        $actualBaseDebits = [];
+        $actualBaseCredits = [];
         $actualCurrencyFlat = [];
 
         foreach (DB::table('posting_lines')->where('posting_batch_id', $id)->get() as $line) {
@@ -425,7 +475,14 @@ final class SalesHistoryAudit
                     $errors[] = "$source [$sourceId] posting currency line with zero base.";
                 }
             } else {
-                $actualBaseAdjustments[(int) $line->ledger_account_id] = ($actualBaseAdjustments[(int) $line->ledger_account_id] ?? BigDecimal::zero())->plus($net);
+                $deb = BigDecimal::of($line->debit_base);
+                $cred = BigDecimal::of($line->credit_base);
+                if ($deb->isPositive()) {
+                    $actualBaseDebits[(int) $line->ledger_account_id] = ($actualBaseDebits[(int) $line->ledger_account_id] ?? BigDecimal::zero())->plus($deb);
+                }
+                if ($cred->isPositive()) {
+                    $actualBaseCredits[(int) $line->ledger_account_id] = ($actualBaseCredits[(int) $line->ledger_account_id] ?? BigDecimal::zero())->plus($cred);
+                }
             }
         }
 
@@ -435,13 +492,15 @@ final class SalesHistoryAudit
             }
         }
 
-        if (isset($expectedCurrency['debit_components']) || isset($expectedCurrency['credit_components']) || isset($expectedCurrency['base_adjustments'])) {
+        if (isset($expectedCurrency['debit_components']) || isset($expectedCurrency['credit_components']) || isset($expectedCurrency['base_debit_adjustments']) || isset($expectedCurrency['base_credit_adjustments']) || isset($expectedCurrency['base_adjustments'])) {
             /** @var array<string, BigDecimal> $expDebits */
             $expDebits = $expectedCurrency['debit_components'] ?? [];
             /** @var array<string, BigDecimal> $expCredits */
             $expCredits = $expectedCurrency['credit_components'] ?? [];
-            /** @var array<int, BigDecimal> $expBaseAdj */
-            $expBaseAdj = $expectedCurrency['base_adjustments'] ?? [];
+            /** @var array<int, BigDecimal> $expBaseDebits */
+            $expBaseDebits = $expectedCurrency['base_debit_adjustments'] ?? [];
+            /** @var array<int, BigDecimal> $expBaseCredits */
+            $expBaseCredits = $expectedCurrency['base_credit_adjustments'] ?? [];
 
             foreach (array_unique(array_merge(array_keys($expDebits), array_keys($actualDebitComponents))) as $key) {
                 if (! ($expDebits[$key] ?? BigDecimal::zero())->isEqualTo($actualDebitComponents[$key] ?? BigDecimal::zero())) {
@@ -453,9 +512,18 @@ final class SalesHistoryAudit
                     $errors[] = "$source [$sourceId] credit currency component [$key] mismatch.";
                 }
             }
-            foreach (array_unique(array_merge(array_keys($expBaseAdj), array_keys($actualBaseAdjustments))) as $account) {
-                if (! ($expBaseAdj[$account] ?? BigDecimal::zero())->isEqualTo($actualBaseAdjustments[$account] ?? BigDecimal::zero())) {
-                    $errors[] = "$source [$sourceId] base adjustment account [$account] mismatch.";
+            if (! empty($expBaseDebits) || ! empty($actualBaseDebits)) {
+                foreach (array_unique(array_merge(array_keys($expBaseDebits), array_keys($actualBaseDebits))) as $account) {
+                    if (! ($expBaseDebits[$account] ?? BigDecimal::zero())->isEqualTo($actualBaseDebits[$account] ?? BigDecimal::zero())) {
+                        $errors[] = "$source [$sourceId] base debit adjustment account [$account] mismatch.";
+                    }
+                }
+            }
+            if (! empty($expBaseCredits) || ! empty($actualBaseCredits)) {
+                foreach (array_unique(array_merge(array_keys($expBaseCredits), array_keys($actualBaseCredits))) as $account) {
+                    if (! ($expBaseCredits[$account] ?? BigDecimal::zero())->isEqualTo($actualBaseCredits[$account] ?? BigDecimal::zero())) {
+                        $errors[] = "$source [$sourceId] base credit adjustment account [$account] mismatch.";
+                    }
                 }
             }
         } elseif (! empty($expectedCurrency)) {

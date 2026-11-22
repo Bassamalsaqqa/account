@@ -138,7 +138,11 @@ class PostSalesReturnAction implements StockEventOwner
             }
             $returnGrandCurrency = BigDecimal::of((string) $lockedReturn->grand_total_currency);
             $reliefBase = app(ReceivableBookValue::class)->relief($invoice, $returnGrandCurrency, (int) $lockedReturn->id);
-            app(SalesReturnAmounts::class)->validateRepresentability($fx, $returnGrandCurrency, $reliefBase, $taxCheck);
+            $taxTotalCurrency = BigDecimal::of((string) $lockedReturn->tax_total_currency);
+            $taxTotalBase = BigDecimal::of((string) $lockedReturn->tax_total_base);
+            $subtotalCurrency = $returnGrandCurrency->minus($taxTotalCurrency);
+            $subtotalBase = $reliefBase->minus($taxTotalBase);
+            app(SalesReturnAmounts::class)->validateRepresentability($fx, $returnGrandCurrency, $reliefBase, $taxCheck, $subtotalCurrency, $subtotalBase);
 
             // 5. Stock restoration at exact original historical sale cost
             $totalCogsBase = BigDecimal::zero();

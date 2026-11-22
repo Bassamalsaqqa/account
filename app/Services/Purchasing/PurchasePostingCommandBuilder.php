@@ -9,8 +9,10 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Models\Company;
+use App\Models\InventoryLot;
 use App\Models\LedgerAccount;
 use App\Models\PostingBatch;
+use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -27,18 +29,18 @@ final class PurchasePostingCommandBuilder
         $inventoryCurrency = BigDecimal::zero();
         $taxes = [];
         $movementCount = 0;
-        if (! $requirePosted || ! $purchase->relationLoaded('lines')) {
+        if (! $purchase->relationLoaded('lines')) {
             $purchase->setRelation('lines', $purchase->lines()->withoutGlobalScopes()->get());
         }
         foreach ($purchase->lines as $line) {
-            if ((int) $line->company_id !== (int) $purchase->company_id) {
+            if ((int) $line->company_id !== (int) $purchase->company_id || (int) $line->purchase_id !== (int) $purchase->id) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
             }
-            if (! $requirePosted || ! $line->relationLoaded('lots')) {
+            if (! $line->relationLoaded('lots')) {
                 $line->setRelation('lots', $line->lots()->withoutGlobalScopes()->get());
             }
             foreach ($line->lots as $lot) {
-                if ((int) $lot->company_id !== (int) $purchase->company_id) {
+                if ((int) $lot->company_id !== (int) $purchase->company_id || (int) $lot->purchase_line_id !== (int) $line->id) {
                     throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
                 }
             }
@@ -46,22 +48,50 @@ final class PurchasePostingCommandBuilder
         if ($purchase->lines->isEmpty()) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
+
+        $allMovements = StockMovement::withoutGlobalScopes()
+            ->where('company_id', $purchase->company_id)
+            ->where('source_type', 'purchase')
+            ->where('source_id', $purchase->id)
+            ->orderBy('id')
+            ->get();
+        $movementsByLine = $allMovements->groupBy('source_line_id');
+
+        $lotIds = $allMovements->pluck('lot_id')->filter()->unique()->all();
+        $batchedLots = ! empty($lotIds)
+            ? InventoryLot::withoutGlobalScopes()
+                ->where('company_id', $purchase->company_id)
+                ->whereIn('id', $lotIds)
+                ->get()
+                ->keyBy('id')
+                ->all()
+            : [];
+
+        $productUnitIds = $purchase->lines->pluck('product_unit_id')->filter()->unique()->all();
+        $batchedUnitIds = ! empty($productUnitIds)
+            ? ProductUnit::withoutGlobalScopes()
+                ->where('company_id', $purchase->company_id)
+                ->whereIn('id', $productUnitIds)
+                ->pluck('unit_id', 'id')
+                ->all()
+            : [];
+
         foreach ($purchase->lines as $line) {
             $expected = app(PurchaseAcquisitionValue::class)->line($line, $line->purchase_tax_account_id);
             if ($line->stock_movement_id === null || $line->inventory_unit_cost_base === null
                 || ! BigDecimal::of($line->inventory_unit_cost_base)->isEqualTo(app(PurchaseAcquisitionValue::class)->unitCost($line, $expected))) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
             }
-            $movements = StockMovement::where('company_id', $purchase->company_id)->where('source_type', 'purchase')
-                ->where('source_id', $purchase->id)->where('source_line_id', $line->id)->orderBy('id')->get();
+            $movements = $movementsByLine->get($line->id, collect());
             if ($movements->isEmpty() || (int) $movements->first()->id !== (int) $line->stock_movement_id
                 || $movements->count() !== max(1, $line->lots->count())) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
             }
             $actual = BigDecimal::zero();
             $movementCount += $movements->count();
+            $preloadedUnitId = $batchedUnitIds[$line->product_unit_id] ?? null;
             foreach ($movements as $movement) {
-                $actual = $actual->plus(app(PurchaseStockProvenance::class)->value($movement, $requirePosted, $purchase, $line));
+                $actual = $actual->plus(app(PurchaseStockProvenance::class)->value($movement, $requirePosted, $purchase, $line, $batchedLots, $preloadedUnitId));
             }
             if (! $actual->isEqualTo($expected)) {
                 throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
@@ -85,7 +115,7 @@ final class PurchasePostingCommandBuilder
             $commercialTotalCurrency = $commercialTotalCurrency->plus($tax['currency']);
         }
         if (! $commercialTotalBase->isEqualTo($purchase->grand_total_base) || ! $commercialTotalCurrency->isEqualTo($purchase->grand_total_currency)
-            || StockMovement::where('company_id', $purchase->company_id)->where('source_type', 'purchase')->where('source_id', $purchase->id)->count() !== $movementCount) {
+            || $allMovements->count() !== $movementCount) {
             throw new InvalidArgumentException(__('purchasing.post_integrity_failed'));
         }
         // Like zero-value purchase returns, a free receipt has stock provenance

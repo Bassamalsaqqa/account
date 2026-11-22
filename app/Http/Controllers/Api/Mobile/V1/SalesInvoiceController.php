@@ -101,9 +101,17 @@ final class SalesInvoiceController extends Controller
         }
 
         $statusFilter = null;
+        /** @var mixed $rawStatus */
         $rawStatus = $request->query('status') ?? $request->query('payment_status');
         if ($rawStatus !== null) {
-            $trimmedStatus = trim((string) $rawStatus);
+            if (is_array($rawStatus) || ! is_string($rawStatus)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Status parameter must be a string.',
+                    status: 422
+                );
+            }
+            $trimmedStatus = trim($rawStatus);
             if ($trimmedStatus !== '') {
                 $statusUpper = strtoupper($trimmedStatus);
                 if (! in_array($statusUpper, ['DRAFT', 'POSTED', 'VOID', 'PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {

@@ -85,25 +85,64 @@ final class SalesReturnAmounts
     }
 
     /**
-     * Validate that return tax and AR totals are representable in base currency at posting exchange rate.
+     * Validate that return gross, net revenue, and tax components are representable in base currency at posting exchange rate.
      * Shared canonical rule for preview, web post, and native post:
-     * 1. Positive return total must produce positive base relief.
-     * 2. Grouped tax components by ledger account and sign must not round to zero base.
+     * 1. Positive return gross total must produce positive event base at the exchange rate, AND positive cumulative base relief.
+     * 2. Non-zero net revenue/subtotal must produce non-zero event base at the exchange rate, AND non-zero base.
+     * 3. Grouped tax components by ledger account and sign must produce positive base conversion at the exchange rate.
      *
-     * @param  array<int, array{pos: BigDecimal, neg: BigDecimal}>  $taxComponents
+     * @param  array<int, array{pos: BigDecimal, neg: BigDecimal, net?: BigDecimal}>  $taxComponents
      */
-    public function validateRepresentability(ExchangeRate $fx, BigDecimal $grandTotalCurrency, BigDecimal $grandTotalBase, array $taxComponents): void
-    {
-        if ($grandTotalCurrency->isPositive() && $grandTotalBase->isZero()) {
-            throw new InvalidArgumentException('Sales return total component cannot be represented at the current exchange rate.');
+    public function validateRepresentability(
+        ExchangeRate $fx,
+        BigDecimal $grandTotalCurrency,
+        BigDecimal $grandTotalBase,
+        array $taxComponents,
+        ?BigDecimal $subtotalCurrency = null,
+        ?BigDecimal $subtotalBase = null
+    ): void {
+        if ($grandTotalCurrency->isPositive()) {
+            $eventGrossBase = $fx->toBase(MoneyAmount::from($grandTotalCurrency));
+            if ($eventGrossBase->isZero() || $grandTotalBase->isZero()) {
+                throw new InvalidArgumentException(__('sales.return_total_unrepresentable'));
+            }
+        }
+
+        if ($subtotalCurrency === null) {
+            $taxTotalCurrency = BigDecimal::zero();
+            foreach ($taxComponents as $comp) {
+                $taxTotalCurrency = $taxTotalCurrency->plus($comp['net'] ?? $comp['pos']->plus($comp['neg']));
+            }
+            $subtotalCurrency = $grandTotalCurrency->minus($taxTotalCurrency);
+        }
+        if ($subtotalBase === null) {
+            $taxTotalBase = BigDecimal::zero();
+            foreach ($taxComponents as $comp) {
+                $posB = $fx->toBase(MoneyAmount::from($comp['pos']))->getAmount();
+                $negB = $fx->toBase(MoneyAmount::from($comp['neg']->abs()))->getAmount();
+                $taxTotalBase = $taxTotalBase->plus($posB->minus($negB));
+            }
+            $subtotalBase = $grandTotalBase->minus($taxTotalBase);
+        }
+
+        if ($subtotalCurrency->isPositive()) {
+            $eventNetBase = $fx->toBase(MoneyAmount::from($subtotalCurrency));
+            if ($eventNetBase->isZero() || $subtotalBase->isLessThanOrEqualTo(0)) {
+                throw new InvalidArgumentException(__('sales.return_revenue_unrepresentable'));
+            }
+        } elseif ($subtotalCurrency->isNegative()) {
+            $eventNetBase = $fx->toBase(MoneyAmount::from($subtotalCurrency->abs()));
+            if ($eventNetBase->isZero() || $subtotalBase->isGreaterThanOrEqualTo(0)) {
+                throw new InvalidArgumentException(__('sales.return_revenue_unrepresentable'));
+            }
         }
 
         foreach ($taxComponents as $comp) {
             if ($comp['pos']->isPositive() && $fx->toBase(MoneyAmount::from($comp['pos']))->isZero()) {
-                throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
+                throw new InvalidArgumentException(__('sales.return_tax_unrepresentable'));
             }
             if ($comp['neg']->isNegative() && $fx->toBase(MoneyAmount::from($comp['neg']->abs()))->isZero()) {
-                throw new InvalidArgumentException('Sales return tax component cannot be represented at the current exchange rate.');
+                throw new InvalidArgumentException(__('sales.return_tax_unrepresentable'));
             }
         }
     }

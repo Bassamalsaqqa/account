@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Models\Vendor;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Purchasing\VendorCatalogService;
+use App\Services\Purchasing\VendorFinancialRead;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Mobile\Receipt\NativeWriteContextResolver;
 use App\Support\Tenancy\CompanyContext;
@@ -96,37 +97,40 @@ final class SupplierController extends Controller
         $vendorIds = $records->pluck('id')->all();
         $balances = [];
         $balancesLoaded = false;
-        try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $balances = $balanceQuery->execute($vendorIds);
-            $balancesLoaded = true;
-        } catch (Throwable) {
-            // Keep empty on error
+        $canReadFinancial = app(VendorFinancialRead::class)->allows((int) $company->id);
+        if ($canReadFinancial) {
+            try {
+                app(CompanyContext::class)->setCompany($company, $user);
+                $balances = $balanceQuery->execute($vendorIds);
+                $balancesLoaded = true;
+            } catch (Throwable) {
+                // Keep empty on error
+            }
         }
 
         $baseCurr = (string) $company->base_currency_code;
         $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
 
-        $suppliers = $records->map(function (Vendor $v) use ($balances, $balancesLoaded, $baseCurr, $cmu): array {
+        $suppliers = $records->map(function (Vendor $v) use ($balances, $balancesLoaded, $canReadFinancial, $baseCurr, $cmu): array {
             $balData = $balances[$v->id] ?? null;
             $totalPayable = null;
             $totalAdvance = null;
 
-            if ($balancesLoaded) {
+            if ($canReadFinancial && $balancesLoaded) {
+                $zeroFormatted = (string) BigDecimal::zero()->toScale($cmu);
                 if ($balData !== null && isset($balData[$baseCurr])) {
                     $b = BigDecimal::of($balData[$baseCurr]['balance']);
                     if ($b->isPositive()) {
                         $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
-                        $totalAdvance = '0.'.str_repeat('0', $cmu);
+                        $totalAdvance = $zeroFormatted;
                     } elseif ($b->isNegative()) {
-                        $totalPayable = '0.'.str_repeat('0', $cmu);
+                        $totalPayable = $zeroFormatted;
                         $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
                     } else {
-                        $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
-                        $totalAdvance = '0.'.str_repeat('0', $cmu);
+                        $totalPayable = $zeroFormatted;
+                        $totalAdvance = $zeroFormatted;
                     }
                 } else {
-                    $zeroFormatted = '0.'.str_repeat('0', $cmu);
                     $totalPayable = $zeroFormatted;
                     $totalAdvance = $zeroFormatted;
                 }
@@ -207,29 +211,33 @@ final class SupplierController extends Controller
         $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
         $totalPayable = null;
         $totalAdvance = null;
-        try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $balances = $balanceQuery->execute([(int) $vendor->id]);
-            $balData = $balances[(int) $vendor->id] ?? null;
-            if ($balData !== null && isset($balData[$baseCurr])) {
-                $b = BigDecimal::of($balData[$baseCurr]['balance']);
-                if ($b->isPositive()) {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
-                    $totalAdvance = '0.'.str_repeat('0', $cmu);
-                } elseif ($b->isNegative()) {
-                    $totalPayable = '0.'.str_repeat('0', $cmu);
-                    $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+        $canReadFinancial = app(VendorFinancialRead::class)->allows((int) $company->id);
+
+        if ($canReadFinancial) {
+            try {
+                app(CompanyContext::class)->setCompany($company, $user);
+                $balances = $balanceQuery->execute([(int) $vendor->id]);
+                $balData = $balances[(int) $vendor->id] ?? null;
+                $zeroFormatted = (string) BigDecimal::zero()->toScale($cmu);
+                if ($balData !== null && isset($balData[$baseCurr])) {
+                    $b = BigDecimal::of($balData[$baseCurr]['balance']);
+                    if ($b->isPositive()) {
+                        $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                        $totalAdvance = $zeroFormatted;
+                    } elseif ($b->isNegative()) {
+                        $totalPayable = $zeroFormatted;
+                        $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+                    } else {
+                        $totalPayable = $zeroFormatted;
+                        $totalAdvance = $zeroFormatted;
+                    }
                 } else {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
-                    $totalAdvance = '0.'.str_repeat('0', $cmu);
+                    $totalPayable = $zeroFormatted;
+                    $totalAdvance = $zeroFormatted;
                 }
-            } else {
-                $zeroFormatted = '0.'.str_repeat('0', $cmu);
-                $totalPayable = $zeroFormatted;
-                $totalAdvance = $zeroFormatted;
+            } catch (Throwable) {
+                // Balance remains null when error/unauthorized - never invent zero
             }
-        } catch (Throwable) {
-            // Balance remains null when error/unauthorized - never invent zero
         }
 
         return response()->json([

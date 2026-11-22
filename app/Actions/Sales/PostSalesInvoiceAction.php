@@ -10,6 +10,7 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
+use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Customer;
@@ -330,7 +331,7 @@ class PostSalesInvoiceAction implements StockEventOwner
             foreach ($lines as $invLine) {
                 $lineTaxCur = BigDecimal::of((string) $invLine->line_tax);
                 $lineTaxBase = BigDecimal::of((string) $invLine->line_tax_base);
-                if ($lineTaxBase->isPositive()) {
+                if (! $lineTaxCur->isZero()) {
                     $taxAccId = $taxOutputAccount->id;
                     if ($invLine->tax_rate_id !== null) {
                         $tr = TaxRate::where('company_id', $company->id)->where('id', $invLine->tax_rate_id)->first();
@@ -350,31 +351,79 @@ class PostSalesInvoiceAction implements StockEventOwner
                     $invLine->save();
                     if (! isset($taxesByAccount[$taxAccId])) {
                         $taxesByAccount[$taxAccId] = [
-                            'base' => BigDecimal::zero(),
+                            'pos' => BigDecimal::zero(),
+                            'neg' => BigDecimal::zero(),
+                            'net' => BigDecimal::zero(),
                             'currency' => BigDecimal::zero(),
                         ];
                     }
-                    $taxesByAccount[$taxAccId]['base'] = $taxesByAccount[$taxAccId]['base']->plus($lineTaxBase);
+                    if ($lineTaxCur->isPositive()) {
+                        $taxesByAccount[$taxAccId]['pos'] = $taxesByAccount[$taxAccId]['pos']->plus($lineTaxCur);
+                    } else {
+                        $taxesByAccount[$taxAccId]['neg'] = $taxesByAccount[$taxAccId]['neg']->plus($lineTaxCur);
+                    }
+                    $taxesByAccount[$taxAccId]['net'] = $taxesByAccount[$taxAccId]['net']->plus($lineTaxCur);
                     $taxesByAccount[$taxAccId]['currency'] = $taxesByAccount[$taxAccId]['currency']->plus($lineTaxCur);
                 }
             }
 
             $taxRemainingBase = $taxTotalBase;
             $taxRemainingGroups = count($taxesByAccount);
-            foreach ($taxesByAccount as $taxAccId => $taxAmts) {
+            foreach ($taxesByAccount as $taxAccId => $comp) {
                 $taxRemainingGroups--;
-                $taxAmts['base'] = $taxRemainingGroups === 0 ? $taxRemainingBase : $taxAmts['currency']->multipliedBy($lockedInvoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
-                $taxRemainingBase = $taxRemainingBase->minus($taxAmts['base']);
-                if ($taxAmts['base']->isPositive()) {
-                    app(SalesPostingLines::class)->append($postingLines,
-                        lineNumber: $lineNum++,
+                $groupBase = $taxRemainingGroups === 0 ? $taxRemainingBase : $comp['net']->multipliedBy($lockedInvoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                $taxRemainingBase = $taxRemainingBase->minus($groupBase);
+
+                $computedSignedCreditSum = BigDecimal::zero();
+
+                // 1a. Positive tax component: Cr Tax Output (credit)
+                if ($comp['pos']->isPositive()) {
+                    $posAmount = MoneyAmount::from($comp['pos']);
+                    $posBase = $fx->toBase($posAmount);
+                    if ($posBase->isPositive()) {
+                        $computedSignedCreditSum = $computedSignedCreditSum->plus($posBase->getAmount());
+                        $postingLines[] = new PostingLineCommand(
+                            lineNumber: count($postingLines) + 1,
+                            ledgerAccountId: $taxAccId,
+                            debitBase: MoneyAmount::zero(),
+                            creditBase: $posBase,
+                            transactionCurrencyCode: $currency,
+                            transactionAmount: $posAmount,
+                            exchangeRate: $fx,
+                            description: "Sales Invoice {$invoiceNumber} Output Tax",
+                        );
+                    }
+                }
+
+                // 1b. Negative tax component: Dr Tax Output (debit)
+                if ($comp['neg']->isNegative()) {
+                    $negAmount = MoneyAmount::from($comp['neg']->abs());
+                    $negBase = $fx->toBase($negAmount);
+                    if ($negBase->isPositive()) {
+                        $computedSignedCreditSum = $computedSignedCreditSum->minus($negBase->getAmount());
+                        $postingLines[] = new PostingLineCommand(
+                            lineNumber: count($postingLines) + 1,
+                            ledgerAccountId: $taxAccId,
+                            debitBase: $negBase,
+                            creditBase: MoneyAmount::zero(),
+                            transactionCurrencyCode: $currency,
+                            transactionAmount: $negAmount,
+                            exchangeRate: $fx,
+                            description: "Sales Invoice {$invoiceNumber} Output Tax Adjustment",
+                        );
+                    }
+                }
+
+                // 2. Base adjustment line represented separately if groupBase differs from computed signed credit base
+                $baseResidual = $groupBase->minus($computedSignedCreditSum);
+                if (! $baseResidual->isZero()) {
+                    $residualCredit = $baseResidual->isPositive();
+                    $postingLines[] = new PostingLineCommand(
+                        lineNumber: count($postingLines) + 1,
                         ledgerAccountId: $taxAccId,
-                        debitBase: MoneyAmount::from('0.000000'),
-                        creditBase: MoneyAmount::from((string) $taxAmts['base']->toScale(6)),
-                        transactionCurrencyCode: $currency,
-                        transactionAmount: MoneyAmount::from((string) $taxAmts['currency']->toScale(6)),
-                        exchangeRate: $fx,
-                        description: "Sales Invoice {$invoiceNumber} Output Tax",
+                        debitBase: $residualCredit ? MoneyAmount::zero() : MoneyAmount::from($baseResidual->abs()),
+                        creditBase: $residualCredit ? MoneyAmount::from($baseResidual->abs()) : MoneyAmount::zero(),
+                        description: "Sales Invoice {$invoiceNumber} Output Tax Base Adjustment",
                     );
                 }
             }

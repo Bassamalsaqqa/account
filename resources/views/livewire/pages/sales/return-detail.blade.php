@@ -1,4 +1,10 @@
 <div class="space-y-6">
+    @if(session()->has('error'))
+        <p role="alert" class="text-sm text-danger font-semibold bg-danger-bg p-3 rounded-control border border-danger/20">{{ session('error') }}</p>
+    @endif
+    @if(session()->has('success'))
+        <p role="status" class="text-sm text-success font-semibold bg-success-bg p-3 rounded-control border border-success/20">{{ session('success') }}</p>
+    @endif
     @foreach($this->correctionHistory as $link)
         <a href="{{ $link['url'] }}" class="touch-action text-sm underline">{{ $link['label'] }}</a>
     @endforeach

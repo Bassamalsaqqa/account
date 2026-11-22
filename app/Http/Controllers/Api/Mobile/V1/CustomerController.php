@@ -366,10 +366,37 @@ final class CustomerController extends Controller
                 status: 422
             );
         }
-        if (array_key_exists('credit_limit_exact', $payload) && ! array_key_exists('credit_limit', $payload)) {
-            $payload['credit_limit'] = $payload['credit_limit_exact'];
-        } elseif (array_key_exists('credit_limit_exact6', $payload) && ! array_key_exists('credit_limit', $payload)) {
-            $payload['credit_limit'] = $payload['credit_limit_exact6'];
+        $hasDisplay = array_key_exists('credit_limit', $payload);
+        $hasExact = array_key_exists('credit_limit_exact', $payload);
+        $hasExact6 = array_key_exists('credit_limit_exact6', $payload);
+
+        if ($hasDisplay && ($hasExact || $hasExact6)) {
+            $exactRaw = $hasExact ? $payload['credit_limit_exact'] : $payload['credit_limit_exact6'];
+            $displayRaw = $payload['credit_limit'];
+            if ($displayRaw !== null && $exactRaw !== null && trim((string) $displayRaw) !== '' && trim((string) $exactRaw) !== '') {
+                try {
+                    $displayDec = BigDecimal::of(trim((string) $displayRaw));
+                    $exactDec = BigDecimal::of(trim((string) $exactRaw));
+                    if (! $displayDec->isEqualTo($exactDec)) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'Conflicting credit_limit and exact alias values supplied.',
+                            status: 422
+                        );
+                    }
+                } catch (Throwable) {
+                    // Let subsequent validation report formatting errors
+                }
+            } elseif ($displayRaw !== $exactRaw) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Conflicting credit_limit and exact alias values supplied.',
+                    status: 422
+                );
+            }
+        }
+        if (($hasExact || $hasExact6) && (! $hasDisplay || $payload['credit_limit'] === null)) {
+            $payload['credit_limit'] = $hasExact ? $payload['credit_limit_exact'] : $payload['credit_limit_exact6'];
         }
         if (array_key_exists('credit_limit', $payload)) {
             $rawLimit = $payload['credit_limit'];
@@ -431,6 +458,7 @@ final class CustomerController extends Controller
                 $normalizedPayload['credit_limit'] = (string) BigDecimal::of((string) $normalizedPayload['credit_limit'])->toScale(6);
             }
         }
+        unset($normalizedPayload['credit_limit_exact'], $normalizedPayload['credit_limit_exact6']);
         ksort($normalizedPayload);
 
         $canonicalPayload = [
@@ -601,10 +629,37 @@ final class CustomerController extends Controller
                 status: 422
             );
         }
-        if (array_key_exists('credit_limit_exact', $payload) && ! array_key_exists('credit_limit', $payload)) {
-            $payload['credit_limit'] = $payload['credit_limit_exact'];
-        } elseif (array_key_exists('credit_limit_exact6', $payload) && ! array_key_exists('credit_limit', $payload)) {
-            $payload['credit_limit'] = $payload['credit_limit_exact6'];
+        $hasDisplay = array_key_exists('credit_limit', $payload);
+        $hasExact = array_key_exists('credit_limit_exact', $payload);
+        $hasExact6 = array_key_exists('credit_limit_exact6', $payload);
+
+        if ($hasDisplay && ($hasExact || $hasExact6)) {
+            $exactRaw = $hasExact ? $payload['credit_limit_exact'] : $payload['credit_limit_exact6'];
+            $displayRaw = $payload['credit_limit'];
+            if ($displayRaw !== null && $exactRaw !== null && trim((string) $displayRaw) !== '' && trim((string) $exactRaw) !== '') {
+                try {
+                    $displayDec = BigDecimal::of(trim((string) $displayRaw));
+                    $exactDec = BigDecimal::of(trim((string) $exactRaw));
+                    if (! $displayDec->isEqualTo($exactDec)) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'Conflicting credit_limit and exact alias values supplied.',
+                            status: 422
+                        );
+                    }
+                } catch (Throwable) {
+                    // Let subsequent validation report formatting errors
+                }
+            } elseif ($displayRaw !== $exactRaw) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Conflicting credit_limit and exact alias values supplied.',
+                    status: 422
+                );
+            }
+        }
+        if (($hasExact || $hasExact6) && (! $hasDisplay || $payload['credit_limit'] === null)) {
+            $payload['credit_limit'] = $hasExact ? $payload['credit_limit_exact'] : $payload['credit_limit_exact6'];
         }
         if (array_key_exists('credit_limit', $payload)) {
             $rawLimit = $payload['credit_limit'];
@@ -659,6 +714,7 @@ final class CustomerController extends Controller
                 $normalizedPayload['credit_limit'] = (string) BigDecimal::of((string) $normalizedPayload['credit_limit'])->toScale(6);
             }
         }
+        unset($normalizedPayload['credit_limit_exact'], $normalizedPayload['credit_limit_exact6']);
         ksort($normalizedPayload);
 
         $canonicalPayload = [

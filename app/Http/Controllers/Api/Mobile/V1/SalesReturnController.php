@@ -8,6 +8,7 @@ use App\Actions\Sales\ExecuteNativeSalesReturnAction;
 use App\Actions\Sales\SalesReturnInput;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
+use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
@@ -150,8 +151,18 @@ final class SalesReturnController extends Controller
                     ];
                 }
 
+                $taxTotalCurrency = BigDecimal::zero();
+                $taxTotalBase = BigDecimal::zero();
+                foreach ($taxComponents as $comp) {
+                    $taxTotalCurrency = $taxTotalCurrency->plus($comp['pos']->plus($comp['neg']));
+                    $posB = $fx->toBase(MoneyAmount::from($comp['pos']))->getAmount();
+                    $negB = $fx->toBase(MoneyAmount::from($comp['neg']->abs()))->getAmount();
+                    $taxTotalBase = $taxTotalBase->plus($posB->minus($negB));
+                }
                 $reliefBase = app(ReceivableBookValue::class)->relief($invoice, $totalReturnAmount);
-                app(SalesReturnAmounts::class)->validateRepresentability($fx, $totalReturnAmount, $reliefBase, $taxComponents);
+                $subtotalCurrency = $totalReturnAmount->minus($taxTotalCurrency);
+                $subtotalBase = $reliefBase->minus($taxTotalBase);
+                app(SalesReturnAmounts::class)->validateRepresentability($fx, $totalReturnAmount, $reliefBase, $taxComponents, $subtotalCurrency, $subtotalBase);
 
                 $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
 
@@ -252,6 +263,8 @@ final class SalesReturnController extends Controller
             return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
         } catch (IdempotencyConflictException $e) {
             return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
+        } catch (\InvalidArgumentException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',

@@ -316,4 +316,7 @@ return [
     'return_to_draft' => 'إعادة إلى مسودة',
     'received_amount' => 'المبلغ المقبوض',
     'allocated_amount' => 'المبلغ المخصص',
+    'return_total_unrepresentable' => 'لا يمكن تمثيل إجمالي مردود المبيعات بسعر الصرف الحالي.',
+    'return_tax_unrepresentable' => 'لا يمكن تمثيل بند الضريبة لمردود المبيعات بسعر الصرف الحالي.',
+    'return_revenue_unrepresentable' => 'لا يمكن تمثيل بند الإيراد لمردود المبيعات بسعر الصرف الحالي.',
 ];

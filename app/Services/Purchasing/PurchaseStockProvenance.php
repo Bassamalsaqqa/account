@@ -15,8 +15,17 @@ use InvalidArgumentException;
 /** Read-only validation shared by completion, retries and inventory history replay. */
 final class PurchaseStockProvenance
 {
-    public function value(StockMovement $movement, bool $requirePosted = true, ?Purchase $purchase = null, ?PurchaseLine $line = null): BigDecimal
-    {
+    /**
+     * @param  array<int, InventoryLot>|null  $batchedLots
+     */
+    public function value(
+        StockMovement $movement,
+        bool $requirePosted = true,
+        ?Purchase $purchase = null,
+        ?PurchaseLine $line = null,
+        ?array $batchedLots = null,
+        ?int $preloadedUnitId = null
+    ): BigDecimal {
         $purchase = ($purchase !== null && (int) $purchase->id === (int) $movement->source_id && (int) $purchase->company_id === (int) $movement->company_id)
             ? $purchase
             : Purchase::withoutGlobalScopes()->where('company_id', $movement->company_id)->find($movement->source_id);
@@ -38,14 +47,33 @@ final class PurchaseStockProvenance
             $this->fail();
         }
         $unitCost = app(PurchaseAcquisitionValue::class)->unitCost($line, $value);
-        $unitId = $line->relationLoaded('productUnit') ? $line->productUnit?->unit_id : $line->productUnit()->withoutGlobalScopes()->where('company_id', $line->company_id)->value('unit_id');
+        if ($preloadedUnitId !== null) {
+            $unitId = $preloadedUnitId;
+        } elseif ($line->relationLoaded('productUnit') && $line->productUnit !== null
+            && (int) $line->productUnit->company_id === (int) $line->company_id
+            && (int) $line->productUnit->id === (int) $line->product_unit_id
+            && (int) $line->productUnit->product_id === (int) $line->product_id) {
+            $unitId = $line->productUnit->unit_id;
+        } else {
+            $unitId = $line->productUnit()->withoutGlobalScopes()->where('company_id', $line->company_id)->value('unit_id');
+        }
         if (! BigDecimal::of($movement->unit_cost_base)->isEqualTo($unitCost)
             || ! BigDecimal::of($movement->conversion_to_base)->isEqualTo($line->unit_conversion_ratio)
             || (int) $movement->unit_id !== (int) $unitId) {
             $this->fail();
         }
-        $lots = $line->relationLoaded('lots') ? $line->lots : $line->lots()->withoutGlobalScopes()->where('company_id', $line->company_id)->get();
-        $line->setRelation('lots', $lots);
+        if ($line->relationLoaded('lots')) {
+            $lots = $line->lots;
+            foreach ($lots as $l) {
+                if ((int) $l->company_id !== (int) $line->company_id
+                    || (int) $l->purchase_line_id !== (int) $line->id) {
+                    $this->fail();
+                }
+            }
+        } else {
+            $lots = $line->lots()->withoutGlobalScopes()->where('company_id', $line->company_id)->get();
+            $line->setRelation('lots', $lots);
+        }
         $quantity = $line->quantity;
         $base = $line->quantity_base;
         if ($lots->isNotEmpty()) {
@@ -54,7 +82,9 @@ final class PurchaseStockProvenance
                 $this->fail();
             }
             $intent = $lots[$index];
-            $lot = InventoryLot::withoutGlobalScopes()->where('company_id', $purchase->company_id)->find($movement->lot_id);
+            $lot = $batchedLots !== null
+                ? ($batchedLots[$movement->lot_id] ?? null)
+                : InventoryLot::withoutGlobalScopes()->where('company_id', $purchase->company_id)->find($movement->lot_id);
             if ($lot === null || (int) $intent->created_inventory_lot_id !== (int) $lot->id
                 || (int) $lot->product_id !== (int) $line->product_id || $lot->source_type !== 'purchase'
                 || (int) $lot->source_id !== (int) $purchase->id || (int) $lot->source_line_id !== (int) $line->id
