@@ -69,7 +69,7 @@
         @foreach(['due_date' => 'due_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-sm font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
         <div><label for="purchase-currency" class="block text-sm font-bold mb-1.5">{{ __('purchasing.currency') }}</label><select id="purchase-currency" wire:model.live="currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($currencies as $currency)<option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>@endforeach</select></div>
         @if ($currency_code !== $baseCurrencyCode)
-        <div><label for="purchase-rate" class="block text-sm font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label><input id="purchase-rate" wire:model.blur="exchange_rate" wire:change="updatedExchangeRate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/></div>
+        <div><label for="purchase-rate" class="block text-sm font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label><input id="purchase-rate" wire:model.blur="exchange_rate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/></div>
         @endif
         <div class=""><label for="purchase-warehouse" class="block text-sm font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label><select id="purchase-warehouse" wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_warehouse') }}</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>@endforeach</select></div>
         <div class=""><label for="purchase-locale" class="block text-sm font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
@@ -156,13 +156,13 @@
                                     {{ __('purchasing.last_purchased_hint', [
                                         'price' => $formattedHintPrice,
                                         'currency' => $lastPriceHints[$index]['currency_code'],
-                                        'unit' => $lastPriceHints[$index]['unit_name'] ?: 'â€”',
+                                        'unit' => $lastPriceHints[$index]['unit_name'] ?: '—',
                                         'date' => $lastPriceHints[$index]['purchase_date'],
                                     ]) }}
                                 </p>
                             @endif
                         </div>
-                    <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }} <span class="text-xs font-normal text-text-muted">({{ __('workflow.preview') }})</span></span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['preview_total'], $currency_code) : 'â€”' }} {{ $currency_code }}</bdi></output></div>
+                    <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }} <span class="text-xs font-normal text-text-muted">({{ __('workflow.preview') }})</span></span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['preview_total'], $currency_code) : '—' }} {{ $currency_code }}</bdi></output></div>
                 </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <div><label for="line-description-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.description') }}</label><input id="line-description-{{ $index }}" wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-11 px-2 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
@@ -233,7 +233,7 @@
             @foreach(['subtotal', 'discount', 'tax', 'total'] as $field)
                 <div>
                     <span class="text-xs text-text-secondary">{{ __('purchasing.'.$field) }}</span>
-                    <p class="font-bold mt-1"><bdi @if($documentTotalsValid && $field === 'total') data-document-total @endif>{{ $documentTotalsValid && isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals[$field], $currency_code) : 'â€”' }} {{ $currency_code }}</bdi></p>
+                    <p class="font-bold mt-1"><bdi @if($documentTotalsValid && $field === 'total') data-document-total @endif>{{ $documentTotalsValid && isset($totals[$field]) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals[$field], $currency_code) : '—' }} {{ $currency_code }}</bdi></p>
                 </div>
             @endforeach
         </div>
