@@ -51,6 +51,7 @@
                     :selected-label="$vendorLabel"
                     :placeholder="__('purchasing.select_vendor')"
                     :aria-label="__('purchasing.vendor')"
+                    :has-error="$errors->has('vendor_id')"
                     required
                 />
                 @if ($canManageVendors)
@@ -59,20 +60,60 @@
                     </button>
                 @endif
             </div>
-
+            @error('vendor_id') <span id="purchase-vendor-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
         </div>
-        @foreach(['purchase_date' => 'purchase_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-sm font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
+        <div>
+            <label for="purchase-purchase_date" class="block text-sm font-bold mb-1.5">{{ __('purchasing.purchase_date') }}</label>
+            <input id="purchase-purchase_date" @error('purchase_date') aria-invalid="true" aria-describedby="purchase-purchase_date-error" @enderror type="date" wire:model="purchase_date" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" required :disabled="documentBusy || saving"/>
+            @error('purchase_date') <span id="purchase-purchase_date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
         </div>
         <div class="border-t border-border pt-3">
             <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3">
-        <div class="sm:col-span-2"><label for="supplier-number" class="block text-sm font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label><input id="supplier-number" wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
-        @foreach(['due_date' => 'due_date'] as $field => $label)<div><label for="purchase-{{ $field }}" class="block text-sm font-bold mb-1.5">{{ __('purchasing.'.$label) }}</label><input id="purchase-{{ $field }}" type="date" wire:model="{{ $field }}" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" @if($field === 'purchase_date') required @endif  :disabled="documentBusy || saving"/></div>@endforeach
-        <div><label for="purchase-currency" class="block text-sm font-bold mb-1.5">{{ __('purchasing.currency') }}</label><select id="purchase-currency" wire:model.live="currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($currencies as $currency)<option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>@endforeach</select></div>
+        <div class="sm:col-span-2">
+            <label for="supplier-number" class="block text-sm font-bold mb-1.5">{{ __('purchasing.vendor_invoice_number') }}</label>
+            <input id="supplier-number" @error('vendor_invoice_number') aria-invalid="true" aria-describedby="supplier-number-error" @enderror wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"/>
+            @error('vendor_invoice_number') <span id="supplier-number-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
+        <div>
+            <label for="purchase-due_date" class="block text-sm font-bold mb-1.5">{{ __('purchasing.due_date') }}</label>
+            <input id="purchase-due_date" @error('due_date') aria-invalid="true" aria-describedby="purchase-due_date-error" @enderror type="date" wire:model="due_date" class="w-full min-w-0 h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"/>
+            @error('due_date') <span id="purchase-due_date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
+        <div>
+            <label for="purchase-currency" class="block text-sm font-bold mb-1.5">{{ __('purchasing.currency') }}</label>
+            <select id="purchase-currency" @error('currency_code') aria-invalid="true" aria-describedby="purchase-currency-error" @enderror wire:model.live="currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
+                @foreach($currencies as $currency)
+                    <option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>
+                @endforeach
+            </select>
+            @error('currency_code') <span id="purchase-currency-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
         @if ($currency_code !== $baseCurrencyCode)
-        <div><label for="purchase-rate" class="block text-sm font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label><input id="purchase-rate" wire:model.blur="exchange_rate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/></div>
+        <div>
+            <label for="purchase-rate" class="block text-sm font-bold mb-1.5">{{ __('purchasing.exchange_rate') }}</label>
+            <input id="purchase-rate" @error('exchange_rate') aria-invalid="true" aria-describedby="purchase-rate-error" @enderror wire:model.blur="exchange_rate" inputmode="decimal" dir="ltr" class="w-full h-11 px-3 border border-border rounded-control text-sm font-mono" :disabled="documentBusy || saving"/>
+            @error('exchange_rate') <span id="purchase-rate-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
         @endif
-        <div class=""><label for="purchase-warehouse" class="block text-sm font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label><select id="purchase-warehouse" wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_warehouse') }}</option>@foreach($warehouses as $warehouse)<option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>@endforeach</select></div>
-        <div class=""><label for="purchase-locale" class="block text-sm font-bold mb-1.5">{{ __('purchasing.document_language') }}</label><select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach($languages as $language)<option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>@endforeach</select></div>
+        <div>
+            <label for="purchase-warehouse" class="block text-sm font-bold mb-1.5">{{ __('purchasing.receiving_warehouse') }}</label>
+            <select id="purchase-warehouse" @error('warehouse_id') aria-invalid="true" aria-describedby="purchase-warehouse-error" @enderror wire:model="warehouse_id" required class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
+                <option value="">{{ __('purchasing.select_warehouse') }}</option>
+                @foreach($warehouses as $warehouse)
+                    <option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>
+                @endforeach
+            </select>
+            @error('warehouse_id') <span id="purchase-warehouse-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
+        <div>
+            <label for="purchase-locale" class="block text-sm font-bold mb-1.5">{{ __('purchasing.document_language') }}</label>
+            <select id="purchase-locale" wire:model="document_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
+                @foreach($languages as $language)
+                    <option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>
+                @endforeach
+            </select>
+        </div>
             </div>
         </div>
     </section>
@@ -123,9 +164,20 @@
                             :extra-args="[$index]"
                             :placeholder="__('purchasing.select_product')"
                             :aria-label="__('purchasing.product') . ' ' . ($index + 1)"
+                            :has-error="$errors->has('lines.'.$index.'.product_id')"
                         />
+                        @error('lines.'.$index.'.product_id') <span id="line-product-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                     </div>
-                    <div class="lg:col-span-2"><label for="line-unit-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.unit') }}</label><select id="line-unit-{{ $index }}" wire:change="changeUnit({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving"><option value="">{{ __('purchasing.select_unit') }}</option>@foreach($unitOptions[$index] ?? [] as $unit)<option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>@endforeach</select></div>
+                    <div class="lg:col-span-2">
+                        <label for="line-unit-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.unit') }}</label>
+                        <select id="line-unit-{{ $index }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="line-unit-{{ $index }}-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-sm" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving">
+                            <option value="">{{ __('purchasing.select_unit') }}</option>
+                            @foreach($unitOptions[$index] ?? [] as $unit)
+                                <option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>
+                            @endforeach
+                        </select>
+                        @error('lines.'.$index.'.product_unit_id') <span id="line-unit-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
+                    </div>
                     <div class="lg:col-span-2">
                         <label for="line-quantity-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.quantity') }}</label>
                         @php
@@ -143,32 +195,59 @@
                     </div>
                     <div class="lg:col-span-2">
                         <label for="line-unit_cost-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.unit_cost') }}</label>
-                        <input id="line-unit_cost-{{ $index }}" wire:model.blur="lines.{{ $index }}.unit_cost" wire:change="recalculate" inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/>
-                            @if(isset($lastPriceHints[$index]))
-                                <p class="text-xs text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
-                                    @php
-                                        $hintPrice = (string) $lastPriceHints[$index]['unit_cost'];
-                                        $hintTrimmed = strpos($hintPrice, '.') !== false ? rtrim(rtrim($hintPrice, '0'), '.') : $hintPrice;
-                                        $hintParts = explode('.', $hintTrimmed);
-                                        $hintDecimals = isset($hintParts[1]) ? strlen($hintParts[1]) : 0;
-                                        $formattedHintPrice = $hintDecimals > 2 ? $hintTrimmed : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($hintPrice, $lastPriceHints[$index]['currency_code']);
-                                    @endphp
-                                    {{ __('purchasing.last_purchased_hint', [
-                                        'price' => $formattedHintPrice,
-                                        'currency' => $lastPriceHints[$index]['currency_code'],
-                                        'unit' => $lastPriceHints[$index]['unit_name'] ?: '—',
-                                        'date' => $lastPriceHints[$index]['purchase_date'],
-                                    ]) }}
-                                </p>
-                            @endif
-                        </div>
+                        <input id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model.blur="lines.{{ $index }}.unit_cost" wire:change="recalculate" inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border rounded-control text-sm font-mono" :disabled="documentBusy || saving"/>
+                        @error('lines.'.$index.'.unit_cost') <span id="line-unit_cost-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
+                        @if(isset($lastPriceHints[$index]))
+                            <p class="text-xs text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
+                                @php
+                                    $hintPrice = (string) $lastPriceHints[$index]['unit_cost'];
+                                    $hintTrimmed = strpos($hintPrice, '.') !== false ? rtrim(rtrim($hintPrice, '0'), '.') : $hintPrice;
+                                    $hintParts = explode('.', $hintTrimmed);
+                                    $hintDecimals = isset($hintParts[1]) ? strlen($hintParts[1]) : 0;
+                                    $formattedHintPrice = $hintDecimals > 2 ? $hintTrimmed : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($hintPrice, $lastPriceHints[$index]['currency_code']);
+                                @endphp
+                                {{ __('purchasing.last_purchased_hint', [
+                                    'price' => $formattedHintPrice,
+                                    'currency' => $lastPriceHints[$index]['currency_code'],
+                                    'unit' => $lastPriceHints[$index]['unit_name'] ?: '—',
+                                    'date' => $lastPriceHints[$index]['purchase_date'],
+                                ]) }}
+                            </p>
+                        @endif
+                    </div>
                     <div class="col-span-2 lg:col-span-2"><span class="block text-xs text-text-secondary mb-1">{{ __('purchasing.line_total') }} <span class="text-xs font-normal text-text-muted">({{ __('workflow.preview') }})</span></span><output class="block h-11 px-2 py-3 text-sm font-bold bg-surface-soft rounded-control"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['preview_total'], $currency_code) : '—' }} {{ $currency_code }}</bdi></output></div>
                 </div>
                 <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div><label for="line-description-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.description') }}</label><input id="line-description-{{ $index }}" wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-11 px-2 border border-border rounded-control text-sm"  :disabled="documentBusy || saving"/></div>
-                    <div><label for="line-discount-type-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.discount') }}</label><select id="line-discount-type-{{ $index }}" wire:model.live="lines.{{ $index }}.discount_type" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving">@foreach(['none', 'percent', 'fixed'] as $type)<option value="{{ $type }}">{{ __('purchasing.discount_'.$type) }}</option>@endforeach</select></div>
-                    <div><label for="line-discount-value-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.discount_value') }}</label><input id="line-discount-value-{{ $index }}" wire:model.blur="lines.{{ $index }}.discount_value" wire:change="recalculate" dir="ltr" inputmode="decimal" class="w-full h-11 px-2 border border-border rounded-control text-sm font-mono"  :disabled="documentBusy || saving"/></div>
-                    @if($taxes->isNotEmpty())<div><label for="line-tax-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.tax') }}</label><select id="line-tax-{{ $index }}" wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving"><option value="">{{ __('purchasing.no_tax') }}</option>@foreach($taxes as $tax)<option value="{{ $tax->id }}">{{ $tax->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($tax->rate, 'ILS') }}%) — {{ __('refinement.tax_'.$tax->calculation) }}</option>@endforeach</select></div>@endif
+                    <div>
+                        <label for="line-description-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.description') }}</label>
+                        <input id="line-description-{{ $index }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="line-description-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving"/>
+                        @error('lines.'.$index.'.item_description') <span id="line-description-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label for="line-discount-type-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.discount') }}</label>
+                        <select id="line-discount-type-{{ $index }}" wire:model.live="lines.{{ $index }}.discount_type" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
+                            @foreach(['none', 'percent', 'fixed'] as $type)
+                                <option value="{{ $type }}">{{ __('purchasing.discount_'.$type) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="line-discount-value-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.discount_value') }}</label>
+                        <input id="line-discount-value-{{ $index }}" @error('lines.'.$index.'.discount_value') aria-invalid="true" aria-describedby="line-discount-value-{{ $index }}-error" @enderror wire:model.blur="lines.{{ $index }}.discount_value" wire:change="recalculate" dir="ltr" inputmode="decimal" class="w-full h-11 px-2 border border-border rounded-control text-sm font-mono" :disabled="documentBusy || saving"/>
+                        @error('lines.'.$index.'.discount_value') <span id="line-discount-value-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
+                    </div>
+                    @if($taxes->isNotEmpty())
+                        <div>
+                            <label for="line-tax-{{ $index }}" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.tax') }}</label>
+                            <select id="line-tax-{{ $index }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="line-tax-{{ $index }}-error" @enderror wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-11 px-2 border border-border rounded-control text-sm" :disabled="documentBusy || saving">
+                                <option value="">{{ __('purchasing.no_tax') }}</option>
+                                @foreach($taxes as $tax)
+                                    <option value="{{ $tax->id }}">{{ $tax->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($tax->rate, 'ILS') }}%) — {{ __('refinement.tax_'.$tax->calculation) }}</option>
+                                @endforeach
+                            </select>
+                            @error('lines.'.$index.'.tax_rate_id') <span id="line-tax-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
+                        </div>
+                    @endif
                 </div>
                 @if($expiryLines[$index] ?? false)
                     <div class="border-t border-border pt-3 space-y-3">
@@ -205,15 +284,18 @@
                                 <div wire:key="intent-{{ $index }}-{{ $lotIndex }}" class="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-surface-soft rounded-control p-3">
                                     <div>
                                         <label for="lot-{{ $index }}-{{ $lotIndex }}-lot_number" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.lot_number') }}</label>
-                                        <input id="lot-{{ $index }}-{{ $lotIndex }}-lot_number" type="text" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.lot_number" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-sm font-mono" :disabled="documentBusy || saving"/>
+                                        <input id="lot-{{ $index }}-{{ $lotIndex }}-lot_number" @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" @enderror type="text" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.lot_number" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-sm font-mono" :disabled="documentBusy || saving"/>
+                                        @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') <span id="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                     </div>
                                     <div>
                                         <label for="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.expiry_date') }}</label>
-                                        <input id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" type="date" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.expiry_date" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-sm" :disabled="documentBusy || saving"/>
+                                        <input id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" @enderror type="date" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.expiry_date" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-sm" :disabled="documentBusy || saving"/>
+                                        @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') <span id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                     </div>
                                     <div>
                                         <label for="lot-{{ $index }}-{{ $lotIndex }}-quantity" class="block text-sm text-text-secondary mb-1">{{ __('purchasing.allocated_quantity') }}</label>
-                                        <input id="lot-{{ $index }}-{{ $lotIndex }}-quantity" type="text" inputmode="decimal" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.quantity" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-sm font-mono" :disabled="documentBusy || saving"/>
+                                        <input id="lot-{{ $index }}-{{ $lotIndex }}-quantity" @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" @enderror type="text" inputmode="decimal" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.quantity" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-sm font-mono" :disabled="documentBusy || saving"/>
+                                        @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') <span id="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                     </div>
                                     <button type="button" wire:click="removeLot({{ $index }}, {{ $lotIndex }})" class="self-end min-h-[44px] px-3 text-danger text-sm font-semibold cursor-pointer hover:bg-danger/10 rounded-control" wire:loading.attr="disabled" wire:target="removeLot" :disabled="documentBusy || saving">{{ __('purchasing.remove_lot') }}</button>
                                 </div>

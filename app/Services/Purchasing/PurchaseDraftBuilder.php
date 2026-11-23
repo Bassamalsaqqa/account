@@ -67,6 +67,28 @@ final class PurchaseDraftBuilder
             }
             unset($lineInput);
         }
+        $customAttributes = [
+            'vendor_id' => __('purchasing.vendor'),
+            'vendor_invoice_number' => __('purchasing.vendor_invoice_number'),
+            'warehouse_id' => __('purchasing.receiving_warehouse'),
+            'purchase_date' => __('purchasing.purchase_date'),
+            'due_date' => __('purchasing.due_date'),
+            'currency_code' => __('purchasing.currency'),
+            'exchange_rate' => __('purchasing.exchange_rate'),
+            'lines' => __('purchasing.purchase_lines'),
+        ];
+        if (isset($data['lines']) && is_array($data['lines'])) {
+            foreach ($data['lines'] as $idx => $line) {
+                $humanIndex = $idx + 1;
+                $customAttributes["lines.{$idx}.product_id"] = __('purchasing.line_attribute_product', ['index' => $humanIndex]);
+                $customAttributes["lines.{$idx}.item_description"] = __('purchasing.line_attribute_description', ['index' => $humanIndex]);
+                $customAttributes["lines.{$idx}.quantity"] = __('purchasing.line_attribute_quantity', ['index' => $humanIndex]);
+                $customAttributes["lines.{$idx}.unit_cost"] = __('purchasing.line_attribute_cost', ['index' => $humanIndex]);
+                $customAttributes["lines.{$idx}.product_unit_id"] = __('purchasing.line_attribute_unit', ['index' => $humanIndex]);
+                $customAttributes["lines.{$idx}.discount_value"] = __('purchasing.line_attribute_discount', ['index' => $humanIndex]);
+                $customAttributes["lines.{$idx}.tax_rate_id"] = __('purchasing.line_attribute_tax', ['index' => $humanIndex]);
+            }
+        }
         $validated = Validator::make($data, [
             'vendor_id' => ['required', 'integer'],
             'vendor_invoice_number' => ['nullable', 'string', 'max:128'],
@@ -88,7 +110,7 @@ final class PurchaseDraftBuilder
             'lines.*.lots.*.product_unit_id' => ['required', 'integer'],
             'lines.*.lots.*.lot_number' => ['nullable', 'string', 'max:128'],
             'lines.*.lots.*.expiry_date' => ['nullable', 'string'],
-        ])->validate();
+        ], [], $customAttributes)->validate();
         $vendor = $rules->vendor($company, (int) $validated['vendor_id']);
         $warehouse = $rules->warehouse($company, isset($validated['warehouse_id']) ? (int) $validated['warehouse_id'] : null);
         $locale = $validated['document_locale'] ?? $rules->defaultLocale($company, $vendor);

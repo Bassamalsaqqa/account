@@ -10,15 +10,15 @@
 
         <div class="space-y-2">
             <span class="block text-xs font-bold text-text-secondary">{{ __('purchase_settlement.mode') }}</span>
-            <div class="flex flex-wrap gap-4 text-sm">
+            <div class="grid gap-2 sm:grid-cols-3">
                 @foreach (['unpaid', 'full', 'partial'] as $mode)
-                    <label for="purchase-settlement-mode-{{ $mode }}" class="inline-flex min-h-11 items-center gap-2 cursor-pointer">
+                    <label for="purchase-settlement-mode-{{ $mode }}" class="flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-primary">
                         <input id="purchase-settlement-mode-{{ $mode }}"
                                type="radio"
                                name="purchase_settlement_mode"
                                value="{{ $mode }}"
                                wire:model.live="settlement.mode"
-                               class="text-primary focus:ring-primary"
+                               class="accent-primary"
                                :disabled="documentBusy || saving" />
                         <span>{{ __('purchase_settlement.mode_'.$mode) }}</span>
                     </label>
@@ -28,6 +28,9 @@
         </div>
 
         @if (($settlement['mode'] ?? 'unpaid') !== 'unpaid')
+            @if ($errors->has('settlement.*'))
+                <div role="alert" tabindex="-1" class="text-sm text-danger" x-data x-init="$el.focus()">{{ __('purchase_settlement.correct_fields') }}</div>
+            @endif
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                     <label for="purchase-settlement-payment_method" class="mb-1 block text-sm font-semibold">

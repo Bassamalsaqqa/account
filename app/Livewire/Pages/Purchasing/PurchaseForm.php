@@ -617,7 +617,7 @@ class PurchaseForm extends Component
         if ($this->showPreview) {
             $this->cancelPreview();
         }
-        $this->authorizeForm();
+        $company = $this->authorizeForm();
         abort_unless(isset($this->lines[$index]), 422);
         unset($this->expandedLotCustomization[$index]);
         if ($productId === '' || $productId === null) {
@@ -628,6 +628,11 @@ class PurchaseForm extends Component
             return true;
         }
         try {
+            if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
+                $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+
+                return false;
+            }
             $unitId = ($productUnitId !== null && $productUnitId !== '') ? (int) $productUnitId : null;
             $selected = app(PurchaseProductSelection::class)->select((int) $productId, $unitId, $this->currency_code, $this->exchange_rate);
         } catch (\InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
@@ -647,7 +652,7 @@ class PurchaseForm extends Component
         if ($this->showPreview) {
             $this->cancelPreview();
         }
-        $this->authorizeForm();
+        $company = $this->authorizeForm();
         abort_unless(isset($this->lines[$index]['product_id']), 422);
         unset($this->expandedLotCustomization[$index]);
         if ($unitId === '') {
@@ -657,6 +662,11 @@ class PurchaseForm extends Component
             return;
         }
         try {
+            if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
+                $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+
+                return;
+            }
             $selected = app(PurchaseProductSelection::class)->select($this->lines[$index]['product_id'], (int) $unitId, $this->currency_code, $this->exchange_rate);
         } catch (\InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
             $this->addError('draft', __('purchasing.invalid_draft'));
@@ -723,15 +733,42 @@ class PurchaseForm extends Component
         if ($this->showPreview) {
             $this->cancelPreview();
         }
-        $this->authorizeForm();
+        $company = $this->authorizeForm();
         $this->resetErrorBag('calculation');
         $this->resetErrorBag('exchange_rate');
         $results = [];
         try {
+            if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
+                $this->totals = [];
+                foreach ($this->lines as &$line) {
+                    unset($line['preview_total']);
+                }
+                $this->previewGrandTotal = '0';
+                $this->documentTotalsValid = false;
+                $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+
+                return;
+            }
+
             foreach ($this->lines as $index => $line) {
+                if (! isset($line['quantity']) || ! is_string($line['quantity']) || trim($line['quantity']) === ''
+                    || ! isset($line['unit_cost']) || ! is_string($line['unit_cost']) || trim($line['unit_cost']) === '') {
+                    $this->totals = [];
+                    foreach ($this->lines as &$l) {
+                        unset($l['preview_total']);
+                    }
+                    $this->previewGrandTotal = '0';
+                    $this->documentTotalsValid = false;
+
+                    return;
+                }
+
                 $tax = ! empty($line['tax_rate_id']) ? TaxRate::where('company_id', $this->pageCompanyId)->where('active', true)->findOrFail($line['tax_rate_id']) : null;
-                $result = app(PurchaseCalculator::class)->line($line['quantity'], $line['unit_cost'], $line['discount_type'] ?? null,
-                    $line['discount_value'], $tax?->rate, $tax?->calculation === TaxRate::CALC_INCLUSIVE, $this->currency_code, $this->exchange_rate);
+                $qty = $line['quantity'];
+                $cost = $line['unit_cost'];
+                $disc = isset($line['discount_value']) && is_string($line['discount_value']) && trim($line['discount_value']) !== '' ? $line['discount_value'] : '0';
+                $result = app(PurchaseCalculator::class)->line($qty, $cost, $line['discount_type'] ?? null,
+                    $disc, $tax?->rate, $tax?->calculation === TaxRate::CALC_INCLUSIVE, $this->currency_code, $this->exchange_rate);
                 $this->lines[$index]['preview_total'] = (string) $result->total;
                 $results[] = $result;
             }
@@ -769,18 +806,19 @@ class PurchaseForm extends Component
         }
 
         foreach ($this->lines as $idx => $line) {
-            if (! is_string($line['quantity'])) {
-                $this->addError("lines.{$idx}.quantity", __('commands.exact_string_required'));
+            $humanIndex = $idx + 1;
+            if (! isset($line['quantity']) || ! is_string($line['quantity']) || trim($line['quantity']) === '') {
+                $this->addError("lines.{$idx}.quantity", __('validation.required', ['attribute' => __('purchasing.line_attribute_quantity', ['index' => $humanIndex])]));
 
                 return null;
             }
-            if (! is_string($line['unit_cost'])) {
-                $this->addError("lines.{$idx}.unit_cost", __('commands.exact_string_required'));
+            if (! isset($line['unit_cost']) || ! is_string($line['unit_cost']) || trim($line['unit_cost']) === '') {
+                $this->addError("lines.{$idx}.unit_cost", __('validation.required', ['attribute' => __('purchasing.line_attribute_cost', ['index' => $humanIndex])]));
 
                 return null;
             }
-            if (! is_string($line['discount_value'] ?? '0')) {
-                $this->addError("lines.{$idx}.discount_value", __('commands.exact_string_required'));
+            if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '') {
+                $this->addError("lines.{$idx}.discount_value", __('validation.required', ['attribute' => __('purchasing.line_attribute_discount', ['index' => $humanIndex])]));
 
                 return null;
             }
@@ -1191,10 +1229,10 @@ class PurchaseForm extends Component
             if ($product && $product->track_expiry) {
                 if (empty($line['lots']) && ! ($this->expandedLotCustomization[$idx] ?? false)) {
                     $line['lots'] = [[
-                        'product_unit_id' => $line['product_unit_id'],
+                        'product_unit_id' => $line['product_unit_id'] ?? null,
                         'lot_number' => null,
                         'expiry_date' => null,
-                        'quantity' => (string) $line['quantity'],
+                        'quantity' => (string) ($line['quantity'] ?? ''),
                     ]];
                 }
             } elseif ($product !== null) {
