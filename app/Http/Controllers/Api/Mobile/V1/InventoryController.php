@@ -84,10 +84,10 @@ final class InventoryController extends Controller
             return [
                 'id' => (string) $m->public_id,
                 'movement_type' => (string) $m->movement_type,
-                'delta' => (string) $delta->toScale(4, RoundingMode::HALF_UP),
+                'delta' => (string) $delta->stripTrailingZeros(),
                 'date' => $m->movement_date->format('Y-m-d'),
                 'reason' => (string) ($m->notes ?? $m->movement_type),
-                'resulting_stock' => (string) BigDecimal::of((string) ($m->quantity_after_product_company ?? $m->quantity_after_base ?? '0'))->toScale(4, RoundingMode::HALF_UP),
+                'resulting_stock' => (string) BigDecimal::of((string) ($m->quantity_after_product_company ?? $m->quantity_after_base ?? '0'))->stripTrailingZeros(),
             ];
         })->values()->all();
 

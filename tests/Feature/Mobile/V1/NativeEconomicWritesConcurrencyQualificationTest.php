@@ -841,6 +841,77 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
         }
     }
 
+    public function test_concurrent_purchase_return_replays_original_receipt_and_commits_once(): void
+    {
+        $schema = DisposableMariaDbSchema::create();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $this->setupFixture();
+            $this->staff->givePermissionTo(['purchasing.return.manage', 'purchasing.return.post']);
+            $bill = app(RecordStagedPurchaseBillAction::class)->execute(
+                company: $this->company,
+                actor: $this->staff,
+                supplierPublicId: $this->vendor->public_id,
+                billNumber: 'BILL-RETURN-RACE',
+                linesInput: [['product_id' => $this->product->public_id, 'quantity' => '100', 'unit_cost_ils' => '25.00']],
+                idempotencyKey: 'return-race-bill',
+                mobileToken: $this->token,
+                mobileDevice: $this->device
+            );
+            $input = [
+                'mode' => 'http',
+                'http' => [
+                    'uri' => "/api/mobile/v1/companies/{$this->company->public_id}/purchases/returns",
+                    'headers' => [
+                        'Authorization' => 'Bearer '.$this->rawToken,
+                        'Idempotency-Key' => 'concurrent-return',
+                        'Content-Type' => 'application/json',
+                        'Accept' => 'application/json',
+                    ],
+                    'body' => [
+                        'purchase_id' => $bill['snapshot']['id'],
+                        'lines' => [['product_id' => $this->product->public_id, 'quantity' => '5']],
+                    ],
+                ],
+            ];
+            $holder = $this->startWorkerProcess($schema, $directory, 'worker-a', $input + [
+                'hold_lock_table' => 'companies', 'wait_for_file' => 'release-holder',
+            ]);
+            touch($directory.'/go-worker-a');
+            StrictBarrier::await(fn (): bool => is_file($directory.'/worker-a.locked'), fn (): bool => $holder->isRunning());
+            $contender = $this->startWorkerProcess($schema, $directory, 'worker-b', $input);
+            touch($directory.'/go-worker-b');
+            $this->awaitProcesslistBlockedCid($directory, $schema, $holder, $contender);
+            touch($directory.'/release-holder');
+            $this->assertSame(0, $holder->wait());
+            $this->assertSame(0, $contender->wait());
+            $created = json_decode($holder->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $replay = json_decode($contender->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame(201, $created['status'], json_encode($created['body']));
+            $this->assertSame(200, $replay['status']);
+            $this->assertSame($created['body'], $replay['body']);
+            $this->assertSame('true', $replay['headers']['X-Idempotent-Replay']);
+            $this->assertSame(1, DB::table('purchase_returns')->count());
+            $this->assertSame(1, DB::table('native_command_receipts')->where('command_type', 'purchase_return')->count());
+            $this->assertAllSixReconciliationsPass();
+        } finally {
+            if (isset($holder)) {
+                $holder->stop();
+            }
+            if (isset($contender)) {
+                $contender->stop();
+            }
+            foreach (glob($directory.'/*') as $file) {
+                unlink($file);
+            }
+            rmdir($directory);
+            $schema->drop();
+        }
+    }
+
     public function test_grn_concurrent_distinct_keys_total_requested_exceeds_remaining_limits_and_bounds(): void
     {
         $schema = DisposableMariaDbSchema::create();

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Mobile\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyMobileSetting;
@@ -33,6 +34,28 @@ final class BusinessSettingsController extends Controller
         $company = $request->attributes->get('mobile_company');
         /** @var User $user */
         $user = $request->attributes->get('mobile_user');
+
+        // Read-ready clients need authoritative precision before merchant rollout.
+        // Only the merchant projection may load operational mappings and taxes.
+        if (! config('mobile.merchant_api_enabled', false)) {
+            if (! $user->hasPermissionTo('sales.invoice.create')) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'FORBIDDEN', message: 'Missing required sales.invoice.create permission.', status: 403
+                );
+            }
+
+            return response()->json([
+                'company_id' => (string) $company->public_id,
+                'name_ar' => (string) $company->name_ar,
+                'name_en' => (string) ($company->name_en ?? $company->name_ar),
+                'city_ar' => (string) ($company->address_ar ?? ''),
+                'city_en' => (string) ($company->address_en ?? ''),
+                'phone' => (string) ($company->phone ?? ''),
+                'tax_number' => (string) ($company->tax_number ?? ''),
+                'default_currency' => (string) $company->base_currency_code,
+                'default_currency_minor_units' => $currencyResolver->resolveForCompany($company, (string) $company->base_currency_code),
+            ], 200, ['Cache-Control' => 'no-store, no-cache, must-revalidate, private']);
+        }
 
         $setting = CompanyMobileSetting::where('company_id', $company->id)->first();
 

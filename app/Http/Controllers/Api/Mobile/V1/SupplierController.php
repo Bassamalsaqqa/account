@@ -12,6 +12,7 @@ use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
+use App\Models\NativeCommandReceipt;
 use App\Models\OpeningTradeItem;
 use App\Models\Purchase;
 use App\Models\User;
@@ -25,6 +26,7 @@ use App\Support\Mobile\SettlementTargetsReader;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
+use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +36,14 @@ use Throwable;
 
 final class SupplierController extends Controller
 {
+    public const ALLOWED_SUPPLIER_FIELDS = [
+        'name', 'name_ar', 'name_en', 'business_name_ar', 'business_name_en',
+        'code', 'phone', 'whatsapp', 'email', 'tax_number',
+        'address', 'address_ar', 'address_en',
+        'city_ar', 'city_en', 'postal_code', 'notes', 'country_code', 'status', 'active',
+        'preferred_locale', 'default_currency_code',
+    ];
+
     /**
      * GET /api/mobile/v1/companies/{companyId}/suppliers
      */
@@ -88,29 +98,43 @@ final class SupplierController extends Controller
 
         $vendorIds = $records->pluck('id')->all();
         $balances = [];
-        try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $balances = $balanceQuery->execute($vendorIds);
-        } catch (Throwable) {
-            // Keep empty on error
+        $balancesLoaded = false;
+        $canReadFinancial = app(VendorFinancialRead::class)->allows((int) $company->id);
+        if ($canReadFinancial) {
+            try {
+                app(CompanyContext::class)->setCompany($company, $user);
+                $balances = $balanceQuery->execute($vendorIds);
+                $balancesLoaded = true;
+            } catch (Throwable) {
+                // Keep empty on error
+            }
         }
 
         $baseCurr = (string) $company->base_currency_code;
         $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
 
-        $suppliers = $records->map(function (Vendor $v) use ($balances, $baseCurr, $cmu): array {
+        $suppliers = $records->map(function (Vendor $v) use ($balances, $balancesLoaded, $canReadFinancial, $baseCurr, $cmu): array {
             $balData = $balances[$v->id] ?? null;
             $totalPayable = null;
             $totalAdvance = null;
 
-            if ($balData !== null && isset($balData[$baseCurr])) {
-                $b = BigDecimal::of($balData[$baseCurr]['balance']);
-                if ($b->isPositive()) {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
-                } elseif ($b->isNegative()) {
-                    $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+            if ($canReadFinancial && $balancesLoaded) {
+                $zeroFormatted = (string) BigDecimal::zero()->toScale($cmu);
+                if ($balData !== null && isset($balData[$baseCurr])) {
+                    $b = BigDecimal::of($balData[$baseCurr]['balance']);
+                    if ($b->isPositive()) {
+                        $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                        $totalAdvance = $zeroFormatted;
+                    } elseif ($b->isNegative()) {
+                        $totalPayable = $zeroFormatted;
+                        $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+                    } else {
+                        $totalPayable = $zeroFormatted;
+                        $totalAdvance = $zeroFormatted;
+                    }
                 } else {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                    $totalPayable = $zeroFormatted;
+                    $totalAdvance = $zeroFormatted;
                 }
             }
 
@@ -124,6 +148,7 @@ final class SupplierController extends Controller
                 'currency' => $baseCurr,
                 'currency_minor_units' => $cmu,
                 'balance_owed' => $totalPayable,
+                'owed' => $totalPayable,
                 'advances' => $totalAdvance,
             ];
         })->values()->all();
@@ -187,22 +212,34 @@ final class SupplierController extends Controller
         $baseCurr = (string) $company->base_currency_code;
         $cmu = $minorUnitsResolver->resolve($baseCurr, $company);
         $totalPayable = null;
-        try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $balances = $balanceQuery->execute([(int) $vendor->id]);
-            $balData = $balances[(int) $vendor->id] ?? null;
-            if ($balData !== null && isset($balData[$baseCurr])) {
-                $b = BigDecimal::of($balData[$baseCurr]['balance']);
-                if ($b->isPositive()) {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
-                } elseif ($b->isNegative()) {
-                    $totalPayable = '0.'.str_repeat('0', $cmu);
+        $totalAdvance = null;
+        $canReadFinancial = app(VendorFinancialRead::class)->allows((int) $company->id);
+
+        if ($canReadFinancial) {
+            try {
+                app(CompanyContext::class)->setCompany($company, $user);
+                $balances = $balanceQuery->execute([(int) $vendor->id]);
+                $balData = $balances[(int) $vendor->id] ?? null;
+                $zeroFormatted = (string) BigDecimal::zero()->toScale($cmu);
+                if ($balData !== null && isset($balData[$baseCurr])) {
+                    $b = BigDecimal::of($balData[$baseCurr]['balance']);
+                    if ($b->isPositive()) {
+                        $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                        $totalAdvance = $zeroFormatted;
+                    } elseif ($b->isNegative()) {
+                        $totalPayable = $zeroFormatted;
+                        $totalAdvance = (string) $b->abs()->toScale($cmu, RoundingMode::HALF_UP);
+                    } else {
+                        $totalPayable = $zeroFormatted;
+                        $totalAdvance = $zeroFormatted;
+                    }
                 } else {
-                    $totalPayable = (string) $b->toScale($cmu, RoundingMode::HALF_UP);
+                    $totalPayable = $zeroFormatted;
+                    $totalAdvance = $zeroFormatted;
                 }
+            } catch (Throwable) {
+                // Balance remains null when error/unauthorized - never invent zero
             }
-        } catch (Throwable) {
-            // Balance remains null when error/unauthorized - never invent zero
         }
 
         return response()->json([
@@ -219,6 +256,8 @@ final class SupplierController extends Controller
             'currency' => $baseCurr,
             'currency_minor_units' => $cmu,
             'balance_owed' => $totalPayable,
+            'owed' => $totalPayable,
+            'advances' => $totalAdvance,
             'status' => $vendor->status === 'active' ? 'active' : 'inactive',
         ], 200, [
             'Content-Type' => 'application/json',
@@ -229,15 +268,31 @@ final class SupplierController extends Controller
     /**
      * POST /api/mobile/v1/companies/{companyId}/suppliers
      */
-    public function store(Request $request, string $companyId, VendorCatalogService $catalogService): JsonResponse
-    {
-        /** @var Company $company */
+    public function store(
+        Request $request,
+        string $companyId,
+        VendorCatalogService $catalogService,
+        NativeCommandReceiptManager $receiptManager,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        /** @var Company|null $company */
         $company = $request->attributes->get('mobile_company');
-        /** @var User $user */
+        /** @var User|null $user */
         $user = $request->attributes->get('mobile_user');
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
+
+        if ($company === null || $user === null || $token === null || $device === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
 
         setPermissionsTeamId($company->id);
-
         if (! $user->hasPermissionTo('vendors.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -256,7 +311,63 @@ final class SupplierController extends Controller
             );
         }
 
+        $existingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+
         $payload = $request->json()->all();
+
+        $isExactHistoricalReplay = false;
+        $replayCanonicalPayload = null;
+        if ($existingReceipt !== null) {
+            $h598cPayload = $payload;
+            if (empty($h598cPayload['name_ar']) && ! empty($h598cPayload['name'])) {
+                $h598cPayload['name_ar'] = $h598cPayload['name'];
+            }
+            if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+                $h598cPayload['address_ar'] = $h598cPayload['address'];
+            }
+            if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+                $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+            }
+            ksort($h598cPayload);
+            $h598cCanonical = [
+                'actor_id' => (int) $user->id,
+                'device_id' => (string) $device->device_id,
+                'company_id' => (string) $company->public_id,
+                'command' => 'supplier_create',
+                'payload' => $h598cPayload,
+            ];
+            $h598cHash = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+
+            $rawCanonical = [
+                'actor_id' => (int) $user->id,
+                'device_id' => (string) $device->device_id,
+                'company_id' => (string) $company->public_id,
+                'command' => 'supplier_create',
+                'payload' => $payload,
+            ];
+            $rawHash = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
+
+            if (hash_equals((string) $existingReceipt->request_hash, $h598cHash)) {
+                $isExactHistoricalReplay = true;
+                $replayCanonicalPayload = $h598cCanonical;
+            } elseif (hash_equals((string) $existingReceipt->request_hash, $rawHash)) {
+                $isExactHistoricalReplay = true;
+                $replayCanonicalPayload = $rawCanonical;
+            }
+        }
+
+        if (! $isExactHistoricalReplay) {
+            $unknown = array_diff(array_keys($payload), self::ALLOWED_SUPPLIER_FIELDS);
+            if (! empty($unknown)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
+                    status: 422
+                );
+            }
+        }
         if (empty($payload['name_ar']) && empty($payload['name_en']) && empty($payload['name'])) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -265,13 +376,123 @@ final class SupplierController extends Controller
             );
         }
 
-        if (empty($payload['name_ar']) && ! empty($payload['name'])) {
-            $payload['name_ar'] = $payload['name'];
+        $normalizedPayload = $payload;
+        if (empty($normalizedPayload['name_ar']) && ! empty($normalizedPayload['name'])) {
+            $normalizedPayload['name_ar'] = $normalizedPayload['name'];
+        }
+        unset($normalizedPayload['company_name'], $normalizedPayload['address_line_1_ar'], $normalizedPayload['address_line_1_en']);
+        if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
+            $normalizedPayload['address_ar'] = $normalizedPayload['address'];
+        }
+        ksort($normalizedPayload);
+
+        $canonicalPayload = $replayCanonicalPayload ?? [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'command' => 'supplier_create',
+            'payload' => $normalizedPayload,
+        ];
+
+        $legacyHashes = [];
+        // Pinned 598c handler: alias-expanded, sorted, includes both company_name AND business_name_ar
+        $h598cPayload = $payload;
+        if (empty($h598cPayload['name_ar']) && ! empty($h598cPayload['name'])) {
+            $h598cPayload['name_ar'] = $h598cPayload['name'];
+        }
+        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+            $h598cPayload['address_ar'] = $h598cPayload['address'];
+        }
+        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+        }
+        ksort($h598cPayload);
+        $h598cCanonical = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'command' => 'supplier_create',
+            'payload' => $h598cPayload,
+        ];
+        $legacyHashes[] = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+
+        if ($normalizedPayload !== $payload) {
+            $rawCanonical = [
+                'actor_id' => (int) $user->id,
+                'device_id' => (string) $device->device_id,
+                'company_id' => (string) $company->public_id,
+                'command' => 'supplier_create',
+                'payload' => $payload,
+            ];
+            $legacyHashes[] = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
         }
 
         try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $vendor = $catalogService->save($company, $user, $payload);
+            $result = $receiptManager->execute(
+                companyId: (int) $company->id,
+                actor: $user,
+                token: $token,
+                device: $device,
+                commandType: 'supplier_create',
+                idempotencyKey: $idempotencyKey,
+                canonicalPayload: $canonicalPayload,
+                requiredPermissions: ['vendors.manage'],
+                executor: function (Company $lockedCompany, User $lockedActor, MobileDevice $lockedDevice, MobileAccessToken $lockedToken) use (
+                    $catalogService,
+                    $normalizedPayload,
+                    $minorUnitsResolver
+                ): array {
+                    app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
+
+                    $vendor = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload);
+
+                    $baseCurr = (string) $lockedCompany->base_currency_code;
+                    $cmu = $minorUnitsResolver->resolve($baseCurr, $lockedCompany);
+
+                    $snapshot = [
+                        'id' => (string) $vendor->public_id,
+                        'code' => $vendor->code,
+                        'name' => (string) $vendor->displayName(),
+                        'name_ar' => $vendor->name_ar,
+                        'name_en' => $vendor->name_en,
+                        'phone' => $vendor->phone,
+                        'address' => $vendor->address_ar ?? $vendor->address_en,
+                        'balance' => null,
+                        'balance_owed' => null,
+                        'owed' => null,
+                        'advances' => null,
+                        'currency' => $baseCurr,
+                        'currency_minor_units' => $cmu,
+                        'status' => $vendor->status === 'active' ? 'active' : 'inactive',
+                    ];
+
+                    return [
+                        'status' => 201,
+                        'snapshot' => $snapshot,
+                        'entity_type' => 'supplier',
+                        'entity_id' => (int) $vendor->id,
+                        'entity_public_id' => (string) $vendor->public_id,
+                    ];
+                },
+                legacyHashes: $legacyHashes
+            );
+
+            $headers = [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                'Idempotency-Key' => $idempotencyKey,
+            ];
+            if ($result['outcome'] === 'replay') {
+                $headers['X-Idempotent-Replay'] = 'true';
+            }
+
+            return response()->json($result['snapshot'], $result['status'], $headers);
+        } catch (AuthenticationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
+        } catch (AuthorizationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -279,31 +500,37 @@ final class SupplierController extends Controller
                 status: 422
             );
         }
-
-        return response()->json([
-            'id' => (string) $vendor->public_id,
-            'name' => (string) $vendor->displayName(),
-            'code' => $vendor->code,
-            'phone' => $vendor->phone,
-            'balance_owed' => null,
-        ], 201, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**
      * PUT /api/mobile/v1/companies/{companyId}/suppliers/{supplierId}
      */
-    public function update(Request $request, string $companyId, string $supplierId, VendorCatalogService $catalogService): JsonResponse
-    {
-        /** @var Company $company */
+    public function update(
+        Request $request,
+        string $companyId,
+        string $supplierId,
+        VendorCatalogService $catalogService,
+        NativeCommandReceiptManager $receiptManager,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        /** @var Company|null $company */
         $company = $request->attributes->get('mobile_company');
-        /** @var User $user */
+        /** @var User|null $user */
         $user = $request->attributes->get('mobile_user');
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+        /** @var MobileDevice|null $device */
+        $device = $request->attributes->get('mobile_device');
+
+        if ($company === null || $user === null || $token === null || $device === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
 
         setPermissionsTeamId($company->id);
-
         if (! $user->hasPermissionTo('vendors.manage')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
@@ -330,40 +557,207 @@ final class SupplierController extends Controller
             );
         }
 
-        $vendor = Vendor::where('company_id', $company->id)
-            ->where('public_id', $supplierId)
+        $existingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
             ->first();
-
-        if ($vendor === null) {
-            return MobileApiBoundary::buildErrorResponse(
-                code: 'NOT_FOUND',
-                message: 'The requested supplier was not found.',
-                status: 404
-            );
-        }
 
         $payload = $request->json()->all();
 
+        $isExactHistoricalReplay = false;
+        $replayCanonicalPayload = null;
+        if ($existingReceipt !== null) {
+            $h598cPayload = $payload;
+            if (array_key_exists('name', $h598cPayload) && ! array_key_exists('name_ar', $h598cPayload)) {
+                $h598cPayload['name_ar'] = $h598cPayload['name'];
+            }
+            if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+                $h598cPayload['address_ar'] = $h598cPayload['address'];
+            }
+            if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+                $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+            }
+            ksort($h598cPayload);
+            $h598cCanonical = [
+                'actor_id' => (int) $user->id,
+                'device_id' => (string) $device->device_id,
+                'company_id' => (string) $company->public_id,
+                'supplier_id' => $supplierId,
+                'command' => 'supplier_update',
+                'payload' => $h598cPayload,
+            ];
+            $h598cHash = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+
+            $rawCanonical = [
+                'actor_id' => (int) $user->id,
+                'device_id' => (string) $device->device_id,
+                'company_id' => (string) $company->public_id,
+                'supplier_id' => $supplierId,
+                'command' => 'supplier_update',
+                'payload' => $payload,
+            ];
+            $rawHash = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
+
+            if (hash_equals((string) $existingReceipt->request_hash, $h598cHash)) {
+                $isExactHistoricalReplay = true;
+                $replayCanonicalPayload = $h598cCanonical;
+            } elseif (hash_equals((string) $existingReceipt->request_hash, $rawHash)) {
+                $isExactHistoricalReplay = true;
+                $replayCanonicalPayload = $rawCanonical;
+            }
+        }
+
+        if (! $isExactHistoricalReplay) {
+            $unknown = array_diff(array_keys($payload), self::ALLOWED_SUPPLIER_FIELDS);
+            if (! empty($unknown)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Unrecognized field(s) in payload: '.implode(', ', $unknown),
+                    status: 422
+                );
+            }
+        }
+
+        $normalizedPayload = $payload;
+        if (array_key_exists('name', $normalizedPayload) && ! array_key_exists('name_ar', $normalizedPayload)) {
+            $normalizedPayload['name_ar'] = $normalizedPayload['name'];
+        }
+        unset($normalizedPayload['company_name'], $normalizedPayload['address_line_1_ar'], $normalizedPayload['address_line_1_en']);
+        if (array_key_exists('address', $normalizedPayload) && ! array_key_exists('address_ar', $normalizedPayload)) {
+            $normalizedPayload['address_ar'] = $normalizedPayload['address'];
+        }
+        ksort($normalizedPayload);
+
+        $canonicalPayload = $replayCanonicalPayload ?? [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'supplier_id' => $supplierId,
+            'command' => 'supplier_update',
+            'payload' => $normalizedPayload,
+        ];
+
+        $legacyHashes = [];
+        // Pinned 598c handler: alias-expanded, sorted, includes both company_name AND business_name_ar
+        $h598cPayload = $payload;
+        if (array_key_exists('name', $h598cPayload) && ! array_key_exists('name_ar', $h598cPayload)) {
+            $h598cPayload['name_ar'] = $h598cPayload['name'];
+        }
+        if (array_key_exists('address', $h598cPayload) && ! array_key_exists('address_ar', $h598cPayload)) {
+            $h598cPayload['address_ar'] = $h598cPayload['address'];
+        }
+        if (array_key_exists('company_name', $h598cPayload) && ! array_key_exists('business_name_ar', $h598cPayload)) {
+            $h598cPayload['business_name_ar'] = $h598cPayload['company_name'];
+        }
+        ksort($h598cPayload);
+        $h598cCanonical = [
+            'actor_id' => (int) $user->id,
+            'device_id' => (string) $device->device_id,
+            'company_id' => (string) $company->public_id,
+            'supplier_id' => $supplierId,
+            'command' => 'supplier_update',
+            'payload' => $h598cPayload,
+        ];
+        $legacyHashes[] = hash('sha256', json_encode($h598cCanonical, JSON_THROW_ON_ERROR));
+
+        if ($normalizedPayload !== $payload) {
+            $rawCanonical = [
+                'actor_id' => (int) $user->id,
+                'device_id' => (string) $device->device_id,
+                'company_id' => (string) $company->public_id,
+                'supplier_id' => $supplierId,
+                'command' => 'supplier_update',
+                'payload' => $payload,
+            ];
+            $legacyHashes[] = hash('sha256', json_encode($rawCanonical, JSON_THROW_ON_ERROR));
+        }
+
         try {
-            app(CompanyContext::class)->setCompany($company, $user);
-            $updated = $catalogService->save($company, $user, $payload, (int) $vendor->id);
+            $result = $receiptManager->execute(
+                companyId: (int) $company->id,
+                actor: $user,
+                token: $token,
+                device: $device,
+                commandType: 'supplier_update',
+                idempotencyKey: $idempotencyKey,
+                canonicalPayload: $canonicalPayload,
+                requiredPermissions: ['vendors.manage'],
+                executor: function (Company $lockedCompany, User $lockedActor, MobileDevice $lockedDevice, MobileAccessToken $lockedToken) use (
+                    $supplierId,
+                    $catalogService,
+                    $normalizedPayload,
+                    $minorUnitsResolver
+                ): array {
+                    /** @var Vendor|null $lockedVendor */
+                    $lockedVendor = Vendor::where('company_id', $lockedCompany->id)
+                        ->where('public_id', $supplierId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($lockedVendor === null) {
+                        throw new InvalidArgumentException('The requested supplier was not found.');
+                    }
+
+                    app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
+                    $updated = $catalogService->save($lockedCompany, $lockedActor, $normalizedPayload, (int) $lockedVendor->id);
+
+                    $baseCurr = (string) $lockedCompany->base_currency_code;
+                    $cmu = $minorUnitsResolver->resolve($baseCurr, $lockedCompany);
+
+                    $snapshot = [
+                        'id' => (string) $updated->public_id,
+                        'code' => $updated->code,
+                        'name' => (string) $updated->displayName(),
+                        'name_ar' => $updated->name_ar,
+                        'name_en' => $updated->name_en,
+                        'phone' => $updated->phone,
+                        'address' => $updated->address_ar ?? $updated->address_en,
+                        'balance' => null,
+                        'balance_owed' => null,
+                        'owed' => null,
+                        'advances' => null,
+                        'currency' => $baseCurr,
+                        'currency_minor_units' => $cmu,
+                        'status' => $updated->status === 'active' ? 'active' : 'inactive',
+                    ];
+
+                    return [
+                        'status' => 200,
+                        'snapshot' => $snapshot,
+                        'entity_type' => 'supplier',
+                        'entity_id' => (int) $updated->id,
+                        'entity_public_id' => (string) $updated->public_id,
+                    ];
+                },
+                legacyHashes: $legacyHashes
+            );
+
+            $headers = [
+                'Content-Type' => 'application/json',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+                'Idempotency-Key' => $idempotencyKey,
+            ];
+            if ($result['outcome'] === 'replay') {
+                $headers['X-Idempotent-Replay'] = 'true';
+            }
+
+            return response()->json($result['snapshot'], $result['status'], $headers);
+        } catch (AuthenticationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'UNAUTHENTICATED', message: $e->getMessage(), status: 401);
+        } catch (AuthorizationException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: $e->getMessage(), status: 403);
+        } catch (IdempotencyConflictException $e) {
+            return MobileApiBoundary::buildErrorResponse(code: 'IDEMPOTENCY_KEY_CONFLICT', message: $e->getMessage(), status: 409);
         } catch (Throwable $e) {
+            if (str_contains($e->getMessage(), 'not found')) {
+                return MobileApiBoundary::buildErrorResponse(code: 'NOT_FOUND', message: $e->getMessage(), status: 404);
+            }
+
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
                 message: 'Failed to update supplier: '.$e->getMessage(),
                 status: 422
             );
         }
-
-        return response()->json([
-            'id' => (string) $updated->public_id,
-            'name' => (string) $updated->displayName(),
-            'code' => $updated->code,
-            'phone' => $updated->phone,
-        ], 200, [
-            'Content-Type' => 'application/json',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
-        ]);
     }
 
     /**
@@ -492,10 +886,19 @@ final class SupplierController extends Controller
             );
         }
 
+        $existingReceipt = NativeCommandReceipt::where('company_id', $company->id)
+            ->where('idempotency_key', $idempotencyKey)
+            ->first();
+
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
         try {
-            $paymentDate = $request->has('payment_date')
-                ? NativeWriteContextResolver::validateDate($request->input('payment_date'), 'payment_date')
-                : now()->format('Y-m-d');
+            if ($request->has('payment_date')) {
+                $paymentDate = NativeWriteContextResolver::validateDate($request->input('payment_date'), 'payment_date');
+            } elseif ($existingReceipt !== null && isset($existingReceipt->payload['payment_date']) && is_string($existingReceipt->payload['payment_date'])) {
+                $paymentDate = $existingReceipt->payload['payment_date'];
+            } else {
+                $paymentDate = Carbon::now($companyTimezone)->toDateString();
+            }
         } catch (Throwable $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'VALIDATION_FAILED',
@@ -507,6 +910,9 @@ final class SupplierController extends Controller
         $paymentCurrency = $request->has('currency') && is_string($request->input('currency')) && trim($request->input('currency')) !== ''
             ? strtoupper(trim($request->input('currency')))
             : (string) $company->base_currency_code;
+        if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
+        }
 
         $rawRate = $request->input('exchange_rate');
         if ($paymentCurrency === (string) $company->base_currency_code) {
@@ -526,12 +932,16 @@ final class SupplierController extends Controller
                 }
             }
         } else {
-            if ($rawRate === null || trim((string) $rawRate) === '') {
-                return MobileApiBoundary::buildErrorResponse(
-                    code: 'VALIDATION_FAILED',
-                    message: 'Explicit exchange_rate is required for foreign currency payment.',
-                    status: 422
-                );
+            if (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '') {
+                if ($existingReceipt !== null) {
+                    $rawRate = isset($existingReceipt->payload['exchange_rate']) ? (string) $existingReceipt->payload['exchange_rate'] : '1.0000000000';
+                } else {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: 'Explicit exchange_rate is required for foreign currency payment.',
+                        status: 422
+                    );
+                }
             }
             try {
                 $paymentRate = NativeWriteContextResolver::validateDecimalString($rawRate, 'exchange_rate', 10, true);
@@ -541,8 +951,25 @@ final class SupplierController extends Controller
         }
 
         $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
-        $notes = $request->has('notes') && is_string($request->input('notes')) ? trim($request->input('notes')) : 'سند صرف للمورد من تطبيق الجوال';
-        $reference = $request->has('reference') && is_string($request->input('reference')) ? trim($request->input('reference')) : null;
+        if ($rawAccountId === null && $existingReceipt !== null && array_key_exists('cash_account_id', $existingReceipt->payload)) {
+            $rawAccountId = $existingReceipt->payload['cash_account_id'];
+        }
+
+        if ($request->has('notes') && is_string($request->input('notes'))) {
+            $notes = trim($request->input('notes'));
+        } elseif ($existingReceipt !== null && array_key_exists('notes', $existingReceipt->payload)) {
+            $notes = $existingReceipt->payload['notes'];
+        } else {
+            $notes = 'سند صرف للمورد من تطبيق الجوال';
+        }
+
+        if ($request->has('reference') && is_string($request->input('reference'))) {
+            $reference = trim($request->input('reference'));
+        } elseif ($existingReceipt !== null && array_key_exists('reference', $existingReceipt->payload)) {
+            $reference = $existingReceipt->payload['reference'];
+        } else {
+            $reference = null;
+        }
         $allocationsInput = $request->input('allocations');
 
         if ($allocationsInput !== null && ! is_array($allocationsInput)) {
@@ -760,7 +1187,7 @@ final class SupplierController extends Controller
                 // Validate allocated amount
                 try {
                     $itemAmount = NativeWriteContextResolver::validateDecimalString(
-                        $item['amount'] ?? $item['allocated_amount'] ?? $item['document_currency_amount'] ?? null,
+                        $item['document_currency_amount'] ?? $item['amount'] ?? $item['allocated_amount'] ?? null,
                         'allocated_amount',
                         6,
                         true
@@ -772,16 +1199,11 @@ final class SupplierController extends Controller
                         status: 422
                     );
                 }
-
                 $paymentAmount = null;
-                if (array_key_exists('payment_currency_amount', $item)) {
+                if (array_key_exists('payment_currency_amount', $item) || array_key_exists('document_currency_amount', $item)) {
                     try {
-                        $paymentAmount = NativeWriteContextResolver::validateDecimalString(
-                            $item['payment_currency_amount'],
-                            'payment_currency_amount',
-                            6,
-                            true
-                        );
+                        $paymentAmount = NativeWriteContextResolver::validateDecimalString($item['payment_currency_amount'] ?? null, 'payment_currency_amount', 6, true);
+                        NativeWriteContextResolver::validateDecimalString($item['document_currency_amount'] ?? null, 'document_currency_amount', 6, true);
                     } catch (Throwable $e) {
                         return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
                     }
@@ -833,15 +1255,68 @@ final class SupplierController extends Controller
             'allocations' => $canonicalAllocations,
         ];
 
-        if ($request->has('exchange_rate') || $request->has('currency')) {
+        if ($request->has('exchange_rate') || $request->has('currency') || $existingReceipt !== null) {
             $canonicalPayload['exchange_rate'] = (string) BigDecimal::of($paymentRate)->toScale(10);
         }
 
         $legacyHashes = [];
+        if ($paymentCurrency === (string) $company->base_currency_code && BigDecimal::of($paymentRate)->compareTo(1) === 0) {
+            if (isset($canonicalPayload['exchange_rate'])) {
+                $legacyPayload = $canonicalPayload;
+                unset($legacyPayload['exchange_rate']);
+                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+            } else {
+                $legacyPayload = $canonicalPayload;
+                $legacyPayload['exchange_rate'] = '1.0000000000';
+                $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+            }
+        }
+        $aliasPayload = $canonicalPayload;
+        $aliasPayload['vendor_id'] = $aliasPayload['supplier_id'];
+        unset($aliasPayload['supplier_id']);
+        $legacyHashes[] = hash('sha256', json_encode($aliasPayload, JSON_THROW_ON_ERROR));
+
+        if ($paymentCurrency === (string) $company->base_currency_code && BigDecimal::of($paymentRate)->compareTo(1) === 0) {
+            if (isset($aliasPayload['exchange_rate'])) {
+                $aliasRatePayload = $aliasPayload;
+                unset($aliasRatePayload['exchange_rate']);
+                $legacyHashes[] = hash('sha256', json_encode($aliasRatePayload, JSON_THROW_ON_ERROR));
+            } else {
+                $aliasRatePayload = $aliasPayload;
+                $aliasRatePayload['exchange_rate'] = '1.0000000000';
+                $legacyHashes[] = hash('sha256', json_encode($aliasRatePayload, JSON_THROW_ON_ERROR));
+            }
+        }
+
         if ($isPureLegacyWire && ! empty($legacyAllocations)) {
-            $legacyPayload = $canonicalPayload;
-            $legacyPayload['allocations'] = $legacyAllocations;
-            $legacyHashes[] = hash('sha256', json_encode($legacyPayload, JSON_THROW_ON_ERROR));
+            $legacyAllocPayload = $canonicalPayload;
+            $legacyAllocPayload['allocations'] = $legacyAllocations;
+            $legacyHashes[] = hash('sha256', json_encode($legacyAllocPayload, JSON_THROW_ON_ERROR));
+
+            $aliasAllocPayload = $legacyAllocPayload;
+            $aliasAllocPayload['vendor_id'] = $aliasAllocPayload['supplier_id'];
+            unset($aliasAllocPayload['supplier_id']);
+            $legacyHashes[] = hash('sha256', json_encode($aliasAllocPayload, JSON_THROW_ON_ERROR));
+
+            if ($paymentCurrency === (string) $company->base_currency_code && BigDecimal::of($paymentRate)->compareTo(1) === 0) {
+                if (isset($legacyAllocPayload['exchange_rate'])) {
+                    $comboPayload = $legacyAllocPayload;
+                    unset($comboPayload['exchange_rate']);
+                    $legacyHashes[] = hash('sha256', json_encode($comboPayload, JSON_THROW_ON_ERROR));
+
+                    $comboAliasPayload = $aliasAllocPayload;
+                    unset($comboAliasPayload['exchange_rate']);
+                    $legacyHashes[] = hash('sha256', json_encode($comboAliasPayload, JSON_THROW_ON_ERROR));
+                } else {
+                    $comboPayload = $legacyAllocPayload;
+                    $comboPayload['exchange_rate'] = '1.0000000000';
+                    $legacyHashes[] = hash('sha256', json_encode($comboPayload, JSON_THROW_ON_ERROR));
+
+                    $comboAliasPayload = $aliasAllocPayload;
+                    $comboAliasPayload['exchange_rate'] = '1.0000000000';
+                    $legacyHashes[] = hash('sha256', json_encode($comboAliasPayload, JSON_THROW_ON_ERROR));
+                }
+            }
         }
 
         try {
@@ -873,7 +1348,6 @@ final class SupplierController extends Controller
                     if ($paymentCurrency !== (string) $lockedCompany->base_currency_code && (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '')) {
                         throw new InvalidArgumentException('Explicit exchange_rate is required for foreign currency payment.');
                     }
-
                     /** @var Vendor|null $vendor */
                     $vendor = Vendor::where('company_id', $lockedCompany->id)
                         ->where('public_id', $supplierId)

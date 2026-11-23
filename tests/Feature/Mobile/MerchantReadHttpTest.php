@@ -71,6 +71,38 @@ final class MerchantReadHttpTest extends TestCase
         $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/{$path}")->assertOk();
     }
 
+    public function test_read_ready_settings_preserve_precision_and_hide_merchant_mapping(): void
+    {
+        config(['mobile.merchant_api_enabled' => false]);
+        $path = "/api/mobile/v1/companies/{$this->company->public_id}/settings/business";
+        $this->getJson($path)->assertOk()->assertJsonPath('default_currency_minor_units', 2)
+            ->assertJsonMissingPath('approved_cash_account')->assertJsonMissingPath('default_warehouse')
+            ->assertJsonMissingPath('walk_in_customer')->assertJsonMissingPath('taxes')->assertJsonMissingPath('currencies');
+        config(['mobile.merchant_api_enabled' => true]);
+        $this->getJson($path)->assertOk()->assertJsonStructure(['approved_cash_account', 'default_warehouse', 'walk_in_customer', 'taxes', 'currencies']);
+        config(['mobile.merchant_api_enabled' => false]);
+        $other = Company::factory()->create(['status' => 'active']);
+        $this->getJson("/api/mobile/v1/companies/{$other->public_id}/settings/business")->assertNotFound();
+        $token = MobileAccessToken::query()->firstOrFail();
+        $actor = User::findOrFail($token->user_id);
+        setPermissionsTeamId($this->company->id);
+        app(CompanyContext::class)->setCompany($this->company, $actor);
+        $actor->removeRole('Owner');
+        $this->getJson($path)->assertForbidden();
+        config(['mobile.merchant_api_enabled' => true]);
+        $this->getJson($path)->assertOk()->assertJsonStructure(['approved_cash_account']);
+        config(['mobile.merchant_api_enabled' => false]);
+        app(CompanyContext::class)->setCompany($this->company, $actor);
+        setPermissionsTeamId($this->company->id);
+        $actor->assignRole('Owner');
+        $token->update(['revoked_at' => now()]);
+        $this->getJson($path)->assertUnauthorized();
+        $token->update(['revoked_at' => null]);
+        MobileAccessToken::query()->update(['expires_at' => now()->subMinute()]);
+        $this->getJson($path)->assertUnauthorized();
+        $this->withHeader('Authorization', '')->getJson($path)->assertUnauthorized();
+    }
+
     public function test_product_detail_preserves_exact_price_and_real_public_unit_identity(): void
     {
         $this->getJson("/api/mobile/v1/companies/{$this->company->public_id}/products/{$this->product->public_id}")

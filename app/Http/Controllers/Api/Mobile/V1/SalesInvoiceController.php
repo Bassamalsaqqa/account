@@ -12,19 +12,20 @@ use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\Customer;
-use App\Models\CustomerPayment;
 use App\Models\Product;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Services\Money\CurrencyMinorUnitsResolver;
+use App\Services\Money\ReceivablePositionAsOf;
 use App\Support\Mobile\SalesInvoiceCursorCodec;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
@@ -100,29 +101,27 @@ final class SalesInvoiceController extends Controller
         }
 
         $statusFilter = null;
-        if ($request->has('status')) {
-            /** @var mixed $rawStatus */
-            $rawStatus = $request->query('status');
-            if ($rawStatus !== null) {
-                if (is_array($rawStatus) || ! is_string($rawStatus)) {
+        /** @var mixed $rawStatus */
+        $rawStatus = $request->query('status') ?? $request->query('payment_status');
+        if ($rawStatus !== null) {
+            if (is_array($rawStatus) || ! is_string($rawStatus)) {
+                return MobileApiBoundary::buildErrorResponse(
+                    code: 'VALIDATION_FAILED',
+                    message: 'Status parameter must be a string.',
+                    status: 422
+                );
+            }
+            $trimmedStatus = trim($rawStatus);
+            if ($trimmedStatus !== '') {
+                $statusUpper = strtoupper($trimmedStatus);
+                if (! in_array($statusUpper, ['DRAFT', 'POSTED', 'VOID', 'PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
-                        message: 'Status parameter must be a string.',
+                        message: 'Status parameter must be one of: DRAFT, POSTED, VOID, PAID_CASH, PAID, PARTIAL, ON_CREDIT.',
                         status: 422
                     );
                 }
-                $trimmedStatus = trim($rawStatus);
-                if ($trimmedStatus !== '') {
-                    $statusUpper = strtoupper($trimmedStatus);
-                    if (! in_array($statusUpper, ['DRAFT', 'POSTED', 'VOID', 'PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
-                        return MobileApiBoundary::buildErrorResponse(
-                            code: 'VALIDATION_FAILED',
-                            message: 'Status parameter must be one of: DRAFT, POSTED, VOID, PAID_CASH, PAID, PARTIAL, ON_CREDIT.',
-                            status: 422
-                        );
-                    }
-                    $statusFilter = $statusUpper;
-                }
+                $statusFilter = $statusUpper;
             }
         }
 
@@ -237,18 +236,48 @@ final class SalesInvoiceController extends Controller
             );
         }
 
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
+        $businessDate = Carbon::now($companyTimezone)->toDateString();
+
+        $hasCashSql = sprintf(
+            'EXISTS (SELECT 1 FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id LEFT JOIN posting_batches pr ON pr.id = cp.reversal_posting_batch_id LEFT JOIN posting_batches er ON er.id = cpae.reversal_posting_batch_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.company_id = %d AND cp.payment_method = "cash" AND cp.customer_id = sales_invoices.customer_id AND cp.posting_batch_id IS NOT NULL AND cp.payment_date <= \'%s\' AND (cp.is_reversed = 0 OR pr.posting_date > \'%s\') AND (cpa.application_event_id IS NULL OR (cpae.company_id = %d AND cpae.customer_payment_id = cp.id AND cpae.applied_at IS NOT NULL AND cpae.application_date <= \'%s\' AND (cpae.reversed_at IS NULL OR er.posting_date > \'%s\' OR (cpae.posting_batch_id IS NULL AND pr.posting_date > \'%s\')))))',
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            $businessDate
+        );
+
         $query = SalesInvoice::where('company_id', $company->id)
+            ->select('sales_invoices.*')
+            ->selectRaw("({$hasCashSql}) as mobile_has_cash_as_of")
             ->with(['customer' => fn ($q) => $q->where('company_id', $company->id)]);
+
+        $allocatedSql = sprintf(
+            '(SELECT COALESCE(SUM(cpa.allocated_amount), 0) FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id LEFT JOIN posting_batches pr ON pr.id = cp.reversal_posting_batch_id LEFT JOIN posting_batches er ON er.id = cpae.reversal_posting_batch_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.company_id = %d AND cp.customer_id = sales_invoices.customer_id AND cp.posting_batch_id IS NOT NULL AND cp.payment_date <= \'%s\' AND (cp.is_reversed = 0 OR pr.posting_date > \'%s\') AND (cpa.application_event_id IS NULL OR (cpae.company_id = %d AND cpae.customer_payment_id = cp.id AND cpae.applied_at IS NOT NULL AND cpae.application_date <= \'%s\' AND (cpae.reversed_at IS NULL OR er.posting_date > \'%s\' OR (cpae.posting_batch_id IS NULL AND pr.posting_date > \'%s\')))))',
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            $businessDate
+        );
+
+        $returnedSql = sprintf(
+            '(SELECT COALESCE(SUM(sr.grand_total_currency), 0) FROM sales_returns sr LEFT JOIN posting_batches inverse ON inverse.id = sr.void_posting_batch_id WHERE sr.sales_invoice_id = sales_invoices.id AND sr.company_id = %d AND sr.posting_batch_id IS NOT NULL AND sr.issue_date <= \'%s\' AND (sr.status = "posted" OR inverse.posting_date > \'%s\'))',
+            (int) $company->id,
+            $businessDate,
+            $businessDate
+        );
 
         // Filter by invoice status or payment status
         if ($statusFilter !== null) {
             if (in_array($statusFilter, ['DRAFT', 'POSTED', 'VOID'], true)) {
                 $query->where('status', strtolower($statusFilter));
             } elseif (in_array($statusFilter, ['PAID_CASH', 'PAID', 'PARTIAL', 'ON_CREDIT'], true)) {
-                $allocatedSql = '(SELECT COALESCE(SUM(cpa.allocated_amount), 0) FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
-                $returnedSql = '(SELECT COALESCE(SUM(sr.grand_total_currency), 0) FROM sales_returns sr WHERE sr.sales_invoice_id = sales_invoices.id AND sr.status = "posted")';
-                $hasCashSql = 'EXISTS (SELECT 1 FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.is_reversed = 0 AND cp.payment_method = "cash" AND (cpa.application_event_id IS NULL OR (cpae.applied_at IS NOT NULL AND cpae.reversed_at IS NULL)))';
-
                 $query->where('status', SalesInvoice::STATUS_POSTED);
 
                 if ($statusFilter === 'PAID_CASH') {
@@ -308,6 +337,13 @@ final class SalesInvoiceController extends Controller
             $query->where('public_id', '<', $cursorPosition);
         }
 
+        if ($request->boolean('allocatable')) {
+            $query->where('status', SalesInvoice::STATUS_POSTED)
+                ->whereNotNull('posting_batch_id')
+                ->where('issue_date', '<=', $businessDate)
+                ->whereRaw("sales_invoices.grand_total_currency > ({$allocatedSql} + {$returnedSql})");
+        }
+
         $records = $query->orderBy('public_id', 'desc')
             ->limit($limit + 1)
             ->get();
@@ -320,10 +356,12 @@ final class SalesInvoiceController extends Controller
             $nextCursor = null;
         }
 
-        $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver): array {
+        $positions = app(ReceivablePositionAsOf::class)->components($records->filter(fn ($i) => $i->isPosted()), $businessDate);
+        $invoices = $records->map(function (SalesInvoice $inv) use ($company, $minorUnitsResolver, $positions, $businessDate): array {
             $cmu = $minorUnitsResolver->resolve((string) $inv->currency_code, $company);
-            $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($inv);
+            $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($inv, $positions[(int) $inv->id] ?? null, $businessDate);
             $paid = $financialSummary['paid'];
+            $returned = $financialSummary['returned'];
             $grandTotal = $financialSummary['grand_total'];
             $remaining = $financialSummary['remaining'];
             $paymentStatus = $financialSummary['payment_status'];
@@ -346,6 +384,11 @@ final class SalesInvoiceController extends Controller
                 'tax' => (string) BigDecimal::of((string) ($inv->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
                 'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
                 'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+                'returned' => (string) $returned->toScale($cmu, RoundingMode::HALF_UP),
+                'total_exact' => (string) $grandTotal,
+                'paid_exact' => (string) $paid,
+                'returned_exact' => (string) $returned,
+                'remaining_exact' => (string) $remaining,
                 'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
                 'currency' => (string) $inv->currency_code,
                 'currency_minor_units' => $cmu,
@@ -394,7 +437,23 @@ final class SalesInvoiceController extends Controller
             );
         }
 
+        $companyTimezone = (string) ($company->timezone ?: 'UTC');
+        $businessDate = Carbon::now($companyTimezone)->toDateString();
+
+        $hasCashSql = sprintf(
+            'EXISTS (SELECT 1 FROM customer_payment_allocations cpa INNER JOIN customer_payments cp ON cp.id = cpa.customer_payment_id LEFT JOIN customer_payment_application_events cpae ON cpae.id = cpa.application_event_id LEFT JOIN posting_batches pr ON pr.id = cp.reversal_posting_batch_id LEFT JOIN posting_batches er ON er.id = cpae.reversal_posting_batch_id WHERE cpa.sales_invoice_id = sales_invoices.id AND cp.company_id = %d AND cp.payment_method = "cash" AND cp.customer_id = sales_invoices.customer_id AND cp.posting_batch_id IS NOT NULL AND cp.payment_date <= \'%s\' AND (cp.is_reversed = 0 OR pr.posting_date > \'%s\') AND (cpa.application_event_id IS NULL OR (cpae.company_id = %d AND cpae.customer_payment_id = cp.id AND cpae.applied_at IS NOT NULL AND cpae.application_date <= \'%s\' AND (cpae.reversed_at IS NULL OR er.posting_date > \'%s\' OR (cpae.posting_batch_id IS NULL AND pr.posting_date > \'%s\')))))',
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            (int) $company->id,
+            $businessDate,
+            $businessDate,
+            $businessDate
+        );
+
         $invoice = SalesInvoice::where('company_id', $company->id)
+            ->select('sales_invoices.*')
+            ->selectRaw("({$hasCashSql}) as mobile_has_cash_as_of")
             ->where('public_id', $publicId)
             ->with(['customer', 'poster', 'lines.product', 'lines.productUnit.unit', 'allocations.customerPayment'])
             ->first();
@@ -408,8 +467,9 @@ final class SalesInvoiceController extends Controller
         }
 
         $cmu = $minorUnitsResolver->resolve((string) $invoice->currency_code, $company);
-        $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($invoice);
+        $financialSummary = $this->resolveFinancialSummaryAndPaymentStatus($invoice, null, $businessDate);
         $paid = $financialSummary['paid'];
+        $returned = $financialSummary['returned'];
         $grandTotal = $financialSummary['grand_total'];
         $remaining = $financialSummary['remaining'];
         $paymentStatus = $financialSummary['payment_status'];
@@ -489,6 +549,11 @@ final class SalesInvoiceController extends Controller
             'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
             'grand_total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
             'paid_amount' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'returned_amount' => (string) $returned->toScale($cmu, RoundingMode::HALF_UP),
+            'total_exact' => (string) $grandTotal,
+            'paid_exact' => (string) $paid,
+            'returned_exact' => (string) $returned,
+            'remaining_exact' => (string) $remaining,
             'remaining_balance' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'currency' => (string) $invoice->currency_code,
             'lines' => $linesPayload,
@@ -510,6 +575,11 @@ final class SalesInvoiceController extends Controller
             'tax' => (string) BigDecimal::of((string) ($invoice->tax_total_currency ?? '0.000000'))->toScale($cmu, RoundingMode::HALF_UP),
             'total' => (string) $grandTotal->toScale($cmu, RoundingMode::HALF_UP),
             'paid' => (string) $paid->toScale($cmu, RoundingMode::HALF_UP),
+            'returned' => (string) $returned->toScale($cmu, RoundingMode::HALF_UP),
+            'total_exact' => (string) $grandTotal,
+            'paid_exact' => (string) $paid,
+            'returned_exact' => (string) $returned,
+            'remaining_exact' => (string) $remaining,
             'remaining' => (string) $remaining->toScale($cmu, RoundingMode::HALF_UP),
             'lines' => $linesPayload,
             'thermal_receipt' => $thermalReceipt,
@@ -520,23 +590,27 @@ final class SalesInvoiceController extends Controller
     }
 
     /**
-     * @return array{paid: BigDecimal, grand_total: BigDecimal, remaining: BigDecimal, payment_status: string}
+     * @param  array{paid: BigDecimal, returned: BigDecimal, outstanding: BigDecimal}|null  $position
+     * @return array{paid: BigDecimal, returned: BigDecimal, grand_total: BigDecimal, remaining: BigDecimal, payment_status: string}
      */
-    private function resolveFinancialSummaryAndPaymentStatus(SalesInvoice $invoice): array
+    private function resolveFinancialSummaryAndPaymentStatus(SalesInvoice $invoice, ?array $position = null, ?string $asOfDate = null): array
     {
         if (! $invoice->isPosted()) {
             $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
 
             return [
                 'paid' => BigDecimal::zero(),
+                'returned' => BigDecimal::zero(),
                 'grand_total' => $grandTotal,
                 'remaining' => $invoice->isVoid() ? BigDecimal::zero() : $grandTotal,
                 'payment_status' => 'ON_CREDIT',
             ];
         }
 
-        $summary = $invoice->calculateFinancialSummary();
+        $date = $asOfDate ?? Carbon::now($invoice->company->timezone ?: 'UTC')->toDateString();
+        $summary = $position ?? app(ReceivablePositionAsOf::class)->components([$invoice], $date)[(int) $invoice->id];
         $paid = $summary['paid'];
+        $returned = $summary['returned'];
         $grandTotal = BigDecimal::of((string) $invoice->grand_total_currency);
         $remaining = $summary['outstanding'];
 
@@ -544,10 +618,28 @@ final class SalesInvoiceController extends Controller
         $isPartiallyPaid = $paid->isPositive() && $remaining->isPositive();
 
         if ($isPaidInFull) {
-            $hasCashPayment = $invoice->paymentAllocations()
-                ->active()
-                ->whereHas('customerPayment', fn ($q) => $q->where('payment_method', CustomerPayment::METHOD_CASH))
-                ->exists();
+            $hasCashPayment = $invoice->getAttribute('mobile_has_cash_as_of') !== null
+                ? (bool) $invoice->getAttribute('mobile_has_cash_as_of')
+                : DB::table('customer_payment_allocations as cpa')
+                    ->join('customer_payments as cp', 'cp.id', '=', 'cpa.customer_payment_id')
+                    ->leftJoin('customer_payment_application_events as cpae', 'cpae.id', '=', 'cpa.application_event_id')
+                    ->leftJoin('posting_batches as pr', 'pr.id', '=', 'cp.reversal_posting_batch_id')
+                    ->leftJoin('posting_batches as er', 'er.id', '=', 'cpae.reversal_posting_batch_id')
+                    ->where('cpa.sales_invoice_id', $invoice->id)
+                    ->where('cp.company_id', $invoice->company_id)
+                    ->where('cp.payment_method', 'cash')
+                    ->where('cp.customer_id', $invoice->customer_id)
+                    ->whereNotNull('cp.posting_batch_id')
+                    ->where('cp.payment_date', '<=', $date)
+                    ->where(fn ($q) => $q->where('cp.is_reversed', 0)->orWhere('pr.posting_date', '>', $date))
+                    ->where(fn ($q) => $q->whereNull('cpa.application_event_id')->orWhere(function ($eq) use ($invoice, $date): void {
+                        $eq->where('cpae.company_id', $invoice->company_id)
+                            ->whereColumn('cpae.customer_payment_id', 'cp.id')
+                            ->whereNotNull('cpae.applied_at')
+                            ->where('cpae.application_date', '<=', $date)
+                            ->where(fn ($rq) => $rq->whereNull('cpae.reversed_at')->orWhere('er.posting_date', '>', $date)->orWhere(fn ($sq) => $sq->whereNull('cpae.posting_batch_id')->where('pr.posting_date', '>', $date)));
+                    }))
+                    ->exists();
             $paymentStatus = $hasCashPayment ? 'PAID_CASH' : 'PAID';
         } elseif ($isPartiallyPaid) {
             $paymentStatus = 'PARTIAL';
@@ -557,6 +649,7 @@ final class SalesInvoiceController extends Controller
 
         return [
             'paid' => $paid,
+            'returned' => $returned,
             'grand_total' => $grandTotal,
             'remaining' => $remaining,
             'payment_status' => $paymentStatus,

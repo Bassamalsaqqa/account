@@ -10,6 +10,7 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
+use App\Domain\Posting\DTO\PostingLineCommand;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Customer;
@@ -119,6 +120,29 @@ class PostSalesReturnAction implements StockEventOwner
 
             $issueDate = (string) $lockedReturn->issue_date->format('Y-m-d');
             $year = (int) substr($issueDate, 0, 4);
+
+            $fx = ExchangeRate::from($lockedReturn->exchange_rate);
+            $taxCheck = [];
+            foreach ($lines as $returnLine) {
+                $t = BigDecimal::of((string) $returnLine->line_tax);
+                if (! $t->isZero()) {
+                    $origLine = SalesInvoiceLine::query()->findOrFail($returnLine->sales_invoice_line_id);
+                    $taxAcc = (int) $origLine->sales_tax_account_id;
+                    $taxCheck[$taxAcc] ??= ['pos' => BigDecimal::zero(), 'neg' => BigDecimal::zero()];
+                    if ($t->isPositive()) {
+                        $taxCheck[$taxAcc]['pos'] = $taxCheck[$taxAcc]['pos']->plus($t);
+                    } else {
+                        $taxCheck[$taxAcc]['neg'] = $taxCheck[$taxAcc]['neg']->plus($t);
+                    }
+                }
+            }
+            $returnGrandCurrency = BigDecimal::of((string) $lockedReturn->grand_total_currency);
+            $reliefBase = app(ReceivableBookValue::class)->relief($invoice, $returnGrandCurrency, (int) $lockedReturn->id);
+            $taxTotalCurrency = BigDecimal::of((string) $lockedReturn->tax_total_currency);
+            $taxTotalBase = BigDecimal::of((string) $lockedReturn->tax_total_base);
+            $subtotalCurrency = $returnGrandCurrency->minus($taxTotalCurrency);
+            $subtotalBase = $reliefBase->minus($taxTotalBase);
+            app(SalesReturnAmounts::class)->validateRepresentability($fx, $returnGrandCurrency, $reliefBase, $taxCheck, $subtotalCurrency, $subtotalBase);
 
             // 5. Stock restoration at exact original historical sale cost
             $totalCogsBase = BigDecimal::zero();
@@ -322,7 +346,7 @@ class PostSalesReturnAction implements StockEventOwner
             $postingLines = [];
             $lineNum = 1;
 
-            // Dr Sales Returns (revenue contra)
+            // Dr Sales Returns (revenue contra) or Cr Sales Returns (revenue reversal adjustment if negative)
             if ($subtotalBase->isPositive()) {
                 app(SalesPostingLines::class)->append($postingLines,
                     lineNumber: $lineNum++,
@@ -334,40 +358,125 @@ class PostSalesReturnAction implements StockEventOwner
                     exchangeRate: $fx,
                     description: "Sales Return {$returnNumber} Revenue Reversal",
                 );
-
+            } elseif ($subtotalBase->isNegative()) {
+                app(SalesPostingLines::class)->append($postingLines,
+                    lineNumber: $lineNum++,
+                    ledgerAccountId: $salesReturnsAccount->id,
+                    debitBase: MoneyAmount::from('0.000000'),
+                    creditBase: MoneyAmount::from((string) $subtotalBase->abs()->toScale(6)),
+                    transactionCurrencyCode: $currency,
+                    transactionAmount: MoneyAmount::from((string) $subtotalCurrency->abs()->toScale(6)),
+                    exchangeRate: $fx,
+                    description: "Sales Return {$returnNumber} Revenue Reversal Adjustment",
+                );
             }
 
-            $taxes = [];
+            $taxComponents = [];
             foreach ($lines as $returnLine) {
-                $tax = BigDecimal::of($returnLine->line_tax);
-                if ($tax->isPositive()) {
+                $tax = BigDecimal::of((string) $returnLine->line_tax);
+                if (! $tax->isZero()) {
                     $original = SalesInvoiceLine::query()->findOrFail($returnLine->sales_invoice_line_id);
                     $account = LedgerAccount::where('company_id', $company->id)->where('id', $original->sales_tax_account_id)->where('active', true)->where('is_control', false)->firstOrFail();
-                    $taxes[$account->id] = ($taxes[$account->id] ?? BigDecimal::zero())->plus($tax);
+                    $taxComponents[$account->id] ??= [
+                        'pos' => BigDecimal::zero(),
+                        'neg' => BigDecimal::zero(),
+                        'net' => BigDecimal::zero(),
+                    ];
+                    if ($tax->isPositive()) {
+                        $taxComponents[$account->id]['pos'] = $taxComponents[$account->id]['pos']->plus($tax);
+                    } else {
+                        $taxComponents[$account->id]['neg'] = $taxComponents[$account->id]['neg']->plus($tax);
+                    }
+                    $taxComponents[$account->id]['net'] = $taxComponents[$account->id]['net']->plus($tax);
                 }
             }
             $taxRemainingBase = $taxTotalBase;
-            $taxRemainingGroups = count($taxes);
-            foreach ($taxes as $accountId => $tax) {
+            $taxRemainingGroups = count($taxComponents);
+            foreach ($taxComponents as $accountId => $comp) {
                 $taxRemainingGroups--;
-                $groupBase = $taxRemainingGroups === 0 ? $taxRemainingBase : $tax->multipliedBy($lockedReturn->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                $netTax = $comp['net'];
+                $groupBase = $taxRemainingGroups === 0 ? $taxRemainingBase : $netTax->multipliedBy($lockedReturn->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
                 $taxRemainingBase = $taxRemainingBase->minus($groupBase);
-                app(SalesPostingLines::class)->append($postingLines, $lineNum++, $accountId,
-                    MoneyAmount::from($groupBase), MoneyAmount::zero(), $currency, MoneyAmount::from($tax), $fx,
-                    "Sales Return {$returnNumber} Tax Reversal");
+
+                $computedSignedSum = BigDecimal::zero();
+
+                // 1a. Primary transaction currency line for positive tax component (Dr Tax Output)
+                if ($comp['pos']->isPositive()) {
+                    $posAmount = MoneyAmount::from($comp['pos']);
+                    $posBase = $fx->toBase($posAmount);
+                    if ($posBase->isPositive()) {
+                        $computedSignedSum = $computedSignedSum->plus($posBase->getAmount());
+                        $postingLines[] = new PostingLineCommand(
+                            lineNumber: count($postingLines) + 1,
+                            ledgerAccountId: $accountId,
+                            debitBase: $posBase,
+                            creditBase: MoneyAmount::zero(),
+                            transactionCurrencyCode: $currency,
+                            transactionAmount: $posAmount,
+                            exchangeRate: $fx,
+                            description: "Sales Return {$returnNumber} Tax Reversal",
+                        );
+                    }
+                }
+
+                // 1b. Primary transaction currency line for negative tax component (Cr Tax Output)
+                if ($comp['neg']->isNegative()) {
+                    $negAmount = MoneyAmount::from($comp['neg']->abs());
+                    $negBase = $fx->toBase($negAmount);
+                    if ($negBase->isPositive()) {
+                        $computedSignedSum = $computedSignedSum->minus($negBase->getAmount());
+                        $postingLines[] = new PostingLineCommand(
+                            lineNumber: count($postingLines) + 1,
+                            ledgerAccountId: $accountId,
+                            debitBase: MoneyAmount::zero(),
+                            creditBase: $negBase,
+                            transactionCurrencyCode: $currency,
+                            transactionAmount: $negAmount,
+                            exchangeRate: $fx,
+                            description: "Sales Return {$returnNumber} Tax Reversal Adjustment",
+                        );
+                    }
+                }
+
+                // 2. Base adjustment line represented separately if groupBase differs from computed signed base
+                $baseResidual = $groupBase->minus($computedSignedSum);
+
+                if (! $baseResidual->isZero()) {
+                    $residualDebit = $baseResidual->isPositive();
+                    $postingLines[] = new PostingLineCommand(
+                        lineNumber: count($postingLines) + 1,
+                        ledgerAccountId: $accountId,
+                        debitBase: $residualDebit ? MoneyAmount::from($baseResidual->abs()) : MoneyAmount::zero(),
+                        creditBase: $residualDebit ? MoneyAmount::zero() : MoneyAmount::from($baseResidual->abs()),
+                        description: "Sales Return {$returnNumber} Tax Reversal Base Adjustment",
+                    );
+                }
             }
 
             // Cr Accounts Receivable (reduces customer AR)
-            app(SalesPostingLines::class)->append($postingLines,
-                lineNumber: $lineNum++,
-                ledgerAccountId: $arAccount->id,
-                debitBase: MoneyAmount::from('0.000000'),
-                creditBase: MoneyAmount::from((string) $grandTotalBase->toScale(6)),
-                transactionCurrencyCode: $currency,
-                transactionAmount: MoneyAmount::from((string) $grandTotalCurrency->toScale(6)),
-                exchangeRate: $fx,
-                description: "Sales Return {$returnNumber} - {$customer->displayName()}",
-            );
+            if ($grandTotalBase->isPositive()) {
+                app(SalesPostingLines::class)->append($postingLines,
+                    lineNumber: $lineNum++,
+                    ledgerAccountId: $arAccount->id,
+                    debitBase: MoneyAmount::from('0.000000'),
+                    creditBase: MoneyAmount::from((string) $grandTotalBase->toScale(6)),
+                    transactionCurrencyCode: $currency,
+                    transactionAmount: MoneyAmount::from((string) $grandTotalCurrency->toScale(6)),
+                    exchangeRate: $fx,
+                    description: "Sales Return {$returnNumber} - {$customer->displayName()}",
+                );
+            } elseif ($grandTotalBase->isNegative()) {
+                app(SalesPostingLines::class)->append($postingLines,
+                    lineNumber: $lineNum++,
+                    ledgerAccountId: $arAccount->id,
+                    debitBase: MoneyAmount::from((string) $grandTotalBase->abs()->toScale(6)),
+                    creditBase: MoneyAmount::from('0.000000'),
+                    transactionCurrencyCode: $currency,
+                    transactionAmount: MoneyAmount::from((string) $grandTotalCurrency->abs()->toScale(6)),
+                    exchangeRate: $fx,
+                    description: "Sales Return {$returnNumber} - {$customer->displayName()}",
+                );
+            }
 
             // Dr Inventory / Cr COGS at restored original cost
             if ($totalCogsBase->isPositive()) {

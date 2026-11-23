@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Domain\Purchasing\PurchaseCalculator;
+use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
+use App\Models\Company;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
+use App\Models\User;
 use App\Models\VendorPaymentAllocation;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -22,7 +26,7 @@ final class PurchasePayableAsOf
      */
     public function forPurchases(iterable $purchases, Carbon $asOf): array
     {
-        return $this->positions($purchases, $asOf, true);
+        return array_map(fn (array $row): BigDecimal => $row['outstanding'], $this->components($purchases, $asOf, true));
     }
 
     /**
@@ -35,12 +39,12 @@ final class PurchasePayableAsOf
      */
     public function forHistory(iterable $purchases, Carbon $asOf): array
     {
-        return $this->positions($purchases, $asOf, false);
+        return array_map(fn (array $row): BigDecimal => $row['outstanding'], $this->components($purchases, $asOf));
     }
 
     /** @param iterable<Purchase> $purchases
-     * @return array<int, BigDecimal> */
-    private function positions(iterable $purchases, Carbon $asOf, bool $deep): array
+     * @return array<int, array{paid: BigDecimal, returned: BigDecimal, outstanding: BigDecimal}> */
+    public function components(iterable $purchases, Carbon $asOf, bool $deep = false): array
     {
         $purchases = collect($purchases);
         if ($purchases->isEmpty()) {
@@ -59,6 +63,8 @@ final class PurchasePayableAsOf
         // Reversal batches persist the Company-local business date at execution.
         // Do not reinterpret historical reversal instants in today's timezone.
         $result = [];
+        $paidAmounts = [];
+        $returnedAmounts = [];
         foreach ($purchases as $purchase) {
             $isVoidAfterCutoff = $purchase->isVoid()
                 && $purchase->void_business_date !== null
@@ -85,6 +91,7 @@ final class PurchasePayableAsOf
                 app(PurchaseReturnPostingCommandBuilder::class)->validatePosted($return);
                 $id = (int) $return->purchase_id;
                 $result[$id] = $result[$id]->minus($return->grand_total_currency);
+                $returnedAmounts[$id] = ($returnedAmounts[$id] ?? BigDecimal::zero())->plus($return->grand_total_currency);
             }
         } else {
             $returns = DB::table('purchase_returns as r')
@@ -96,6 +103,7 @@ final class PurchasePayableAsOf
             foreach ($returns as $return) {
                 $id = (int) $return->purchase_id;
                 $result[$id] = $result[$id]->minus((string) $return->relief);
+                $returnedAmounts[$id] = BigDecimal::of((string) $return->relief);
             }
         }
         $allocations = VendorPaymentAllocation::query()
@@ -124,28 +132,104 @@ final class PurchasePayableAsOf
         foreach ($allocations as $row) {
             $id = (int) $row->purchase_id;
             $result[$id] = $result[$id]->minus((string) $row->getAttribute('relief'));
+            $paidAmounts[$id] = BigDecimal::of((string) $row->getAttribute('relief'));
         }
+        $components = [];
         foreach ($result as $id => $position) {
-            $result[$id] = ($position->isPositive() ? $position : BigDecimal::zero())->toScale(6);
+            $components[$id] = ['outstanding' => ($position->isPositive() ? $position : BigDecimal::zero())->toScale(6), 'paid' => $paidAmounts[$id] ?? BigDecimal::zero(), 'returned' => $returnedAmounts[$id] ?? BigDecimal::zero()];
         }
 
-        return $result;
+        return $components;
     }
 
     /** @param list<int> $ids */
     private function assertReadProvenance(int $companyId, array $ids, string $date): void
     {
-        $purchases = DB::table('purchases as p')
-            ->join('posting_batches as b', 'b.id', '=', 'p.posting_batch_id')
-            ->leftJoin('posting_batches as vb', 'vb.id', '=', 'p.void_posting_batch_id')
-            ->whereIn('p.id', $ids)->where('p.company_id', $companyId)
-            ->where(fn ($q) => $q->where('p.status', 'posted')->orWhere(fn ($q) => $q->where('p.status', 'void')->where('p.void_business_date', '>', $date)))
-            ->whereNotNull('p.purchase_number')->where('p.purchase_number', '!=', '')
-            ->whereNotNull('p.posted_at')->whereNotNull('p.posted_by')
-            ->where('b.company_id', $companyId)->where('b.source_type', 'purchase')
-            ->whereColumn('b.source_id', 'p.id')->whereIn('b.status', ['posted', 'reversed'])
-            ->whereNull('b.reversal_of_id')->whereColumn('b.posting_date', 'p.purchase_date')->count();
-        if ($purchases !== count($ids)) {
+        $zeroCostPurchases = Purchase::with(['lines.product', 'lines.lots', 'poster'])
+            ->where('company_id', $companyId)
+            ->whereIn('id', $ids)
+            ->whereNull('posting_batch_id')
+            ->get();
+
+        if ($zeroCostPurchases->isNotEmpty()) {
+            $company = Company::findOrFail($companyId);
+            $builder = app(PurchasePostingCommandBuilder::class);
+            foreach ($zeroCostPurchases as $zPurchase) {
+                if (! in_array($zPurchase->status, ['posted', 'void'], true)) {
+                    throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                }
+                if ($zPurchase->status === 'void' && $zPurchase->void_business_date <= $date) {
+                    throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                }
+                if (empty($zPurchase->purchase_number) || $zPurchase->posted_at === null || $zPurchase->posted_by === null) {
+                    throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                }
+                $grandBase = BigDecimal::of((string) $zPurchase->grand_total_base);
+                $grandCurr = BigDecimal::of((string) $zPurchase->grand_total_currency);
+                $taxBase = BigDecimal::of((string) $zPurchase->tax_total_base);
+                if (! $grandBase->isZero() || ! $grandCurr->isZero() || ! $taxBase->isZero()) {
+                    throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                }
+
+                // Canonical line and header arithmetic integrity check beyond stored totals/provenance
+                $calcResults = [];
+                foreach ($zPurchase->lines as $line) {
+                    $calcResult = app(PurchaseCalculator::class)->line(
+                        $line->quantity,
+                        $line->unit_cost,
+                        $line->discount_type,
+                        $line->discount_value,
+                        $line->tax_rate_snapshot,
+                        $line->tax_inclusive,
+                        $zPurchase->currency_code,
+                        $zPurchase->exchange_rate
+                    );
+                    foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
+                        foreach (['' => $field, '_base' => $field.'Base'] as $suffix => $property) {
+                            if (! $calcResult->{$property}->isEqualTo($line->getAttribute('line_'.$field.$suffix))) {
+                                throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                            }
+                        }
+                    }
+                    $calcResults[] = $calcResult;
+                }
+                $totals = app(SalesDocumentTotalsCalculator::class)->calculate($calcResults);
+                foreach ($totals->toArray() as $field => $expected) {
+                    if (! BigDecimal::of((string) $expected)->isEqualTo($zPurchase->{$field})) {
+                        throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                    }
+                }
+
+                app(LandedCostIntegrity::class)->validate($zPurchase, true);
+                $actor = $zPurchase->poster ?? ($zPurchase->posted_by ? User::find($zPurchase->posted_by) : null) ?? new User(['id' => $zPurchase->posted_by]);
+                $cmd = $builder->build($company, $zPurchase, (string) $zPurchase->purchase_number, $actor, requirePosted: true);
+                if ($cmd !== null) {
+                    throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                }
+            }
+        }
+
+        $zeroCostIds = $zeroCostPurchases->pluck('id')->all();
+        $standardIds = array_values(array_diff($ids, $zeroCostIds));
+
+        $standardCount = 0;
+        if (! empty($standardIds)) {
+            $standardCount = DB::table('purchases as p')
+                ->join('posting_batches as b', 'b.id', '=', 'p.posting_batch_id')
+                ->whereIn('p.id', $standardIds)->where('p.company_id', $companyId)
+                ->where(fn ($q) => $q->where('p.status', 'posted')->orWhere(fn ($q) => $q->where('p.status', 'void')->where('p.void_business_date', '>', $date)))
+                ->whereNotNull('p.purchase_number')->where('p.purchase_number', '!=', '')
+                ->whereNotNull('p.posted_at')->whereNotNull('p.posted_by')
+                ->where('b.company_id', $companyId)
+                ->where('b.source_type', 'purchase')
+                ->whereColumn('b.source_id', 'p.id')
+                ->whereIn('b.status', ['posted', 'reversed'])
+                ->whereNull('b.reversal_of_id')
+                ->whereColumn('b.posting_date', 'p.purchase_date')
+                ->count();
+        }
+
+        if (($standardCount + count($zeroCostIds)) !== count($ids)) {
             throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
         }
         $invalidReturn = DB::table('purchase_returns as r')

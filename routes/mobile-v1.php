@@ -51,6 +51,7 @@ Route::middleware([MobileMerchantBoundary::class, MobileAuthenticate::class])->g
 });
 
 Route::prefix('companies/{companyId}')->group(function (): void {
+    Route::get('/settings/business', [BusinessSettingsController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.settings.business');
     Route::get('/bootstrap', [BootstrapController::class, 'show'])->middleware('mobile.auth:sales.invoice.create')->name('mobile.v1.bootstrap');
     Route::get('/products', [ProductController::class, 'index'])->middleware('mobile.auth:product.viewAny')->name('mobile.v1.products.index');
     Route::get('/customers', [CustomerController::class, 'index'])->middleware('mobile.auth:customers.view')->name('mobile.v1.customers.index');
@@ -120,9 +121,7 @@ Route::prefix('companies/{companyId}')
         Route::post('/reports/shift-close', [ReportController::class, 'shiftClose'])->middleware('mobile.auth:reports.financial.view')->name('mobile.v1.reports.shift_close');
         Route::get('/reports/treasury', [ReportController::class, 'treasury'])->middleware('mobile.auth:reports.financial.view')->name('mobile.v1.reports.treasury');
 
-        // Settings
-        Route::get('/settings/business', [BusinessSettingsController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.settings.business');
-
         // Receipts & Command Status
-        Route::get('/receipts/{idempotencyKey}/status', [ReceiptStatusController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.receipts.status');
+        Route::get('/receipts/status', [ReceiptStatusController::class, 'show'])->middleware('mobile.auth')->name('mobile.v1.receipts.status.query');
+        Route::get('/receipts/{idempotencyKey}/status', [ReceiptStatusController::class, 'show'])->where('idempotencyKey', '.*')->middleware('mobile.auth')->name('mobile.v1.receipts.status');
     });

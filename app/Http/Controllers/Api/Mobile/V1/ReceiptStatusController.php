@@ -26,9 +26,10 @@ final class ReceiptStatusController extends Controller
     public function show(
         Request $request,
         string $companyId,
-        string $idempotencyKey,
-        NativeCommandReceiptManager $receiptManager
+        ?string $idempotencyKey = null,
+        ?NativeCommandReceiptManager $receiptManager = null
     ): JsonResponse {
+        $receiptManager ??= app(NativeCommandReceiptManager::class);
         /** @var Company|null $company */
         $company = $request->attributes->get('mobile_company');
         /** @var User|null $user */
@@ -44,8 +45,18 @@ final class ReceiptStatusController extends Controller
             );
         }
 
+        $rawKey = $request->query('idempotency_key') ?? $idempotencyKey;
+        if (! is_string($rawKey) || trim($rawKey) === '') {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'Idempotency key parameter is required.',
+                status: 404
+            );
+        }
+        $key = trim($rawKey);
+
         try {
-            $status = $receiptManager->lookup($company, $user, $device, $idempotencyKey);
+            $status = $receiptManager->lookup($company, $user, $device, $key);
         } catch (AuthorizationException $e) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',

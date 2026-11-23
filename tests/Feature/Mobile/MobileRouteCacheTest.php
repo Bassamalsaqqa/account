@@ -11,6 +11,15 @@ final class MobileRouteCacheTest extends TestCase
 {
     private ?string $tempRouteCache = null;
 
+    public function test_cached_settings_read_retains_master_gate_and_authentication(): void
+    {
+        $uri = '/api/mobile/v1/companies/01M3WMTQQZE7P30Z3KC93N7YJ9/settings/business';
+        $enabled = $this->runWorker(mobileEnabled: true, cached: true, method: 'GET', uri: $uri);
+        $this->assertSame(401, $enabled['status']);
+        $disabled = $this->runWorker(mobileEnabled: false, cached: true, method: 'GET', uri: $uri);
+        $this->assertSame(404, $disabled['status']);
+    }
+
     protected function tearDown(): void
     {
         if ($this->tempRouteCache !== null && file_exists($this->tempRouteCache)) {

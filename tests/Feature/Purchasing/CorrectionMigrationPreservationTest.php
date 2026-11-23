@@ -14,6 +14,7 @@ use App\Models\Customer;
 use App\Services\Corrections\TradeCorrection;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -28,6 +29,14 @@ final class CorrectionMigrationPreservationTest extends Phase5DTestCase
     private ?DisposableMariaDbSchema $canonicalSchema = null;
 
     private ?DisposableMariaDbSchema $historicalSchema = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        if (! config('app.key')) {
+            config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
+        }
+    }
 
     public function refreshDatabase(): void
     {
@@ -176,8 +185,13 @@ final class CorrectionMigrationPreservationTest extends Phase5DTestCase
             $source = app(PostSalesReturnAction::class)->execute($source, $this->owner);
         }
         $service = app(TradeCorrection::class);
-        $preview = $service->preview($source, $this->owner, 'edit', 'Migration retention fixture', '2026-11-07');
-        $replacement = $service->execute($preview['token'], $this->owner);
+        Carbon::setTestNow('2026-11-07 12:00:00');
+        try {
+            $preview = $service->preview($source, $this->owner, 'edit', 'Migration retention fixture', '2026-11-07');
+            $replacement = $service->execute($preview['token'], $this->owner);
+        } finally {
+            Carbon::setTestNow();
+        }
         foreach (['sales_invoice', 'sales_return', 'purchase_return'] as $receiptFamily) {
             $this->assertSame($receiptFamily === $family ? 1 : 0, DB::table($receiptFamily.'_correction_receipts')->count());
         }

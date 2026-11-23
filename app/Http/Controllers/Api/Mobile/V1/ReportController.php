@@ -48,7 +48,7 @@ final class ReportController extends Controller
         setPermissionsTeamId($company->id);
         app(CompanyContext::class)->setCompany($company, $user);
 
-        if (! $user->hasPermissionTo('reports.financial.view') && ! $user->hasPermissionTo('money.cash.view')) {
+        if (! $user->hasPermissionTo('reports.financial.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required reports permission.',
@@ -67,7 +67,7 @@ final class ReportController extends Controller
 
         // 1. Opening cash from canonical money ledger (as of start of day); never trust client float or invent zero on error
         $openingFloat = null;
-        if ($approvedCashAccount !== null && $user->hasPermissionTo('money.cash.view')) {
+        if ($approvedCashAccount !== null && ($user->hasPermissionTo('reports.financial.view') || $user->hasPermissionTo('money.cash.view'))) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
                 $openingBalances = $moneyBalanceQuery->forType($company, 'cash', $yesterday);
@@ -110,7 +110,7 @@ final class ReportController extends Controller
 
         // 6. Expected drawer cash must come from canonical CURRENT MoneyBalanceQuery for exact approved account
         $expectedCash = null;
-        if ($approvedCashAccount !== null && $user->hasPermissionTo('money.cash.view')) {
+        if ($approvedCashAccount !== null && ($user->hasPermissionTo('reports.financial.view') || $user->hasPermissionTo('money.cash.view'))) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
                 $currentBalances = $moneyBalanceQuery->forType($company, 'cash');
@@ -160,7 +160,7 @@ final class ReportController extends Controller
         setPermissionsTeamId($company->id);
         app(CompanyContext::class)->setCompany($company, $user);
 
-        if (! $user->hasPermissionTo('reports.financial.view') && ! $user->hasPermissionTo('money.cash.view')) {
+        if (! $user->hasPermissionTo('reports.financial.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required reports permission.',
@@ -315,7 +315,7 @@ final class ReportController extends Controller
             // Revalidate permissions under lock
             setPermissionsTeamId($company->id);
             $lockedUser->unsetRelation('roles')->unsetRelation('permissions');
-            if (! $lockedUser->hasPermissionTo('reports.financial.view') && ! $lockedUser->hasPermissionTo('money.cash.view')) {
+            if (! $lockedUser->hasPermissionTo('reports.financial.view')) {
                 return MobileApiBoundary::buildErrorResponse(
                     code: 'FORBIDDEN',
                     message: 'Action is unauthorized. Missing required reports permission.',
@@ -519,7 +519,7 @@ final class ReportController extends Controller
 
         setPermissionsTeamId($company->id);
 
-        if (! $user->hasPermissionTo('reports.financial.view') && ! $user->hasPermissionTo('money.cash.view')) {
+        if (! $user->hasPermissionTo('reports.financial.view')) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'FORBIDDEN',
                 message: 'Action is unauthorized. Missing required reports permission.',

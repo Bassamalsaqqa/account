@@ -70,8 +70,12 @@ class ReturnDetail extends Component
             abort(403, 'Unauthorized.');
         }
 
-        $this->return = $postAction->execute($this->return, $user);
-        session()->flash('success', __('sales.posted_successfully'));
+        try {
+            $this->return = $postAction->execute($this->return, $user);
+            session()->flash('success', __('sales.posted_successfully'));
+        } catch (\InvalidArgumentException $e) {
+            session()->flash('error', $e->getMessage());
+        }
     }
 
     public function voidReturn(VoidSalesReturnAction $voidAction): void

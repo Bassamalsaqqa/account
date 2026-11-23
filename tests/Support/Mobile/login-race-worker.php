@@ -17,7 +17,14 @@ $app = require __DIR__.'/../../../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 DisposableMariaDbSchema::assertPrimarySchema(DB::connection()->getDatabaseName());
 $input = json_decode(base64_decode($argv[1]), true, 512, JSON_THROW_ON_ERROR);
-touch($argv[2]);
+// Signal after mobile membership discovery establishes its read view, before
+// company locking can serialize the workers. Browser admission locks User first.
+DB::connection()->beforeExecuting(function (string $sql) use ($argv): void {
+    $table = ($argv[3] ?? 'mobile') === 'browser' ? 'users' : 'companies';
+    if (str_contains($sql, 'from `'.$table.'`') && str_contains($sql, 'for update')) {
+        touch($argv[2]);
+    }
+});
 $request = Request::create('/api/mobile/v1/auth/login', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json', 'REMOTE_ADDR' => '127.0.0.1'], json_encode($input, JSON_THROW_ON_ERROR));
 if (($argv[3] ?? 'mobile') === 'browser') {
     $browser = TwoFactorLoginRequest::create('/two-factor-challenge', 'POST', ['recovery_code' => $input['recovery_code']]);

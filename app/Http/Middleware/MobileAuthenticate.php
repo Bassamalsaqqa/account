@@ -117,7 +117,7 @@ final class MobileAuthenticate
                 return MobileApiBoundary::buildErrorResponse(
                     code: 'FORBIDDEN_TENANT_MISMATCH',
                     message: 'User does not possess active authorized membership in the requested company context.',
-                    status: 403,
+                    status: $request->routeIs('mobile.v1.settings.business') && ! config('mobile.merchant_api_enabled', false) ? 404 : 403,
                     details: ['requested_company_id' => $companyId]
                 );
             }
@@ -131,7 +131,7 @@ final class MobileAuthenticate
                 return MobileApiBoundary::buildErrorResponse(
                     code: 'FORBIDDEN_TENANT_MISMATCH',
                     message: 'User does not possess active authorized membership in the requested company context.',
-                    status: 403,
+                    status: $request->routeIs('mobile.v1.settings.business') && ! config('mobile.merchant_api_enabled', false) ? 404 : 403,
                     details: ['requested_company_id' => $companyId]
                 );
             }
@@ -140,7 +140,7 @@ final class MobileAuthenticate
                 return MobileApiBoundary::buildErrorResponse(
                     code: 'FORBIDDEN_TENANT_MISMATCH',
                     message: 'User does not possess active authorized membership in the requested company context.',
-                    status: 403,
+                    status: $request->routeIs('mobile.v1.settings.business') && ! config('mobile.merchant_api_enabled', false) ? 404 : 403,
                     details: ['requested_company_id' => $companyId]
                 );
             }

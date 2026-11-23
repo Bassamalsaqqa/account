@@ -9,9 +9,12 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\User;
+use App\Services\Audit\AuditService;
+use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class CustomerCatalogService
 {
@@ -22,10 +25,31 @@ final class CustomerCatalogService
             $company = app(SalesActorGuard::class)->lockAndAuthorize($company->id, $actor, 'customers.manage');
             $customer = $customerId === null ? new Customer : Customer::where('company_id', $company->id)->whereKey($customerId)->lockForUpdate()->firstOrFail();
 
-            foreach (['name_ar', 'name_en'] as $nameKey) {
-                if (array_key_exists($nameKey, $data) && is_string($data[$nameKey])) {
-                    $trimmed = trim($data[$nameKey]);
-                    $data[$nameKey] = $trimmed === '' ? null : $trimmed;
+            if (array_key_exists('address', $data)) {
+                if ($data['address'] === null || (is_string($data['address']) && trim($data['address']) === '')) {
+                    if (! array_key_exists('address_ar', $data)) {
+                        $data['address_ar'] = null;
+                    }
+                    if (! array_key_exists('address_en', $data)) {
+                        $data['address_en'] = null;
+                    }
+                    if (! array_key_exists('address_line_1_ar', $data)) {
+                        $data['address_line_1_ar'] = null;
+                    }
+                    if (! array_key_exists('address_line_1_en', $data)) {
+                        $data['address_line_1_en'] = null;
+                    }
+                } else {
+                    if (! array_key_exists('address_ar', $data)) {
+                        $data['address_ar'] = $data['address'];
+                    }
+                }
+            }
+
+            foreach (['name_ar', 'name_en', 'phone', 'whatsapp', 'email', 'tax_number', 'address_ar', 'address_en', 'address_line_1_ar', 'address_line_1_en', 'city_ar', 'city_en', 'notes'] as $fieldKey) {
+                if (array_key_exists($fieldKey, $data) && is_string($data[$fieldKey])) {
+                    $trimmed = trim($data[$fieldKey]);
+                    $data[$fieldKey] = $trimmed === '' ? null : $trimmed;
                 }
             }
 
@@ -69,12 +93,38 @@ final class CustomerCatalogService
 
             $payload = $validator->validate();
             if (array_key_exists('credit_limit', $data)) {
-                $limit = $data['credit_limit'] === null ? null : MoneyAmount::from($data['credit_limit']);
-                if ($limit?->getAmount()->isNegative()) {
-                    throw ValidationException::withMessages(['credit_limit' => __('validation.min.numeric', ['attribute' => __('sales.credit_limit'), 'min' => 0])]);
+                $rawLimit = $data['credit_limit'];
+                if (is_bool($rawLimit) || is_float($rawLimit)) {
+                    throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
                 }
-                $payload['credit_limit'] = $limit === null ? null : (string) $limit;
+                if ($rawLimit === null || (is_string($rawLimit) && trim($rawLimit) === '')) {
+                    $payload['credit_limit'] = null;
+                } else {
+                    if (! is_string($rawLimit) && ! is_int($rawLimit)) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
+                    }
+                    $trimmed = trim((string) $rawLimit);
+                    if (! preg_match('/^\d+(\.\d+)?$/', $trimmed)) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
+                    }
+                    try {
+                        $dec = BigDecimal::of($trimmed);
+                        if ($dec->getScale() > 6) {
+                            throw ValidationException::withMessages(['credit_limit' => __('validation.max.numeric', ['attribute' => __('sales.credit_limit'), 'max' => 6])]);
+                        }
+                        $limit = MoneyAmount::from($trimmed);
+                    } catch (ValidationException $ve) {
+                        throw $ve;
+                    } catch (Throwable) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.numeric', ['attribute' => __('sales.credit_limit')])]);
+                    }
+                    if ($limit->getAmount()->isNegative()) {
+                        throw ValidationException::withMessages(['credit_limit' => __('validation.min.numeric', ['attribute' => __('sales.credit_limit'), 'min' => 0])]);
+                    }
+                    $payload['credit_limit'] = (string) $limit->getAmount()->toScale(6);
+                }
             }
+            $before = $customer->exists ? $customer->only(array_keys($payload)) : null;
             $customer->fill($payload);
             $customer->company_id = $company->id;
             $customer->updated_by = $actor->id;
@@ -82,6 +132,7 @@ final class CustomerCatalogService
                 $customer->created_by = $actor->id;
             }
             $customer->save();
+            app(AuditService::class)->log($company->id, 'customer.saved', 'Customer configuration saved', $actor->id, $customer, $before, $customer->only(array_keys($payload)));
 
             return $customer->refresh();
         });

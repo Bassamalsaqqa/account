@@ -195,7 +195,12 @@
       "route_name": "mobile.v1.settings.business",
       "action_class": "App\\Http\\Controllers\\Api\\Mobile\\V1\\BusinessSettingsController::show",
       "permissions_required": [],
-      "tested_in": "Tests\\Unit\\Mobile\\MerchantAdaptersAndCoverageTest::test_business_settings_mappings",
+      "tested_in": "Tests\\Feature\\Mobile\\MerchantReadHttpTest::test_read_ready_settings_preserve_precision_and_hide_merchant_mapping",
+      "release_projection": {
+        "merchant_off": "sales.invoice.create required; profile fields and authoritative base precision only; operational mappings, taxes and currencies absent",
+        "merchant_on": "Existing full response schema below; existing authentication and permission behavior preserved",
+        "master_mobile_gate": "required for both projections"
+      },
       "request_schema": {},
       "request_example": {},
       "response_schema": {
