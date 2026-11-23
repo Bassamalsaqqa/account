@@ -15,6 +15,7 @@ use App\Models\Warehouse;
 use App\Services\Inventory\ProductCatalogService;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportLifecycleHooks\DirectlyCallingLifecycleHooksNotAllowedException;
 use Livewire\Livewire;
@@ -141,5 +142,107 @@ final class PurchaseFormLifecycleBindingTest extends TestCase
         }
 
         $this->assertSame([], $violations, 'Found illegal direct lifecycle hook bindings in blade templates: '.implode(', ', $violations));
+    }
+
+    public function test_empty_line_validation_displays_human_readable_attribute_names_without_raw_dot_paths(): void
+    {
+        app()->setLocale('ar');
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('save', false);
+
+        $test->assertHasErrors(['lines.0.product_id']);
+
+        $errors = $test->errors();
+        $productError = $errors->first('lines.0.product_id');
+
+        // Assert error message uses localized human readable attribute instead of raw dot-path
+        $this->assertStringContainsString('البند', $productError);
+        $this->assertStringContainsString('الصنف', $productError);
+        $this->assertStringNotContainsString('lines.0.product_id', $productError);
+
+        $html = $test->html();
+        $this->assertStringContainsString('aria-invalid="true"', $html);
+        $this->assertStringContainsString('id="purchase-vendor"', $html);
+    }
+
+    public function test_currency_switch_clears_fx_rate_and_requires_rate_before_auto_cost_population_without_500(): void
+    {
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id);
+
+        // Initial base currency
+        $test->assertSet('currency_code', 'ILS');
+        $test->assertSet('exchange_rate', '1.0000000000');
+        $test->call('selectProduct', 0, $this->product->id);
+        $test->assertSet('lines.0.unit_cost', '10.00');
+
+        // Switch to foreign currency JOD
+        $test->set('currency_code', 'JOD');
+        $test->assertSet('exchange_rate', '');
+        $test->assertSet('lines.0.unit_cost', '');
+
+        // Trying to auto-populate product cost without exchange rate must not throw 500
+        $test->call('selectProduct', 0, $this->product->id);
+        $test->assertHasErrors(['exchange_rate']);
+        $this->assertSame('', $test->get('lines.0.unit_cost'));
+
+        // Supplying valid exchange rate allows auto-cost population
+        $test->set('exchange_rate', '0.2800000000');
+        $test->call('selectProduct', 0, $this->product->id);
+        $test->assertHasNoErrors('exchange_rate');
+
+        // Switch to USD: again clears exchange_rate and unit costs safely
+        $test->set('currency_code', 'USD');
+        $test->assertSet('exchange_rate', '');
+        $test->assertSet('lines.0.unit_cost', '');
+    }
+
+    public function test_immediate_settlement_mode_rendered_with_accessible_cards_and_parity_with_sales(): void
+    {
+        $test = Livewire::test(PurchaseForm::class);
+
+        $html = $test->html();
+
+        // 3-mode card radio group matching sales layout
+        $this->assertStringContainsString('grid gap-2 sm:grid-cols-3', $html);
+        $this->assertStringContainsString('id="purchase-settlement-mode-unpaid"', $html);
+        $this->assertStringContainsString('id="purchase-settlement-mode-full"', $html);
+        $this->assertStringContainsString('id="purchase-settlement-mode-partial"', $html);
+        $this->assertStringContainsString('rounded-control border border-border bg-surface px-3 py-2 text-sm', $html);
+    }
+
+    public function test_empty_or_missing_cost_or_quantity_clears_totals_and_fails_validation_while_explicit_zero_cost_is_allowed(): void
+    {
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id);
+
+        // Explicit string '0' is valid policy (ADR 0013 zero-cost purchase)
+        $test->set('lines.0.unit_cost', '0');
+        $test->call('recalculate');
+        $this->assertTrue($test->get('documentTotalsValid'));
+        $this->assertTrue(BigDecimal::of($test->get('totals.total'))->isZero());
+
+        // Empty string cost must mark preview totals unavailable and clear totals
+        $test->set('lines.0.unit_cost', '');
+        $test->call('recalculate');
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $this->assertSame([], $test->get('totals'));
+
+        // Saving draft with empty cost fails validation with short field error
+        $test->call('save', false);
+        $test->assertHasErrors(['lines.0.unit_cost']);
+
+        // Empty string quantity also marks preview unavailable and fails validation
+        $test->set('lines.0.unit_cost', '10.00');
+        $test->set('lines.0.quantity', '');
+        $test->call('recalculate');
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $test->call('save', false);
+        $test->assertHasErrors(['lines.0.quantity']);
     }
 }
