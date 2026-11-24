@@ -6,10 +6,13 @@ namespace Tests\Feature\Purchasing;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
+use App\Actions\Purchasing\PostPurchaseAction;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
 use App\Models\CompanyPurchaseSetting;
+use App\Models\PostingBatch;
+use App\Models\PostingLine;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
@@ -236,7 +239,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertSame('45.00', $test->get('previewGrandTotal'));
     }
 
-    public function test_header_discount_binding_and_validation_without_ui_only_mock_calculation(): void
+    public function test_header_discount_binding_and_validation_with_canonical_calculation(): void
     {
         $test = Livewire::test(PurchaseForm::class)
             ->set('vendor_id', $this->vendor->id)
@@ -248,30 +251,61 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         // Initial defaults
         $test->assertSet('discount_type', 'none');
         $test->assertSet('discount_value', '0');
+        $test->assertSet('showDiscountControl', false);
 
-        // Layout-only intermediate stage: nonzero global discount fails closed
+        // Toggle opens discount control
+        $test->call('toggleDiscountControl');
+        $test->assertSet('showDiscountControl', true);
+
+        // Canonical 10% global discount on 50.00 subtotal
         $test->set('discount_type', 'percent');
         $test->set('discount_value', '10');
         $test->call('recalculate');
 
-        // Recalculation invalidates preview totals to prevent misleading amounts before domain integration
-        $this->assertFalse($test->get('documentTotalsValid'));
-        $this->assertSame([], $test->get('totals'));
-        $this->assertSame('0', $test->get('previewGrandTotal'));
+        $this->assertTrue($test->get('documentTotalsValid'));
+        $this->assertSame('45.00', $test->get('previewGrandTotal'));
+        $this->assertSame('5.000000', $test->get('totals.discount'));
 
-        // Save fails with short field error on discount_value
+        // Validation: percent > 100 fails
+        $test->set('discount_value', '150');
+        $test->call('recalculate');
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $test->assertHasErrors(['discount_value']);
+
         $test->call('save', false);
         $test->assertHasErrors(['discount_value']);
 
-        // Explicit zero or none passes and preserves valid recalculation
-        $test->set('discount_value', '0');
+        // Validation: negative discount fails
+        $test->set('discount_value', '-10');
+        $test->call('recalculate');
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $test->assertHasErrors(['discount_value']);
+
+        // Validation: fixed discount exceeding subtotal fails
+        $test->set('discount_type', 'fixed');
+        $test->set('discount_value', '60.00');
+        $test->call('recalculate');
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $test->assertHasErrors(['discount_value']);
+
+        // Valid fixed discount passes and saves draft
+        $test->set('discount_value', '5.00');
         $test->call('recalculate');
         $this->assertTrue($test->get('documentTotalsValid'));
-        $this->assertSame('50.00', $test->get('previewGrandTotal'));
+        $this->assertSame('45.00', $test->get('previewGrandTotal'));
 
         $test->call('saveDraft');
-        $test->assertHasNoErrors(['discount_value']);
+        $test->assertHasNoErrors();
         $this->assertNotNull($test->get('savedDraftPublicId'));
+
+        $savedDraft = Purchase::where('company_id', $this->company->id)->where('public_id', $test->get('savedDraftPublicId'))->firstOrFail();
+        $this->assertSame('fixed', $savedDraft->discount_type);
+        $this->assertTrue(BigDecimal::of($savedDraft->discount_value)->isEqualTo('5.00'));
+        $this->assertSame('document', $savedDraft->discount_scope);
+
+        $line = $savedDraft->lines->first();
+        $this->assertTrue(BigDecimal::of($line->allocated_document_discount)->isEqualTo('5.00'));
+        $this->assertTrue(BigDecimal::of($line->line_total)->isEqualTo('45.00'));
     }
 
     public function test_legacy_line_discounts_cannot_be_tampered_by_client_request_or_new_lines(): void
@@ -351,7 +385,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertStringContainsString('x-show="true"', $errorHtml);
     }
 
-    public function test_lines_table_action_bar_is_clean_of_shortcuts_and_counters_and_global_discount_input_hidden_in_intermediate_stage(): void
+    public function test_lines_table_action_bar_is_clean_of_shortcuts_and_counters_and_global_discount_controls_toggle(): void
     {
         $test = Livewire::test(PurchaseForm::class);
         $html = $test->html();
@@ -360,9 +394,71 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertStringNotContainsString('Alt+N', $html);
         $this->assertStringNotContainsString('· 1 Items', $html);
 
-        // Global discount input is hidden from UI during layout-only intermediate stage
+        // Global discount input is initially collapsed behind clean add button
+        $this->assertStringContainsString('wire:click="toggleDiscountControl"', $html);
         $this->assertStringNotContainsString('id="purchase-discount-type"', $html);
-        $this->assertStringNotContainsString('id="purchase-discount-value"', $html);
+
+        // When toggled, interactive inputs appear
+        $test->call('toggleDiscountControl');
+        $toggledHtml = $test->html();
+        $this->assertStringContainsString('id="purchase-discount-type"', $toggledHtml);
+        $this->assertStringContainsString('id="purchase-discount-value"', $toggledHtml);
+    }
+
+    public function test_fx_currency_requires_exchange_rate_and_recalculates_on_sync(): void
+    {
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->set('currency_code', 'USD')
+            ->set('exchange_rate', '')
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_cost', '10.00');
+
+        // Blank exchange rate on FX currency fails calculation
+        $test->call('recalculate');
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $test->assertHasErrors(['exchange_rate']);
+
+        // Providing valid exchange rate succeeds and recalculates preview
+        $test->set('exchange_rate', '3.5000000000');
+        $test->call('recalculate');
+        $this->assertTrue($test->get('documentTotalsValid'));
+        $this->assertSame('20.00', $test->get('previewGrandTotal'));
+    }
+
+    public function test_arabic_and_english_locale_rendering_and_messages(): void
+    {
+        // Arabic
+        app()->setLocale('ar');
+        $testAr = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '150');
+
+        $testAr->call('recalculate');
+        $testAr->assertHasErrors(['discount_value']);
+        $errorAr = $testAr->errors()->first('discount_value');
+        $this->assertStringContainsString('الخصم', $errorAr);
+
+        // English
+        app()->setLocale('en');
+        $testEn = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '150');
+
+        $testEn->call('recalculate');
+        $testEn->assertHasErrors(['discount_value']);
+        $errorEn = $testEn->errors()->first('discount_value');
+        $this->assertStringContainsString('percentage', strtolower($errorEn));
     }
 
     public function test_legacy_line_discount_renders_read_only_badge_and_persists_without_silent_reset(): void
@@ -388,7 +484,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
 
         // Hydrates existing legacy discount
         $test->assertSet('lines.0.discount_type', 'fixed');
-        $test->assertSet('lines.0.discount_value', '5.00');
+        $this->assertTrue(BigDecimal::of($test->get('lines.0.discount_value'))->isEqualTo('5.00'));
 
         $html = $test->html();
 
@@ -408,5 +504,46 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $reloadedLine = $reloaded->lines->first();
         $this->assertSame('fixed', $reloadedLine->discount_type);
         $this->assertTrue(BigDecimal::of($reloadedLine->discount_value)->isEqualTo('5.00'));
+    }
+
+    public function test_purchase_draft_with_document_discount_posts_successfully(): void
+    {
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_cost', '25.00')
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '10')
+            ->call('saveDraft');
+
+        $test->assertHasNoErrors();
+        $publicId = $test->get('savedDraftPublicId');
+        $this->assertNotNull($publicId);
+
+        $purchase = Purchase::where('company_id', $this->company->id)->where('public_id', $publicId)->firstOrFail();
+        $this->assertSame('draft', $purchase->status);
+        $this->assertTrue(BigDecimal::of($purchase->subtotal_currency)->isEqualTo('50.00'));
+        $this->assertTrue(BigDecimal::of($purchase->discount_total_currency)->isEqualTo('5.00'));
+        $this->assertTrue(BigDecimal::of($purchase->grand_total_currency)->isEqualTo('45.00'));
+
+        // Post the purchase draft
+        $posted = app(PostPurchaseAction::class)->execute($purchase, $this->owner);
+        $this->assertSame('posted', $posted->status);
+
+        // Assert posting batch balances exactly
+        $batch = PostingBatch::where('company_id', $this->company->id)->whereKey($posted->posting_batch_id)->firstOrFail();
+        $lines = PostingLine::where('posting_batch_id', $batch->id)->get();
+
+        $dr = BigDecimal::zero();
+        $cr = BigDecimal::zero();
+        foreach ($lines as $line) {
+            $dr = $dr->plus(BigDecimal::of($line->debit_base));
+            $cr = $cr->plus(BigDecimal::of($line->credit_base));
+        }
+        $this->assertTrue($dr->isEqualTo($cr));
+        $this->assertTrue($dr->isPositive());
     }
 }

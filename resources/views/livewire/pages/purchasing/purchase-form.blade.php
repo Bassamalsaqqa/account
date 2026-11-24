@@ -440,12 +440,65 @@
                         </span>
                     </div>
 
-                    <!-- Short field error if nonzero global discount is submitted before domain wiring -->
-                    @error('discount_value')
+                    <!-- Global Document Discount Control (Stitch compact) -->
+                    @if(($discount_scope ?? 'document') === 'document')
                         <div class="pt-2">
-                            <span id="purchase-discount-value-error" role="alert" class="text-danger text-xs block">{{ $message }}</span>
+                            @if (! $showDiscountControl)
+                                <div class="flex items-center justify-between">
+                                    <span class="text-text-secondary">{{ __('purchasing.discount') }}</span>
+                                    <button type="button" wire:click="toggleDiscountControl" class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer">
+                                        + {{ __('purchasing.add_discount') }}
+                                    </button>
+                                </div>
+                            @else
+                                <div class="p-2.5 bg-surface-soft rounded-control border border-border space-y-2 mt-2">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-xs font-bold text-text-primary">{{ __('purchasing.document_discount') }}</span>
+                                        <button type="button" wire:click="toggleDiscountControl" class="text-xs text-danger hover:underline cursor-pointer">
+                                            ✕ {{ __('purchasing.remove_discount') }}
+                                        </button>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label for="purchase-discount-type" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount') }}</label>
+                                            <select id="purchase-discount-type" wire:model.live="discount_type" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
+                                                <option value="none">{{ __('purchasing.discount_none') }}</option>
+                                                <option value="percent">{{ __('purchasing.discount_percent') }}</option>
+                                                <option value="fixed">{{ __('purchasing.discount_fixed') }}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label for="purchase-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount_value') }}</label>
+                                            <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model.blur="discount_value" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
+                                        </div>
+                                    </div>
+                                    @error('discount_value')
+                                        <span id="purchase-discount-value-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            @endif
                         </div>
-                    @enderror
+                    @endif
+
+                    <!-- Discount Line in Summary Breakdown (if applied) -->
+                    @php
+                        $hasDiscountAmount = false;
+                        if ($documentTotalsValid && isset($totals['discount']) && $totals['discount'] !== '') {
+                            try {
+                                $hasDiscountAmount = \Brick\Math\BigDecimal::of($totals['discount'])->isPositive();
+                            } catch (\Throwable) {
+                                $hasDiscountAmount = false;
+                            }
+                        }
+                    @endphp
+                    @if($hasDiscountAmount)
+                        <div class="flex items-center justify-between pt-2 text-danger">
+                            <span>{{ ($discount_scope ?? 'document') === 'line' ? __('purchasing.manual_discount') : __('purchasing.discount') }}</span>
+                            <span class="font-mono font-semibold tabular-nums">
+                                -<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['discount'], $currency_code) }}</bdi> {{ $currency_code }}
+                            </span>
+                        </div>
+                    @endif
 
                     <!-- Tax (if applicable) -->
                     @php
