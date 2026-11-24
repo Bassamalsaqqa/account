@@ -210,7 +210,8 @@ final class PurchaseCorrection
      */
     private function replacementData(Purchase $purchase): array
     {
-        $data = $purchase->only(['vendor_id', 'warehouse_id', 'vendor_invoice_number', 'currency_code', 'exchange_rate', 'document_locale', 'notes']);
+        $data = $purchase->only(['vendor_id', 'warehouse_id', 'vendor_invoice_number', 'currency_code', 'exchange_rate', 'document_locale', 'notes',
+            'discount_type', 'discount_value', 'discount_scope', 'discount_basis', 'discount_calculation_version']);
         $data['purchase_date'] = $purchase->purchase_date->format('Y-m-d');
         $data['due_date'] = $purchase->due_date?->format('Y-m-d');
         $data['lines'] = $purchase->lines()->where('company_id', $purchase->company_id)->with('lots')->orderBy('line_number')->get()->map(function ($line): array {

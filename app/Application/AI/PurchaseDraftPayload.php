@@ -16,7 +16,8 @@ final class PurchaseDraftPayload
     public function canonicalize(array $payload): array
     {
         $headers = ['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date',
-            'currency_code', 'exchange_rate', 'document_locale', 'notes', 'lines'];
+            'currency_code', 'exchange_rate', 'document_locale', 'notes',
+            'discount_type', 'discount_value', 'discount_scope', 'lines'];
         if (array_diff(array_keys($payload), $headers) !== [] || strlen(json_encode($payload, JSON_THROW_ON_ERROR)) > 65536) {
             throw new InvalidArgumentException('Invalid purchase draft command fields.');
         }
@@ -28,6 +29,18 @@ final class PurchaseDraftPayload
         foreach (['vendor_invoice_number', 'due_date', 'notes'] as $field) {
             $payload[$field] ??= null;
         }
+        $payload['discount_type'] ??= 'none';
+        $payload['discount_value'] ??= '0';
+        $payload['discount_scope'] ??= 'document';
+
+        if ($payload['discount_type'] !== null && ! in_array($payload['discount_type'], ['none', 'fixed', 'percent'], true)) {
+            throw new InvalidArgumentException('Invalid purchase discount type.');
+        }
+        if (! in_array($payload['discount_scope'], ['document', 'line'], true)) {
+            throw new InvalidArgumentException('Invalid purchase discount scope.');
+        }
+        $payload['discount_value'] = $this->decimal($payload['discount_value'], 6);
+
         $payload['exchange_rate'] = $this->decimal($payload['exchange_rate'], 10);
         foreach (['vendor_invoice_number', 'purchase_date', 'due_date', 'currency_code', 'document_locale', 'notes'] as $field) {
             if ($payload[$field] !== null && ! is_string($payload[$field])) {
