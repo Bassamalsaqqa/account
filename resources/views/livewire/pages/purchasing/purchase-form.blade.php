@@ -59,7 +59,19 @@
                     <span class="font-semibold text-text-primary">{{ $resolvedWh ? $resolvedWh->displayName() : __('purchasing.select_warehouse') }}</span>
                 </div>
             </div>
-            <button type="button" wire:click="toggleMoreDetails" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-soft hover:bg-surface-soft/80 text-text-primary rounded-control font-medium text-xs border border-border transition-colors cursor-pointer">
+            @php
+                $hasDrawerErrors = $errors->hasAny([
+                    'vendor_invoice_number',
+                    'due_date',
+                    'warehouse_id',
+                    'purchase_date',
+                    'currency_code',
+                    'exchange_rate',
+                    'document_locale',
+                    'notes',
+                ]);
+            @endphp
+            <button type="button" wire:click="toggleMoreDetails" aria-expanded="{{ ($showMoreDetails || $hasDrawerErrors) ? 'true' : 'false' }}" aria-controls="extendedDetailsDrawer" class="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] bg-surface-soft hover:bg-surface-soft/80 text-text-primary rounded-control font-medium text-xs border border-border transition-colors cursor-pointer">
                 <x-icon name="tune" class="w-3.5 h-3.5 text-text-secondary" />
                 <span>{{ $showMoreDetails ? __('purchasing.hide_more_details') : __('purchasing.more_details') }}</span>
                 <x-icon name="chevron-down" class="w-3.5 h-3.5 text-text-secondary transition-transform duration-200 {{ $showMoreDetails ? 'rotate-180' : '' }}" />
@@ -446,19 +458,19 @@
                             @if (! $showDiscountControl)
                                 <div class="flex items-center justify-between">
                                     <span class="text-text-secondary">{{ __('purchasing.discount') }}</span>
-                                    <button type="button" wire:click="toggleDiscountControl" class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer">
+                                    <button type="button" wire:click="toggleDiscountControl" aria-expanded="false" aria-controls="purchase-document-discount-container" class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer min-h-[44px] min-w-[44px] py-2">
                                         + {{ __('purchasing.add_discount') }}
                                     </button>
                                 </div>
                             @else
-                                <div class="p-2.5 bg-surface-soft rounded-control border border-border space-y-2 mt-2">
+                                <div id="purchase-document-discount-container" class="p-2.5 bg-surface-soft rounded-control border border-border space-y-2 mt-2">
                                     <div class="flex items-center justify-between">
                                         <span class="text-xs font-bold text-text-primary">{{ __('purchasing.document_discount') }}</span>
-                                        <button type="button" wire:click="toggleDiscountControl" class="text-xs text-danger hover:underline cursor-pointer">
+                                        <button type="button" wire:click="toggleDiscountControl" aria-expanded="true" aria-controls="purchase-document-discount-container" class="text-xs text-danger hover:underline cursor-pointer min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2">
                                             ✕ {{ __('purchasing.remove_discount') }}
                                         </button>
                                     </div>
-                                    <div class="grid grid-cols-2 gap-2">
+                                    <div class="grid @if($discount_type !== 'none') grid-cols-2 @else grid-cols-1 @endif gap-2">
                                         <div>
                                             <label for="purchase-discount-type" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount') }}</label>
                                             <select id="purchase-discount-type" wire:model.live="discount_type" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
@@ -467,12 +479,15 @@
                                                 <option value="fixed">{{ __('purchasing.discount_fixed') }}</option>
                                             </select>
                                         </div>
-                                        <div>
-                                            <label for="purchase-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount_value') }}</label>
-                                            <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model.blur="discount_value" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
-                                        </div>
+                                        @if ($discount_type !== 'none')
+                                            <div>
+                                                <label for="purchase-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount_value') }}</label>
+                                                <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model.blur="discount_value" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
+                                            </div>
+                                        @endif
                                     </div>
                                     @error('discount_value')
+                                        <span x-init="$nextTick(() => document.getElementById('purchase-discount-value')?.focus())"></span>
                                         <span id="purchase-discount-value-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span>
                                     @enderror
                                 </div>

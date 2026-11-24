@@ -389,7 +389,10 @@ class PurchaseForm extends Component
         if (! $this->showDiscountControl) {
             $this->discount_type = 'none';
             $this->discount_value = '0';
+            $this->resetErrorBag('discount_value');
             $this->recalculate();
+        } elseif ($this->discount_type === 'none') {
+            $this->discount_type = 'percent';
         }
     }
 
@@ -454,7 +457,8 @@ class PurchaseForm extends Component
                     $this->saveAndConfirmOnce();
 
                     return $this->completedConfirmation;
-                }
+                },
+                legacyDigest: $this->legacySettlementDigest()
             );
         } catch (HttpException $exception) {
             if ($exception->getStatusCode() !== 409) {
@@ -721,13 +725,24 @@ class PurchaseForm extends Component
         $company = $this->authorizeForm();
         abort_unless(isset($this->lines[$index]), 422);
         unset($this->expandedLotCustomization[$index]);
+
+        $currentPublicId = $this->lines[$index]['public_id'] ?? null;
+        $persisted = $currentPublicId !== null ? ($this->persistedLineDiscounts[$currentPublicId] ?? null) : null;
+        $hasPersistedDiscount = $persisted !== null && ($persisted['discount_type'] ?? 'none') !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
+
         if ($productId === '' || $productId === null) {
+            if ($hasPersistedDiscount) {
+                $this->addError("lines.{$index}.product_id", __('purchasing.legacy_discounted_line_immutable_product'));
+
+                return false;
+            }
             $this->lines[$index] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
             $this->recalculate();
 
             return true;
         }
+
         try {
             if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
                 $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
@@ -741,7 +756,33 @@ class PurchaseForm extends Component
 
             return false;
         }
-        unset($this->lines[$index]['public_id']);
+
+        $isSameProduct = (int) ($this->lines[$index]['product_id'] ?? 0) === (int) $productId;
+        $isSameUnit = (int) ($this->lines[$index]['product_unit_id'] ?? 0) === (int) $selected['product_unit_id'];
+
+        if ($hasPersistedDiscount) {
+            if (! $isSameProduct) {
+                $this->addError("lines.{$index}.product_id", __('purchasing.legacy_discounted_line_immutable_product'));
+
+                return false;
+            }
+            if (! $isSameUnit) {
+                $this->addError("lines.{$index}.product_unit_id", __('purchasing.legacy_discounted_line_immutable_unit'));
+
+                return false;
+            }
+        }
+
+        if ($isSameProduct && $isSameUnit && $currentPublicId !== null) {
+            $selected['public_id'] = $currentPublicId;
+            if ($hasPersistedDiscount) {
+                $selected['discount_type'] = $persisted['discount_type'];
+                $selected['discount_value'] = $persisted['discount_value'];
+            }
+        } else {
+            unset($this->lines[$index]['public_id']);
+        }
+
         $this->lines[$index] = array_replace($this->lines[$index], $selected, ['lots' => []]);
         $this->recalculate();
 
@@ -756,12 +797,31 @@ class PurchaseForm extends Component
         $company = $this->authorizeForm();
         abort_unless(isset($this->lines[$index]['product_id']), 422);
         unset($this->expandedLotCustomization[$index]);
+
+        $currentPublicId = $this->lines[$index]['public_id'] ?? null;
+        $persisted = $currentPublicId !== null ? ($this->persistedLineDiscounts[$currentPublicId] ?? null) : null;
+        $hasPersistedDiscount = $persisted !== null && ($persisted['discount_type'] ?? 'none') !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
+
         if ($unitId === '') {
+            if ($hasPersistedDiscount) {
+                $this->addError("lines.{$index}.product_unit_id", __('purchasing.legacy_discounted_line_immutable_unit'));
+
+                return;
+            }
             $this->lines[$index]['product_unit_id'] = null;
             $this->lines[$index]['lots'] = [];
+            unset($this->lines[$index]['public_id']);
 
             return;
         }
+
+        $isSameUnit = (int) ($this->lines[$index]['product_unit_id'] ?? 0) === (int) $unitId;
+        if ($hasPersistedDiscount && ! $isSameUnit) {
+            $this->addError("lines.{$index}.product_unit_id", __('purchasing.legacy_discounted_line_immutable_unit'));
+
+            return;
+        }
+
         try {
             if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
                 $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
@@ -774,7 +834,17 @@ class PurchaseForm extends Component
 
             return;
         }
-        unset($this->lines[$index]['public_id']);
+
+        if ($isSameUnit && $currentPublicId !== null) {
+            $selected['public_id'] = $currentPublicId;
+            if ($hasPersistedDiscount) {
+                $selected['discount_type'] = $persisted['discount_type'];
+                $selected['discount_value'] = $persisted['discount_value'];
+            }
+        } else {
+            unset($this->lines[$index]['public_id']);
+        }
+
         $this->lines[$index] = array_replace($this->lines[$index], $selected, ['lots' => []]);
         $this->recalculate();
     }
@@ -976,7 +1046,7 @@ class PurchaseForm extends Component
 
             if (($this->settlement['mode'] ?? 'unpaid') === 'full') {
                 $paymentCurrency = $this->settlementPaymentCurrency();
-                if ($paymentCurrency === $this->currency_code && ($this->settlement['amount'] === '' || $this->settlement['amount'] === $oldGrandTotal)) {
+                if ($paymentCurrency === $this->currency_code) {
                     $this->settlement['amount'] = $this->previewGrandTotal;
                 }
             }
@@ -1122,7 +1192,12 @@ class PurchaseForm extends Component
             return null;
         }
 
-        if ($confirmation['digest'] === null || $confirmation['digest'] !== $this->settlementDigest()) {
+        $digestMatches = $confirmation['digest'] !== null && (
+            $confirmation['digest'] === $this->settlementDigest()
+            || ($this->legacySettlementDigest() !== null && $confirmation['digest'] === $this->legacySettlementDigest())
+        );
+
+        if (! $digestMatches) {
             $this->cancelPreview();
             $this->previewError = __('commands.form_changed_repreview_required');
 
@@ -1267,6 +1342,62 @@ class PurchaseForm extends Component
             ];
         }
 
+        $headerDiscountType = $this->discount_type ?? 'none';
+        if ($headerDiscountType === 'percentage') {
+            $headerDiscountType = 'percent';
+        }
+        $headerDiscountValue = trim((string) ($this->discount_value ?? '0'));
+        $hasHeaderDiscount = $headerDiscountType !== 'none' && $headerDiscountValue !== '' && ! BigDecimal::of($headerDiscountValue)->isZero();
+
+        $normalized = [
+            'vendor_id' => (int) $this->vendor_id,
+            'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
+            'vendor_invoice_number' => $this->vendor_invoice_number ? trim($this->vendor_invoice_number) : null,
+            'currency_code' => strtoupper(trim($this->currency_code)),
+            'exchange_rate' => trim($this->exchange_rate),
+            'purchase_date' => trim($this->purchase_date),
+            'due_date' => $this->due_date ? trim($this->due_date) : null,
+            'notes' => $this->notes !== null ? trim($this->notes) : null,
+            'document_locale' => $this->document_locale,
+            'discount_type' => $hasHeaderDiscount ? $headerDiscountType : null,
+            'discount_value' => $hasHeaderDiscount ? $headerDiscountValue : null,
+            'lines' => $normalizedLines,
+        ];
+
+        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function computeLegacyPayloadDigest(): ?string
+    {
+        $headerDiscountType = $this->discount_type ?? 'none';
+        if ($headerDiscountType === 'percentage') {
+            $headerDiscountType = 'percent';
+        }
+        $headerDiscountValue = trim((string) ($this->discount_value ?? '0'));
+        $hasHeaderDiscount = $headerDiscountType !== 'none' && $headerDiscountValue !== '' && ! BigDecimal::of($headerDiscountValue)->isZero();
+        if ($hasHeaderDiscount) {
+            return null;
+        }
+
+        $normalizedLines = [];
+        foreach ($this->lines as $line) {
+            $discountType = $line['discount_type'] ?? 'none';
+            if ($discountType === 'percentage') {
+                $discountType = 'percent';
+            }
+            $normalizedLines[] = [
+                'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
+                'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
+                'item_description' => trim((string) ($line['item_description'] ?? '')),
+                'quantity' => trim((string) ($line['quantity'] ?? '')),
+                'unit_cost' => trim((string) ($line['unit_cost'] ?? '')),
+                'discount_type' => $discountType !== 'none' ? $discountType : null,
+                'discount_value' => trim((string) ($line['discount_value'] ?? '0')),
+                'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
+                'lots' => $line['lots'] ?? [],
+            ];
+        }
+
         $normalized = [
             'vendor_id' => (int) $this->vendor_id,
             'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
@@ -1281,6 +1412,16 @@ class PurchaseForm extends Component
         ];
 
         return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function legacySettlementDigest(): ?string
+    {
+        $legacyPayload = $this->computeLegacyPayloadDigest();
+        if ($legacyPayload === null) {
+            return null;
+        }
+
+        return hash('sha256', $legacyPayload.'|'.json_encode($this->settlement, JSON_THROW_ON_ERROR));
     }
 
     /** @return array<string, mixed> */
@@ -1306,14 +1447,18 @@ class PurchaseForm extends Component
             'settlement.exchange_rate' => ['required', 'string', 'regex:/^\d+(\.\d{1,10})?$/'],
         ];
 
-        if ($this->settlement['mode'] === 'partial' && $paymentCurrency === $this->currency_code) {
+        $isCrossCurrency = $paymentCurrency !== $this->currency_code;
+        if (! $isCrossCurrency && $this->settlement['mode'] === 'full') {
+            $this->settlement['amount'] = $this->previewGrandTotal;
+        }
+
+        if ($this->settlement['mode'] === 'partial' && ! $isCrossCurrency) {
             $this->settlement['purchase_amount'] = $this->settlement['amount'];
         }
         if ($this->settlement['mode'] === 'partial') {
             $rules['settlement.purchase_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
         }
 
-        $isCrossCurrency = $paymentCurrency !== $this->currency_code;
         if ($isCrossCurrency) {
             $rules['settlement.payment_currency_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
         } else {
@@ -1331,6 +1476,25 @@ class PurchaseForm extends Component
         }
 
         $this->validate($rules, [], collect(array_keys($rules))->mapWithKeys(fn ($key) => [$key => __('purchase_settlement.'.str_replace('settlement.', '', $key))])->all());
+
+        if ($this->documentTotalsValid && $this->previewGrandTotal !== null) {
+            $grandTotal = BigDecimal::of($this->previewGrandTotal);
+            if (! $isCrossCurrency) {
+                $payAmount = BigDecimal::of($this->settlement['amount'] !== '' ? $this->settlement['amount'] : '0');
+                if ($this->settlement['mode'] === 'full' && ! $payAmount->isEqualTo($grandTotal)) {
+                    throw ValidationException::withMessages(['settlement.amount' => __('purchase_settlement.amount')]);
+                } elseif ($this->settlement['mode'] === 'partial' && ($payAmount->isZero() || $payAmount->isGreaterThanOrEqualTo($grandTotal))) {
+                    throw ValidationException::withMessages(['settlement.amount' => __('purchase_settlement.amount')]);
+                }
+            } else {
+                $purchaseAmount = BigDecimal::of(($this->settlement['purchase_amount'] ?? '') !== '' ? $this->settlement['purchase_amount'] : '0');
+                if ($this->settlement['mode'] === 'full' && ! $purchaseAmount->isEqualTo($grandTotal)) {
+                    throw ValidationException::withMessages(['settlement.purchase_amount' => __('purchase_settlement.amount')]);
+                } elseif ($this->settlement['mode'] === 'partial' && ($purchaseAmount->isZero() || $purchaseAmount->isGreaterThanOrEqualTo($grandTotal))) {
+                    throw ValidationException::withMessages(['settlement.purchase_amount' => __('purchase_settlement.amount')]);
+                }
+            }
+        }
 
         $choice = array_intersect_key($this->settlement, array_flip(['mode', 'payment_method', 'amount', 'exchange_rate']));
         $choice['money_account_id'] = (int) $this->settlement['money_account_id'];

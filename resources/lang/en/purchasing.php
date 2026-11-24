@@ -64,6 +64,8 @@ return [
     'resolved_warehouse' => 'Resolved warehouse',
     'default_badge' => 'Default',
     'legacy_discount_badge' => 'Legacy discount: :value',
+    'legacy_discounted_line_immutable_product' => 'Cannot change product on a line with an existing legacy discount.',
+    'legacy_discounted_line_immutable_unit' => 'Cannot change unit on a line with an existing legacy discount.',
     'actions' => 'Actions',
     'row_options' => 'Row options',
     'search_or_scan' => 'Scan barcode or quick search',

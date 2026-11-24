@@ -39,18 +39,22 @@ final class PurchaseFormConfirmation
      * @param  callable(): ?array{public_id: string, token: string, key: string, digest: string, paid: bool}  $confirm
      * @return array{public_id: string, token: string, key: string, digest: string, paid: bool}|null
      */
-    public function execute(int $companyId, User $actor, ?string $source, string $identity, string $digest, callable $confirm): ?array
+    public function execute(int $companyId, User $actor, ?string $source, string $identity, string $digest, callable $confirm, ?string $legacyDigest = null): ?array
     {
         $key = $this->key($companyId, $actor, $source, $identity);
 
-        return DB::transaction(function () use ($companyId, $actor, $source, $key, $digest, $confirm): ?array {
+        return DB::transaction(function () use ($companyId, $actor, $source, $key, $digest, $confirm, $legacyDigest): ?array {
             $guard = app(SalesActorGuard::class);
             $guard->lockAndAuthorize($companyId, $actor, $source === null ? 'purchasing.purchase.create' : 'purchasing.purchase.edit_draft');
             $guard->lockAndAuthorize($companyId, $actor, 'purchasing.cost.view');
             $guard->lockAndAuthorize($companyId, $actor, 'purchasing.purchase.post');
             $receipt = PurchaseConfirmationReceipt::query()->where('company_id', $companyId)->where('request_key', $key)->first();
             if ($receipt !== null) {
-                if ((int) $receipt->actor_id !== (int) $actor->id || $receipt->source_public_id !== $source || ! hash_equals($receipt->payload_digest, $digest)) {
+                $digestMatches = hash_equals($receipt->payload_digest, $digest);
+                if (! $digestMatches && $legacyDigest !== null && hash_equals($receipt->payload_digest, $legacyDigest)) {
+                    $digestMatches = true;
+                }
+                if ((int) $receipt->actor_id !== (int) $actor->id || $receipt->source_public_id !== $source || ! $digestMatches) {
                     throw new HttpException(409, 'Purchase confirmation request changed.');
                 }
                 $confirmation = json_decode(Crypt::decryptString($receipt->confirmation), true, flags: JSON_THROW_ON_ERROR);

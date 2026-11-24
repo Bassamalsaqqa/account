@@ -64,6 +64,8 @@ return [
     'resolved_warehouse' => 'مستودع الاستلام المعتمد',
     'default_badge' => 'الافتراضي',
     'legacy_discount_badge' => 'خصم سابق: :value',
+    'legacy_discounted_line_immutable_product' => 'لا يمكن تغيير المنتج لبند مسجل به خصم سابق.',
+    'legacy_discounted_line_immutable_unit' => 'لا يمكن تغيير الوحدة لبند مسجل به خصم سابق.',
     'actions' => 'إجراءات',
     'row_options' => 'خيارات إضافية',
     'search_or_scan' => 'مسح باركود أو بحث سريع',

@@ -7,24 +7,31 @@ namespace Tests\Feature\Purchasing;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
+use App\Application\Commands\ImmediatePurchaseCommands;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
 use App\Models\CompanyPurchaseSetting;
+use App\Models\LedgerAccount;
+use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
+use App\Models\PurchaseConfirmationReceipt;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Inventory\ProductCatalogService;
+use App\Services\Purchasing\PurchaseFormConfirmation;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -545,5 +552,300 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         }
         $this->assertTrue($dr->isEqualTo($cr));
         $this->assertTrue($dr->isPositive());
+    }
+
+    public function test_select_product_and_change_unit_preserves_identity_and_discount_for_same_item_and_blocks_changing_discounted_legacy_item(): void
+    {
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '2',
+                    'unit_cost' => '25.00',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '5.00',
+                ],
+            ],
+        ]);
+
+        $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
+        $origPublicId = $test->get('lines.0.public_id');
+        $this->assertNotNull($origPublicId);
+
+        // 1. Legitimate allowed edit: changing quantity retains public_id and exact discount
+        $test->set('lines.0.quantity', '3');
+        $test->call('recalculate');
+        $this->assertSame($origPublicId, $test->get('lines.0.public_id'));
+        $this->assertSame('fixed', $test->get('lines.0.discount_type'));
+        $this->assertTrue(BigDecimal::of($test->get('lines.0.discount_value'))->isEqualTo('5.00'));
+
+        // 2. Calling selectProduct with SAME product & unit preserves public_id and exact discount
+        $test->call('selectProduct', 0, $this->product->id);
+        $test->assertHasNoErrors();
+        $this->assertSame($origPublicId, $test->get('lines.0.public_id'));
+        $this->assertSame('fixed', $test->get('lines.0.discount_type'));
+        $this->assertTrue(BigDecimal::of($test->get('lines.0.discount_value'))->isEqualTo('5.00'));
+
+        // 3. Calling changeUnit with SAME unit preserves public_id and exact discount
+        $baseUnit = $this->product->productUnits()->first();
+        $test->call('changeUnit', 0, $baseUnit->id);
+        $test->assertHasNoErrors();
+        $this->assertSame($origPublicId, $test->get('lines.0.public_id'));
+        $this->assertSame('fixed', $test->get('lines.0.discount_type'));
+        $this->assertTrue(BigDecimal::of($test->get('lines.0.discount_value'))->isEqualTo('5.00'));
+
+        // Create second product for change attempt
+        $piece = Unit::where('code', 'piece')->firstOrFail();
+        $otherProduct = app(ProductCatalogService::class)->createProduct($this->company, [
+            'name_ar' => 'منتج آخر',
+            'name_en' => 'Other Product',
+            'sku' => 'SKU-SIMP-02',
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'track_expiry' => false,
+            'base_unit_id' => $piece->id,
+            'default_purchase_cost_base' => '30.00',
+        ], $this->owner->id);
+
+        // 4. Calling selectProduct with DIFFERENT product on discounted legacy line is blocked with error
+        $test->call('selectProduct', 0, $otherProduct->id);
+        $test->assertHasErrors(['lines.0.product_id']);
+        $this->assertSame($origPublicId, $test->get('lines.0.public_id'));
+        $this->assertSame('fixed', $test->get('lines.0.discount_type'));
+        $this->assertTrue(BigDecimal::of($test->get('lines.0.discount_value'))->isEqualTo('5.00'));
+
+        // 5. Calling changeUnit with DIFFERENT unit on discounted legacy line is blocked with error
+        $test->call('changeUnit', 0, 999999);
+        $test->assertHasErrors(['lines.0.product_unit_id']);
+        $this->assertSame($origPublicId, $test->get('lines.0.public_id'));
+        $this->assertSame('fixed', $test->get('lines.0.discount_type'));
+        $this->assertTrue(BigDecimal::of($test->get('lines.0.discount_value'))->isEqualTo('5.00'));
+
+        // 6. Test saveDraft with allowed edits on a fresh form instance saves and preserves discount
+        $testSave = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
+        $testSave->set('lines.0.quantity', '5');
+        $testSave->call('saveDraft');
+        $testSave->assertHasNoErrors();
+
+        $reloaded = Purchase::where('id', $draft->id)->firstOrFail();
+        $this->assertSame('fixed', $reloaded->lines->first()->discount_type);
+        $this->assertTrue(BigDecimal::of($reloaded->lines->first()->discount_value)->isEqualTo('5.00'));
+    }
+
+    public function test_ai_unsaved_form_purchase_allowlist_preserves_discount_type_and_value(): void
+    {
+        $test = Livewire::test(PurchaseForm::class);
+        $test->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_cost', '50.00')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '10');
+
+        $test->call('recalculate');
+        $this->assertTrue($test->get('documentTotalsValid'));
+        $this->assertSame('90.00', $test->get('previewGrandTotal'));
+
+        // Check aiEditablePayload reflection
+        $reflection = new \ReflectionClass($test->instance());
+        $method = $reflection->getMethod('aiEditablePayload');
+        $method->setAccessible(true);
+        $payload = $method->invoke($test->instance());
+
+        $this->assertArrayHasKey('discount_type', $payload);
+        $this->assertArrayHasKey('discount_value', $payload);
+        $this->assertSame('percent', $payload['discount_type']);
+        $this->assertSame('10', $payload['discount_value']);
+
+        // Scope and version must not be in the editable client payload
+        $this->assertArrayNotHasKey('discount_scope', $payload);
+        $this->assertArrayNotHasKey('discount_calculation_version', $payload);
+    }
+
+    public function test_stale_payment_amount_synchronizes_on_full_payment_after_recalculation_and_defends_overage(): void
+    {
+        $cashAccount = MoneyAccount::where('company_id', $this->company->id)->where('currency_code', 'ILS')->first();
+        if (! $cashAccount) {
+            $ledger = LedgerAccount::where('company_id', $this->company->id)->where('code', '1010')->first()
+                ?? LedgerAccount::where('company_id', $this->company->id)->first();
+            $cashAccount = MoneyAccount::create([
+                'company_id' => $this->company->id,
+                'name_ar' => 'صندوق كاش',
+                'name_en' => 'Cash Box',
+                'currency_code' => 'ILS',
+                'account_type' => MoneyAccount::TYPE_CASH,
+                'is_active' => true,
+                'ledger_account_id' => $ledger->id,
+            ]);
+        }
+
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '4')
+            ->set('lines.0.unit_cost', '25.00') // Subtotal 100.00
+            ->set('settlement.mode', 'full')
+            ->set('settlement.payment_method', 'cash')
+            ->set('settlement.money_account_id', (string) $cashAccount->id);
+
+        $test->call('recalculate');
+        $this->assertSame('100.00', $test->get('previewGrandTotal'));
+        $this->assertSame('100.00', $test->get('settlement.amount'));
+
+        // Step 1: User enters invalid discount 150% -> recalculate fails
+        $test->call('toggleDiscountControl')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '150')
+            ->call('recalculate');
+
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $test->assertHasErrors(['discount_value']);
+
+        // Step 2: User fixes discount to valid 10% -> recalculate succeeds
+        $test->set('discount_value', '10')
+            ->call('recalculate');
+
+        $this->assertTrue($test->get('documentTotalsValid'));
+        $this->assertSame('90.00', $test->get('previewGrandTotal'));
+
+        // Crucial fix assertion: Full payment amount MUST synchronize to 90.00, not stale 100.00!
+        $this->assertSame('90.00', $test->get('settlement.amount'));
+
+        // Step 3: Partial payment mode preserves intentional partial amount
+        $test->set('settlement.mode', 'partial')
+            ->set('settlement.amount', '40.00')
+            ->call('recalculate');
+
+        $this->assertSame('40.00', $test->get('settlement.amount'));
+
+        // Step 4: Defend against overage/advance on confirmation (e.g. attempting to pay 95 on total 90 in partial mode)
+        $test->set('settlement.amount', '95.00');
+        $test->call('saveAndConfirm');
+        $test->assertHasErrors(['settlement.amount']);
+    }
+
+    public function test_confirmation_digest_binds_header_discount_intent_with_legacy_replay_compatibility(): void
+    {
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_cost', '25.00');
+
+        $test->call('recalculate');
+
+        // Document has NO discount -> legacySettlementDigest exists
+        $currentDigest = $test->instance()->settlementDigest();
+        $legacyDigest = $test->instance()->legacySettlementDigest();
+        $this->assertNotNull($legacyDigest);
+
+        // Simulate an existing confirmation receipt created under the legacy digest
+        $identity = app(PurchaseFormConfirmation::class)->identity((int) $this->company->id, $this->owner, null);
+
+        // Create a draft for the receipt
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '2',
+                    'unit_cost' => '25.00',
+                ],
+            ],
+        ]);
+
+        $preview = app(ImmediatePurchaseCommands::class)->preview($draft, $this->owner, ['mode' => 'unpaid']);
+        $confirmationData = [
+            'public_id' => $draft->public_id,
+            'token' => $preview['confirmation_token'],
+            'key' => (string) Str::uuid(),
+            'digest' => $legacyDigest,
+            'paid' => false,
+        ];
+
+        // Store legacy receipt
+        $reflection = new \ReflectionClass(app(PurchaseFormConfirmation::class));
+        $keyMethod = $reflection->getMethod('key');
+        $keyMethod->setAccessible(true);
+        $extractedKey = $keyMethod->invoke(app(PurchaseFormConfirmation::class), (int) $this->company->id, $this->owner, null, $identity);
+
+        PurchaseConfirmationReceipt::create([
+            'company_id' => $this->company->id,
+            'actor_id' => $this->owner->id,
+            'purchase_id' => $draft->id,
+            'source_public_id' => null,
+            'request_key' => $extractedKey,
+            'payload_digest' => $legacyDigest,
+            'confirmation' => Crypt::encryptString(json_encode($confirmationData, JSON_THROW_ON_ERROR)),
+            'created_at' => now(),
+        ]);
+
+        // Replaying with currentDigest (which passes legacyDigest as fallback) succeeds without throwing 409!
+        $confirmed = app(PurchaseFormConfirmation::class)->execute(
+            (int) $this->company->id,
+            $this->owner,
+            null,
+            $identity,
+            $currentDigest,
+            fn () => null,
+            legacyDigest: $legacyDigest
+        );
+
+        $this->assertNotNull($confirmed);
+        $this->assertSame($draft->public_id, $confirmed['public_id']);
+
+        // Now activate a discount: digest MUST change, and legacyDigest becomes null
+        $test->call('toggleDiscountControl')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '10')
+            ->call('recalculate');
+
+        $discountedDigest = $test->instance()->settlementDigest();
+        $this->assertNotSame($currentDigest, $discountedDigest);
+        $this->assertNull($test->instance()->legacySettlementDigest());
+    }
+
+    public function test_accessible_ui_attributes_and_conditional_discount_value_input(): void
+    {
+        $test = Livewire::test(PurchaseForm::class);
+        $html = $test->html();
+
+        // Extended details drawer toggle has aria-expanded and aria-controls
+        $this->assertStringContainsString('aria-controls="extendedDetailsDrawer"', $html);
+        $this->assertStringContainsString('aria-expanded="false"', $html);
+
+        // Before toggle: Add discount button has aria-expanded="false" and aria-controls
+        $this->assertStringContainsString('aria-controls="purchase-document-discount-container"', $html);
+        $this->assertStringContainsString('aria-expanded="false"', $html);
+        $this->assertStringNotContainsString('id="purchase-discount-value"', $html);
+
+        // Toggle discount control: type defaults to percent, value input is visible
+        $test->call('toggleDiscountControl');
+        $htmlToggled = $test->html();
+        $this->assertStringContainsString('id="purchase-document-discount-container"', $htmlToggled);
+        $this->assertStringContainsString('id="purchase-discount-type"', $htmlToggled);
+        $this->assertStringContainsString('id="purchase-discount-value"', $htmlToggled);
+
+        // When discount_type is set to 'none', value input is removed from DOM
+        $test->set('discount_type', 'none');
+        $htmlNone = $test->html();
+        $this->assertStringNotContainsString('id="purchase-discount-value"', $htmlNone);
+
+        // When set to 'fixed', value input reappears
+        $test->set('discount_type', 'fixed');
+        $htmlFixed = $test->html();
+        $this->assertStringContainsString('id="purchase-discount-value"', $htmlFixed);
     }
 }
