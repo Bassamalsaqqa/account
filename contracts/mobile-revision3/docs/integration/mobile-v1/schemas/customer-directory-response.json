@@ -45,7 +45,10 @@
             "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
           },
           "code": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "minLength": 1,
             "maxLength": 64
           },
