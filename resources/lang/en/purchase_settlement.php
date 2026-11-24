@@ -29,6 +29,7 @@ return [
     'correct_fields' => 'Review the payment fields below. Your saved purchase remains a draft.',
     'review' => 'Review purchase payment',
     'paid_amount' => 'Total paid',
+    'balance_inputs_required' => 'Enter a valid payment account, amounts and any required exchange rate to see the balance.',
     'outstanding_purchase_amount' => 'Purchase balance after posting',
     'unallocated_payment_amount' => 'Unapplied supplier credit',
     'check_control' => 'Outgoing checks',

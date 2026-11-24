@@ -23,6 +23,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnAllocation;
+use App\Models\PurchaseReturnLine;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Purchasing\PurchasePayableAsOf;
@@ -720,6 +721,7 @@ final class PurchaseController extends Controller
         $previewLines = [];
         $totalReturnCost = BigDecimal::zero();
         $seen = [];
+        $currencyScale = $purchase->currency_minor_units ?? ($purchase->currency_code === 'JOD' ? 3 : 2);
         try {
             $lines = PurchaseReturnInput::normalize($request->input('lines'));
             foreach ($lines as $lineData) {
@@ -729,9 +731,37 @@ final class PurchaseController extends Controller
                 }
                 $seen[$origLine->id] = true;
                 $quantity = BigDecimal::of($lineData['quantity']);
+
+                $priorLines = PurchaseReturnLine::where('company_id', $purchase->company_id)
+                    ->where('purchase_line_id', $origLine->id)
+                    ->whereHas('purchaseReturn', fn ($q) => $q->where('status', PurchaseReturn::STATUS_POSTED))
+                    ->get();
+
+                $priorQty = BigDecimal::zero();
+                $priorTotal = BigDecimal::zero();
+                foreach ($priorLines as $prev) {
+                    $priorQty = $priorQty->plus((string) $prev->quantity);
+                    $priorTotal = $priorTotal->plus((string) $prev->line_total);
+                }
+
+                $origQty = BigDecimal::of((string) $origLine->quantity);
+                $remainingQty = $origQty->minus($priorQty);
+                if ($quantity->isGreaterThan($remainingQty)) {
+                    throw new \InvalidArgumentException('Return quantity exceeds remaining purchase line quantity.');
+                }
+
+                $origTotal = BigDecimal::of((string) $origLine->line_total);
+                $remainingTotal = $origTotal->minus($priorTotal);
+
+                if ($quantity->isEqualTo($remainingQty)) {
+                    $allocatedTotal = $remainingTotal;
+                } else {
+                    $allocatedTotal = $remainingTotal->multipliedBy($quantity)
+                        ->dividedBy($remainingQty, $currencyScale, RoundingMode::HALF_UP);
+                }
+
+                $totalReturnCost = $totalReturnCost->plus($allocatedTotal);
                 $unitCost = BigDecimal::of((string) $origLine->unit_cost);
-                $lineTotal = $quantity->multipliedBy($unitCost);
-                $totalReturnCost = $totalReturnCost->plus($lineTotal);
 
                 $previewLines[] = [
                     'purchase_line_id' => (string) $origLine->public_id,
@@ -739,7 +769,7 @@ final class PurchaseController extends Controller
                     'product_name' => $origLine->product ? (string) $origLine->product->displayName() : 'بند مشتريات',
                     'quantity' => (string) $quantity,
                     'unit_cost_ils' => (string) $unitCost->toScale(2, RoundingMode::HALF_UP),
-                    'line_total_ils' => (string) $lineTotal->toScale(2, RoundingMode::HALF_UP),
+                    'line_total_ils' => (string) $allocatedTotal->toScale(2, RoundingMode::HALF_UP),
                 ];
             }
         } catch (\InvalidArgumentException $e) {

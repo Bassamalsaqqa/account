@@ -511,9 +511,9 @@
                             @endif
                         </td>
                         @if($withCost)
-                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_cost']) }}</td>
-                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['discount']) }}</td>
-                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['total']) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatMoneyInput($line['unit_cost'], $data['document']['currency_minor_units'] ?? 2) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['discount'], scale: $data['document']['currency_minor_units'] ?? 2) }}</td>
+                            <td class="number" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['total'], scale: $data['document']['currency_minor_units'] ?? 2) }}</td>
                         @endif
                     </tr>
                 @endforeach
@@ -528,7 +528,7 @@
                         <tr>
                             <td style="width: 60%;">{{ __('purchasing_documents.subtotal') }}</td>
                             <td class="number" style="width: 40%;" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['subtotal']) }} {{ $data['document']['currency_code'] ?? '' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['subtotal'], scale: $data['document']['currency_minor_units'] ?? 2) }} {{ $data['document']['currency_code'] ?? '' }}
                             </td>
                         </tr>
                     @endif
@@ -536,7 +536,7 @@
                         <tr>
                             <td>{{ __('purchasing_documents.discount') }}</td>
                             <td class="number" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['discount_total']) }} {{ $data['document']['currency_code'] ?? '' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['discount_total'], scale: $data['document']['currency_minor_units'] ?? 2) }} {{ $data['document']['currency_code'] ?? '' }}
                             </td>
                         </tr>
                     @endif
@@ -544,7 +544,7 @@
                         <tr>
                             <td>{{ __('purchasing_documents.tax') }}</td>
                             <td class="number" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['tax_total']) }} {{ $data['document']['currency_code'] ?? '' }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['tax_total'], scale: $data['document']['currency_minor_units'] ?? 2) }} {{ $data['document']['currency_code'] ?? '' }}
                             </td>
                         </tr>
                     @endif
@@ -552,7 +552,7 @@
                         <tr class="grand-total-row">
                             <td><strong>{{ __('purchasing_documents.grand_total') }}</strong></td>
                             <td class="number" dir="ltr">
-                                <strong>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['grand_total']) }} {{ $data['document']['currency_code'] ?? '' }}</strong>
+                                <strong>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($data['document']['grand_total'], scale: $data['document']['currency_minor_units'] ?? 2) }} {{ $data['document']['currency_code'] ?? '' }}</strong>
                             </td>
                         </tr>
                     @endif

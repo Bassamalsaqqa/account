@@ -32,6 +32,7 @@ use Illuminate\Support\Str;
  * @property int $warehouse_id
  * @property string $status
  * @property string $currency_code
+ * @property int|null $currency_minor_units
  * @property string $base_currency_code
  * @property string $document_locale
  * @property Carbon $purchase_date
@@ -73,8 +74,10 @@ class Purchase extends Model
     /** @var list<string> */
     protected $fillable = [
         'public_id', 'company_id', 'purchase_number', 'vendor_id', 'vendor_invoice_number',
-        'warehouse_id', 'status', 'purchase_date', 'due_date', 'currency_code', 'base_currency_code',
-        'exchange_rate', 'document_locale', 'subtotal_currency', 'discount_total_currency',
+        'warehouse_id', 'status', 'purchase_date', 'due_date', 'currency_code', 'currency_minor_units', 'base_currency_code',
+        'exchange_rate', 'document_locale', 'discount_type', 'discount_value', 'discount_scope',
+        'discount_basis', 'discount_calculation_version',
+        'subtotal_currency', 'discount_total_currency',
         'tax_total_currency', 'grand_total_currency', 'subtotal_base', 'discount_total_base',
         'tax_total_base', 'grand_total_base', 'notes', 'vendor_snapshot', 'company_snapshot',
         'is_staged', 'idempotency_key', 'request_hash', 'response_snapshot',
@@ -92,9 +95,17 @@ class Purchase extends Model
             'vendor_snapshot' => 'array', 'company_snapshot' => 'array',
             'posted_at' => 'datetime', 'void_business_date' => 'date', 'voided_at' => 'datetime',
             'exchange_rate' => 'string',
+            'discount_value' => 'string',
+            'discount_calculation_version' => 'integer',
+            'currency_minor_units' => 'integer',
             'is_staged' => 'boolean',
             'response_snapshot' => 'array',
         ];
+    }
+
+    public function resolvedCurrencyMinorUnits(): int
+    {
+        return $this->currency_minor_units ?? ($this->currency_code === 'JOD' ? 3 : 2);
     }
 
     private bool $completingPost = false;

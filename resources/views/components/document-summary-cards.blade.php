@@ -1,4 +1,5 @@
 @props([
+    'currencyScale' => 2,
     'cards' => null,
     'total' => null,
     'paid' => '0.00',
@@ -33,12 +34,12 @@
         <div class="document-summary-card p-4 bg-surface border border-border rounded-card shadow-panel space-y-2">
             <span class="text-xs font-medium text-text-secondary block">{{ __('sales.total') }}</span>
             <div class="text-lg font-bold font-mono num text-text-primary">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total, $currency) }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total, $currency, $currencyScale) }}
                 <span class="text-xs font-normal text-text-secondary">{{ $currency }}</span>
             </div>
             @if($returned && \Brick\Math\BigDecimal::of((string) $returned)->isPositive())
                 <span class="text-xs text-text-muted block" dir="ltr">
-                    {{ __('sales.returns') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returned, $currency) }}
+                    {{ __('sales.returns') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returned, $currency, $currencyScale) }}
                 </span>
             @endif
         </div>
@@ -47,7 +48,7 @@
         <div class="document-summary-card p-4 bg-surface border border-border rounded-card shadow-panel space-y-2">
             <span class="text-xs font-medium text-text-secondary block">{{ __('sales.paid_amount') }}</span>
             <div class="text-lg font-bold font-mono num text-success">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($paid, $currency) }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($paid, $currency, $currencyScale) }}
                 <span class="text-xs font-normal text-text-secondary">{{ $currency }}</span>
             </div>
         </div>
@@ -56,7 +57,7 @@
         <div class="document-summary-card p-4 bg-surface border border-border rounded-card shadow-panel space-y-2">
             <span class="text-xs font-medium text-text-secondary block">{{ __('sales.outstanding_amount') }}</span>
             <div class="text-lg font-bold font-mono num {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($remaining) ? 'text-danger' : 'text-text-primary' }}">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($remaining, $currency) }}
+                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($remaining, $currency, $currencyScale) }}
                 <span class="text-xs font-normal text-text-secondary">{{ $currency }}</span>
             </div>
         </div>

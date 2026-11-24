@@ -77,7 +77,7 @@
                             <td class="py-3 px-4 font-bold text-text-secondary"><bdi>{{ $return->currency_code }}</bdi></td>
                             @if($withCost)
                                 <td class="py-3 px-4 font-bold text-text-primary tabular-nums" dir="ltr">
-                                    <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code) }}</bdi>
+                                    <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code, $return->resolvedCurrencyMinorUnits()) }}</bdi>
                                 </td>
                             @endif
                             <td class="table-actions py-3 px-4 text-end">
@@ -132,7 +132,7 @@
                         @if($withCost)
                             <div>
                                 <dt class="text-text-secondary">{{ __('purchasing.total') }}</dt>
-                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code) }}</bdi></dd>
+                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code, $return->resolvedCurrencyMinorUnits()) }}</bdi></dd>
                             </div>
                         @endif
                     </dl>

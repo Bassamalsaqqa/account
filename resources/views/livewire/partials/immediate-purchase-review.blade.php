@@ -9,10 +9,15 @@
             <dt class="text-text-secondary">{{ __('purchase_settlement.money_account_id') }}</dt>
             <dd class="font-semibold">{{ $review['payment_method'] === 'check' ? __('purchase_settlement.check_control') : (app()->getLocale() === 'ar' ? ($review['account_name_ar'] ?: $review['account_name_en']) : ($review['account_name_en'] ?: $review['account_name_ar'])) }}</dd>
         </div>
+        @php
+            $paymentCurrencyScale = $review['payment_currency'] === $review['purchase_currency']
+                ? $purchaseCurrencyScale
+                : app(\App\Services\Money\CurrencyMinorUnitsResolver::class)->resolve($review['payment_currency']);
+        @endphp
         @foreach (['paid_amount' => 'payment_currency', 'purchase_amount' => 'purchase_currency', 'outstanding_purchase_amount' => 'purchase_currency', 'unallocated_payment_amount' => 'payment_currency'] as $field => $currencyField)
             <div>
                 <dt class="text-text-secondary">{{ __('purchase_settlement.'.$field) }}</dt>
-                <dd dir="ltr" class="text-start font-semibold tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($review[$field], $review[$currencyField]) }} {{ $review[$currencyField] }}</dd>
+                <dd dir="ltr" class="text-start font-semibold tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($review[$field], $review[$currencyField], $currencyField === 'purchase_currency' ? $purchaseCurrencyScale : $paymentCurrencyScale) }} {{ $review[$currencyField] }}</dd>
             </div>
         @endforeach
         @foreach (['payment_date', 'exchange_rate', ...($review['payment_method'] === 'check' ? ['check_number', 'bank_name', 'drawer', 'due_date'] : [])] as $field)

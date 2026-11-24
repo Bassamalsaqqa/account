@@ -6,6 +6,9 @@ namespace App\Services\Purchasing;
 
 use App\Domain\Inventory\Services\UnitConversionService;
 use App\Domain\Inventory\ValueObjects\Quantity;
+use App\Domain\Purchasing\DocumentDiscountAllocator;
+use App\Domain\Purchasing\DocumentDiscountIntent;
+use App\Domain\Purchasing\DocumentDiscountLineCandidate;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Models\Company;
@@ -31,6 +34,42 @@ final class PurchaseDraftIntegrity
             $this->fail();
         }
         Product::where('company_id', $company->id)->whereIn('id', $purchase->lines->pluck('product_id'))->orderBy('id')->lockForUpdate()->get();
+        $isDocScope = ($purchase->discount_scope ?? 'document') === 'document';
+        $allocationResult = null;
+        $minorUnits = $purchase->resolvedCurrencyMinorUnits();
+        if ($isDocScope) {
+            $candidates = [];
+            foreach ($purchase->lines as $line) {
+                $candidates[] = new DocumentDiscountLineCandidate(
+                    lineNumber: (int) $line->line_number,
+                    unitCost: BigDecimal::of((string) $line->unit_cost),
+                    quantity: BigDecimal::of((string) $line->quantity),
+                    subtotal: BigDecimal::of((string) $line->line_subtotal),
+                    taxInclusive: (bool) $line->tax_inclusive,
+                    taxRate: $line->tax_rate_snapshot !== null ? BigDecimal::of((string) $line->tax_rate_snapshot) : null,
+                );
+            }
+            try {
+                $intent = new DocumentDiscountIntent(
+                    discountType: in_array($purchase->discount_type, [null, '', 'none'], true) ? DocumentDiscountIntent::TYPE_NONE : $purchase->discount_type,
+                    discountValue: $purchase->discount_value ?? '0',
+                    discountScope: 'document',
+                    discountBasis: $purchase->discount_basis ?? 'subtotal',
+                    version: (int) ($purchase->discount_calculation_version ?? DocumentDiscountIntent::VERSION_CANONICAL),
+                );
+                $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $purchase->currency_code, $minorUnits);
+            } catch (\Throwable) {
+                $this->fail();
+            }
+        } else {
+            if ($purchase->discount_type !== null && $purchase->discount_type !== 'none' && $purchase->discount_type !== '') {
+                $this->fail();
+            }
+            if (! BigDecimal::of((string) ($purchase->discount_value ?? '0'))->isZero()) {
+                $this->fail();
+            }
+        }
+
         $results = [];
         foreach ($purchase->lines as $line) {
             if ((int) $line->company_id !== (int) $company->id || $line->stock_movement_id !== null
@@ -51,8 +90,28 @@ final class PurchaseDraftIntegrity
             } elseif ($line->tax_rate_snapshot !== null || $line->tax_inclusive || ! BigDecimal::of($line->line_tax)->isZero()) {
                 $this->fail();
             }
-            $result = app(PurchaseCalculator::class)->line($line->quantity, $line->unit_cost, $line->discount_type,
-                $line->discount_value, $line->tax_rate_snapshot, $line->tax_inclusive, $purchase->currency_code, $purchase->exchange_rate);
+
+            if ($isDocScope) {
+                $expectedDiscount = $allocationResult->forLine((int) $line->line_number);
+                if (! BigDecimal::of((string) ($line->allocated_document_discount ?? '0'))->isEqualTo($expectedDiscount)
+                    || ! BigDecimal::of((string) ($line->manual_discount_amount ?? '0'))->isZero()
+                    || ($line->discount_type !== null && $line->discount_type !== 'none' && $line->discount_type !== '')
+                    || ! BigDecimal::of((string) ($line->discount_value ?? '0'))->isZero()
+                    || ! BigDecimal::of((string) $line->line_discount)->isEqualTo($expectedDiscount)) {
+                    $this->fail();
+                }
+                $calcType = 'fixed';
+                $calcValue = (string) $expectedDiscount;
+            } else {
+                if (! BigDecimal::of((string) ($line->allocated_document_discount ?? '0'))->isZero()) {
+                    $this->fail();
+                }
+                $calcType = $line->discount_type;
+                $calcValue = $line->discount_value;
+            }
+
+            $result = app(PurchaseCalculator::class)->line($line->quantity, $line->unit_cost, $calcType,
+                $calcValue, $line->tax_rate_snapshot, $line->tax_inclusive, $purchase->currency_code, $purchase->exchange_rate, $minorUnits);
             foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
                 foreach (['' => $field, '_base' => $field.'Base'] as $suffix => $property) {
                     if (! $result->{$property}->isEqualTo($line->getAttribute('line_'.$field.$suffix))) {

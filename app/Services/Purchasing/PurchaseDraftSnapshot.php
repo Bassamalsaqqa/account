@@ -9,6 +9,7 @@ use App\Models\LandedCostAllocation;
 use App\Models\LedgerAccount;
 use App\Models\Purchase;
 use App\Models\TaxRate;
+use Brick\Math\BigDecimal;
 
 final class PurchaseDraftSnapshot
 {
@@ -73,6 +74,12 @@ final class PurchaseDraftSnapshot
                 ];
             }
 
+            $isLineScope = ($locked->discount_scope ?? 'document') === 'line';
+            $manualDiscount = (string) ($line->manual_discount_amount ?? '0');
+            if ($isLineScope && BigDecimal::of($manualDiscount)->isZero() && ! BigDecimal::of((string) ($line->line_discount ?? '0'))->isZero()) {
+                $manualDiscount = (string) $line->line_discount;
+            }
+
             $linesArray[] = [
                 'line_number' => (int) $line->line_number,
                 'product_id' => (int) $line->product_id,
@@ -84,6 +91,8 @@ final class PurchaseDraftSnapshot
                 'unit_conversion_ratio' => (string) $line->unit_conversion_ratio,
                 'discount_type' => $line->discount_type,
                 'discount_value' => (string) $line->discount_value,
+                'manual_discount_amount' => $manualDiscount,
+                'allocated_document_discount' => $isLineScope ? '0.000000' : (string) ($line->allocated_document_discount ?? '0'),
                 'tax_rate_id' => $taxRateId,
                 'tax_rate_snapshot' => $taxRateSnapshot,
                 'tax_inclusive' => (bool) $line->tax_inclusive,
@@ -134,9 +143,15 @@ final class PurchaseDraftSnapshot
                 'due_date' => $locked->due_date?->format('Y-m-d'),
                 'vendor_invoice_number' => $locked->vendor_invoice_number !== null ? trim($locked->vendor_invoice_number) : null,
                 'currency_code' => (string) $locked->currency_code,
+                'currency_minor_units' => $locked->resolvedCurrencyMinorUnits(),
                 'exchange_rate' => (string) $locked->exchange_rate,
                 'document_locale' => (string) $locked->document_locale,
                 'notes' => $locked->notes !== null ? trim($locked->notes) : null,
+                'discount_type' => $locked->discount_type,
+                'discount_value' => (string) ($locked->discount_value ?? '0'),
+                'discount_scope' => (string) ($locked->discount_scope ?? 'document'),
+                'discount_basis' => (string) ($locked->discount_basis ?? 'subtotal'),
+                'discount_calculation_version' => (int) ($locked->discount_calculation_version ?? 1),
                 'subtotal_currency' => (string) $locked->subtotal_currency,
                 'subtotal_base' => (string) $locked->subtotal_base,
                 'discount_total_currency' => (string) $locked->discount_total_currency,

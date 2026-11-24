@@ -39,7 +39,14 @@ final class PurchaseReturnAmounts
             'total' => BigDecimal::zero(),
         ];
 
-        $currencyScale = $return->currency_code === 'JOD' ? 3 : 2;
+        $purchase = $return->purchase ?? Purchase::where('company_id', $return->company_id)->findOrFail($return->purchase_id);
+        $currencyScale = $return->currency_minor_units
+            ?? $purchase->currency_minor_units
+            ?? ($return->currency_code === 'JOD' ? 3 : 2);
+
+        if ($return->currency_minor_units === null) {
+            $return->currency_minor_units = $currencyScale;
+        }
         $seen = [];
 
         foreach ($return->lines()->lockForUpdate()->get() as $line) {
@@ -156,7 +163,14 @@ final class PurchaseReturnAmounts
             throw new InvalidArgumentException('Draft header does not match original purchase provenance.');
         }
 
-        $currencyScale = $return->currency_code === 'JOD' ? 3 : 2;
+        $purchase = $return->purchase ?? Purchase::where('company_id', $return->company_id)->findOrFail($return->purchase_id);
+        $currencyScale = $return->currency_minor_units
+            ?? $purchase->currency_minor_units
+            ?? ($return->currency_code === 'JOD' ? 3 : 2);
+
+        if ($return->currency_minor_units === null) {
+            $return->currency_minor_units = $currencyScale;
+        }
         $seen = [];
 
         $totalsCurrency = [

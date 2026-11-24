@@ -43,7 +43,8 @@ class PurchasingDocumentsTest extends Phase5ETestCase
         $jodDto = app(PurchasingDocumentBuilder::class)->build($jod, 'ar');
         $this->assertSame('12.345000', $jodDto['document']['grand_total']);
         $this->assertSame('JOD', $jodDto['document']['currency_code']);
-        File::put(base_path('.ai/delegations/phase9-implementation/pdf/purchase-jod-ar.pdf'), app(PurchasingDocumentRenderer::class)->pdf($jodDto));
+        $this->get(route('pdf.purchase', $jod->public_id).'?format=print&locale=ar')->assertOk()->assertSee('12.345');
+        $this->assertStringStartsWith('%PDF-', app(PurchasingDocumentRenderer::class)->pdf($jodDto));
         $before = $this->economicSnapshot();
         $this->get(route('pdf.vendor-statement', $this->vendor->public_id).'?format=print&locale=en')->assertOk()->assertSee('USD')->assertSee('JOD');
         $this->assertSame($before, $this->economicSnapshot());
@@ -436,40 +437,43 @@ class PurchasingDocumentsTest extends Phase5ETestCase
         $builder = app(PurchasingDocumentBuilder::class);
         $renderer = app(PurchasingDocumentRenderer::class);
 
-        $directory = base_path('.ai/delegations/phase9-implementation/pdf');
-        File::ensureDirectoryExists($directory);
-
-        foreach (['ar', 'en'] as $locale) {
-            // Purchase
-            $purchaseData = $builder->build($purchase, $locale);
-            $purchasePdf = $renderer->pdf($purchaseData);
-            $this->assertStringStartsWith('%PDF-', $purchasePdf);
-            File::put($directory.'/purchase-'.$locale.'.pdf', $purchasePdf);
-
-            // Purchase Return
-            $returnData = $builder->build($return, $locale);
-            $returnPdf = $renderer->pdf($returnData);
-            $this->assertStringStartsWith('%PDF-', $returnPdf);
-            File::put($directory.'/purchase-return-'.$locale.'.pdf', $returnPdf);
-
-            // Vendor Payment
-            $paymentData = $builder->build($payment, $locale);
-            $paymentPdf = $renderer->pdf($paymentData);
-            $this->assertStringStartsWith('%PDF-', $paymentPdf);
-            File::put($directory.'/vendor-payment-'.$locale.'.pdf', $paymentPdf);
-
-            // Vendor Statement
-            $stmtData = $builder->statement($this->vendor, '2026-10-01', '2026-10-10', $locale);
-            $stmtPdf = $renderer->pdf($stmtData);
-            $this->assertStringStartsWith('%PDF-', $stmtPdf);
-            File::put($directory.'/vendor-statement-'.$locale.'.pdf', $stmtPdf);
-        }
-
-        // Verify all 8 files exist
-        foreach (['purchase', 'purchase-return', 'vendor-payment', 'vendor-statement'] as $docType) {
+        $directory = sys_get_temp_dir().'/account-test-purchasing-pdfs-'.bin2hex(random_bytes(12));
+        $this->assertTrue(File::makeDirectory($directory, 0700));
+        try {
             foreach (['ar', 'en'] as $locale) {
-                $this->assertFileExists($directory.'/'.$docType.'-'.$locale.'.pdf');
+                // Purchase
+                $purchaseData = $builder->build($purchase, $locale);
+                $purchasePdf = $renderer->pdf($purchaseData);
+                $this->assertStringStartsWith('%PDF-', $purchasePdf);
+                File::put($directory.'/purchase-'.$locale.'.pdf', $purchasePdf);
+
+                // Purchase Return
+                $returnData = $builder->build($return, $locale);
+                $returnPdf = $renderer->pdf($returnData);
+                $this->assertStringStartsWith('%PDF-', $returnPdf);
+                File::put($directory.'/purchase-return-'.$locale.'.pdf', $returnPdf);
+
+                // Vendor Payment
+                $paymentData = $builder->build($payment, $locale);
+                $paymentPdf = $renderer->pdf($paymentData);
+                $this->assertStringStartsWith('%PDF-', $paymentPdf);
+                File::put($directory.'/vendor-payment-'.$locale.'.pdf', $paymentPdf);
+
+                // Vendor Statement
+                $stmtData = $builder->statement($this->vendor, '2026-10-01', '2026-10-10', $locale);
+                $stmtPdf = $renderer->pdf($stmtData);
+                $this->assertStringStartsWith('%PDF-', $stmtPdf);
+                File::put($directory.'/vendor-statement-'.$locale.'.pdf', $stmtPdf);
             }
+
+            // Verify all 8 files exist
+            foreach (['purchase', 'purchase-return', 'vendor-payment', 'vendor-statement'] as $docType) {
+                foreach (['ar', 'en'] as $locale) {
+                    $this->assertFileExists($directory.'/'.$docType.'-'.$locale.'.pdf');
+                }
+            }
+        } finally {
+            File::deleteDirectory($directory);
         }
     }
 
