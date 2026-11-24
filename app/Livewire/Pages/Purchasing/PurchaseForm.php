@@ -732,6 +732,7 @@ class PurchaseForm extends Component
         $this->authorizeForm();
         $this->lines[] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
             'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
+        $this->clearPurchaseTotals();
     }
 
     public function removeLine(int $index): void

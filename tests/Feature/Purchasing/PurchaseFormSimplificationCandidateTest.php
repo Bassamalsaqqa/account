@@ -492,20 +492,15 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
             ->set('warehouse_id', $this->warehouse->id)
             ->set('currency_code', 'USD')
             ->set('exchange_rate', '')
+            ->assertSet('documentTotalsValid', false)
+            ->assertHasErrors(['exchange_rate']);
+
+        $test->set('exchange_rate', '3.5000000000')
             ->call('selectProduct', 0, $this->product->id)
             ->set('lines.0.quantity', '2')
-            ->set('lines.0.unit_cost', '10.00');
-
-        // Blank exchange rate on FX currency fails calculation
-        $test->call('recalculate');
-        $this->assertFalse($test->get('documentTotalsValid'));
-        $test->assertHasErrors(['exchange_rate']);
-
-        // Providing valid exchange rate succeeds and recalculates preview
-        $test->set('exchange_rate', '3.5000000000');
-        $test->call('recalculate');
-        $this->assertTrue($test->get('documentTotalsValid'));
-        $this->assertSame('20.00', $test->get('previewGrandTotal'));
+            ->set('lines.0.unit_cost', '10.00')
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '20.00');
     }
 
     public function test_arabic_and_english_locale_rendering_and_messages(): void
