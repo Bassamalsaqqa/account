@@ -36,8 +36,8 @@ final class PurchaseDraftPayload
         if (! in_array($payload['discount_type'], ['none', 'fixed', 'percent'], true)) {
             throw new InvalidArgumentException('Invalid purchase discount type.');
         }
-        if (! in_array($payload['discount_scope'], ['document', 'line'], true)) {
-            throw new InvalidArgumentException('Invalid purchase discount scope.');
+        if ($payload['discount_scope'] !== 'document') {
+            throw new InvalidArgumentException('Legacy line discount scope is not selectable via AI assistant.');
         }
         $payload['discount_value'] = $this->decimal($payload['discount_value'], 6);
 
@@ -68,8 +68,13 @@ final class PurchaseDraftPayload
             $line['tax_rate_id'] = $this->identity($line['tax_rate_id'] ?? null);
             $line['quantity'] = $this->decimal($line['quantity'] ?? null, 6);
             $line['unit_cost'] = $this->decimal($line['unit_cost'] ?? null, 6);
-            $line['discount_type'] = $line['discount_type'] ?? 'none';
-            $line['discount_value'] = $this->decimal($line['discount_value'] ?? '0', 6);
+            $hasManualLineDiscount = ($line['discount_type'] ?? 'none') !== 'none'
+                && ! BigDecimal::of((string) ($line['discount_value'] ?? '0'))->isZero();
+            if ($hasManualLineDiscount) {
+                throw new InvalidArgumentException('Manual line discounts are not supported via AI assistant.');
+            }
+            $line['discount_type'] = 'none';
+            $line['discount_value'] = '0.000000';
             $line['lots'] ??= [];
             if (! is_array($line['lots']) || ! array_is_list($line['lots']) || count($line['lots']) > 100) {
                 throw new InvalidArgumentException('Purchase lots must be a bounded list.');

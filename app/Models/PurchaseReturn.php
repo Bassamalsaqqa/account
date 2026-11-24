@@ -33,6 +33,7 @@ use Illuminate\Support\Str;
  * @property int $vendor_id
  * @property int $warehouse_id
  * @property string $currency_code
+ * @property int|null $currency_minor_units
  * @property string $base_currency_code
  * @property string $exchange_rate
  * @property Carbon|string $return_date
@@ -80,7 +81,7 @@ class PurchaseReturn extends Model
     /** @var list<string> */
     protected $fillable = [
         'public_id', 'company_id', 'return_number', 'purchase_id', 'vendor_id',
-        'warehouse_id', 'currency_code', 'base_currency_code', 'exchange_rate',
+        'warehouse_id', 'currency_code', 'currency_minor_units', 'base_currency_code', 'exchange_rate',
         'return_date', 'status', 'subtotal_currency', 'discount_total_currency',
         'tax_total_currency', 'grand_total_currency', 'subtotal_base', 'discount_total_base',
         'tax_total_base', 'grand_total_base', 'reason', 'notes', 'document_locale',
@@ -102,7 +103,15 @@ class PurchaseReturn extends Model
             'posted_at' => 'datetime',
             'void_business_date' => 'date', 'voided_at' => 'datetime',
             'exchange_rate' => 'string',
+            'currency_minor_units' => 'integer',
         ];
+    }
+
+    public function resolvedCurrencyMinorUnits(): int
+    {
+        return $this->currency_minor_units
+            ?? $this->purchase?->currency_minor_units
+            ?? ($this->currency_code === 'JOD' ? 3 : 2);
     }
 
     private bool $completingPost = false;

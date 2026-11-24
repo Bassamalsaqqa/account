@@ -15,14 +15,17 @@ use App\Services\Sales\SalesActorGuard;
 
 final class CreatePurchaseDraftAction
 {
-    /** @param array<string, mixed> $data */
-    public function execute(Company $company, User $actor, array $data): Purchase
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $options
+     */
+    public function execute(Company $company, User $actor, array $data, array $options = []): Purchase
     {
-        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $data): Purchase {
+        return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $data, $options): Purchase {
             $guard = app(SalesActorGuard::class);
             $company = $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.purchase.create');
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.cost.view');
-            $draft = app(PurchaseDraftBuilder::class)->prepare($company, $data);
+            $draft = app(PurchaseDraftBuilder::class)->prepare($company, $data, null, $options);
             $purchase = Purchase::create($draft->header + ['company_id' => $company->id, 'created_by' => $actor->id]);
             app(PurchaseDraftWriter::class)->replaceLines($purchase, $draft);
             app(AuditService::class)->log($company->id, 'purchase.draft.created', 'Purchase draft created', $actor->id, $purchase, null, $purchase->only(['vendor_id', 'warehouse_id', 'currency_code']));

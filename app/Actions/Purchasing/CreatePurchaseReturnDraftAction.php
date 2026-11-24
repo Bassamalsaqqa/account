@@ -114,6 +114,7 @@ final class CreatePurchaseReturnDraftAction
                 'vendor_id' => $purchase->vendor_id,
                 'warehouse_id' => $purchase->warehouse_id,
                 'currency_code' => $purchase->currency_code,
+                'currency_minor_units' => $purchase->currency_minor_units ?? ($purchase->currency_code === 'JOD' ? 3 : 2),
                 'base_currency_code' => $purchase->base_currency_code,
                 'exchange_rate' => $purchase->exchange_rate,
                 'return_date' => $returnDateStr,

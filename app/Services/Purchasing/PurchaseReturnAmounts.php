@@ -9,7 +9,6 @@ use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnLine;
-use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use InvalidArgumentException;
@@ -40,7 +39,14 @@ final class PurchaseReturnAmounts
             'total' => BigDecimal::zero(),
         ];
 
-        $currencyScale = app(CurrencyMinorUnitsResolver::class)->resolve($return->currency_code);
+        $purchase = $return->purchase ?? Purchase::where('company_id', $return->company_id)->findOrFail($return->purchase_id);
+        $currencyScale = $return->currency_minor_units
+            ?? $purchase->currency_minor_units
+            ?? ($return->currency_code === 'JOD' ? 3 : 2);
+
+        if ($return->currency_minor_units === null) {
+            $return->currency_minor_units = $currencyScale;
+        }
         $seen = [];
 
         foreach ($return->lines()->lockForUpdate()->get() as $line) {
@@ -157,7 +163,14 @@ final class PurchaseReturnAmounts
             throw new InvalidArgumentException('Draft header does not match original purchase provenance.');
         }
 
-        $currencyScale = app(CurrencyMinorUnitsResolver::class)->resolve($return->currency_code);
+        $purchase = $return->purchase ?? Purchase::where('company_id', $return->company_id)->findOrFail($return->purchase_id);
+        $currencyScale = $return->currency_minor_units
+            ?? $purchase->currency_minor_units
+            ?? ($return->currency_code === 'JOD' ? 3 : 2);
+
+        if ($return->currency_minor_units === null) {
+            $return->currency_minor_units = $currencyScale;
+        }
         $seen = [];
 
         $totalsCurrency = [

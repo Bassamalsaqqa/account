@@ -29,8 +29,11 @@ use Illuminate\Validation\ValidationException;
 
 final class PurchaseDraftBuilder
 {
-    /** @param array<string, mixed> $data */
-    public function prepare(Company $company, array $data, ?Purchase $existing = null): PreparedPurchaseDraft
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, mixed>  $options
+     */
+    public function prepare(Company $company, array $data, ?Purchase $existing = null, array $options = []): PreparedPurchaseDraft
     {
         foreach ([...Purchase::RESERVED_FIELDS, 'status', 'company_id', 'base_currency_code', 'created_by'] as $reserved) {
             if (array_key_exists($reserved, $data)) {
@@ -145,11 +148,12 @@ final class PurchaseDraftBuilder
             $rawL = $data['lines'][$lineIdx] ?? [];
             $dt = $l['discount_type'] ?? null;
             $dv = $rawL['discount_value'] ?? '0';
-            if ($dt !== null && $dt !== 'none' && $dt !== '') {
+            $isPositiveVal = $dv !== '' && ! BigDecimal::of((string) $dv)->isZero();
+            if ($dt !== null && $dt !== 'none' && $dt !== '' && $isPositiveVal) {
                 $hasLineDiscounts = true;
                 break;
             }
-            if ($dv !== '' && ! BigDecimal::of((string) $dv)->isZero()) {
+            if ($isPositiveVal) {
                 $hasLineDiscounts = true;
                 break;
             }
@@ -174,8 +178,13 @@ final class PurchaseDraftBuilder
             throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
         }
 
+        $allowLegacyScope = (bool) ($options['allow_legacy_scope'] ?? false);
+
         if ($existing === null) {
             if ($requestedScope === 'line') {
+                if (! $allowLegacyScope) {
+                    throw ValidationException::withMessages(['discount_scope' => __('purchasing.manual_line_discount_forbidden')]);
+                }
                 $discountScope = 'line';
             } else {
                 $discountScope = 'document';
@@ -184,18 +193,19 @@ final class PurchaseDraftBuilder
                 }
             }
         } else {
-            if ($requestedScope === 'line') {
-                if ($existing->discount_scope === 'document') {
-                    throw ValidationException::withMessages(['discount_scope' => __('purchasing.manual_line_discount_forbidden')]);
-                }
-                $discountScope = 'line';
-            } else {
-                $discountScope = $requestedScope ?? ($existing->discount_scope ?? 'document');
-                if ($discountScope === 'document' && $hasLineDiscounts) {
-                    throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
-                }
+            // Derive discount scope strictly from persisted state
+            $discountScope = $existing->discount_scope ?? 'document';
+            if ($requestedScope !== null && $requestedScope !== $discountScope) {
+                throw ValidationException::withMessages(['discount_scope' => __('purchasing.inconsistent_discount_scope')]);
+            }
+            if ($discountScope === 'document' && $hasLineDiscounts) {
+                throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
             }
         }
+
+        $currencyMinorUnits = $existing !== null && $existing->currency_minor_units !== null
+            ? $existing->currency_minor_units
+            : app(CurrencyMinorUnitsResolver::class)->resolve($validated['currency_code']);
 
         $results = [];
         $prepared = [];
@@ -207,7 +217,7 @@ final class PurchaseDraftBuilder
         $allocationResult = null;
         if ($discountScope === 'document') {
             $candidates = [];
-            $minor = app(CurrencyMinorUnitsResolver::class)->resolve($validated['currency_code']);
+            $minor = $currencyMinorUnits;
             foreach ($validated['lines'] as $index => $line) {
                 $raw = $data['lines'][$index];
                 $product = $products->get((int) $line['product_id']);
@@ -288,28 +298,22 @@ final class PurchaseDraftBuilder
                 $hasIncomingDiscount = $rawDiscountType !== null && $rawDiscountType !== 'none' && $rawDiscountType !== ''
                     && ! BigDecimal::of((string) ($rawDiscountVal !== '' ? $rawDiscountVal : '0'))->isZero();
 
-                if ($isSameItem) {
+                if ($isSameItem || ($existing === null && $allowLegacyScope)) {
                     // Stored legacy line discount is immutable on the server.
                     // Preserve exact raw legacy precision; ignore client modifications/formatters.
-                    $effectiveDiscountType = $original->discount_type;
-                    $effectiveDiscountValue = (string) ($original->discount_value ?? '0');
+                    $effectiveDiscountType = $existing === null ? $rawDiscountType : $original->discount_type;
+                    $effectiveDiscountValue = (string) ($existing === null ? $rawDiscountVal : ($original->discount_value ?? '0'));
                     $lineDiscountType = in_array($effectiveDiscountType, [null, 'none'], true) ? null : $effectiveDiscountType;
-                    $lineDiscountValue = (string) ($original->discount_value ?? '0.000000');
+                    $lineDiscountValue = (string) ($existing === null ? ($rawDiscountVal !== '' ? $rawDiscountVal : '0.000000') : ($original->discount_value ?? '0.000000'));
                 } else {
-                    if ($original !== null) {
-                        // Product or unit was replaced on an existing persisted line:
-                        // Legacy discount is reset to none / 0; does not transfer to new item.
-                        $effectiveDiscountType = null;
-                        $effectiveDiscountValue = '0';
-                        $lineDiscountType = null;
-                        $lineDiscountValue = '0.000000';
-                    } else {
-                        // New line added to line-scoped draft, or replacement lines on currency change
-                        $effectiveDiscountType = in_array($rawDiscountType, [null, '', 'none'], true) ? null : $rawDiscountType;
-                        $effectiveDiscountValue = (string) ($rawDiscountVal !== '' ? $rawDiscountVal : '0');
-                        $lineDiscountType = $effectiveDiscountType;
-                        $lineDiscountValue = (string) MoneyAmount::from($effectiveDiscountValue);
+                    // New row added to legacy draft or existing line had product/unit replaced
+                    if ($hasIncomingDiscount) {
+                        throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
                     }
+                    $effectiveDiscountType = null;
+                    $effectiveDiscountValue = '0';
+                    $lineDiscountType = null;
+                    $lineDiscountValue = '0.000000';
                 }
 
                 $calculated = app(PurchaseCalculator::class)->line(
@@ -389,7 +393,9 @@ final class PurchaseDraftBuilder
         return new PreparedPurchaseDraft([
             'vendor_id' => $vendor->id, 'vendor_invoice_number' => $validated['vendor_invoice_number'],
             'warehouse_id' => $warehouse->id, 'purchase_date' => $date, 'due_date' => $validated['due_date'],
-            'currency_code' => $validated['currency_code'], 'base_currency_code' => $company->base_currency_code,
+            'currency_code' => $validated['currency_code'],
+            'currency_minor_units' => $currencyMinorUnits,
+            'base_currency_code' => $company->base_currency_code,
             'exchange_rate' => (string) ExchangeRate::from($rate)->getValue(),
             'document_locale' => $locale, 'notes' => $validated['notes'] ?? null,
             'discount_type' => $discountScope === 'document' ? (in_array($headerDiscountType, [null, '', 'none'], true) ? null : $headerDiscountType) : null,
@@ -412,18 +418,27 @@ final class PurchaseDraftBuilder
         $data = $purchase->only(['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'currency_code', 'exchange_rate', 'document_locale', 'notes']);
         $data['purchase_date'] = $purchase->purchase_date->format('Y-m-d');
         $data['due_date'] = $purchase->due_date?->format('Y-m-d');
+        $data['currency_minor_units'] = $purchase->currency_minor_units ?? ($purchase->currency_code === 'JOD' ? 3 : 2);
         $data['discount_type'] = $purchase->discount_type ?? 'none';
         $data['discount_value'] = (string) ($purchase->discount_value ?? '0');
         $data['discount_scope'] = $purchase->discount_scope ?? 'document';
         $data['discount_basis'] = $purchase->discount_basis ?? 'subtotal';
         $data['discount_calculation_version'] = (int) ($purchase->discount_calculation_version ?? 1);
-        $data['lines'] = $purchase->lines->map(function (PurchaseLine $line): array {
+        $data['lines'] = $purchase->lines->map(function (PurchaseLine $line) use ($purchase): array {
             $data = $line->only(['public_id', 'product_id', 'product_unit_id', 'item_description', 'discount_type', 'tax_rate_id']);
             $data['quantity'] = SalesMoneyFormatter::formatQuantity($line->quantity);
             $data['unit_cost'] = SalesMoneyFormatter::formatMoneyInput($line->unit_cost);
             $data['discount_value'] = (string) ($line->discount_value ?? '0');
-            $data['manual_discount_amount'] = (string) ($line->manual_discount_amount ?? '0');
-            $data['allocated_document_discount'] = (string) ($line->allocated_document_discount ?? '0');
+            $manualDiscount = (string) ($line->manual_discount_amount ?? '0');
+            if (($purchase->discount_scope ?? 'document') === 'line'
+                && BigDecimal::of($manualDiscount)->isZero()
+                && ! BigDecimal::of((string) ($line->line_discount ?? '0'))->isZero()) {
+                $manualDiscount = (string) $line->line_discount;
+            }
+            $data['manual_discount_amount'] = $manualDiscount;
+            $data['allocated_document_discount'] = ($purchase->discount_scope ?? 'document') === 'line'
+                ? '0.000000'
+                : (string) ($line->allocated_document_discount ?? '0');
             $data['lots'] = $line->lots->map(fn ($lot) => [
                 'public_id' => $lot->public_id, 'product_unit_id' => $line->product_unit_id,
                 'lot_number' => $lot->lot_number, 'expiry_date' => $lot->expiry_date?->format('Y-m-d'),

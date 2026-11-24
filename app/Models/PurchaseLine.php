@@ -30,7 +30,10 @@ use Illuminate\Support\Str;
  * @property string $quantity
  * @property string $quantity_base
  * @property string $unit_cost
+ * @property string|null $discount_type
  * @property string $discount_value
+ * @property string $manual_discount_amount
+ * @property string $allocated_document_discount
  * @property string $line_subtotal
  * @property string $line_discount
  * @property string $line_tax

@@ -178,13 +178,17 @@ final class RecordStagedPurchaseBillAction
                     throw new InvalidArgumentException('Explicit exact cost and positive quantity decimal strings are required for every purchase line.');
                 }
 
+                $rawDiscountType = $l['discount_type'] ?? 'none';
+                $rawDiscountValue = (string) ($l['discount_value'] ?? '0');
+                $isZeroPlaceholder = ($rawDiscountType === 'none' || $rawDiscountValue === '0' || $rawDiscountValue === '' || BigDecimal::of($rawDiscountValue)->isZero());
+
                 $lineDraft = [
                     'product_id' => $prod->id,
                     'product_unit_id' => $prodUnit->id,
                     'quantity' => $qty,
                     'unit_cost' => $unitCost,
-                    'discount_type' => 'fixed',
-                    'discount_value' => '0',
+                    'discount_type' => $isZeroPlaceholder ? 'none' : $rawDiscountType,
+                    'discount_value' => $isZeroPlaceholder ? '0' : $rawDiscountValue,
                 ];
 
                 if ($prod->track_expiry && ! empty($l['lots']) && is_array($l['lots'])) {

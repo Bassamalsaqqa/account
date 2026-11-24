@@ -9,6 +9,7 @@ use App\Models\LandedCostAllocation;
 use App\Models\LedgerAccount;
 use App\Models\Purchase;
 use App\Models\TaxRate;
+use Brick\Math\BigDecimal;
 
 final class PurchaseDraftSnapshot
 {
@@ -73,6 +74,12 @@ final class PurchaseDraftSnapshot
                 ];
             }
 
+            $isLineScope = ($locked->discount_scope ?? 'document') === 'line';
+            $manualDiscount = (string) ($line->manual_discount_amount ?? '0');
+            if ($isLineScope && BigDecimal::of($manualDiscount)->isZero() && ! BigDecimal::of((string) ($line->line_discount ?? '0'))->isZero()) {
+                $manualDiscount = (string) $line->line_discount;
+            }
+
             $linesArray[] = [
                 'line_number' => (int) $line->line_number,
                 'product_id' => (int) $line->product_id,
@@ -84,8 +91,8 @@ final class PurchaseDraftSnapshot
                 'unit_conversion_ratio' => (string) $line->unit_conversion_ratio,
                 'discount_type' => $line->discount_type,
                 'discount_value' => (string) $line->discount_value,
-                'manual_discount_amount' => (string) ($line->manual_discount_amount ?? '0'),
-                'allocated_document_discount' => (string) ($line->allocated_document_discount ?? '0'),
+                'manual_discount_amount' => $manualDiscount,
+                'allocated_document_discount' => $isLineScope ? '0.000000' : (string) ($line->allocated_document_discount ?? '0'),
                 'tax_rate_id' => $taxRateId,
                 'tax_rate_snapshot' => $taxRateSnapshot,
                 'tax_inclusive' => (bool) $line->tax_inclusive,
