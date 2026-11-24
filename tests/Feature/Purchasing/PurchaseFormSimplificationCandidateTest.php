@@ -1141,7 +1141,9 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
 
         // Component must preserve frozen precision of draft (3) instead of mutated table scale (2)
-        $test->assertSet('currency_minor_units', 3);
+        $test->assertSet('currency_minor_units', 3)
+            ->assertSeeText('29.500')
+            ->assertSeeText('0.500');
         $this->assertSame('29.500', $test->get('previewGrandTotal'));
 
         // Re-calculate must also respect frozen precision

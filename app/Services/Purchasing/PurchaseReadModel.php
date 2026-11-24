@@ -29,7 +29,7 @@ final class PurchaseReadModel
     private function buildDetail(Purchase $purchase, bool $withCost): array
     {
         $data = $purchase->only(['public_id', 'purchase_number', 'vendor_invoice_number', 'status', 'currency_code', 'currency_minor_units', 'document_locale', 'notes']);
-        $data['currency_minor_units'] = $purchase->currency_minor_units ?? ($purchase->currency_code === 'JOD' ? 3 : 2);
+        $data['currency_minor_units'] = $purchase->resolvedCurrencyMinorUnits();
         $data['posted_at'] = $purchase->posted_at?->format('Y-m-d H:i');
         $data['purchase_date'] = $purchase->purchase_date->format('Y-m-d');
         $data['due_date'] = $purchase->due_date?->format('Y-m-d');

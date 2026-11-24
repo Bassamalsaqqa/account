@@ -358,7 +358,7 @@
 
                     <div class="sm:col-span-2 lg:col-span-1">
                         <span class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.line_total') }}</span>
-                        <output class="block h-11 px-2 py-3 text-xs font-bold font-mono bg-surface-soft rounded-control text-end tabular-nums"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['preview_total'], $currency_code) : '—' }}</bdi></output>
+                        <output class="block h-11 px-2 py-3 text-xs font-bold font-mono bg-surface-soft rounded-control text-end tabular-nums"><bdi>{{ isset($line['preview_total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['preview_total'], $currency_code, $currency_minor_units ?? 2) : '—' }}</bdi></output>
                     </div>
                 </div>
 
@@ -450,7 +450,7 @@
             @include('livewire.partials.immediate-purchase-settlement')
 
             @if ($showPreview && ! empty($previewData['settlement']))
-                @include('livewire.partials.immediate-purchase-review', ['review' => $previewData['settlement']])
+                @include('livewire.partials.immediate-purchase-review', ['review' => $previewData['settlement'], 'purchaseCurrencyScale' => $currency_minor_units ?? 2])
             @endif
         </div>
 
@@ -468,7 +468,7 @@
                     <div class="flex items-center justify-between pt-1">
                         <span class="text-text-secondary font-medium">{{ __('purchasing.subtotal') }}</span>
                         <span class="font-mono font-semibold text-text-primary tabular-nums">
-                            {{ $documentTotalsValid && isset($totals['subtotal']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['subtotal'], $currency_code) : '—' }} {{ $currency_code }}
+                            {{ $documentTotalsValid && isset($totals['subtotal']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['subtotal'], $currency_code, $currency_minor_units ?? 2) : '—' }} {{ $currency_code }}
                         </span>
                     </div>
 
@@ -530,7 +530,7 @@
                         <div class="flex items-center justify-between pt-2 text-danger">
                             <span>{{ ($discount_scope ?? 'document') === 'line' ? __('purchasing.manual_discount') : __('purchasing.discount') }}</span>
                             <span class="font-mono font-semibold tabular-nums">
-                                -<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['discount'], $currency_code) }}</bdi> {{ $currency_code }}
+                                -<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['discount'], $currency_code, $currency_minor_units ?? 2) }}</bdi> {{ $currency_code }}
                             </span>
                         </div>
                     @endif
@@ -550,7 +550,7 @@
                     <div class="flex items-center justify-between pt-2">
                         <span class="text-text-secondary">{{ __('purchasing.tax') }}</span>
                         <span class="font-mono font-semibold text-text-secondary tabular-nums">
-                            {{ $documentTotalsValid && isset($totals['tax']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['tax'], $currency_code) : '—' }} {{ $currency_code }}
+                            {{ $documentTotalsValid && isset($totals['tax']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['tax'], $currency_code, $currency_minor_units ?? 2) : '—' }} {{ $currency_code }}
                         </span>
                     </div>
                     @endif
@@ -559,7 +559,7 @@
                     <div class="flex items-baseline justify-between pt-3 border-t-2 border-border">
                         <span class="text-sm font-bold text-text-primary uppercase tracking-tight">{{ __('purchasing.total') }}</span>
                         <div class="text-xl sm:text-2xl font-bold font-mono text-text-primary tracking-tight tabular-nums">
-                            <bdi @if($documentTotalsValid) data-document-total @endif>{{ $documentTotalsValid && isset($totals['total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['total'], $currency_code) : '—' }}</bdi>
+                            <bdi @if($documentTotalsValid) data-document-total @endif>{{ $documentTotalsValid && isset($totals['total']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($totals['total'], $currency_code, $currency_minor_units ?? 2) : '—' }}</bdi>
                             <span class="text-sm font-normal text-text-muted">{{ $currency_code }}</span>
                         </div>
                     </div>
@@ -596,7 +596,7 @@
     </footer>
 
     @php($canConfirmPurchase = auth()->user()->hasPermissionTo('purchasing.purchase.post'))
-    <x-document-mobile-actions :total="$totals['total'] ?? '0'" :currency="$currency_code" :valid="$documentTotalsValid" :can-confirm="$canConfirmPurchase" :confirm-label="__('purchasing.post_purchase')" />
+    <x-document-mobile-actions :total="$totals['total'] ?? '0'" :currency="$currency_code" :currency-scale="$currency_minor_units ?? 2" :valid="$documentTotalsValid" :can-confirm="$canConfirmPurchase" :confirm-label="__('purchasing.post_purchase')" />
 
 </form>
 

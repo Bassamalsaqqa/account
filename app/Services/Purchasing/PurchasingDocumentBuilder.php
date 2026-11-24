@@ -211,6 +211,7 @@ final class PurchasingDocumentBuilder
         if ($withCost) {
             $document += [
                 'currency_code' => (string) $purchase->currency_code,
+                'currency_minor_units' => $purchase->resolvedCurrencyMinorUnits(),
                 'base_currency_code' => (string) $purchase->base_currency_code,
                 'exchange_rate' => (string) $purchase->exchange_rate,
                 'discount_type' => $purchase->discount_type,
@@ -290,6 +291,7 @@ final class PurchasingDocumentBuilder
         if ($withCost) {
             $document += [
                 'currency_code' => (string) $return->currency_code,
+                'currency_minor_units' => $return->resolvedCurrencyMinorUnits(),
                 'base_currency_code' => (string) $return->base_currency_code,
                 'exchange_rate' => (string) $return->exchange_rate,
                 'subtotal' => (string) $return->subtotal_currency,
