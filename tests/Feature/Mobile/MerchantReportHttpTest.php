@@ -808,6 +808,16 @@ final class MerchantReportHttpTest extends TestCase
             ->assertJsonPath('observation_recorded', true)
             ->assertJsonPath('is_shift_closed', false)
             ->assertJsonPath('success', true);
+
+        // 3. Treasury is allowed for reports.financial.view
+        $treasuryResp = $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/treasury");
+        $treasuryResp->assertOk()
+            ->assertJsonStructure([
+                'company_id',
+                'cash_accounts',
+                'bank_accounts',
+            ]);
     }
 
     public function test_shift_summary_and_close_forbid_money_cash_view_only(): void
@@ -825,6 +835,11 @@ final class MerchantReportHttpTest extends TestCase
         ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
             'counted_cash' => '100.00',
         ])->assertStatus(403);
+
+        // 3. Treasury is strictly forbidden
+        $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/treasury")
+            ->assertStatus(403);
     }
 
     public function test_shift_summary_and_close_forbid_neither_permission(): void
@@ -842,6 +857,11 @@ final class MerchantReportHttpTest extends TestCase
         ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
             'counted_cash' => '100.00',
         ])->assertStatus(403);
+
+        // 3. Treasury is strictly forbidden
+        $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/treasury")
+            ->assertStatus(403);
     }
 
     public function test_home_and_product_redact_monetary_metrics_when_unauthorized(): void

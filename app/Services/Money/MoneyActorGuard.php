@@ -26,7 +26,7 @@ final class MoneyActorGuard
         }
         setPermissionsTeamId($companyId);
         $actor->unsetRelation('roles')->unsetRelation('permissions');
-        if (! $actor->hasPermissionTo($permission) && ! (in_array($permission, ['money.cash.view', 'money.bank.view'], true) && $actor->hasPermissionTo('reports.financial.view'))) {
+        if (! $actor->hasPermissionTo($permission)) {
             throw new AuthorizationException('Money permission is required.');
         }
 

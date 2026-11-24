@@ -70,7 +70,7 @@ final class ReportController extends Controller
         if ($approvedCashAccount !== null) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
-                $openingBalances = $moneyBalanceQuery->forType($company, 'cash', $yesterday);
+                $openingBalances = $moneyBalanceQuery->forReport($company, 'cash', $yesterday);
                 foreach ($openingBalances as $row) {
                     if ($row['public_id'] === $approvedCashAccount->public_id && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
                         $openingFloat = BigDecimal::of((string) $row['balance_currency']);
@@ -113,7 +113,7 @@ final class ReportController extends Controller
         if ($approvedCashAccount !== null) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
-                $currentBalances = $moneyBalanceQuery->forType($company, 'cash');
+                $currentBalances = $moneyBalanceQuery->forReport($company, 'cash');
                 foreach ($currentBalances as $row) {
                     if ($row['public_id'] === $approvedCashAccount->public_id && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
                         $expectedCash = BigDecimal::of((string) $row['balance_currency']);
@@ -414,7 +414,7 @@ final class ReportController extends Controller
             $expectedCash = null;
             try {
                 app(CompanyContext::class)->setCompany($company, $lockedUser);
-                $currentBalances = $moneyBalanceQuery->forType($company, 'cash');
+                $currentBalances = $moneyBalanceQuery->forReport($company, 'cash');
                 foreach ($currentBalances as $row) {
                     if ($row['public_id'] === $lockedCashAccount->public_id && ($row['currency_balance_available'] ?? false) && isset($row['balance_currency'])) {
                         $expectedCash = BigDecimal::of((string) $row['balance_currency']);
@@ -532,8 +532,8 @@ final class ReportController extends Controller
 
         try {
             app(CompanyContext::class)->setCompany($company, $user);
-            $cashAccounts = $moneyBalanceQuery->forType($company, 'cash');
-            $bankAccounts = $moneyBalanceQuery->forType($company, 'bank');
+            $cashAccounts = $moneyBalanceQuery->forReport($company, 'cash');
+            $bankAccounts = $moneyBalanceQuery->forReport($company, 'bank');
         } catch (Throwable) {
             // Keep empty on error
         }
