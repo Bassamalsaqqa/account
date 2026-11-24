@@ -33,7 +33,7 @@ final class PurchaseDraftPayload
         $payload['discount_value'] ??= '0';
         $payload['discount_scope'] ??= 'document';
 
-        if ($payload['discount_type'] !== null && ! in_array($payload['discount_type'], ['none', 'fixed', 'percent'], true)) {
+        if (! in_array($payload['discount_type'], ['none', 'fixed', 'percent'], true)) {
             throw new InvalidArgumentException('Invalid purchase discount type.');
         }
         if (! in_array($payload['discount_scope'], ['document', 'line'], true)) {
@@ -94,6 +94,23 @@ final class PurchaseDraftPayload
     public function hash(array $payload): string
     {
         return hash('sha256', json_encode($this->sort($payload), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /** @param array<string, mixed> $canonical */
+    public function isEquivalentLegacyPayload(array $canonical): bool
+    {
+        return ($canonical['discount_type'] ?? 'none') === 'none'
+            && BigDecimal::of((string) ($canonical['discount_value'] ?? '0'))->isZero()
+            && ($canonical['discount_scope'] ?? 'document') === 'document';
+    }
+
+    /** @param array<string, mixed> $canonical */
+    public function legacyHash(array $canonical): string
+    {
+        $legacy = $canonical;
+        unset($legacy['discount_type'], $legacy['discount_value'], $legacy['discount_scope']);
+
+        return $this->hash($legacy);
     }
 
     private function identity(mixed $value): ?int

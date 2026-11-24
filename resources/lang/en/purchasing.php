@@ -103,6 +103,7 @@ return [
     'zero_subtotal_discount_forbidden' => 'Cannot apply a document discount to a zero subtotal.',
     'invalid_discount_percentage' => 'Discount percentage must be between 0 and 100.',
     'tax_inclusive_global_discount_forbidden' => 'Document-wide discounts are not supported on invoices with tax-inclusive lines.',
+    'inconsistent_discount_scope' => 'Cannot combine document-level discount with line-level discount scope.',
     'manual_line_discount_forbidden' => 'Line-level discounts are not permitted on new purchase invoices; use document discount.',
     'invalid_discount_type' => 'Unsupported discount type.',
     'invalid_discount_value' => 'Discount value is invalid.',

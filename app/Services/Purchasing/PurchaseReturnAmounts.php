@@ -9,6 +9,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnLine;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use InvalidArgumentException;
@@ -39,7 +40,7 @@ final class PurchaseReturnAmounts
             'total' => BigDecimal::zero(),
         ];
 
-        $currencyScale = $return->currency_code === 'JOD' ? 3 : 2;
+        $currencyScale = app(CurrencyMinorUnitsResolver::class)->resolve($return->currency_code);
         $seen = [];
 
         foreach ($return->lines()->lockForUpdate()->get() as $line) {
@@ -156,7 +157,7 @@ final class PurchaseReturnAmounts
             throw new InvalidArgumentException('Draft header does not match original purchase provenance.');
         }
 
-        $currencyScale = $return->currency_code === 'JOD' ? 3 : 2;
+        $currencyScale = app(CurrencyMinorUnitsResolver::class)->resolve($return->currency_code);
         $seen = [];
 
         $totalsCurrency = [

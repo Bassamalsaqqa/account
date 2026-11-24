@@ -8,7 +8,9 @@ use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
 use App\Actions\Purchasing\UpdatePurchaseDraftAction;
+use App\Application\AI\PurchaseDraftCommands;
 use App\Application\AI\PurchaseDraftPayload;
+use App\Models\AiPurchaseDraftReceipt;
 use App\Models\Company;
 use App\Models\LedgerAccount;
 use App\Models\PostingBatch;
@@ -34,6 +36,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 class PurchaseDocumentDiscountWorkflowTest extends TestCase
@@ -63,6 +66,7 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['app.key' => 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=']);
         app(CompanyContext::class)->clear();
         $this->owner = User::factory()->create(['locale' => 'en']);
         $this->company = app(CreateCompanyAction::class)->execute($this->owner, [
@@ -633,9 +637,9 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
     }
 
     /**
-     * Update draft rejects swapped or mismatched product_id on line public_id
+     * Update draft with replaced product_id on line public_id resets legacy discount without transferring
      */
-    public function test_update_draft_rejects_swapped_or_mismatched_product_id_on_line_public_id(): void
+    public function test_update_draft_with_replaced_product_id_resets_legacy_discount_without_transferring(): void
     {
         $payload = [
             'vendor_id' => $this->vendor->id,
@@ -645,35 +649,42 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
             'exchange_rate' => '1',
             'discount_type' => 'none',
             'discount_value' => '0',
-            'discount_scope' => 'document',
+            'discount_scope' => 'line',
             'lines' => [
-                ['product_id' => $this->soap->id, 'quantity' => '5', 'unit_cost' => '10.00'],
-                ['product_id' => $this->shampoo->id, 'quantity' => '2', 'unit_cost' => '20.00'],
+                ['product_id' => $this->soap->id, 'quantity' => '5', 'unit_cost' => '10.00', 'discount_type' => 'fixed', 'discount_value' => '5.00'],
+                ['product_id' => $this->shampoo->id, 'quantity' => '2', 'unit_cost' => '20.00', 'discount_type' => 'percent', 'discount_value' => '10.00'],
             ],
         ];
 
         $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
         $editable = app(PurchaseDraftBuilder::class)->editableData($draft);
 
-        // Client attempts to swap product_id of line 0 from Soap to Oil while retaining Soap line public_id
+        // Client changes product of line 0 from Soap to Oil while retaining line public_id
         $oilUnit = ProductUnit::where('product_id', $this->oil->id)->where('is_base', true)->firstOrFail();
         $editable['lines'][0]['product_id'] = $this->oil->id;
         $editable['lines'][0]['product_unit_id'] = $oilUnit->id;
+        unset($editable['lines'][0]['discount_type'], $editable['lines'][0]['discount_value']);
 
-        $this->expectException(ValidationException::class);
-        try {
-            app(UpdatePurchaseDraftAction::class)->execute($draft, $this->owner, $editable);
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('lines', $e->errors());
-            $this->assertSame(__('purchasing.stale_line_intent'), $e->errors()['lines'][0]);
-            throw $e;
-        }
+        $updated = app(UpdatePurchaseDraftAction::class)->execute($draft, $this->owner, $editable);
+
+        $line0 = $updated->lines->where('product_id', $this->oil->id)->sole();
+        $line1 = $updated->lines->where('product_id', $this->shampoo->id)->sole();
+
+        // Line 0 was replaced: legacy discount from Soap is reset, NOT transferred to Oil
+        $this->assertNull($line0->discount_type);
+        $this->assertSame('0.000000', (string) $line0->discount_value);
+        $this->assertSame('0.000000', (string) $line0->line_discount);
+
+        // Line 1 was unchanged: legacy discount strictly preserved
+        $this->assertSame('percent', $line1->discount_type);
+        $this->assertSame('10.000000', (string) $line1->discount_value);
+        $this->assertSame('4.000000', (string) $line1->line_discount);
     }
 
     /**
-     * Update draft rejects swapped or mismatched product_unit_id on line public_id
+     * Update draft with replaced product_unit_id on line public_id resets legacy discount without transferring
      */
-    public function test_update_draft_rejects_swapped_or_mismatched_product_unit_id_on_line_public_id(): void
+    public function test_update_draft_with_replaced_unit_id_resets_legacy_discount_without_transferring(): void
     {
         $cartonUnit = Unit::firstOrCreate(
             ['code' => 'carton'],
@@ -696,9 +707,9 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
             'exchange_rate' => '1',
             'discount_type' => 'none',
             'discount_value' => '0',
-            'discount_scope' => 'document',
+            'discount_scope' => 'line',
             'lines' => [
-                ['product_id' => $this->soap->id, 'quantity' => '5', 'unit_cost' => '10.00'],
+                ['product_id' => $this->soap->id, 'quantity' => '5', 'unit_cost' => '10.00', 'discount_type' => 'fixed', 'discount_value' => '5.00'],
             ],
         ];
 
@@ -707,15 +718,18 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
 
         // Client changes unit to carton while retaining the original line public_id
         $editable['lines'][0]['product_unit_id'] = $altProductUnit->id;
+        $editable['lines'][0]['quantity'] = '1';
+        $editable['lines'][0]['unit_cost'] = '90.00';
+        unset($editable['lines'][0]['discount_type'], $editable['lines'][0]['discount_value']);
 
-        $this->expectException(ValidationException::class);
-        try {
-            app(UpdatePurchaseDraftAction::class)->execute($draft, $this->owner, $editable);
-        } catch (ValidationException $e) {
-            $this->assertArrayHasKey('lines', $e->errors());
-            $this->assertSame(__('purchasing.stale_line_intent'), $e->errors()['lines'][0]);
-            throw $e;
-        }
+        $updated = app(UpdatePurchaseDraftAction::class)->execute($draft, $this->owner, $editable);
+        $line0 = $updated->lines->firstOrFail();
+
+        // Line 0 unit was replaced: legacy discount is reset, NOT transferred to the new unit
+        $this->assertNull($line0->discount_type);
+        $this->assertSame('0.000000', (string) $line0->discount_value);
+        $this->assertSame('0.000000', (string) $line0->line_discount);
+        $this->assertSame('90.000000', (string) $line0->line_total);
     }
 
     /**
@@ -794,5 +808,162 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
         // Line 1: qty 1 * 100 = 100 subtotal - 15.50% = 15.50 discount = 84.50
         $this->assertSame('15.500000', (string) $updatedLine1->line_discount);
         $this->assertSame('84.500000', (string) $updatedLine1->line_total);
+    }
+
+    public function test_new_purchase_rejects_line_discounts_without_explicit_line_scope(): void
+    {
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '2',
+                    'unit_cost' => '50.00',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '10.00',
+                ],
+            ],
+        ];
+
+        $this->expectException(ValidationException::class);
+        app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+    }
+
+    public function test_inconsistent_discount_scope_and_header_discount_rejected(): void
+    {
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'discount_scope' => 'line',
+            'discount_type' => 'fixed',
+            'discount_value' => '5.00',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '2',
+                    'unit_cost' => '50.00',
+                ],
+            ],
+        ];
+
+        $this->expectException(ValidationException::class);
+        app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+    }
+
+    public function test_legitimate_unit_replacement_on_legacy_draft_resets_line_discount_without_error(): void
+    {
+        $boxUnit = Unit::where('code', 'box')->firstOrFail();
+        $boxProductUnit = ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->soap->id,
+            'unit_id' => $boxUnit->id,
+            'conversion_to_base' => '10.000000',
+            'active' => true,
+        ]);
+
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'discount_scope' => 'line',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '2',
+                    'unit_cost' => '50.00',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '12.000000',
+                ],
+                [
+                    'product_id' => $this->shampoo->id,
+                    'quantity' => '1',
+                    'unit_cost' => '100.00',
+                    'discount_type' => 'percent',
+                    'discount_value' => '10.000000',
+                ],
+            ],
+        ];
+
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $editable = app(PurchaseDraftBuilder::class)->editableData($draft);
+
+        // User changes unit on line 0 to Box (10x), unit cost to 450, quantity 1
+        $editable['lines'][0]['product_unit_id'] = $boxProductUnit->id;
+        $editable['lines'][0]['quantity'] = '1';
+        $editable['lines'][0]['unit_cost'] = '450.00';
+        unset($editable['lines'][0]['discount_type'], $editable['lines'][0]['discount_value']);
+
+        $updated = app(UpdatePurchaseDraftAction::class)->execute($draft, $this->owner, $editable);
+
+        $line0 = $updated->lines->where('product_id', $this->soap->id)->sole();
+        $line1 = $updated->lines->where('product_id', $this->shampoo->id)->sole();
+
+        // Line 0 unit was replaced: legacy discount is reset to none / 0 without error
+        $this->assertNull($line0->discount_type);
+        $this->assertSame('0.000000', (string) $line0->discount_value);
+        $this->assertSame('0.000000', (string) $line0->line_discount);
+        $this->assertSame('450.000000', (string) $line0->line_total);
+
+        // Line 1 unit was NOT changed: legacy discount is strictly preserved
+        $this->assertSame('percent', $line1->discount_type);
+        $this->assertSame('10.000000', (string) $line1->discount_value);
+        $this->assertSame('10.000000', (string) $line1->line_discount);
+        $this->assertSame('90.000000', (string) $line1->line_total);
+    }
+
+    public function test_ai_purchase_draft_receipt_idempotency_retries_for_pre_upgrade_legacy_hash(): void
+    {
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'document_locale' => 'en',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '5.000000',
+                    'unit_cost' => '20.000000',
+                ],
+            ],
+        ];
+
+        $commands = app(PurchaseDraftCommands::class);
+        $formKey = (string) Str::uuid();
+
+        // First creation via AI command
+        $purchase = $commands->create($this->company, $this->owner, $payload, $formKey);
+        $this->assertNotNull($purchase->id);
+
+        // Simulate pre-upgrade receipt: manually store legacy hash (without discount_type, discount_value, discount_scope)
+        $intent = app(PurchaseDraftPayload::class);
+        $canonical = $intent->canonicalize($payload);
+        $legacyHash = $intent->legacyHash($canonical);
+
+        AiPurchaseDraftReceipt::where('form_key', $formKey)->update(['payload_hash' => $legacyHash]);
+
+        // Retrying identical form must succeed via legacy hash equivalence
+        $retryPurchase = $commands->create($this->company, $this->owner, $payload, $formKey);
+        $this->assertSame($purchase->id, $retryPurchase->id);
+
+        // Retrying with changed economics (quantity = 6) must reject with 409
+        $changedPayload = $payload;
+        $changedPayload['lines'][0]['quantity'] = '6.000000';
+
+        try {
+            $commands->create($this->company, $this->owner, $changedPayload, $formKey);
+            $this->fail('Expected HttpException 409');
+        } catch (HttpException $e) {
+            $this->assertSame(409, $e->getStatusCode());
+        }
     }
 }

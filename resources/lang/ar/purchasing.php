@@ -103,6 +103,7 @@ return [
     'zero_subtotal_discount_forbidden' => 'لا يمكن تطبيق خصم على فاتورة بمجموع فرعي صفري.',
     'invalid_discount_percentage' => 'يجب أن تكون نسبة الخصم بين 0 و 100.',
     'tax_inclusive_global_discount_forbidden' => 'لا يمكن تطبيق خصم على مستوى الفاتورة عند وجود بنود شاملة للضريبة.',
+    'inconsistent_discount_scope' => 'لا يمكن الجمع بين خصم الفاتورة ونطاق خصم البنود.',
     'manual_line_discount_forbidden' => 'خصومات البنود الفردية غير مسموحة في فواتير الشراء الجديدة؛ استخدم خصم الفاتورة العام.',
     'invalid_discount_type' => 'نوع الخصم غير مدعوم.',
     'invalid_discount_value' => 'قيمة الخصم غير صالحة.',
