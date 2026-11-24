@@ -10,18 +10,19 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use Tests\Support\DisposableMariaDbSchema;
 
-// Ensure test administrative environment for DisposableMariaDbSchema
+// Keep the local runner identity supplied by the guarded test environment.
+$runnerUsername = getenv('PHASE8_TEST_DB_USERNAME') ?: 'test_runner';
 putenv('APP_ENV=testing');
 putenv('PHASE8_ALLOW_DISPOSABLE_DB=1');
 putenv('PHASE8_TEST_DB_HOST=127.0.0.1');
 putenv('PHASE8_TEST_DB_PORT=3342');
-putenv('PHASE8_TEST_DB_USERNAME=test_runner');
+putenv('PHASE8_TEST_DB_USERNAME='.$runnerUsername);
 putenv('PHASE8_TEST_DB_EMPTY_PASSWORD=1');
 $_ENV['APP_ENV'] = 'testing';
 $_ENV['PHASE8_ALLOW_DISPOSABLE_DB'] = '1';
 $_ENV['PHASE8_TEST_DB_HOST'] = '127.0.0.1';
 $_ENV['PHASE8_TEST_DB_PORT'] = '3342';
-$_ENV['PHASE8_TEST_DB_USERNAME'] = 'test_runner';
+$_ENV['PHASE8_TEST_DB_USERNAME'] = $runnerUsername;
 $_ENV['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
 
 $root = dirname(__DIR__, 3);
@@ -80,7 +81,7 @@ try {
     $meta = Tests\Support\ReleaseUi\ReleaseUiFixtures::seed('%CRED_FILE%');
     echo "JSON_OUTPUT:" . json_encode($meta, JSON_THROW_ON_ERROR);
 } catch (\Throwable $e) {
-    echo "EXCEPTION:" . $e->getMessage() . "\n" . $e->getTraceAsString();
+    echo "SEED_ERROR:" . get_class($e) . " (" . $e->getCode() . ")";
     exit(1);
 }
 PHP;
@@ -93,11 +94,6 @@ PHP;
     ReleaseUiSession::writeSecureFile($stateDir, 'seeder.php', $seederCode);
 
     $env = $schema->environment();
-    $env['DB_DATABASE'] = $schemaName;
-    $env['DB_PORT'] = '3342';
-    $env['DB_HOST'] = '127.0.0.1';
-    $env['DB_USERNAME'] = 'test_runner';
-    $env['DB_PASSWORD'] = '';
     $env['SESSION_DRIVER'] = 'database';
     $env['CACHE_STORE'] = 'array';
     foreach (DisposableMariaDbSchema::testSettings() as $k => $v) {
@@ -116,7 +112,7 @@ PHP;
 
     $jsonStr = substr($fixtureOutput, strpos($fixtureOutput, 'JSON_OUTPUT:') + 12);
     $fixtures = json_decode(trim($jsonStr), true, flags: JSON_THROW_ON_ERROR);
-    fwrite(STDOUT, 'Seeding complete. User: '.$fixtures['user_email']."\n");
+    fwrite(STDOUT, "Seeding complete.\n");
 
     // 5. Find open port
     $port = 8088;
@@ -142,12 +138,14 @@ PHP;
         'APP_DEBUG' => 'true',
         'APP_URL' => "http://127.0.0.1:{$port}",
         'LOG_CHANNEL' => 'stack',
+        'APP_CONFIG_CACHE' => $env['APP_CONFIG_CACHE'],
+        'DB_URL' => '',
         'DB_CONNECTION' => 'mysql',
-        'DB_HOST' => '127.0.0.1',
-        'DB_PORT' => '3342',
-        'DB_DATABASE' => $schemaName,
-        'DB_USERNAME' => 'test_runner',
-        'DB_PASSWORD' => '',
+        'DB_HOST' => $env['DB_HOST'],
+        'DB_PORT' => $env['DB_PORT'],
+        'DB_DATABASE' => $env['DB_DATABASE'],
+        'DB_USERNAME' => $env['DB_USERNAME'],
+        'DB_PASSWORD' => $env['DB_PASSWORD'],
         'SESSION_DRIVER' => 'database',
         'SESSION_LIFETIME' => '120',
         'SESSION_SECURE_COOKIE' => 'false',
