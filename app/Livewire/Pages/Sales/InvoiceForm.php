@@ -648,18 +648,20 @@ class InvoiceForm extends Component
         $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
         $fx = BigDecimal::of($this->exchange_rate ?: '1.0');
 
+        $lineTaxIds = array_map(static fn (array $line): int|false => filter_var($line['tax_rate_id'] ?? null, FILTER_VALIDATE_INT), $this->lines);
+        $taxIds = array_values(array_unique(array_filter($lineTaxIds)));
+        $taxes = $taxIds === [] ? collect() : TaxRate::query()
+            ->where('company_id', $company->id)
+            ->whereKey($taxIds)
+            ->get()
+            ->keyBy('id');
+
         $calcResults = [];
 
         foreach ($this->lines as $idx => $line) {
-            $taxRate = null;
-            $taxInclusive = false;
-            if (! empty($line['tax_rate_id'])) {
-                $tr = TaxRate::find($line['tax_rate_id']);
-                if ($tr !== null) {
-                    $taxRate = BigDecimal::of((string) $tr->rate);
-                    $taxInclusive = $tr->calculation === TaxRate::CALC_INCLUSIVE;
-                }
-            }
+            $tax = $taxes->get($lineTaxIds[$idx] ?: 0);
+            $taxRate = $tax === null ? null : BigDecimal::of((string) $tax->rate);
+            $taxInclusive = $tax?->calculation === TaxRate::CALC_INCLUSIVE;
 
             $discountType = $line['discount_type'];
             if ($discountType === 'percentage') {

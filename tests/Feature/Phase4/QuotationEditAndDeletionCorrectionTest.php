@@ -7,10 +7,12 @@ namespace Tests\Feature\Phase4;
 use App\Actions\Sales\ConvertQuotationToInvoiceAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\QuotationDetail;
 use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\AuditEvent;
 use App\Models\Quotation;
+use App\Models\TaxRate;
 use App\Services\Sales\SalesReconciliationService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -109,6 +111,46 @@ class QuotationEditAndDeletionCorrectionTest extends TestCase
         $form->call('save')->assertHasNoErrors();
         $this->assertSame('90.000000', $quote->fresh()->grand_total_currency);
         $this->assertSame('percent', $quote->lines()->sole()->discount_type);
+    }
+
+    public static function salesPreviewForms(): array
+    {
+        return [[InvoiceForm::class], [QuotationForm::class]];
+    }
+
+    #[DataProvider('salesPreviewForms')]
+    public function test_live_preview_batches_tax_rates_for_twenty_lines(string $component): void
+    {
+        $taxRates = [];
+        foreach (['16', '5'] as $percentage) {
+            $taxRates[] = TaxRate::create([
+                'company_id' => $this->company->id,
+                'code' => 'VAT'.$percentage,
+                'name_ar' => 'ضريبة',
+                'rate' => $percentage,
+                'calculation' => TaxRate::CALC_EXCLUSIVE,
+                'active' => true,
+            ])->id;
+        }
+
+        $form = Livewire::test($component);
+        $line = [...$form->get('lines')[0], 'quantity' => '2', 'unit_price' => '25'];
+        $lines = [];
+        for ($index = 0; $index < 20; $index++) {
+            $lines[] = [...$line, 'tax_rate_id' => $taxRates[$index % 2]];
+        }
+
+        $form->set('lines', $lines);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $form->call('recalculate')->assertSet('previewGrandTotal', '1105.00');
+            $taxQueries = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from `tax_rates`'));
+            $this->assertLessThanOrEqual(2, count($taxQueries));
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
     }
 
     public static function closedStates(): array
