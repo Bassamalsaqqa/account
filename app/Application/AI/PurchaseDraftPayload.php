@@ -15,6 +15,15 @@ final class PurchaseDraftPayload
      */
     public function canonicalize(array $payload): array
     {
+        return $this->normalize($payload, false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function normalize(array $payload, bool $legacy): array
+    {
         $headers = ['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date',
             'currency_code', 'exchange_rate', 'document_locale', 'notes',
             'discount_type', 'discount_value', 'discount_scope', 'lines'];
@@ -68,13 +77,13 @@ final class PurchaseDraftPayload
             $line['tax_rate_id'] = $this->identity($line['tax_rate_id'] ?? null);
             $line['quantity'] = $this->decimal($line['quantity'] ?? null, 6);
             $line['unit_cost'] = $this->decimal($line['unit_cost'] ?? null, 6);
-            $hasManualLineDiscount = ($line['discount_type'] ?? 'none') !== 'none'
-                && ! BigDecimal::of((string) ($line['discount_value'] ?? '0'))->isZero();
-            if ($hasManualLineDiscount) {
+            $discountType = $line['discount_type'] ?? 'none';
+            $discountValue = $this->decimal($line['discount_value'] ?? '0', 6);
+            if (! in_array($discountType, ['none', 'fixed', 'percent'], true) || $discountValue !== '0') {
                 throw new InvalidArgumentException('Manual line discounts are not supported via AI assistant.');
             }
-            $line['discount_type'] = 'none';
-            $line['discount_value'] = '0.000000';
+            $line['discount_type'] = $legacy ? $discountType : 'none';
+            $line['discount_value'] = $legacy ? $discountValue : '0.000000';
             $line['lots'] ??= [];
             if (! is_array($line['lots']) || ! array_is_list($line['lots']) || count($line['lots']) > 100) {
                 throw new InvalidArgumentException('Purchase lots must be a bounded list.');
@@ -109,10 +118,10 @@ final class PurchaseDraftPayload
             && ($canonical['discount_scope'] ?? 'document') === 'document';
     }
 
-    /** @param array<string, mixed> $canonical */
-    public function legacyHash(array $canonical): string
+    /** @param array<string, mixed> $payload */
+    public function legacyHash(array $payload): string
     {
-        $legacy = $canonical;
+        $legacy = $this->normalize($payload, true);
         unset($legacy['discount_type'], $legacy['discount_value'], $legacy['discount_scope']);
 
         return $this->hash($legacy);

@@ -956,6 +956,81 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $intent->canonicalize($payloadWithLineScope);
     }
 
+    public function test_editing_draft_currency_resnapshots_precision_then_posts_at_the_frozen_scale(): void
+    {
+        $this->company->currencies()->where('currency_code', 'JOD')->update(['enabled' => true]);
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'ILS',
+            'discount_type' => 'percent',
+            'discount_value' => '50',
+            'lines' => [['product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '1.004']],
+        ]);
+        $this->assertSame(2, $draft->currency_minor_units);
+
+        Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id])
+            ->set('currency_code', 'JOD')
+            ->set('exchange_rate', '2')
+            ->set('lines.0.unit_cost', '1.004')
+            ->assertSet('currency_minor_units', 3)
+            ->assertSet('previewGrandTotal', '0.502')
+            ->call('saveDraft')
+            ->assertHasNoErrors();
+        $this->assertSame('0.502000', $draft->fresh()->discount_total_currency);
+
+        Currency::where('code', 'JOD')->update(['minor_units' => 2]);
+        app(CurrencyMinorUnitsResolver::class)->flush();
+        Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id])
+            ->assertSet('currency_minor_units', 3)
+            ->assertSet('previewGrandTotal', '0.502')
+            ->call('saveAndConfirm')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('purchases.show', $draft->public_id));
+
+        $posted = $draft->fresh(['lines']);
+        $this->assertTrue($posted->isPosted());
+        $this->assertSame(3, $posted->currency_minor_units);
+        $this->assertSame('0.502000', $posted->lines->sole()->allocated_document_discount);
+    }
+
+    public function test_failed_preview_keeps_replaced_line_id_and_legacy_discount_for_retry(): void
+    {
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'ILS',
+            'discount_scope' => 'line',
+            'lines' => [[
+                'product_id' => $this->product->id, 'quantity' => '1', 'unit_cost' => '20',
+                'discount_type' => 'fixed', 'discount_value' => '2.125',
+            ]],
+        ], ['allow_legacy_scope' => true]);
+
+        $originalId = $draft->lines->sole()->public_id;
+        $form = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id])
+            ->set('lines.0.unit_cost', '25.13')
+            ->set('settlement.mode', 'full')
+            ->set('settlement.money_account_id', 999999999)
+            ->call('saveAndConfirm')
+            ->assertHasErrors(['settlement.money_account_id'])
+            ->assertSet('showPreview', false);
+        $this->assertNotNull($form->get('previewError'));
+        $this->assertTrue($draft->fresh()->isDraft());
+        $savedLine = $draft->lines()->sole();
+        $this->assertNotSame($originalId, $savedLine->public_id);
+        $form->assertSet('lines.0.public_id', $savedLine->public_id)
+            ->assertSet('lines.0.unit_cost', '25.13')
+            ->assertSet('lines.0.discount_value', '2.125000')
+            ->set('settlement.mode', 'unpaid')
+            ->call('saveAndConfirm')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('purchases.show', $draft->public_id));
+
+        $this->assertTrue($draft->fresh()->isPosted());
+        $this->assertSame('2.125000', $draft->lines()->sole()->discount_value);
+    }
+
     public function test_component_preview_uses_frozen_draft_precision_when_currency_scale_mutates(): void
     {
         $bhd = Currency::firstOrCreate(

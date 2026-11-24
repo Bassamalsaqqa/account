@@ -207,8 +207,8 @@ final class PurchaseDraftBuilder
             }
         }
 
-        $currencyMinorUnits = $existing !== null && $existing->currency_minor_units !== null
-            ? $existing->currency_minor_units
+        $currencyMinorUnits = $existing !== null && $existing->currency_code === $validated['currency_code']
+            ? $existing->resolvedCurrencyMinorUnits()
             : app(CurrencyMinorUnitsResolver::class)->resolve($validated['currency_code']);
 
         $results = [];
@@ -250,7 +250,7 @@ final class PurchaseDraftBuilder
                     discountBasis: DocumentDiscountIntent::BASIS_SUBTOTAL,
                     version: DocumentDiscountIntent::VERSION_CANONICAL,
                 );
-                $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $validated['currency_code']);
+                $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $validated['currency_code'], $currencyMinorUnits);
             } catch (\InvalidArgumentException $e) {
                 throw ValidationException::withMessages(['discount_value' => $e->getMessage()]);
             }
@@ -290,7 +290,8 @@ final class PurchaseDraftBuilder
                     $tax?->rate,
                     $tax?->calculation === TaxRate::CALC_INCLUSIVE,
                     $validated['currency_code'],
-                    $rate
+                    $rate,
+                    $currencyMinorUnits
                 );
                 $lineDiscountType = null;
                 $lineDiscountValue = '0.000000';
@@ -328,7 +329,8 @@ final class PurchaseDraftBuilder
                     $tax?->rate,
                     $tax?->calculation === TaxRate::CALC_INCLUSIVE,
                     $validated['currency_code'],
-                    $rate
+                    $rate,
+                    $currencyMinorUnits
                 );
                 $manualDiscountAmount = (string) $calculated->discount;
                 $allocatedDocDiscount = '0.000000';

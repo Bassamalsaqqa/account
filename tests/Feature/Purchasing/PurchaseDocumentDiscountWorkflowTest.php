@@ -52,6 +52,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -616,6 +617,46 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
         $this->assertSame('90.000000', (string) $replacement->grand_total_currency);
     }
 
+    public static function legacyDiscounts(): array
+    {
+        return ['discounted' => ['0.125'], 'zero discount only' => ['0']];
+    }
+
+    #[DataProvider('legacyDiscounts')]
+    public function test_posted_edit_copies_legacy_line_discounts_and_frozen_precision(string $discount): void
+    {
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'discount_scope' => 'line',
+            'lines' => [
+                ['product_id' => $this->soap->id, 'quantity' => '1', 'unit_cost' => '10.126', 'discount_type' => 'fixed', 'discount_value' => $discount],
+                ['product_id' => $this->shampoo->id, 'quantity' => '1', 'unit_cost' => '20.126', 'discount_type' => 'fixed', 'discount_value' => '0'],
+            ],
+        ];
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload, ['allow_legacy_scope' => true]);
+        $posted = app(PostPurchaseAction::class)->execute($draft, $this->owner);
+        Currency::where('code', 'ILS')->update(['minor_units' => 3]);
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        $correction = app(PurchaseCorrection::class);
+        $preview = $correction->preview($posted, $this->owner, 'edit', 'Correct vendor bill', '2026-11-24');
+        $this->assertEmpty($preview['blockers']);
+        $replacement = $correction->execute($preview['token'], $this->owner);
+
+        $this->assertTrue($replacement->isDraft());
+        $this->assertSame('void', $posted->fresh()->status);
+        $this->assertSame(2, $replacement->currency_minor_units);
+        $this->assertSame('line', $replacement->discount_scope);
+        $this->assertSame($posted->grand_total_currency, $replacement->grand_total_currency);
+        $this->assertSame(['fixed', 'fixed'], $replacement->lines->pluck('discount_type')->all());
+        $this->assertSame($posted->lines->pluck('discount_value')->all(), $replacement->lines->pluck('discount_value')->all());
+        $this->assertSame($posted->lines->pluck('line_discount')->all(), $replacement->lines->pluck('manual_discount_amount')->all());
+        $this->assertSame($replacement->id, $correction->execute($preview['token'], $this->owner)->id);
+    }
+
     /**
      * Update draft rejects duplicate line public_ids
      */
@@ -949,6 +990,8 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
                     'product_id' => $this->soap->id,
                     'quantity' => '5.000000',
                     'unit_cost' => '20.000000',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '0.00',
                 ],
             ],
         ];
@@ -960,10 +1003,23 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
         $purchase = $commands->create($this->company, $this->owner, $payload, $formKey);
         $this->assertNotNull($purchase->id);
 
-        // Simulate pre-upgrade receipt: manually store legacy hash (without discount_type, discount_value, discount_scope)
-        $intent = app(PurchaseDraftPayload::class);
-        $canonical = $intent->canonicalize($payload);
-        $legacyHash = $intent->legacyHash($canonical);
+        // Exact pre-upgrade canonical fields, including the fixed-zero line and stripped decimals.
+        $legacyHash = app(PurchaseDraftPayload::class)->hash([
+            ...$payload,
+            'vendor_invoice_number' => null,
+            'due_date' => null,
+            'notes' => null,
+            'exchange_rate' => '1',
+            'lines' => [[
+                ...$payload['lines'][0],
+                'product_unit_id' => null,
+                'tax_rate_id' => null,
+                'quantity' => '5',
+                'unit_cost' => '20',
+                'discount_value' => '0',
+                'lots' => [],
+            ]],
+        ]);
 
         AiPurchaseDraftReceipt::where('form_key', $formKey)->update(['payload_hash' => $legacyHash]);
 

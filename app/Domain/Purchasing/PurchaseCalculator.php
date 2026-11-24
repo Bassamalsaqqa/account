@@ -16,14 +16,14 @@ use InvalidArgumentException;
 
 final class PurchaseCalculator
 {
-    public function line(mixed $quantity, mixed $cost, ?string $discountType, mixed $discountValue, mixed $taxRate, bool $inclusive, string $currency, mixed $rate): SalesLineCalculationResult
+    public function line(mixed $quantity, mixed $cost, ?string $discountType, mixed $discountValue, mixed $taxRate, bool $inclusive, string $currency, mixed $rate, ?int $minorUnits = null): SalesLineCalculationResult
     {
         $qty = Quantity::of($quantity)->toBigDecimal();
         $price = MoneyAmount::from($cost)->getAmount();
         $discount = MoneyAmount::from($discountValue)->getAmount();
         $fx = ExchangeRate::from($rate)->getValue();
         try {
-            $minor = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
+            $minor = $minorUnits ?? app(CurrencyMinorUnitsResolver::class)->resolve($currency);
         } catch (\Throwable) {
             $minor = in_array(strtoupper(trim($currency)), ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
         }

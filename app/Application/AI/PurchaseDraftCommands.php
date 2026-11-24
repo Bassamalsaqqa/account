@@ -29,7 +29,7 @@ final class PurchaseDraftCommands
         $canonical = $intent->canonicalize($payload);
         $digest = $intent->hash($canonical);
 
-        return DB::transaction(function () use ($company, $actor, $canonical, $digest, $formKey, $sourceRequestId, $intent): Purchase {
+        return DB::transaction(function () use ($company, $actor, $canonical, $digest, $formKey, $sourceRequestId, $intent, $payload): Purchase {
             $guard = app(SalesActorGuard::class);
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.purchase.create');
             $guard->lockAndAuthorize((int) $company->id, $actor, 'purchasing.purchase.view');
@@ -39,7 +39,7 @@ final class PurchaseDraftCommands
             if ($receipt !== null) {
                 $hashMatches = hash_equals($receipt->payload_hash, $digest);
                 if (! $hashMatches && $intent->isEquivalentLegacyPayload($canonical)) {
-                    $hashMatches = hash_equals($receipt->payload_hash, $intent->legacyHash($canonical));
+                    $hashMatches = hash_equals($receipt->payload_hash, $intent->legacyHash($payload));
                 }
                 if (! $hashMatches) {
                     throw new HttpException(409, 'Purchase form already saved with different fields.');

@@ -143,6 +143,7 @@ final class PurchaseDraftSnapshot
                 'due_date' => $locked->due_date?->format('Y-m-d'),
                 'vendor_invoice_number' => $locked->vendor_invoice_number !== null ? trim($locked->vendor_invoice_number) : null,
                 'currency_code' => (string) $locked->currency_code,
+                'currency_minor_units' => $locked->resolvedCurrencyMinorUnits(),
                 'exchange_rate' => (string) $locked->exchange_rate,
                 'document_locale' => (string) $locked->document_locale,
                 'notes' => $locked->notes !== null ? trim($locked->notes) : null,

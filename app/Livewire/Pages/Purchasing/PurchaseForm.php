@@ -316,10 +316,10 @@ class PurchaseForm extends Component
                 $this->receivingStock = true;
             }
         }
+        $this->previousCurrencyCode = $this->currency_code;
         if ($publicId === null) {
             $this->mountAiInput('purchase');
         }
-        $this->previousCurrencyCode = $this->currency_code;
         $this->settlement['payment_date'] = now($company->timezone)->format('Y-m-d');
         $this->settlement['due_date'] = now($company->timezone)->format('Y-m-d');
         $this->settlement['currency_code'] = $this->currency_code ?: $company->base_currency_code;
@@ -354,9 +354,6 @@ class PurchaseForm extends Component
     {
         $changed = $currency !== $this->previousCurrencyCode;
         $this->currency_code = $currency;
-        if ($changed) {
-            $this->currency_minor_units = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
-        }
         if ($currency === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
         } elseif ($changed) {
@@ -374,7 +371,6 @@ class PurchaseForm extends Component
                 }
             }
         }
-        $this->previousCurrencyCode = $currency;
         $this->recalculate();
     }
 
@@ -922,6 +918,15 @@ class PurchaseForm extends Component
         $this->resetErrorBag('discount_value');
         $results = [];
         try {
+            if ($this->currency_code !== $this->previousCurrencyCode || $this->currency_minor_units === null) {
+                $draftId = $this->savedDraftPublicId ?? $this->publicId;
+                $draft = $draftId === null ? null : Purchase::where('company_id', $company->id)
+                    ->where('public_id', $draftId)->where('currency_code', $this->currency_code)->first();
+                $this->currency_minor_units = $draft?->resolvedCurrencyMinorUnits()
+                    ?? app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
+                $this->previousCurrencyCode = $this->currency_code;
+            }
+
             if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
                 $this->totals = [];
                 foreach ($this->lines as &$line) {
@@ -949,7 +954,7 @@ class PurchaseForm extends Component
             }
 
             $discountScope = $this->discount_scope;
-            $minor = $this->currency_minor_units ?? app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
+            $minor = $this->currency_minor_units;
             $allocationResult = null;
 
             if ($discountScope === 'document') {
@@ -981,7 +986,7 @@ class PurchaseForm extends Component
                         discountBasis: DocumentDiscountIntent::BASIS_SUBTOTAL,
                         version: DocumentDiscountIntent::VERSION_CANONICAL,
                     );
-                    $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $this->currency_code);
+                    $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $this->currency_code, $minor);
                 } catch (\InvalidArgumentException $e) {
                     $this->totals = [];
                     foreach ($this->lines as &$l) {
@@ -1010,7 +1015,8 @@ class PurchaseForm extends Component
                         $tax?->rate,
                         $tax?->calculation === TaxRate::CALC_INCLUSIVE,
                         $this->currency_code,
-                        $this->exchange_rate
+                        $this->exchange_rate,
+                        $minor
                     );
                 } else {
                     $lineDiscountType = $line['discount_type'] ?? 'none';
@@ -1041,7 +1047,7 @@ class PurchaseForm extends Component
 
                     $disc = isset($line['discount_value']) && is_string($line['discount_value']) && trim($line['discount_value']) !== '' ? $line['discount_value'] : '0';
                     $result = app(PurchaseCalculator::class)->line($qty, $cost, $line['discount_type'] ?? null,
-                        $disc, $tax?->rate, $tax?->calculation === TaxRate::CALC_INCLUSIVE, $this->currency_code, $this->exchange_rate);
+                        $disc, $tax?->rate, $tax?->calculation === TaxRate::CALC_INCLUSIVE, $this->currency_code, $this->exchange_rate, $minor);
                 }
 
                 $this->lines[$index]['preview_total'] = (string) $result->total;
@@ -1142,17 +1148,24 @@ class PurchaseForm extends Component
         }
 
         $this->savedDraftPublicId = $purchase->public_id;
-        $this->savedDraftPayloadHash = hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
-
+        $this->currency_minor_units = $purchase->resolvedCurrencyMinorUnits();
         $this->persistedLineDiscounts = [];
-        foreach ($purchase->lines as $pLine) {
-            if (! empty($pLine->public_id)) {
-                $this->persistedLineDiscounts[$pLine->public_id] = [
-                    'discount_type' => $pLine->discount_type ?? 'none',
-                    'discount_value' => (string) ($pLine->discount_value ?? '0'),
+        foreach ($purchase->lines as $persistedLine) {
+            $index = $persistedLine->line_number - 1;
+            $this->lines[$index]['public_id'] = $persistedLine->public_id;
+            foreach ($this->lines[$index]['lots'] ?? [] as $lotIndex => $lot) {
+                if (isset($lot['public_id'], $persistedLine->lots[$lotIndex])) {
+                    $this->lines[$index]['lots'][$lotIndex]['public_id'] = $persistedLine->lots[$lotIndex]->public_id;
+                }
+            }
+            if ($persistedLine->discount_type !== null) {
+                $this->persistedLineDiscounts[$persistedLine->public_id] = [
+                    'discount_type' => $persistedLine->discount_type,
+                    'discount_value' => (string) $persistedLine->discount_value,
                 ];
             }
         }
+        $this->savedDraftPayloadHash = hash('sha256', json_encode($this->draftData(), JSON_THROW_ON_ERROR));
 
         if (! $andPost) {
             $this->discardAiInput();
@@ -1641,6 +1654,7 @@ class PurchaseForm extends Component
 
         $lines = $this->lines;
         foreach ($lines as &$line) {
+            unset($line['preview_total']);
             if (! empty($line['public_id']) && isset($this->persistedLineDiscounts[$line['public_id']])) {
                 $line['discount_type'] = $this->persistedLineDiscounts[$line['public_id']]['discount_type'];
                 $line['discount_value'] = $this->persistedLineDiscounts[$line['public_id']]['discount_value'];

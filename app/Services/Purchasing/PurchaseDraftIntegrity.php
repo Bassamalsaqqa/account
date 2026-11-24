@@ -36,6 +36,7 @@ final class PurchaseDraftIntegrity
         Product::where('company_id', $company->id)->whereIn('id', $purchase->lines->pluck('product_id'))->orderBy('id')->lockForUpdate()->get();
         $isDocScope = ($purchase->discount_scope ?? 'document') === 'document';
         $allocationResult = null;
+        $minorUnits = $purchase->resolvedCurrencyMinorUnits();
         if ($isDocScope) {
             $candidates = [];
             foreach ($purchase->lines as $line) {
@@ -56,7 +57,7 @@ final class PurchaseDraftIntegrity
                     discountBasis: $purchase->discount_basis ?? 'subtotal',
                     version: (int) ($purchase->discount_calculation_version ?? DocumentDiscountIntent::VERSION_CANONICAL),
                 );
-                $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $purchase->currency_code);
+                $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $purchase->currency_code, $minorUnits);
             } catch (\Throwable) {
                 $this->fail();
             }
@@ -110,7 +111,7 @@ final class PurchaseDraftIntegrity
             }
 
             $result = app(PurchaseCalculator::class)->line($line->quantity, $line->unit_cost, $calcType,
-                $calcValue, $line->tax_rate_snapshot, $line->tax_inclusive, $purchase->currency_code, $purchase->exchange_rate);
+                $calcValue, $line->tax_rate_snapshot, $line->tax_inclusive, $purchase->currency_code, $purchase->exchange_rate, $minorUnits);
             foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
                 foreach (['' => $field, '_base' => $field.'Base'] as $suffix => $property) {
                     if (! $result->{$property}->isEqualTo($line->getAttribute('line_'.$field.$suffix))) {
