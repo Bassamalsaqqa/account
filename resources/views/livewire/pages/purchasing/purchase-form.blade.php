@@ -3,6 +3,23 @@
       class="space-y-4 pb-44 md:pb-6"
       x-data="{
           saving: false, documentBusy: false, operationFailed: false,
+          previewTimer: null, removePreviewInterceptor: null,
+          init() {
+              // An outgoing form message already includes pending input edits.
+              this.removePreviewInterceptor = $wire.$interceptMessage(({ onSend }) => {
+                  onSend(() => clearTimeout(this.previewTimer));
+              });
+          },
+          schedulePurchasePreview() {
+              clearTimeout(this.previewTimer);
+              this.previewTimer = setTimeout(() => {
+                  if (!this.saving && !this.documentBusy) $wire.$commit();
+              }, 350);
+          },
+          destroy() {
+              clearTimeout(this.previewTimer);
+              this.removePreviewInterceptor?.();
+          },
           handleSaveDraft() {
               if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBlocked($wire) || $wire.showQuickVendorModal) return;
               this.saving = true;
@@ -13,6 +30,7 @@
               window.enqueueDocumentOperation($wire, 'addLine').catch(() => { this.operationFailed = true; });
           }
       }"
+      @input="if ($event.target.hasAttribute('data-purchase-preview-input')) schedulePurchasePreview()"
       @document-operation-state.window="if ($event.detail.id === $wire.$id) documentBusy = $event.detail.busy"
       @keydown.window.prevent.ctrl.s="handleSaveDraft()"
       @keydown.window.prevent.meta.s="handleSaveDraft()"
@@ -31,7 +49,7 @@
 
     <p class="p-3 bg-info-bg text-info text-xs sm:text-sm rounded-control">{{ __('purchasing.draft_notice') }}</p>
     @include('livewire.ai.unsaved-notice')
-    <x-form-attention />
+    <x-form-attention :focus="$focusFormErrors" wire:key="purchase-form-attention-{{ (int) $focusFormErrors }}" />
     @if($duplicateWarning)<p role="status" class="p-3 bg-warning-bg text-warning text-sm rounded-control">{{ __('purchasing.duplicate_vendor_invoice') }}</p>@endif
     @if ($receivingStock)
         <p role="status" class="text-sm text-text-secondary">{{ __('quick_product.receive_help') }}</p>
@@ -179,7 +197,7 @@
                 <label for="purchase-rate" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.exchange_rate') }}
                 </label>
-                <input id="purchase-rate" @error('exchange_rate') aria-invalid="true" aria-describedby="purchase-rate-error" @enderror wire:model.blur="exchange_rate" inputmode="decimal" dir="ltr" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
+                <input id="purchase-rate" @error('exchange_rate') aria-invalid="true" aria-describedby="purchase-rate-error" @enderror wire:model="exchange_rate" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
                 @error('exchange_rate') <span id="purchase-rate-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
             @endif
@@ -306,6 +324,7 @@
                         <label for="line-quantity-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.quantity') }} <span class="text-danger">*</span></label>
                         <x-touch-quantity-stepper
                             :index="$index"
+                            :preview-input="true"
                             :allows-fraction="$lineAllowsFraction"
                             :step="\App\Support\QuantityStep::forUnit($selectedUnit?->unit)"
                             id="line-quantity-{{ $index }}"
@@ -316,7 +335,7 @@
 
                     <div class="lg:col-span-2">
                         <label for="line-unit_cost-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.unit_cost') }} <span class="text-danger">*</span></label>
-                        <input id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model.blur="lines.{{ $index }}.unit_cost" wire:change="recalculate" inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-xs font-mono text-end" placeholder="0.00" :disabled="documentBusy || saving"/>
+                        <input id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.unit_cost" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-xs font-mono text-end" placeholder="0.00" :disabled="documentBusy || saving"/>
                         @error('lines.'.$index.'.unit_cost') <span id="line-unit_cost-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                         @if(isset($lastPriceHints[$index]))
                             <p class="text-[11px] text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
@@ -392,7 +411,7 @@
                                 <div class="bg-surface rounded-control p-2.5 flex items-center justify-between gap-2 text-xs text-text-secondary border border-border/50">
                                     <span class="flex items-center gap-2">
                                         <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                                        <span>{{ __('purchase_settlement.auto_lot_notice') }} (<strong><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['quantity']) }}</bdi></strong> {{ $selectedUnit?->unit?->name() ?? '' }})</span>
+                                        <span>{{ __('purchase_settlement.auto_lot_notice') }} @if ($documentTotalsValid) (<strong><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['quantity']) }}</bdi></strong> {{ $selectedUnit?->unit?->name() ?? '' }}) @endif</span>
                                     </span>
                                 </div>
                             @else
@@ -443,6 +462,7 @@
                     <span class="text-[11px] text-text-muted font-mono">{{ $currency_code }}</span>
                 </div>
 
+                <p wire:loading.delay wire:target="lines,exchange_rate,discount_value,discount_type,currency_code,vendor_id" role="status" class="text-xs text-text-secondary">{{ __('purchasing.updating_totals') }}</p>
                 <div class="space-y-2 text-xs divide-y divide-border/40">
                     <!-- Subtotal -->
                     <div class="flex items-center justify-between pt-1">
@@ -482,7 +502,7 @@
                                         @if ($discount_type !== 'none')
                                             <div>
                                                 <label for="purchase-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount_value') }}</label>
-                                                <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model.blur="discount_value" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
+                                                <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" data-purchase-preview-input class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
                                             </div>
                                         @endif
                                     </div>
@@ -548,7 +568,7 @@
                 @if (! $documentTotalsValid)
                     <div class="flex items-center gap-2 p-2 rounded bg-warning-bg border border-warning/20 text-warning text-xs mt-2" role="status">
                         <x-icon name="alert-triangle" class="w-4 h-4 shrink-0 text-warning" />
-                        <span>{{ __('camera.totals_unavailable') }}</span>
+                        <span>{{ $errors->first('calculation') ?: __('camera.totals_unavailable') }}</span>
                     </div>
                 @endif
             </section>

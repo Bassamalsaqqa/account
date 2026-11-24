@@ -34,25 +34,38 @@ final readonly class DocumentDiscountIntent
         public string $discountBasis = self::BASIS_SUBTOTAL,
         public int $version = self::VERSION_CANONICAL,
     ) {
-        $type = $this->discountType ?? self::TYPE_NONE;
+        $this->discountValue = self::parseValue($this->discountType, $discountValue);
+    }
+
+    public static function parseValue(?string $type, mixed $value): BigDecimal
+    {
+        $type ??= self::TYPE_NONE;
         if (! in_array($type, [self::TYPE_NONE, self::TYPE_FIXED, self::TYPE_PERCENT], true)) {
             throw new InvalidArgumentException(__('purchasing.invalid_discount_type'));
         }
-        try {
-            $val = BigDecimal::of(trim((string) ($discountValue ?? '0')) !== '' ? trim((string) $discountValue) : '0');
-        } catch (\Throwable) {
+        if ($type === self::TYPE_NONE && ($value === null || (is_string($value) && trim($value) === ''))) {
+            return BigDecimal::zero();
+        }
+        if (! is_string($value) && ! is_int($value)) {
             throw new InvalidArgumentException(__('purchasing.invalid_discount_value'));
         }
-        if ($val->isNegative()) {
+        $input = trim((string) $value);
+        // Match the DECIMAL(20,6) storage envelope before constructing a decimal.
+        if (! preg_match('/\A-?\d{1,14}(?:\.\d{1,6})?\z/', $input)) {
+            throw new InvalidArgumentException(__('purchasing.invalid_discount_value'));
+        }
+        $amount = BigDecimal::of($input);
+        if ($amount->isNegative()) {
             throw new InvalidArgumentException(__('purchasing.negative_discount_forbidden'));
         }
-        if ($type === self::TYPE_PERCENT && $val->isGreaterThan(100)) {
+        if ($type === self::TYPE_PERCENT && $amount->isGreaterThan(100)) {
             throw new InvalidArgumentException(__('purchasing.invalid_discount_percentage'));
         }
-        if ($type === self::TYPE_NONE && ! $val->isZero()) {
+        if ($type === self::TYPE_NONE && ! $amount->isZero()) {
             throw new InvalidArgumentException(__('purchasing.invalid_discount_value'));
         }
-        $this->discountValue = $val;
+
+        return $amount;
     }
 
     public function isNone(): bool

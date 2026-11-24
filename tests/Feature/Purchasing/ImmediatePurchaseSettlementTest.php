@@ -353,6 +353,51 @@ final class ImmediatePurchaseSettlementTest extends TestCase
         $this->assertSame($check->id, $result['payment']->check_id);
     }
 
+    public function test_form_previews_remaining_balance_for_each_mode_before_saving(): void
+    {
+        $cashUsd = app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, [
+            'account_type' => 'cash',
+            'name_ar' => 'صندوق دولار',
+            'name_en' => 'USD Cash Account',
+            'currency_code' => 'USD',
+        ]);
+
+        $form = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->call('selectProduct', 0, $this->standardProduct->id)
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_cost', '50')
+            ->assertViewHas('settlementBalance', ['remaining' => '100.00', 'credit' => null])
+            ->set('settlement.mode', 'full')
+            ->assertSet('settlement.amount', '100.00')
+            ->assertViewHas('settlementBalance', ['remaining' => '0.00', 'credit' => null])
+            ->set('settlement.mode', 'partial')
+            ->assertSet('settlement.amount', '')
+            ->set('settlement.amount', '25')
+            ->assertViewHas('settlementBalance', ['remaining' => '75.00', 'credit' => null]);
+
+        $form->set('settlement.money_account_id', (string) $cashUsd->id)
+            ->assertSet('settlement.amount', '')
+            ->assertSet('settlement.exchange_rate', '')
+            ->set('settlement.amount', '20')
+            ->set('settlement.purchase_amount', '50')
+            ->set('settlement.payment_currency_amount', '15')
+            ->set('settlement.exchange_rate', '3.5')
+            ->assertViewHas('settlementBalance', ['remaining' => '50.00', 'credit' => '5.00'])
+            ->set('settlement.payment_currency_amount', '21')
+            ->assertViewHas('settlementBalance', null)
+            ->set('settlement.payment_currency_amount', '15')
+            ->set('settlement.exchange_rate', '0')
+            ->assertViewHas('settlementBalance', null)
+            ->set('settlement.exchange_rate', '3.5')
+            ->set('settlement.mode', 'full')
+            ->assertViewHas('settlementBalance', ['remaining' => '0.00', 'credit' => '5.00'])
+            ->set('settlement.mode', 'unpaid')
+            ->assertViewHas('settlementBalance', ['remaining' => '100.00', 'credit' => null]);
+
+        $this->assertDatabaseCount('purchases', 0);
+    }
+
     public function test_cross_currency_settlement_requires_both_amounts_and_base_fx_is_one(): void
     {
         $purchase = $this->draft('USD', '3.5', [[

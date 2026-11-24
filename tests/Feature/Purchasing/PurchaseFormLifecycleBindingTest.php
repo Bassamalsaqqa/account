@@ -90,7 +90,7 @@ final class PurchaseFormLifecycleBindingTest extends TestCase
         $html = $test->html();
 
         $this->assertStringContainsString('id="purchase-rate"', $html);
-        $this->assertStringContainsString('wire:model.blur="exchange_rate"', $html);
+        $this->assertStringContainsString('wire:model="exchange_rate" data-purchase-preview-input', $html);
         $this->assertStringNotContainsString('wire:change="updatedExchangeRate"', $html,
             'The exchange_rate input must not bind updatedExchangeRate to wire:change because calling lifecycle hooks directly causes HTTP 500 DirectlyCallingLifecycleHooksNotAllowedException.'
         );

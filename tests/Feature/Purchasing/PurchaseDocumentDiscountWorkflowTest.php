@@ -373,6 +373,62 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
         app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
     }
 
+    public function test_draft_builder_rejects_malformed_header_discount_values_as_field_errors(): void
+    {
+        $data = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'lines' => [['product_id' => $this->soap->id, 'quantity' => '1', 'unit_cost' => '25']],
+        ];
+
+        foreach ([['fixed', []], ['fixed', 'abc'], ['fixed', '1,2'], ['fixed', '1e2'],
+            ['fixed', '1.0000001'], ['fixed', '-2'], ['fixed', ''], ['fixed', null],
+            ['fixed', '100000000000000'], ['none', '1']] as [$type, $value]) {
+            try {
+                app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $data + [
+                    'discount_type' => $type,
+                    'discount_value' => $value,
+                ]);
+                $this->fail('Malformed discount was accepted.');
+            } catch (ValidationException $exception) {
+                $this->assertArrayHasKey('discount_value', $exception->errors());
+            }
+        }
+        $this->assertDatabaseCount('purchases', 0);
+    }
+
+    public function test_draft_currency_update_requires_explicit_fixed_discount_intent(): void
+    {
+        $lines = [['product_id' => $this->soap->id, 'quantity' => '1', 'unit_cost' => '25']];
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'discount_type' => 'fixed',
+            'discount_value' => '5',
+            'lines' => $lines,
+        ]);
+
+        $changes = ['currency_code' => 'USD', 'exchange_rate' => '3.5', 'lines' => $lines];
+        try {
+            app(UpdatePurchaseDraftAction::class)->execute($draft, $this->owner, $changes);
+            $this->fail('Fixed discount was implicitly reinterpreted.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('discount_value', $exception->errors());
+        }
+        $this->assertSame('ILS', $draft->fresh()->currency_code);
+        $this->assertSame('5.000000', $draft->fresh()->discount_value);
+
+        $updated = app(UpdatePurchaseDraftAction::class)->execute($draft, $this->owner, $changes + ['discount_value' => '2.50']);
+        $this->assertSame('USD', $updated->currency_code);
+        $this->assertSame('2.500000', $updated->discount_value);
+    }
+
     public function test_document_discount_rejects_negative_value(): void
     {
         $payload = [

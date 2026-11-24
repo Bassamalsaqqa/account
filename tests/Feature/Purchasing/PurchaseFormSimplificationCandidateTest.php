@@ -251,6 +251,71 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertSame('45.00', $test->get('previewGrandTotal'));
     }
 
+    public function test_malformed_discount_confirmation_returns_a_field_error_without_writing(): void
+    {
+        app()->setLocale('en');
+        $form = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'fixed');
+
+        foreach (['abc', '1,2', '1e2', '', '-1', '0.0000001', '100000000000000', []] as $value) {
+            $form->update(
+                calls: [['method' => 'saveAndConfirm', 'params' => [], 'path' => '']],
+                updates: ['discount_value' => $value],
+            )->assertHasErrors('discount_value')
+                ->assertSet('documentTotalsValid', false);
+        }
+        $this->assertDatabaseCount('purchases', 0);
+        $this->assertDatabaseCount('purchase_confirmation_receipts', 0);
+    }
+
+    public function test_fixed_discount_requires_reentry_on_manual_and_vendor_currency_changes(): void
+    {
+        $foreignVendor = app(VendorCatalogService::class)->save($this->company, $this->owner, [
+            'name_ar' => 'مورد أجنبي',
+            'name_en' => 'Foreign supplier',
+            'default_currency_code' => 'USD',
+        ]);
+
+        foreach (['vendor_id' => $foreignVendor->id, 'currency_code' => 'USD'] as $field => $value) {
+            $form = Livewire::test(PurchaseForm::class)
+                ->set('vendor_id', $this->vendor->id)
+                ->call('selectProduct', 0, $this->product->id)
+                ->call('toggleDiscountControl')
+                ->set('discount_type', 'fixed')
+                ->set('discount_value', '17')
+                ->set($field, $value)
+                ->assertSet('currency_code', 'USD')
+                ->assertSet('discount_value', '')
+                ->assertSet('lines.0.unit_cost', '')
+                ->assertHasErrors('discount_value');
+
+            $form->set('exchange_rate', '3.5')
+                ->set('lines.0.unit_cost', '25')
+                ->call('saveAndConfirm')
+                ->assertHasErrors('discount_value')
+                ->set('discount_value', '5')
+                ->assertSet('previewGrandTotal', '20.00');
+        }
+        $this->assertDatabaseCount('purchases', 0);
+    }
+
+    public function test_bundled_currency_change_clears_pending_fixed_discount_and_cost(): void
+    {
+        Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'fixed')
+            ->update(updates: ['lines.0.unit_cost' => '25', 'discount_value' => '17', 'currency_code' => 'USD'])
+            ->assertSet('currency_code', 'USD')
+            ->assertSet('lines.0.unit_cost', '')
+            ->assertSet('discount_value', '')
+            ->assertHasErrors('discount_value');
+    }
+
     public function test_header_discount_binding_and_validation_with_canonical_calculation(): void
     {
         $test = Livewire::test(PurchaseForm::class)
@@ -732,6 +797,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
             ->call('recalculate');
 
         $this->assertSame('40.00', $test->get('settlement.amount'));
+        $test->assertViewHas('settlementBalance', ['remaining' => '50.00', 'credit' => null]);
 
         // Step 4: Defend against overage/advance on confirmation (e.g. attempting to pay 95 on total 90 in partial mode)
         $test->set('settlement.amount', '95.00');

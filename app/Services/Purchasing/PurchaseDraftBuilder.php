@@ -53,6 +53,12 @@ final class PurchaseDraftBuilder
                     throw ValidationException::withMessages($errors);
                 }
                 Validator::make($data, ['exchange_rate' => ['required']])->validate();
+                if ($existing->discount_scope === 'line' && $existing->lines()->where('discount_value', '!=', 0)->exists()) {
+                    throw ValidationException::withMessages(['currency_code' => __('purchasing.currency_change_legacy_discount')]);
+                }
+                if ($existing->discount_type === 'fixed' && ! array_key_exists('discount_value', $data)) {
+                    throw ValidationException::withMessages(['discount_value' => __('purchasing.currency_change_discount')]);
+                }
             }
             $data = array_replace($this->editableData($existing), $data);
         }
@@ -146,28 +152,34 @@ final class PurchaseDraftBuilder
         $rate = $data['exchange_rate'] ?? '1';
         $rules->header($company, $validated['currency_code'], $rate, $date, $validated['due_date'], $locale);
 
-        // Resolve discount scope and enforce strict mutex / legacy preservation
-        $hasLineDiscounts = false;
-        foreach ($validated['lines'] as $lineIdx => $l) {
-            $rawL = $data['lines'][$lineIdx] ?? [];
-            $dt = $l['discount_type'] ?? null;
-            $dv = $rawL['discount_value'] ?? '0';
-            $isPositiveVal = $dv !== '' && ! BigDecimal::of((string) $dv)->isZero();
-            if ($dt !== null && $dt !== 'none' && $dt !== '' && $isPositiveVal) {
-                $hasLineDiscounts = true;
-                break;
-            }
-            if ($isPositiveVal) {
-                $hasLineDiscounts = true;
-                break;
-            }
-        }
-
         $headerDiscountType = $validated['discount_type'] ?? null;
-        $headerDiscountValue = $data['discount_value'] ?? '0';
-        $hasDocumentDiscount = $headerDiscountType !== null
-            && $headerDiscountType !== 'none'
-            && ! BigDecimal::of((string) ($headerDiscountValue ?: '0'))->isZero();
+        try {
+            $intent = new DocumentDiscountIntent(
+                discountType: $headerDiscountType,
+                discountValue: $data['discount_value'] ?? null,
+            );
+        } catch (\InvalidArgumentException $e) {
+            throw ValidationException::withMessages(['discount_value' => $e->getMessage()]);
+        }
+        $headerDiscountValue = $intent->discountValue;
+        $hasDocumentDiscount = ! $intent->isNone();
+
+        $hasLineDiscounts = false;
+        $lineDiscountValues = [];
+        foreach ($validated['lines'] as $lineIdx => $line) {
+            $type = $line['discount_type'] ?? 'none';
+            $rawValue = $data['lines'][$lineIdx]['discount_value'] ?? null;
+            try {
+                $lineDiscount = DocumentDiscountIntent::parseValue(
+                    $type === 'none' ? 'fixed' : $type,
+                    $type === 'none' && ($rawValue === null || $rawValue === '') ? '0' : $rawValue,
+                );
+            } catch (\InvalidArgumentException $e) {
+                throw ValidationException::withMessages(["lines.{$lineIdx}.discount_value" => $e->getMessage()]);
+            }
+            $lineDiscountValues[$lineIdx] = $lineDiscount;
+            $hasLineDiscounts = $hasLineDiscounts || ! $lineDiscount->isZero();
+        }
 
         if ($hasDocumentDiscount && $hasLineDiscounts) {
             throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
@@ -243,13 +255,6 @@ final class PurchaseDraftBuilder
             }
 
             try {
-                $intent = new DocumentDiscountIntent(
-                    discountType: in_array($headerDiscountType, [null, '', 'none'], true) ? DocumentDiscountIntent::TYPE_NONE : $headerDiscountType,
-                    discountValue: $headerDiscountValue,
-                    discountScope: 'document',
-                    discountBasis: DocumentDiscountIntent::BASIS_SUBTOTAL,
-                    version: DocumentDiscountIntent::VERSION_CANONICAL,
-                );
                 $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $validated['currency_code'], $currencyMinorUnits);
             } catch (\InvalidArgumentException $e) {
                 throw ValidationException::withMessages(['discount_value' => $e->getMessage()]);
@@ -301,7 +306,7 @@ final class PurchaseDraftBuilder
                 $rawDiscountType = $line['discount_type'] ?? null;
                 $rawDiscountVal = $raw['discount_value'] ?? '0';
                 $hasIncomingDiscount = $rawDiscountType !== null && $rawDiscountType !== 'none' && $rawDiscountType !== ''
-                    && ! BigDecimal::of((string) ($rawDiscountVal !== '' ? $rawDiscountVal : '0'))->isZero();
+                    && ! $lineDiscountValues[$index]->isZero();
 
                 if ($isSameItem || ($existing === null && $allowLegacyScope)) {
                     // Stored legacy line discount is immutable on the server.
@@ -405,7 +410,7 @@ final class PurchaseDraftBuilder
             'exchange_rate' => (string) ExchangeRate::from($rate)->getValue(),
             'document_locale' => $locale, 'notes' => $validated['notes'] ?? null,
             'discount_type' => $discountScope === 'document' ? (in_array($headerDiscountType, [null, '', 'none'], true) ? null : $headerDiscountType) : null,
-            'discount_value' => $discountScope === 'document' ? (string) MoneyAmount::from((string) ($headerDiscountValue ?: '0')) : '0.000000',
+            'discount_value' => $discountScope === 'document' ? (string) $headerDiscountValue->toScale(DocumentDiscountAllocator::STORAGE_SCALE) : '0.000000',
             'discount_scope' => $discountScope,
             'discount_basis' => 'subtotal',
             'discount_calculation_version' => $discountScope === 'document' ? DocumentDiscountIntent::VERSION_CANONICAL : DocumentDiscountIntent::VERSION_LEGACY,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Domain\Purchasing\DocumentDiscountIntent;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
 
@@ -39,16 +40,15 @@ final class PurchaseDraftPayload
             $payload[$field] ??= null;
         }
         $payload['discount_type'] ??= 'none';
-        $payload['discount_value'] ??= '0';
         $payload['discount_scope'] ??= 'document';
 
         if (! in_array($payload['discount_type'], ['none', 'fixed', 'percent'], true)) {
-            throw new InvalidArgumentException('Invalid purchase discount type.');
+            throw new InvalidArgumentException(__('purchasing.invalid_discount_type'));
         }
         if ($payload['discount_scope'] !== 'document') {
             throw new InvalidArgumentException('Legacy line discount scope is not selectable via AI assistant.');
         }
-        $payload['discount_value'] = $this->decimal($payload['discount_value'], 6);
+        $payload['discount_value'] = (string) DocumentDiscountIntent::parseValue($payload['discount_type'], $payload['discount_value'] ?? null)->strippedOfTrailingZeros();
 
         $payload['exchange_rate'] = $this->decimal($payload['exchange_rate'], 10);
         foreach (['vendor_invoice_number', 'purchase_date', 'due_date', 'currency_code', 'document_locale', 'notes'] as $field) {
