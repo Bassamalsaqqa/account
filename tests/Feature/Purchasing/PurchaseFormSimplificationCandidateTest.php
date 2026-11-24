@@ -1099,6 +1099,20 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertSame('2.125000', $draft->lines()->sole()->discount_value);
     }
 
+    public function test_blank_product_row_invalidates_totals_but_selected_zero_cost_remains_valid(): void
+    {
+        Livewire::test(PurchaseForm::class)
+            ->assertSet('documentTotalsValid', false)
+            ->set('vendor_id', $this->vendor->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.unit_cost', '0')
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '0.00')
+            ->call('addLine')
+            ->assertSet('documentTotalsValid', false)
+            ->assertSet('totals', []);
+    }
+
     public function test_discounted_purchase_preview_batches_tax_queries_for_many_lines(): void
     {
         $tax = TaxRate::create([

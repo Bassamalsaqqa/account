@@ -987,7 +987,8 @@ class PurchaseForm extends Component
             }
 
             foreach ($this->lines as $line) {
-                if (! isset($line['quantity']) || ! is_string($line['quantity']) || trim($line['quantity']) === ''
+                if (empty($line['product_id'])
+                    || ! isset($line['quantity']) || ! is_string($line['quantity']) || trim($line['quantity']) === ''
                     || ! isset($line['unit_cost']) || ! is_string($line['unit_cost']) || trim($line['unit_cost']) === '') {
                     $this->clearPurchaseTotals();
 
