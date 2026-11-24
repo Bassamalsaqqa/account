@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Fin1;
 
+use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\PaymentDetail;
 use App\Models\CustomerPayment;
+use App\Models\MoneyAccount;
 use App\Models\SalesInvoice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\Support\SalesCorrectionFixtures;
 use Tests\TestCase;
@@ -34,7 +37,8 @@ final class ImmediateSaleLivewireTest extends TestCase
         ]);
     }
 
-    private function form(SalesInvoice $invoice)
+    /** @return Testable<InvoiceForm> */
+    private function form(SalesInvoice $invoice): Testable
     {
         return Livewire::test(InvoiceForm::class, ['publicId' => $invoice->public_id]);
     }
@@ -137,6 +141,112 @@ final class ImmediateSaleLivewireTest extends TestCase
             Livewire::test(PaymentDetail::class, ['publicId' => $payment->public_id])
                 ->assertSee(__('fin1.check'))->assertSee(__('money.check_number'))
                 ->assertDontSee('money.check')->assertDontSee('sales.check');
+        }
+    }
+
+    public function test_prospective_remaining_balance_updates_for_same_currency_partial_settlement(): void
+    {
+        $invoice = $this->draft();
+        $this->form($invoice)
+            ->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $this->cash->id)
+            ->set('settlement.amount', '40')
+            ->assertHasNoErrors()
+            ->assertSet('prospectiveRemainingBalance', '60.00')
+            ->assertSet('prospectiveRemainingExact', '60.000000')
+            ->assertSee(__('fin1.outstanding_invoice_amount'))
+            ->assertSee('60.00 USD');
+    }
+
+    public function test_prospective_remaining_balance_updates_for_cross_currency_partial_settlement(): void
+    {
+        $invoice = $this->draft();
+        $cashIls = MoneyAccount::where('company_id', $this->company->id)->where('currency_code', 'ILS')->first()
+            ?? app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, ['account_type' => 'cash', 'name_ar' => 'صندوق شيكل', 'name_en' => 'Cash ILS', 'currency_code' => 'ILS']);
+
+        $this->form($invoice)
+            ->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $cashIls->id)
+            ->set('settlement.amount', '350')
+            ->set('settlement.invoice_amount', '40')
+            ->set('settlement.payment_currency_amount', '140')
+            ->set('settlement.exchange_rate', '1')
+            ->assertHasNoErrors()
+            ->assertSet('prospectiveRemainingBalance', '60.00')
+            ->assertSet('prospectiveRemainingExact', '60.000000')
+            ->assertSee(__('fin1.outstanding_invoice_amount'))
+            ->assertSee('60.00 USD');
+    }
+
+    public function test_prospective_balance_handles_invalid_and_overpayment_inputs(): void
+    {
+        $invoice = $this->draft();
+
+        // Overpayment in same-currency partial settlement
+        $this->form($invoice)
+            ->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $this->cash->id)
+            ->set('settlement.amount', '100')
+            ->assertSet('prospectiveRemainingBalance', null)
+            ->assertHasErrors(['settlement.amount'])
+            ->assertSee(__('fin1.partial_amount_exceeds_total'));
+
+        // Greater overpayment in same-currency
+        $this->form($invoice)
+            ->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $this->cash->id)
+            ->set('settlement.amount', '120')
+            ->assertSet('prospectiveRemainingBalance', null)
+            ->assertHasErrors(['settlement.amount'])
+            ->assertSee(__('fin1.partial_amount_exceeds_total'));
+
+        // Invalid non-numeric input
+        $this->form($invoice)
+            ->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $this->cash->id)
+            ->set('settlement.amount', 'invalid')
+            ->assertSet('prospectiveRemainingBalance', null)
+            ->assertHasErrors(['settlement.amount']);
+
+        // Cross-currency overpayment on invoice
+        $cashIls = MoneyAccount::where('company_id', $this->company->id)->where('currency_code', 'ILS')->first()
+            ?? app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, ['account_type' => 'cash', 'name_ar' => 'صندوق شيكل', 'name_en' => 'Cash ILS', 'currency_code' => 'ILS']);
+
+        $this->form($invoice)
+            ->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $cashIls->id)
+            ->set('settlement.amount', '500')
+            ->set('settlement.invoice_amount', '120')
+            ->assertSet('prospectiveRemainingBalance', null)
+            ->assertHasErrors(['settlement.invoice_amount'])
+            ->assertSee(__('fin1.partial_amount_exceeds_total'));
+
+        // Cross-currency consumed exceeds payment received
+        $this->form($invoice)
+            ->set('settlement.mode', 'partial')
+            ->set('settlement.money_account_id', (string) $cashIls->id)
+            ->set('settlement.amount', '100')
+            ->set('settlement.invoice_amount', '40')
+            ->set('settlement.payment_currency_amount', '150')
+            ->assertSet('prospectiveRemainingBalance', null)
+            ->assertHasErrors(['settlement.payment_currency_amount'])
+            ->assertSee(__('fin1.consumed_exceeds_received'));
+    }
+
+    public function test_prospective_balance_bilingual_accessible_summary_renders_in_arabic_and_english(): void
+    {
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $invoice = $this->draft();
+            $this->form($invoice)
+                ->set('settlement.mode', 'partial')
+                ->set('settlement.money_account_id', (string) $this->cash->id)
+                ->set('settlement.amount', '40')
+                ->assertHasNoErrors()
+                ->assertSee(__('fin1.outstanding_invoice_amount'))
+                ->assertSee('60.00 USD')
+                ->set('settlement.amount', '150')
+                ->assertSee(__('fin1.partial_amount_exceeds_total'));
         }
     }
 }

@@ -33,6 +33,7 @@ use App\Models\SalesInvoice;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
 use App\Services\Money\EligibleMoneyAccounts;
+use App\Services\Sales\ImmediateSettlementPreview;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
 use App\Support\InvoiceConfirmation;
@@ -193,6 +194,12 @@ class InvoiceForm extends Component
     #[Locked]
     public bool $settlementPreview = false;
 
+    public ?string $prospectiveRemainingBalance = null;
+
+    public ?string $prospectiveRemainingExact = null;
+
+    public ?string $prospectiveBalanceError = null;
+
     public function mount(CompanyContext $context, ?string $publicId = null, ?int $customer_id = null): void
     {
         $customer_id ??= request()->integer('customer_id') ?: null;
@@ -301,6 +308,7 @@ class InvoiceForm extends Component
 
         if ($property !== null && str_starts_with($property, 'settlement.')) {
             $this->syncSettlementDefaults($property);
+            $this->recalculateSettlementPreview();
         }
     }
 
@@ -703,6 +711,8 @@ class InvoiceForm extends Component
                 $this->settlement['amount'] = $this->previewGrandTotal;
             }
         }
+
+        $this->recalculateSettlementPreview();
     }
 
     public function saveAndConfirm(SalesInvoiceCommands $commands): mixed
@@ -984,6 +994,42 @@ class InvoiceForm extends Component
         $this->executeKey = null;
         $this->previewDigest = null;
         $this->settlementPreview = false;
+        $this->recalculateSettlementPreview();
+    }
+
+    public function recalculateSettlementPreview(): void
+    {
+        if (($this->settlement['mode'] ?? 'unpaid') !== 'partial') {
+            $this->prospectiveRemainingBalance = null;
+            $this->prospectiveRemainingExact = null;
+            $this->prospectiveBalanceError = null;
+
+            return;
+        }
+
+        $company = app(CompanyContext::class)->company();
+        $paymentCurrency = $this->settlementPaymentCurrency();
+        if ($paymentCurrency === $this->currency_code && ($this->settlement['amount'] ?? '') !== '') {
+            $this->settlement['invoice_amount'] = $this->settlement['amount'];
+        }
+
+        $preview = app(ImmediateSettlementPreview::class)->calculate(
+            grandTotal: $this->previewGrandTotal,
+            documentCurrency: $this->currency_code ?: $company->base_currency_code,
+            settlement: $this->settlement,
+            paymentCurrency: $paymentCurrency,
+            baseCurrency: $company->base_currency_code,
+        );
+
+        $this->prospectiveRemainingBalance = $preview['remaining_balance'];
+        $this->prospectiveRemainingExact = $preview['remaining_exact'];
+        $this->prospectiveBalanceError = $preview['error'];
+
+        if ($preview['error'] !== null && $preview['error_field'] !== null) {
+            $this->addError('settlement.'.$preview['error_field'], $preview['error']);
+        } elseif ($preview['valid']) {
+            $this->resetErrorBag(['settlement.amount', 'settlement.invoice_amount', 'settlement.payment_currency_amount', 'settlement.exchange_rate']);
+        }
     }
 
     #[Locked]

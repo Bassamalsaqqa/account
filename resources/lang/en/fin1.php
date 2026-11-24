@@ -18,4 +18,11 @@ return [
     'unallocated_payment_amount' => 'Unapplied receipt credit', 'check_control' => 'Checks in hand',
     'atomic_help' => 'Final confirmation posts the invoice, receipt and allocation together. A check remains received, not cleared.',
     'posted_with_payment' => 'Invoice and receipt posted together. Receipt details and the remaining balance are available on this invoice.',
+    'invalid_amount' => 'Enter a valid positive payment amount.',
+    'invalid_invoice_amount' => 'Enter a valid positive invoice amount.',
+    'invalid_payment_currency_amount' => 'Enter a valid positive applied payment amount.',
+    'invalid_exchange_rate' => 'Enter a valid positive exchange rate.',
+    'partial_amount_exceeds_total' => 'Partial payment cannot equal or exceed invoice total.',
+    'consumed_exceeds_received' => 'Applied payment amount cannot exceed total received.',
+    'prospective_balance' => 'Remaining invoice balance',
 ];
