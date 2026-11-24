@@ -13,6 +13,7 @@
     'disabled' => false,
     'required' => false,
     'compact' => false,
+    'hasError' => false,
 ])
 
 @php
@@ -57,6 +58,7 @@
             :aria-controls="listboxId"
             :aria-activedescendant="activeId"
             aria-label="{{ $ariaLabel }}"
+            @if($hasError) aria-invalid="true" aria-describedby="{{ $id }}-error" @endif
             x-model="query"
             @input="handleInput()"
             @focus="handleFocus()"
@@ -65,7 +67,7 @@
             :disabled="{{ $disabled ? 'true' : 'false' }} || (typeof saving !== 'undefined' && saving)"
             autocomplete="off"
             spellcheck="false"
-            class="w-full rounded-control border border-border bg-canvas px-3 text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden transition-colors {{ $compact ? 'min-h-[44px] md:min-h-8 md:h-8 py-1' : 'min-h-[44px] h-11 py-2' }} ltr:pr-8 rtl:pl-8"
+            class="w-full rounded-control border {{ $hasError ? 'border-danger' : 'border-border' }} bg-canvas px-3 text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden transition-colors {{ $compact ? 'min-h-[44px] md:min-h-8 md:h-8 py-1' : 'min-h-[44px] h-11 py-2' }} ltr:pr-8 rtl:pl-8"
             dir="auto"
         />
 
