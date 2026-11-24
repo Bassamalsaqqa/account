@@ -31,6 +31,13 @@ final class RecoveryInspection
     private const CURRENT_CODE_SHA_OPTIONS = [
         '8d8428261cd2a10690ab77a5c7271e46b5ff5217',
         'c74c9a4e0b4135055dbb8ed7d3e3715d2ddba24f',
+        '06e4f6d71b8dc3202f0708dff91a21b32a5afd33',
+        '8362c15263920b7ebeb5b3efc90d62b951b62daf',
+        'd873d5829c40780c9d0cc1e8bb3ca569fe2f4388',
+        'f8a0cf7012c4875bec7320d42e0f8dde58593b52',
+        '8c1fea407a9c288e5d2fbc495dada1a548386941',
+        'efa257fae488d7ea546b6050bf7e08b47f7f4980',
+        'd6e70547a1f5e022cecc18029e5d7a5bba52bd13',
     ];
 
     /**
@@ -50,9 +57,22 @@ final class RecoveryInspection
             'target-schema',
             'target-user',
         ];
-        $allowed = array_merge($required, ['mode']);
+        $optional = ['mode', 'expected-tables', 'expected-migrations'];
+        $allowed = array_merge($required, $optional);
         $keys = array_keys($options);
         $this->require(array_diff($required, $keys) === [] && array_diff($keys, $allowed) === [], 'INVOCATION');
+
+        $hasExpectedTables = array_key_exists('expected-tables', $options);
+        $hasExpectedMigrations = array_key_exists('expected-migrations', $options);
+        $this->require($hasExpectedTables === $hasExpectedMigrations, 'INVOCATION');
+
+        if ($hasExpectedTables) {
+            $this->require(
+                ctype_digit($options['expected-tables']) && (int) $options['expected-tables'] > 0 && (int) $options['expected-tables'] <= 10000
+                && ctype_digit($options['expected-migrations']) && (int) $options['expected-migrations'] > 0 && (int) $options['expected-migrations'] <= 10000,
+                'SCHEMA_SPECIFICATION'
+            );
+        }
 
         $this->require((bool) preg_match('/^[a-f0-9]{64}$/D', $options['manifest-sha256']), 'TRUSTED_DIGEST');
         $this->require((bool) preg_match('/^[a-f0-9]{40}$/D', $options['expected-code']), 'CODE_IDENTITY');
@@ -93,8 +113,31 @@ final class RecoveryInspection
             $this->require(in_array($manifest['code_sha'], self::CURRENT_CODE_SHA_OPTIONS, true), 'CURRENT_CODE_SHA');
         }
 
-        $schema = $manifest['mode'] === 'historical' ? ['tables' => 80, 'migrations' => 61] : ['tables' => 83, 'migrations' => 63];
-        $this->require($manifest['schema'] === $schema, 'SCHEMA_IDENTITY');
+        $this->require(
+            is_array($manifest['schema'])
+            && array_keys($manifest['schema']) === ['tables', 'migrations']
+            && is_int($manifest['schema']['tables'])
+            && $manifest['schema']['tables'] > 0
+            && is_int($manifest['schema']['migrations'])
+            && $manifest['schema']['migrations'] > 0,
+            'SCHEMA_IDENTITY'
+        );
+
+        if ($manifest['mode'] === 'historical') {
+            if ($hasExpectedTables) {
+                $this->require(
+                    (int) $options['expected-tables'] === 80 && (int) $options['expected-migrations'] === 61,
+                    'HISTORICAL_SCHEMA'
+                );
+            }
+            $expectedSchema = ['tables' => 80, 'migrations' => 61];
+        } else {
+            $expectedSchema = $hasExpectedTables
+                ? ['tables' => (int) $options['expected-tables'], 'migrations' => (int) $options['expected-migrations']]
+                : ['tables' => 83, 'migrations' => 63];
+        }
+
+        $this->require($manifest['schema'] === $expectedSchema, 'SCHEMA_IDENTITY');
 
         $this->require(is_array($manifest['key_history_refs']) && count($manifest['key_history_refs']) >= 1 && count($manifest['key_history_refs']) <= 32, 'KEY_REFERENCES');
         foreach ($manifest['key_history_refs'] as $reference) {
@@ -162,6 +205,7 @@ final class RecoveryInspection
             'off_host_custody' => $offHost === null ? 'NOT_VERIFIED' : 'DECLARED_NOT_INDEPENDENTLY_VERIFIED',
             'recovery_point_age_seconds' => $now - $captured,
             'provisional_24h_age' => $manifest['mode'] === 'historical' ? 'NOT_APPLICABLE_TO_CURRENT_RPO' : ($now - $captured > 86400 ? 'STALE' : 'WITHIN_TARGET'),
+            'schema_verified' => $manifest['schema'],
             'effective_database_connection' => 'NOT_VERIFIED',
             'network_ingress_egress_jobs' => 'NOT_VERIFIED',
             'actual_restore_and_key_recovery' => 'NOT_VERIFIED',
@@ -267,7 +311,7 @@ if (PHP_SAPI === 'cli' && realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''))
         $options = [];
         foreach (array_slice($argv, 1) as $argument) {
             if ($argument === '--help' || $argument === '-h') {
-                echo "Usage: php bin/recovery-preflight.php --manifest=<path> --manifest-sha256=<hex> ...\n";
+                echo "Usage: php bin/recovery-preflight.php --manifest=<path> --manifest-sha256=<hex> --expected-code=<sha> --scratch=<path> --ownership-proof=<path> --target-host=<ip> --target-port=<port> --target-schema=<schema> --target-user=<user> [--mode=historical|current] [--expected-tables=<int> --expected-migrations=<int>]\n";
                 exit(0);
             }
             if (! preg_match('/^--([a-z0-9-]+)=(.+)$/sD', $argument, $match) || isset($options[$match[1]])) {
