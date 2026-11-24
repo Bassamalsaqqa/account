@@ -200,6 +200,17 @@ class PurchaseForm extends Component
     /** @var array<int, bool> */
     public array $expandedLotCustomization = [];
 
+    /** @var array<int, bool> */
+    public array $expandedRowOptions = [];
+
+    public string $discount_type = 'none';
+
+    public string $discount_value = '0';
+
+    public bool $showDiscountControl = false;
+
+    public bool $showMoreDetails = false;
+
     public ?string $previewGrandTotal = null;
 
     protected function authorizeForm(): Company
@@ -228,10 +239,18 @@ class PurchaseForm extends Component
         abort_if($publicId === null && $receiveProduct !== null && request()->query('assistant') !== null, 422);
         if ($publicId !== null) {
             $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
-            foreach (app(PurchaseDraftBuilder::class)->editableData($purchase) as $key => $value) {
+            $editableData = app(PurchaseDraftBuilder::class)->editableData($purchase);
+            foreach ($editableData as $key => $value) {
                 $this->{$key} = $value;
             }
             $this->currencyManuallySelected = true;
+            $this->discount_type = $editableData['discount_type'] ?? ($purchase->discount_type ?? 'none');
+            $this->discount_value = isset($editableData['discount_value'])
+                ? (string) $editableData['discount_value']
+                : (isset($purchase->discount_value) ? (string) $purchase->discount_value : '0');
+            if (isset($this->discount_type) && ! empty($this->discount_type) && $this->discount_type !== 'none') {
+                $this->showDiscountControl = true;
+            }
             foreach ($this->lines as $index => $line) {
                 $lots = $line['lots'] ?? [];
                 if (count($lots) > 1 || (! empty($lots[0]['lot_number'])) || (! empty($lots[0]['expiry_date'])) || (isset($lots[0]['quantity']) && (string) $lots[0]['quantity'] !== (string) $line['quantity'])) {
@@ -239,6 +258,9 @@ class PurchaseForm extends Component
                 }
             }
         } else {
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->showDiscountControl = false;
             $this->purchase_date = now($company->timezone)->format('Y-m-d');
             $this->due_date = app(PurchaseDocumentRules::class)->defaultDueDate($company, $this->purchase_date);
             $this->currency_code = $company->base_currency_code;
@@ -332,9 +354,46 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
+    public function toggleDiscountControl(): void
+    {
+        $this->showDiscountControl = ! $this->showDiscountControl;
+        if (! $this->showDiscountControl) {
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->recalculate();
+        }
+    }
+
+    public function updatedDiscountType(): void
+    {
+        if ($this->discount_type === 'none') {
+            $this->discount_value = '0';
+        }
+        $this->recalculate();
+    }
+
+    public function updatedDiscountValue(): void
+    {
+        $this->resetErrorBag('discount_value');
+        $this->recalculate();
+    }
+
+    public function toggleMoreDetails(): void
+    {
+        $this->showMoreDetails = ! $this->showMoreDetails;
+    }
+
+    public function toggleRowOptions(int $index): void
+    {
+        $this->expandedRowOptions[$index] = ! ($this->expandedRowOptions[$index] ?? false);
+    }
+
     public function updatedLines(): void
     {
         foreach ($this->lines as $index => &$line) {
+            if (($line['discount_type'] ?? 'none') === 'none') {
+                $line['discount_value'] = '0';
+            }
             if (! empty($line['product_id']) && ! ($this->expandedLotCustomization[$index] ?? false)) {
                 if (count($line['lots'] ?? []) === 1 && empty($line['lots'][0]['lot_number']) && empty($line['lots'][0]['expiry_date'])) {
                     $line['lots'][0]['quantity'] = (string) $line['quantity'];
@@ -601,13 +660,18 @@ class PurchaseForm extends Component
         $this->lines = array_values($this->lines);
 
         $newExpanded = [];
+        $newRowOptions = [];
         foreach ($this->lines as $newIdx => $line) {
             $oldIdx = $newIdx >= $index ? $newIdx + 1 : $newIdx;
             if (isset($this->expandedLotCustomization[$oldIdx])) {
                 $newExpanded[$newIdx] = $this->expandedLotCustomization[$oldIdx];
             }
+            if (isset($this->expandedRowOptions[$oldIdx])) {
+                $newRowOptions[$newIdx] = $this->expandedRowOptions[$oldIdx];
+            }
         }
         $this->expandedLotCustomization = $newExpanded;
+        $this->expandedRowOptions = $newRowOptions;
 
         $this->recalculate();
     }
@@ -766,6 +830,21 @@ class PurchaseForm extends Component
                 $tax = ! empty($line['tax_rate_id']) ? TaxRate::where('company_id', $this->pageCompanyId)->where('active', true)->findOrFail($line['tax_rate_id']) : null;
                 $qty = $line['quantity'];
                 $cost = $line['unit_cost'];
+
+                $lineDiscountType = $line['discount_type'] ?? 'none';
+                if ($lineDiscountType !== 'none') {
+                    if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '' || ! is_numeric(trim($line['discount_value']))) {
+                        $this->totals = [];
+                        foreach ($this->lines as &$l) {
+                            unset($l['preview_total']);
+                        }
+                        $this->previewGrandTotal = '0';
+                        $this->documentTotalsValid = false;
+
+                        return;
+                    }
+                }
+
                 $disc = isset($line['discount_value']) && is_string($line['discount_value']) && trim($line['discount_value']) !== '' ? $line['discount_value'] : '0';
                 $result = app(PurchaseCalculator::class)->line($qty, $cost, $line['discount_type'] ?? null,
                     $disc, $tax?->rate, $tax?->calculation === TaxRate::CALC_INCLUSIVE, $this->currency_code, $this->exchange_rate);
@@ -817,8 +896,27 @@ class PurchaseForm extends Component
 
                 return null;
             }
-            if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '') {
-                $this->addError("lines.{$idx}.discount_value", __('validation.required', ['attribute' => __('purchasing.line_attribute_discount', ['index' => $humanIndex])]));
+            $lineDiscountType = $line['discount_type'] ?? 'none';
+            if ($lineDiscountType !== 'none') {
+                if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '' || ! is_numeric(trim($line['discount_value']))) {
+                    $this->addError("lines.{$idx}.discount_value", __('validation.required', ['attribute' => __('purchasing.line_attribute_discount', ['index' => $humanIndex])]));
+
+                    return null;
+                }
+            } else {
+                $this->lines[$idx]['discount_value'] = '0';
+            }
+        }
+
+        $this->resetErrorBag('discount_value');
+        if ($this->discount_type !== 'none') {
+            if (trim($this->discount_value) === '' || ! is_numeric(trim($this->discount_value)) || (float) trim($this->discount_value) < 0) {
+                $this->addError('discount_value', __('purchasing.invalid_discount'));
+
+                return null;
+            }
+            if ($this->discount_type === 'percent' && (float) trim($this->discount_value) > 100) {
+                $this->addError('discount_value', __('purchasing.invalid_discount'));
 
                 return null;
             }
@@ -1245,6 +1343,8 @@ class PurchaseForm extends Component
         foreach (['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes'] as $field) {
             $data[$field] = $this->{$field};
         }
+        $data['discount_type'] = $this->discount_type;
+        $data['discount_value'] = $this->discount_value;
         $data['lines'] = $lines;
 
         return $data;
