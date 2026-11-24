@@ -7,6 +7,7 @@ namespace Tests\Feature\Purchasing;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
+use App\Application\AI\PurchaseDraftPayload;
 use App\Application\Commands\ImmediatePurchaseCommands;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Models\Company;
@@ -32,6 +33,7 @@ use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -228,6 +230,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
             'purchase_date' => '2026-11-24',
             'currency_code' => 'ILS',
             'exchange_rate' => '1',
+            'discount_scope' => 'line',
             'lines' => [
                 [
                     'product_id' => $this->product->id,
@@ -323,6 +326,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
             'purchase_date' => '2026-11-24',
             'currency_code' => 'ILS',
             'exchange_rate' => '1',
+            'discount_scope' => 'line',
             'lines' => [
                 [
                     'product_id' => $this->product->id,
@@ -476,6 +480,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
             'purchase_date' => '2026-11-24',
             'currency_code' => 'ILS',
             'exchange_rate' => '1',
+            'discount_scope' => 'line',
             'lines' => [
                 [
                     'product_id' => $this->product->id,
@@ -562,6 +567,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
             'purchase_date' => '2026-11-24',
             'currency_code' => 'ILS',
             'exchange_rate' => '1',
+            'discount_scope' => 'line',
             'lines' => [
                 [
                     'product_id' => $this->product->id,
@@ -847,5 +853,104 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $test->set('discount_type', 'fixed');
         $htmlFixed = $test->html();
         $this->assertStringContainsString('id="purchase-discount-value"', $htmlFixed);
+    }
+
+    public function test_authoritative_precision_used_in_livewire_preview_and_settlement_choice_without_lossy_formatting(): void
+    {
+        // Enable JOD currency for this company
+        $this->company->currencies()->updateOrCreate(
+            ['currency_code' => 'JOD'],
+            [
+                'exchange_rate' => '0.2300000000',
+                'is_default' => false,
+                'enabled' => true,
+            ]
+        );
+
+        $test = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('currency_code', 'JOD')
+            ->set('exchange_rate', '0.2300000000')
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '1')
+            ->set('lines.0.unit_cost', '10.5')
+            ->call('recalculate');
+
+        // JOD has 3 minor units: previewGrandTotal MUST be 10.500 (not lossy 10.5 or 10.50)
+        $this->assertSame('10.500', $test->get('previewGrandTotal'));
+
+        // Money account in JOD
+        $ledger = LedgerAccount::where('company_id', $this->company->id)->where('code', '1010')->first()
+            ?? LedgerAccount::where('company_id', $this->company->id)->first();
+        $moneyAccount = MoneyAccount::create([
+            'company_id' => $this->company->id,
+            'name_ar' => 'حساب دينار',
+            'name_en' => 'JOD Account',
+            'currency_code' => 'JOD',
+            'account_type' => MoneyAccount::TYPE_CASH,
+            'is_active' => true,
+            'ledger_account_id' => $ledger->id,
+        ]);
+
+        // Switching to full settlement synchronizes exact 3-decimal previewGrandTotal
+        $test->set('settlement.mode', 'full')
+            ->set('settlement.payment_method', 'cash')
+            ->set('settlement.money_account_id', $moneyAccount->id)
+            ->call('recalculate');
+
+        $this->assertSame('10.500', $test->get('settlement.amount'));
+
+        // Reject excess precision beyond JOD's 3 decimal minor units (e.g. 4 decimals)
+        $test->set('settlement.mode', 'partial')
+            ->set('settlement.amount', '5.1234');
+
+        $reflection = new \ReflectionClass($test->instance());
+        $method = $reflection->getMethod('settlementChoice');
+        $method->setAccessible(true);
+
+        $this->expectException(ValidationException::class);
+        $method->invoke($test->instance());
+    }
+
+    public function test_normal_create_and_ai_paths_cannot_request_legacy_scope_or_line_discounts(): void
+    {
+        // 1. Web UI PurchaseForm normal create defaults to 'document' and rejects line discounts
+        $test = Livewire::test(PurchaseForm::class);
+        $this->assertSame('document', $test->get('discount_scope'));
+
+        // Set lines and save draft
+        $test->set('vendor_id', $this->vendor->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_cost', '15.00')
+            ->call('saveDraft');
+
+        $savedDraft = Purchase::latest('id')->firstOrFail();
+        $this->assertSame('document', $savedDraft->discount_scope);
+        $this->assertSame('none', $savedDraft->lines->sole()->discount_type ?? 'none');
+        $this->assertSame('0.000000', (string) $savedDraft->lines->sole()->discount_value);
+
+        // 2. AI payload cannot request 'line' discount_scope
+        $intent = app(PurchaseDraftPayload::class);
+        $payloadWithLineScope = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'document_locale' => 'en',
+            'discount_scope' => 'line',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '2.000000',
+                    'unit_cost' => '15.000000',
+                ],
+            ],
+        ];
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Purchase drafts created by AI must use document discount scope.');
+        $intent->canonicalize($payloadWithLineScope);
     }
 }

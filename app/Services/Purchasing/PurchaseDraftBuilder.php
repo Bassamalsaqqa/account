@@ -20,6 +20,7 @@ use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\TaxRate;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Support\Facades\Validator;
@@ -166,26 +167,33 @@ final class PurchaseDraftBuilder
 
         $requestedScope = $data['discount_scope'] ?? ($validated['discount_scope'] ?? null);
 
+        if ($requestedScope === 'line' && $hasDocumentDiscount) {
+            throw ValidationException::withMessages(['discount_value' => __('purchasing.inconsistent_discount_scope')]);
+        }
+        if ($requestedScope === 'document' && $hasLineDiscounts) {
+            throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
+        }
+
         if ($existing === null) {
-            if ($requestedScope === 'document') {
+            if ($requestedScope === 'line') {
+                $discountScope = 'line';
+            } else {
                 $discountScope = 'document';
                 if ($hasLineDiscounts) {
                     throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
                 }
-            } elseif ($requestedScope === 'line') {
-                $discountScope = 'line';
-            } elseif ($hasDocumentDiscount) {
-                $discountScope = 'document';
-            } elseif ($hasLineDiscounts) {
-                // Historical non-UI caller adapter: legacy tests/callers submitting line discounts
-                $discountScope = 'line';
-            } else {
-                $discountScope = 'document';
             }
         } else {
-            $discountScope = $requestedScope ?? $existing->discount_scope ?? ($hasLineDiscounts ? 'line' : 'document');
-            if ($discountScope === 'document' && $hasLineDiscounts) {
-                throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
+            if ($requestedScope === 'line') {
+                if ($existing->discount_scope === 'document') {
+                    throw ValidationException::withMessages(['discount_scope' => __('purchasing.manual_line_discount_forbidden')]);
+                }
+                $discountScope = 'line';
+            } else {
+                $discountScope = $requestedScope ?? ($existing->discount_scope ?? 'document');
+                if ($discountScope === 'document' && $hasLineDiscounts) {
+                    throw ValidationException::withMessages(['lines' => __('purchasing.manual_line_discount_forbidden')]);
+                }
             }
         }
 
@@ -199,7 +207,7 @@ final class PurchaseDraftBuilder
         $allocationResult = null;
         if ($discountScope === 'document') {
             $candidates = [];
-            $minor = $validated['currency_code'] === 'JOD' ? 3 : 2;
+            $minor = app(CurrencyMinorUnitsResolver::class)->resolve($validated['currency_code']);
             foreach ($validated['lines'] as $index => $line) {
                 $raw = $data['lines'][$index];
                 $product = $products->get((int) $line['product_id']);
@@ -246,6 +254,7 @@ final class PurchaseDraftBuilder
             $quantity = $raw['quantity'] ?? null;
             $unit = $rules->selectedUnit($product, isset($line['product_unit_id']) ? (int) $line['product_unit_id'] : null, $quantity);
             $original = null;
+            $isSameItem = false;
             if (isset($line['public_id'])) {
                 if ($existing === null) {
                     throw ValidationException::withMessages(['lines' => __('purchasing.invalid_receiving_intent')]);
@@ -253,9 +262,7 @@ final class PurchaseDraftBuilder
                 $original = PurchaseLine::where('company_id', $company->id)->where('purchase_id', $existing->id)
                     ->where('public_id', $line['public_id'])->firstOrFail();
 
-                if ((int) $original->product_id !== (int) $product->id || (int) $original->product_unit_id !== (int) $unit->id) {
-                    throw ValidationException::withMessages(['lines' => __('purchasing.stale_line_intent')]);
-                }
+                $isSameItem = (int) $original->product_id === (int) $product->id && (int) $original->product_unit_id === (int) $unit->id;
             }
             $tax = isset($line['tax_rate_id']) ? TaxRate::where('company_id', $company->id)->where('active', true)->findOrFail($line['tax_rate_id']) : null;
 
@@ -281,12 +288,28 @@ final class PurchaseDraftBuilder
                 $hasIncomingDiscount = $rawDiscountType !== null && $rawDiscountType !== 'none' && $rawDiscountType !== ''
                     && ! BigDecimal::of((string) ($rawDiscountVal !== '' ? $rawDiscountVal : '0'))->isZero();
 
-                if (! $hasIncomingDiscount && $original !== null && $original->discount_type !== null && $original->discount_type !== 'none') {
+                if ($isSameItem) {
+                    // Stored legacy line discount is immutable on the server.
+                    // Preserve exact raw legacy precision; ignore client modifications/formatters.
                     $effectiveDiscountType = $original->discount_type;
-                    $effectiveDiscountValue = (string) $original->discount_value;
+                    $effectiveDiscountValue = (string) ($original->discount_value ?? '0');
+                    $lineDiscountType = in_array($effectiveDiscountType, [null, 'none'], true) ? null : $effectiveDiscountType;
+                    $lineDiscountValue = (string) ($original->discount_value ?? '0.000000');
                 } else {
-                    $effectiveDiscountType = $line['discount_type'] ?? null;
-                    $effectiveDiscountValue = $raw['discount_value'] ?? '0';
+                    if ($original !== null) {
+                        // Product or unit was replaced on an existing persisted line:
+                        // Legacy discount is reset to none / 0; does not transfer to new item.
+                        $effectiveDiscountType = null;
+                        $effectiveDiscountValue = '0';
+                        $lineDiscountType = null;
+                        $lineDiscountValue = '0.000000';
+                    } else {
+                        // New line added to line-scoped draft, or replacement lines on currency change
+                        $effectiveDiscountType = in_array($rawDiscountType, [null, '', 'none'], true) ? null : $rawDiscountType;
+                        $effectiveDiscountValue = (string) ($rawDiscountVal !== '' ? $rawDiscountVal : '0');
+                        $lineDiscountType = $effectiveDiscountType;
+                        $lineDiscountValue = (string) MoneyAmount::from($effectiveDiscountValue);
+                    }
                 }
 
                 $calculated = app(PurchaseCalculator::class)->line(
@@ -299,8 +322,6 @@ final class PurchaseDraftBuilder
                     $validated['currency_code'],
                     $rate
                 );
-                $lineDiscountType = in_array($effectiveDiscountType, [null, 'none'], true) ? null : $effectiveDiscountType;
-                $lineDiscountValue = (string) MoneyAmount::from($effectiveDiscountValue);
                 $manualDiscountAmount = (string) $calculated->discount;
                 $allocatedDocDiscount = '0.000000';
             }
@@ -371,8 +392,8 @@ final class PurchaseDraftBuilder
             'currency_code' => $validated['currency_code'], 'base_currency_code' => $company->base_currency_code,
             'exchange_rate' => (string) ExchangeRate::from($rate)->getValue(),
             'document_locale' => $locale, 'notes' => $validated['notes'] ?? null,
-            'discount_type' => in_array($headerDiscountType, [null, '', 'none'], true) ? null : $headerDiscountType,
-            'discount_value' => (string) MoneyAmount::from((string) ($headerDiscountValue ?: '0')),
+            'discount_type' => $discountScope === 'document' ? (in_array($headerDiscountType, [null, '', 'none'], true) ? null : $headerDiscountType) : null,
+            'discount_value' => $discountScope === 'document' ? (string) MoneyAmount::from((string) ($headerDiscountValue ?: '0')) : '0.000000',
             'discount_scope' => $discountScope,
             'discount_basis' => 'subtotal',
             'discount_calculation_version' => $discountScope === 'document' ? DocumentDiscountIntent::VERSION_CANONICAL : DocumentDiscountIntent::VERSION_LEGACY,

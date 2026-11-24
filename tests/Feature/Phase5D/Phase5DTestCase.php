@@ -102,7 +102,7 @@ abstract class Phase5DTestCase extends TestCase
 
     protected function createAndPostPurchase(array $changes = []): Purchase
     {
-        $purchase = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, array_replace_recursive([
+        $payload = array_replace_recursive([
             'vendor_id' => $this->vendor->id,
             'warehouse_id' => $this->warehouse->id,
             'purchase_date' => '2026-10-04',
@@ -117,7 +117,18 @@ abstract class Phase5DTestCase extends TestCase
                     'unit_cost' => '10',
                 ],
             ],
-        ], $changes));
+        ], $changes);
+
+        if (! isset($payload['discount_scope']) && isset($payload['lines'])) {
+            foreach ($payload['lines'] as $l) {
+                if (! empty($l['discount_type']) && $l['discount_type'] !== 'none') {
+                    $payload['discount_scope'] = 'line';
+                    break;
+                }
+            }
+        }
+
+        $purchase = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
 
         return app(PostPurchaseAction::class)->execute($purchase, $this->owner);
     }

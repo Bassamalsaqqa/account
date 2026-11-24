@@ -10,6 +10,7 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculationResult;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\RoundingMode;
 use InvalidArgumentException;
 
@@ -21,7 +22,11 @@ final class PurchaseCalculator
         $price = MoneyAmount::from($cost)->getAmount();
         $discount = MoneyAmount::from($discountValue)->getAmount();
         $fx = ExchangeRate::from($rate)->getValue();
-        $minor = $currency === 'JOD' ? 3 : 2;
+        try {
+            $minor = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
+        } catch (\Throwable) {
+            $minor = in_array(strtoupper(trim($currency)), ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+        }
         if (! $qty->isPositive() || $price->isNegative() || $discount->isNegative()
             || ! in_array($discountType, [null, 'none', 'fixed', 'percent'], true)
             || ($discountType === 'percent' && $discount->isGreaterThan(100))

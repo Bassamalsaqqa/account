@@ -60,6 +60,13 @@ final class PurchaseDraftIntegrity
             } catch (\Throwable) {
                 $this->fail();
             }
+        } else {
+            if ($purchase->discount_type !== null && $purchase->discount_type !== 'none' && $purchase->discount_type !== '') {
+                $this->fail();
+            }
+            if (! BigDecimal::of((string) ($purchase->discount_value ?? '0'))->isZero()) {
+                $this->fail();
+            }
         }
 
         $results = [];
@@ -87,6 +94,8 @@ final class PurchaseDraftIntegrity
                 $expectedDiscount = $allocationResult->forLine((int) $line->line_number);
                 if (! BigDecimal::of((string) ($line->allocated_document_discount ?? '0'))->isEqualTo($expectedDiscount)
                     || ! BigDecimal::of((string) ($line->manual_discount_amount ?? '0'))->isZero()
+                    || ($line->discount_type !== null && $line->discount_type !== 'none' && $line->discount_type !== '')
+                    || ! BigDecimal::of((string) ($line->discount_value ?? '0'))->isZero()
                     || ! BigDecimal::of((string) $line->line_discount)->isEqualTo($expectedDiscount)) {
                     $this->fail();
                 }

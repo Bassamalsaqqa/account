@@ -272,4 +272,37 @@ class DocumentDiscountAllocatorTest extends TestCase
             );
         }
     }
+
+    public function test_large_amount_overflow_conservation_jod(): void
+    {
+        // JOD has 3 decimal places -> 1,000,000 JOD = 1,000,000,000 minor units
+        // Product of minor units across large amounts exceeds PHP_INT_MAX without arbitrary precision
+        $lines = [
+            new DocumentDiscountLineCandidate(1, BigDecimal::of('500000.000'), BigDecimal::of('2'), BigDecimal::of('1000000.000')),
+            new DocumentDiscountLineCandidate(2, BigDecimal::of('1000000.000'), BigDecimal::of('1'), BigDecimal::of('1000000.000')),
+        ];
+
+        // 100% discount on 2,000,000.000 JOD = 2,000,000.000 JOD
+        $intent = new DocumentDiscountIntent(DocumentDiscountIntent::TYPE_PERCENT, '100');
+        $result = $this->allocator->allocate($intent, $lines, 'JOD', customMinorUnits: 3);
+
+        $this->assertSame('1000000.000000', (string) $result->forLine(1));
+        $this->assertSame('1000000.000000', (string) $result->forLine(2));
+        $this->assertSame('2000000.000000', (string) $result->totalAllocated);
+        $this->assertSame('2000000.000000', (string) $result->totalBasis);
+    }
+
+    public function test_fixed_discount_overprecision_rejection(): void
+    {
+        $lines = [
+            new DocumentDiscountLineCandidate(1, BigDecimal::of('10.00'), BigDecimal::of('1'), BigDecimal::of('10.00')),
+        ];
+
+        // ILS has 2 minor units. Fixed discount with 3 decimals (1.001) must be rejected
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage(__('purchasing.invalid_discount_value'));
+
+        $intent = new DocumentDiscountIntent(DocumentDiscountIntent::TYPE_FIXED, '1.001');
+        $this->allocator->allocate($intent, $lines, 'ILS', customMinorUnits: 2);
+    }
 }

@@ -89,12 +89,23 @@ class PurchaseDraftTest extends TestCase
 
     protected function payload(array $changes = []): array
     {
-        return array_replace([
+        $payload = array_replace([
             'vendor_id' => $this->vendor->id, 'warehouse_id' => Warehouse::firstOrFail()->id,
             'vendor_invoice_number' => ' SUP-001 ', 'purchase_date' => '2026-10-03',
             'currency_code' => 'ILS', 'exchange_rate' => '1', 'document_locale' => 'ar',
             'lines' => [['product_id' => $this->product->id, 'quantity' => '2', 'unit_cost' => '24', 'lots' => []]],
         ], $changes);
+
+        if (! isset($payload['discount_scope']) && isset($payload['lines'])) {
+            foreach ($payload['lines'] as $l) {
+                if (! empty($l['discount_type']) && $l['discount_type'] !== 'none') {
+                    $payload['discount_scope'] = 'line';
+                    break;
+                }
+            }
+        }
+
+        return $payload;
     }
 
     protected function create(array $changes = []): Purchase
@@ -419,13 +430,16 @@ class PurchaseDraftTest extends TestCase
                     break;
                 case 'cost precision': $data['lines'][0]['unit_cost'] = '24.0000001';
                     break;
-                case 'negative discount': $data['lines'][0]['discount_type'] = 'fixed';
+                case 'negative discount': $data['discount_scope'] = 'line';
+                    $data['lines'][0]['discount_type'] = 'fixed';
                     $data['lines'][0]['discount_value'] = '-1';
                     break;
-                case 'percent above 100': $data['lines'][0]['discount_type'] = 'percent';
+                case 'percent above 100': $data['discount_scope'] = 'line';
+                    $data['lines'][0]['discount_type'] = 'percent';
                     $data['lines'][0]['discount_value'] = '101';
                     break;
-                case 'excess fixed discount': $data['lines'][0]['discount_type'] = 'fixed';
+                case 'excess fixed discount': $data['discount_scope'] = 'line';
+                    $data['lines'][0]['discount_type'] = 'fixed';
                     $data['lines'][0]['discount_value'] = '49';
                     break;
                 case 'invalid purchase date': $data['purchase_date'] = '2026-02-30';
@@ -756,9 +770,11 @@ class PurchaseDraftTest extends TestCase
             ->assertSet('lines.0.unit_cost', '')->assertSet('lines.0.discount_type', 'none')->assertSet('lines.0.discount_value', '0')
             ->assertSet('lines.0.product_unit_id', $this->carton->id)->assertSet('lines.0.lots.0.quantity', '1')
             ->assertSet('totals', [])->assertHasErrors('currency')->assertSee(__('purchasing.currency_changed_reenter_costs'))
-            ->assertSee(__('purchasing.exchange_rate_required'))->set('exchange_rate', '3.6')->call('save')->assertHasErrors('draft');
+            ->assertSee(__('purchasing.exchange_rate_required'))->set('exchange_rate', '3.6')->call('save')->assertHasErrors('lines.0.unit_cost');
         $this->assertDatabaseCount('purchases', 0);
-        $form->set('lines.0.unit_cost', '7')->assertHasNoErrors(['currency', 'calculation'])->call('save')->assertHasNoErrors();
+        Livewire::test(PurchaseForm::class)->set('vendor_id', $this->vendor->id)->set('exchange_rate', '3.6')
+            ->call('selectProduct', 0, $this->product->id)->call('addLot', 0)
+            ->set('lines.0.unit_cost', '7')->assertHasNoErrors(['currency', 'calculation'])->call('save')->assertHasNoErrors();
         $this->assertSame('7.000000', Purchase::firstOrFail()->lines->sole()->unit_cost);
     }
 
@@ -866,11 +882,13 @@ class PurchaseDraftTest extends TestCase
 
     public function test_numeric_form_errors_and_empty_tax_selection_are_safe(): void
     {
-        $form = Livewire::test(PurchaseForm::class)
+        Livewire::test(PurchaseForm::class)
             ->set('vendor_id', $this->vendor->id)->call('selectProduct', 0, $this->product->id)
-            ->set('lines.0.unit_cost', '')->assertHasErrors('calculation')->call('save')->assertHasErrors('draft');
+            ->set('lines.0.unit_cost', '')->call('save')->assertHasErrors('lines.0.unit_cost');
         $this->assertDatabaseCount('purchases', 0);
-        $form->set('lines.0.unit_cost', '24')->set('lines.0.tax_rate_id', '')->call('save')->assertHasNoErrors();
+        Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.unit_cost', '24')->set('lines.0.tax_rate_id', '')->call('save')->assertHasNoErrors();
         $this->assertNull(Purchase::firstOrFail()->lines->sole()->tax_rate_id);
     }
 

@@ -37,6 +37,7 @@ use App\Models\Purchase;
 use App\Models\TaxRate;
 use App\Models\Vendor;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Purchasing\DuplicateVendorInvoice;
 use App\Services\Purchasing\PurchaseDocumentRules;
@@ -938,7 +939,7 @@ class PurchaseForm extends Component
             }
 
             $discountScope = $this->discount_scope ?? 'document';
-            $minor = $this->currency_code === 'JOD' ? 3 : 2;
+            $minor = app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
             $allocationResult = null;
 
             if ($discountScope === 'document') {
@@ -1040,7 +1041,7 @@ class PurchaseForm extends Component
             $oldGrandTotal = $this->previewGrandTotal;
             $this->totals = ['subtotal' => (string) $total->subtotalCurrency, 'discount' => (string) $total->discountTotalCurrency,
                 'tax' => (string) $total->taxTotalCurrency, 'total' => (string) $total->grandTotalCurrency];
-            $this->previewGrandTotal = SalesMoneyFormatter::formatMoneyInput($total->grandTotalCurrency);
+            $this->previewGrandTotal = (string) $total->grandTotalCurrency->toScale($minor, RoundingMode::HALF_UP);
             $this->resetErrorBag('currency');
             $this->documentTotalsValid = true;
 
@@ -1048,6 +1049,8 @@ class PurchaseForm extends Component
                 $paymentCurrency = $this->settlementPaymentCurrency();
                 if ($paymentCurrency === $this->currency_code) {
                     $this->settlement['amount'] = $this->previewGrandTotal;
+                } else {
+                    $this->settlement['purchase_amount'] = $this->previewGrandTotal;
                 }
             }
         } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
@@ -1450,6 +1453,8 @@ class PurchaseForm extends Component
         $isCrossCurrency = $paymentCurrency !== $this->currency_code;
         if (! $isCrossCurrency && $this->settlement['mode'] === 'full') {
             $this->settlement['amount'] = $this->previewGrandTotal;
+        } elseif ($isCrossCurrency && $this->settlement['mode'] === 'full') {
+            $this->settlement['purchase_amount'] = $this->previewGrandTotal;
         }
 
         if ($this->settlement['mode'] === 'partial' && ! $isCrossCurrency) {
@@ -1476,6 +1481,32 @@ class PurchaseForm extends Component
         }
 
         $this->validate($rules, [], collect(array_keys($rules))->mapWithKeys(fn ($key) => [$key => __('purchase_settlement.'.str_replace('settlement.', '', $key))])->all());
+
+        $payMinor = app(CurrencyMinorUnitsResolver::class)->resolve($paymentCurrency);
+        $amountStr = (string) ($this->settlement['amount'] ?? '');
+        if ($amountStr !== '') {
+            $parts = explode('.', $amountStr);
+            if (isset($parts[1]) && strlen($parts[1]) > $payMinor) {
+                throw ValidationException::withMessages(['settlement.amount' => __('purchase_settlement.amount')]);
+            }
+        }
+        if ($isCrossCurrency) {
+            $purchaseMinor = app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
+            $purchaseAmountStr = (string) ($this->settlement['purchase_amount'] ?? '');
+            if ($purchaseAmountStr !== '') {
+                $parts = explode('.', $purchaseAmountStr);
+                if (isset($parts[1]) && strlen($parts[1]) > $purchaseMinor) {
+                    throw ValidationException::withMessages(['settlement.purchase_amount' => __('purchase_settlement.amount')]);
+                }
+            }
+            $paymentCurrencyAmountStr = (string) ($this->settlement['payment_currency_amount'] ?? '');
+            if ($paymentCurrencyAmountStr !== '') {
+                $parts = explode('.', $paymentCurrencyAmountStr);
+                if (isset($parts[1]) && strlen($parts[1]) > $payMinor) {
+                    throw ValidationException::withMessages(['settlement.payment_currency_amount' => __('purchase_settlement.amount')]);
+                }
+            }
+        }
 
         if ($this->documentTotalsValid && $this->previewGrandTotal !== null) {
             $grandTotal = BigDecimal::of($this->previewGrandTotal);
