@@ -216,6 +216,9 @@ class PurchaseForm extends Component
     #[Locked]
     public int $discount_calculation_version = 1;
 
+    #[Locked]
+    public ?int $currency_minor_units = null;
+
     /** @var array<string, array{discount_type: string, discount_value: string}> */
     #[Locked]
     public array $persistedLineDiscounts = [];
@@ -267,6 +270,9 @@ class PurchaseForm extends Component
                 : (isset($purchase->discount_value) ? (string) $purchase->discount_value : '0');
             $this->discount_scope = $editableData['discount_scope'] ?? ($purchase->discount_scope ?? 'document');
             $this->discount_calculation_version = (int) ($editableData['discount_calculation_version'] ?? ($purchase->discount_calculation_version ?? 1));
+            $this->currency_minor_units = isset($editableData['currency_minor_units'])
+                ? (int) $editableData['currency_minor_units']
+                : ($purchase->currency_minor_units ?? $purchase->resolvedCurrencyMinorUnits());
             $this->persistedLineDiscounts = [];
             foreach ($editableData['lines'] as $l) {
                 if (! empty($l['public_id'])) {
@@ -288,6 +294,7 @@ class PurchaseForm extends Component
         } else {
             $this->discount_scope = 'document';
             $this->discount_calculation_version = 1;
+            $this->currency_minor_units = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
             $this->discount_type = 'none';
             $this->discount_value = '0';
             $this->showDiscountControl = false;
@@ -347,6 +354,9 @@ class PurchaseForm extends Component
     {
         $changed = $currency !== $this->previousCurrencyCode;
         $this->currency_code = $currency;
+        if ($changed) {
+            $this->currency_minor_units = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
+        }
         if ($currency === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
         } elseif ($changed) {
@@ -729,7 +739,7 @@ class PurchaseForm extends Component
 
         $currentPublicId = $this->lines[$index]['public_id'] ?? null;
         $persisted = $currentPublicId !== null ? ($this->persistedLineDiscounts[$currentPublicId] ?? null) : null;
-        $hasPersistedDiscount = $persisted !== null && ($persisted['discount_type'] ?? 'none') !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
+        $hasPersistedDiscount = $persisted !== null && $persisted['discount_type'] !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
 
         if ($productId === '' || $productId === null) {
             if ($hasPersistedDiscount) {
@@ -801,7 +811,7 @@ class PurchaseForm extends Component
 
         $currentPublicId = $this->lines[$index]['public_id'] ?? null;
         $persisted = $currentPublicId !== null ? ($this->persistedLineDiscounts[$currentPublicId] ?? null) : null;
-        $hasPersistedDiscount = $persisted !== null && ($persisted['discount_type'] ?? 'none') !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
+        $hasPersistedDiscount = $persisted !== null && $persisted['discount_type'] !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
 
         if ($unitId === '') {
             if ($hasPersistedDiscount) {
@@ -938,8 +948,8 @@ class PurchaseForm extends Component
                 }
             }
 
-            $discountScope = $this->discount_scope ?? 'document';
-            $minor = app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
+            $discountScope = $this->discount_scope;
+            $minor = $this->currency_minor_units ?? app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
             $allocationResult = null;
 
             if ($discountScope === 'document') {
@@ -1345,11 +1355,11 @@ class PurchaseForm extends Component
             ];
         }
 
-        $headerDiscountType = $this->discount_type ?? 'none';
+        $headerDiscountType = $this->discount_type;
         if ($headerDiscountType === 'percentage') {
             $headerDiscountType = 'percent';
         }
-        $headerDiscountValue = trim((string) ($this->discount_value ?? '0'));
+        $headerDiscountValue = trim((string) $this->discount_value);
         $hasHeaderDiscount = $headerDiscountType !== 'none' && $headerDiscountValue !== '' && ! BigDecimal::of($headerDiscountValue)->isZero();
 
         $normalized = [
@@ -1372,11 +1382,11 @@ class PurchaseForm extends Component
 
     public function computeLegacyPayloadDigest(): ?string
     {
-        $headerDiscountType = $this->discount_type ?? 'none';
+        $headerDiscountType = $this->discount_type;
         if ($headerDiscountType === 'percentage') {
             $headerDiscountType = 'percent';
         }
-        $headerDiscountValue = trim((string) ($this->discount_value ?? '0'));
+        $headerDiscountValue = trim((string) $this->discount_value);
         $hasHeaderDiscount = $headerDiscountType !== 'none' && $headerDiscountValue !== '' && ! BigDecimal::of($headerDiscountValue)->isZero();
         if ($hasHeaderDiscount) {
             return null;
@@ -1669,9 +1679,12 @@ class PurchaseForm extends Component
         }
         $data['discount_type'] = $this->discount_type;
         $data['discount_value'] = (string) ($this->discount_value !== '' ? $this->discount_value : '0');
-        $data['discount_scope'] = $this->discount_scope ?? 'document';
+        $data['discount_scope'] = $this->discount_scope;
         $data['discount_basis'] = 'subtotal';
-        $data['discount_calculation_version'] = $this->discount_calculation_version ?? 1;
+        $data['discount_calculation_version'] = $this->discount_calculation_version;
+        if ($this->currency_minor_units !== null) {
+            $data['currency_minor_units'] = $this->currency_minor_units;
+        }
         $data['lines'] = $lines;
 
         return $data;

@@ -6,18 +6,27 @@ namespace Tests\Feature\Purchasing;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Purchasing\CreatePurchaseDraftAction;
+use App\Actions\Purchasing\CreatePurchaseReturnDraftAction;
 use App\Actions\Purchasing\PostPurchaseAction;
+use App\Actions\Purchasing\PostPurchaseReturnAction;
+use App\Actions\Purchasing\RecordStagedPurchaseBillAction;
 use App\Actions\Purchasing\UpdatePurchaseDraftAction;
 use App\Application\AI\PurchaseDraftCommands;
 use App\Application\AI\PurchaseDraftPayload;
+use App\Http\Controllers\Api\Mobile\V1\PurchaseController;
 use App\Models\AiPurchaseDraftReceipt;
 use App\Models\Company;
+use App\Models\CompanyCurrency;
+use App\Models\Currency;
 use App\Models\LedgerAccount;
+use App\Models\MobileAccessToken;
+use App\Models\MobileDevice;
 use App\Models\PostingBatch;
 use App\Models\PostingLine;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
+use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnLine;
 use App\Models\TaxRate;
@@ -27,15 +36,22 @@ use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Corrections\PurchaseCorrection;
 use App\Services\Inventory\ProductCatalogService;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Purchasing\PurchaseDraftBuilder;
+use App\Services\Purchasing\PurchaseDraftSnapshot;
+use App\Services\Purchasing\PurchaseDraftWriter;
+use App\Services\Purchasing\PurchaseReadModel;
 use App\Services\Purchasing\PurchaseReturnAmounts;
+use App\Services\Purchasing\PurchaseReturnPostedIntegrityValidator;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -620,7 +636,7 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
             ],
         ];
 
-        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload, ['allow_legacy_scope' => true]);
         $editable = app(PurchaseDraftBuilder::class)->editableData($draft);
 
         // Forged client payload duplicates the public_id of line 0 onto line 1
@@ -656,7 +672,7 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
             ],
         ];
 
-        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload, ['allow_legacy_scope' => true]);
         $editable = app(PurchaseDraftBuilder::class)->editableData($draft);
 
         // Client changes product of line 0 from Soap to Oil while retaining line public_id
@@ -713,7 +729,7 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
             ],
         ];
 
-        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload, ['allow_legacy_scope' => true]);
         $editable = app(PurchaseDraftBuilder::class)->editableData($draft);
 
         // Client changes unit to carton while retaining the original line public_id
@@ -765,7 +781,7 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
             ],
         ];
 
-        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload, ['allow_legacy_scope' => true]);
         $this->assertSame('line', $draft->discount_scope);
 
         $line0 = $draft->lines->where('product_id', $this->soap->id)->sole();
@@ -892,7 +908,7 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
             ],
         ];
 
-        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload, ['allow_legacy_scope' => true]);
         $editable = app(PurchaseDraftBuilder::class)->editableData($draft);
 
         // User changes unit on line 0 to Box (10x), unit cost to 450, quantity 1
@@ -965,5 +981,497 @@ class PurchaseDocumentDiscountWorkflowTest extends TestCase
         } catch (HttpException $e) {
             $this->assertSame(409, $e->getStatusCode());
         }
+    }
+
+    public function test_record_staged_purchase_bill_with_fixed_zero_placeholders_succeeds_and_posts(): void
+    {
+        config([
+            'mobile.enabled' => true,
+            'mobile.merchant_api_enabled' => true,
+        ]);
+
+        $deviceId = (string) Str::uuid();
+        $device = MobileDevice::create([
+            'device_id' => $deviceId,
+            'device_name' => 'Merchant Test Phone',
+            'user_id' => $this->owner->id,
+        ]);
+
+        $rawToken = 'st_m_'.bin2hex(random_bytes(32));
+        $token = MobileAccessToken::create([
+            'token_hash' => hash('sha256', $rawToken),
+            'device_id' => $deviceId,
+            'user_id' => $this->owner->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', (string) $this->owner->password), 0, 16),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $this->owner->givePermissionTo([
+            'purchasing.purchase.create',
+            'purchasing.purchase.post',
+        ]);
+
+        $action = app(RecordStagedPurchaseBillAction::class);
+        $res = $action->execute(
+            company: $this->company,
+            actor: $this->owner,
+            supplierPublicId: (string) $this->vendor->public_id,
+            billNumber: 'STAGED-INV-001',
+            linesInput: [
+                [
+                    'product_id' => (string) $this->soap->public_id,
+                    'quantity' => '10.000000',
+                    'unit_cost' => '15.000000',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '0',
+                ],
+            ],
+            idempotencyKey: (string) Str::uuid(),
+            mobileToken: $token,
+            mobileDevice: $device
+        );
+
+        $bill = Purchase::where('company_id', $this->company->id)->where('public_id', $res['snapshot']['id'])->firstOrFail();
+        $this->assertNotNull($bill);
+        $this->assertSame(Purchase::STATUS_POSTED, $bill->status);
+        $this->assertTrue((bool) $bill->is_staged);
+        $this->assertSame('document', $bill->discount_scope);
+
+        $line = $bill->lines()->firstOrFail();
+        $this->assertNull($line->discount_type);
+        $this->assertSame('0.000000', (string) $line->discount_value);
+        $this->assertSame('0.000000', (string) $line->manual_discount_amount);
+        $this->assertSame('0.000000', (string) $line->allocated_document_discount);
+        $this->assertSame('150.000000', (string) $line->line_total);
+    }
+
+    public function test_purchase_return_preserves_frozen_purchase_precision_when_currency_scale_mutates(): void
+    {
+        // 1. Enable JOD currency with 3 minor units in company
+        $jod = Currency::where('code', 'JOD')->first();
+        if ($jod === null) {
+            $jod = Currency::create(['code' => 'JOD', 'name' => 'Jordanian Dinar', 'symbol' => 'JD', 'minor_units' => 3, 'active' => true]);
+        } else {
+            $jod->update(['minor_units' => 3, 'active' => true]);
+        }
+        CompanyCurrency::firstOrCreate(
+            ['company_id' => $this->company->id, 'currency_code' => 'JOD'],
+            ['enabled' => true, 'is_base' => false]
+        );
+
+        // 2. Create and post a JOD purchase (precision = 3) with document discount
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'JOD',
+            'exchange_rate' => '1.4100000000',
+            'discount_type' => 'fixed',
+            'discount_value' => '10.000',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '10.000000',
+                    'unit_cost' => '10.000',
+                ],
+            ],
+        ];
+
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $this->assertSame(3, $draft->currency_minor_units);
+        $this->assertSame('90.000000', (string) $draft->grand_total_currency);
+
+        $posted = app(PostPurchaseAction::class)->execute($draft, $this->owner);
+        $this->assertSame(3, $posted->currency_minor_units);
+
+        // 3. Mutate JOD in currencies table to 2 decimal places to simulate currency definition changes
+        $jod->update(['minor_units' => 2]);
+
+        // 4. Create partial purchase return (return 4 out of 10)
+        $returnDraftAction = app(CreatePurchaseReturnDraftAction::class);
+        $origLine = $posted->lines->firstOrFail();
+
+        $return1 = $returnDraftAction->execute($this->company, $this->owner, [
+            'purchase_id' => $posted->id,
+            'return_date' => '2026-11-24',
+            'lines' => [
+                [
+                    'purchase_line_id' => $origLine->id,
+                    'quantity' => '4.000000',
+                ],
+            ],
+        ]);
+
+        // Return must inherit purchase's frozen precision (3)
+        $this->assertSame(3, $return1->currency_minor_units);
+        // Allocation: 4 / 10 of 90.000 = 36.000
+        $this->assertSame('36.000000', (string) $return1->grand_total_currency);
+
+        // Posting partial return 1 verifies validateDraftIntegrity with frozen precision (3)
+        $postedReturn1 = app(PostPurchaseReturnAction::class)->execute($return1, $this->owner);
+        $this->assertSame(PurchaseReturn::STATUS_POSTED, $postedReturn1->status);
+
+        // 5. Create final return for remainder (return 6 out of 10)
+        $return2 = $returnDraftAction->execute($this->company, $this->owner, [
+            'purchase_id' => $posted->id,
+            'return_date' => '2026-11-24',
+            'lines' => [
+                [
+                    'purchase_line_id' => $origLine->id,
+                    'quantity' => '6.000000',
+                ],
+            ],
+        ]);
+
+        $this->assertSame(3, $return2->currency_minor_units);
+        // Allocation: remaining 90.000 - 36.000 = 54.000
+        $this->assertSame('54.000000', (string) $return2->grand_total_currency);
+
+        $postedReturn2 = app(PostPurchaseReturnAction::class)->execute($return2, $this->owner);
+        $this->assertSame(PurchaseReturn::STATUS_POSTED, $postedReturn2->status);
+
+        // Conservation: 36.000000 + 54.000000 == 90.000000
+        $totalReturned = BigDecimal::of((string) $postedReturn1->grand_total_currency)
+            ->plus((string) $postedReturn2->grand_total_currency);
+        $this->assertTrue($totalReturned->isEqualTo(BigDecimal::of((string) $posted->grand_total_currency)));
+    }
+
+    public function test_mobile_return_preview_aligns_with_authoritative_discount_allocation(): void
+    {
+        // Purchase: 10 units at 50 = 500, with document discount of 50 => grand total = 450
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'discount_type' => 'fixed',
+            'discount_value' => '50.00',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '10.000000',
+                    'unit_cost' => '50.00',
+                ],
+            ],
+        ];
+
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $posted = app(PostPurchaseAction::class)->execute($draft, $this->owner);
+        $origLine = $posted->lines->firstOrFail();
+
+        // Mobile preview return of 4 units: 4 / 10 of 450 = 180.00 (NOT 4 * 50 = 200)
+        $controller = app(PurchaseController::class);
+        $request = Request::create(
+            "/api/mobile/v1/companies/{$this->company->public_id}/purchases/returns/preview",
+            'POST',
+            [
+                'purchase_id' => $posted->public_id,
+                'lines' => [
+                    [
+                        'purchase_line_id' => $origLine->public_id,
+                        'product_id' => $this->soap->public_id,
+                        'quantity' => '4.000000',
+                    ],
+                ],
+            ]
+        );
+        $request->attributes->set('mobile_user', $this->owner);
+        $request->attributes->set('mobile_company', $this->company);
+
+        $response = $controller->previewReturn($request, (string) $this->company->public_id);
+        $data = $response->getData(true);
+
+        $this->assertSame('180.00', $data['total_debit_ils']);
+        $this->assertSame('180.00', $data['lines'][0]['line_total_ils']);
+        $this->assertSame('50.00', $data['lines'][0]['unit_cost_ils']);
+    }
+
+    public function test_public_callers_and_ai_cannot_select_legacy_scope_or_manual_line_discounts(): void
+    {
+        // 1. CreatePurchaseDraftAction rejects discount_scope = 'line'
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'discount_scope' => 'line',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '5',
+                    'unit_cost' => '10.00',
+                ],
+            ],
+        ];
+
+        try {
+            app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+            $this->fail('Expected ValidationException for legacy line discount scope');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('discount_scope', $e->errors());
+        }
+
+        // 2. AI payload rejects discount_scope = 'line'
+        $aiPayload = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'document_locale' => 'en',
+            'discount_scope' => 'line',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '5.000000',
+                    'unit_cost' => '20.000000',
+                ],
+            ],
+        ];
+
+        try {
+            app(PurchaseDraftPayload::class)->canonicalize($aiPayload);
+            $this->fail('Expected InvalidArgumentException for AI legacy scope');
+        } catch (InvalidArgumentException $e) {
+            $this->assertSame('Legacy line discount scope is not selectable via AI assistant.', $e->getMessage());
+        }
+
+        // 3. AI payload rejects manual line discounts
+        $aiPayloadWithLineDiscount = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'document_locale' => 'en',
+            'discount_scope' => 'document',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '5.000000',
+                    'unit_cost' => '20.000000',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '5.000000',
+                ],
+            ],
+        ];
+
+        try {
+            app(PurchaseDraftPayload::class)->canonicalize($aiPayloadWithLineDiscount);
+            $this->fail('Expected InvalidArgumentException for AI line discounts');
+        } catch (InvalidArgumentException $e) {
+            $this->assertSame('Manual line discounts are not supported via AI assistant.', $e->getMessage());
+        }
+
+        // 4. Adding a new row with manual discount to an existing legacy draft throws manual_line_discount_forbidden
+        $legacyDraft = app(PurchaseDraftBuilder::class)->prepare(
+            $this->company,
+            [
+                'vendor_id' => $this->vendor->id,
+                'warehouse_id' => $this->warehouse->id,
+                'purchase_date' => '2026-11-24',
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1',
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'discount_scope' => 'line',
+                'lines' => [
+                    ['product_id' => $this->soap->id, 'quantity' => '2', 'unit_cost' => '50.00'],
+                ],
+            ],
+            null,
+            ['allow_legacy_scope' => true]
+        );
+        $draftModel = Purchase::create($legacyDraft->header + ['company_id' => $this->company->id, 'created_by' => $this->owner->id]);
+        app(PurchaseDraftWriter::class)->replaceLines($draftModel, $legacyDraft);
+
+        $editable = app(PurchaseDraftBuilder::class)->editableData($draftModel);
+        // Add a second brand new row with a manual line discount
+        $editable['lines'][] = [
+            'product_id' => $this->shampoo->id,
+            'quantity' => '1',
+            'unit_cost' => '100.00',
+            'discount_type' => 'fixed',
+            'discount_value' => '15.00',
+        ];
+
+        try {
+            app(UpdatePurchaseDraftAction::class)->execute($draftModel, $this->owner, $editable);
+            $this->fail('Expected ValidationException when adding new row with discount to legacy draft');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('lines', $e->errors());
+        }
+    }
+
+    public function test_legacy_discount_breakdown_derived_fallback_in_read_model_and_snapshot(): void
+    {
+        // 1. Create legacy draft with line discount via trusted internal option
+        $prepared = app(PurchaseDraftBuilder::class)->prepare(
+            $this->company,
+            [
+                'vendor_id' => $this->vendor->id,
+                'warehouse_id' => $this->warehouse->id,
+                'purchase_date' => '2026-11-24',
+                'currency_code' => 'ILS',
+                'exchange_rate' => '1',
+                'discount_type' => 'none',
+                'discount_value' => '0',
+                'discount_scope' => 'line',
+                'lines' => [
+                    [
+                        'product_id' => $this->soap->id,
+                        'quantity' => '2',
+                        'unit_cost' => '50.00',
+                        'discount_type' => 'fixed',
+                        'discount_value' => '15.00',
+                    ],
+                ],
+            ],
+            null,
+            ['allow_legacy_scope' => true]
+        );
+        $draft = Purchase::create($prepared->header + ['company_id' => $this->company->id, 'created_by' => $this->owner->id]);
+        app(PurchaseDraftWriter::class)->replaceLines($draft, $prepared);
+
+        // Simulate pre-migration database rows: currency_minor_units null, manual_discount_amount 0
+        $draft->update(['currency_minor_units' => null]);
+        PurchaseLine::where('purchase_id', $draft->id)->update([
+            'manual_discount_amount' => '0.000000',
+            'allocated_document_discount' => '0.000000',
+        ]);
+
+        $line = $draft->lines()->firstOrFail();
+        $this->assertSame('15.000000', (string) $line->line_discount);
+        $this->assertSame('0.000000', (string) $line->manual_discount_amount);
+
+        // 2. PurchaseReadModel::detail derives manual_discount_amount from line_discount
+        $detail = app(PurchaseReadModel::class)->detail($draft, true);
+        $this->assertSame(2, $detail['currency_minor_units']);
+        $this->assertSame('15.000000', $detail['lines'][0]['manual_discount_amount']);
+        $this->assertSame('0.000000', $detail['lines'][0]['allocated_document_discount']);
+        $this->assertSame('fixed', $detail['lines'][0]['discount_type']);
+        $this->assertSame('15.000000', (string) $detail['lines'][0]['discount_value']);
+
+        // 3. PurchaseDraftSnapshot derives manual_discount_amount from line_discount
+        $snapshot = app(PurchaseDraftSnapshot::class)->capture($draft);
+        $this->assertSame('15.000000', $snapshot['lines'][0]['manual_discount_amount']);
+        $this->assertSame('0.000000', $snapshot['lines'][0]['allocated_document_discount']);
+
+        // 4. PurchaseDraftBuilder::editableData derives manual_discount_amount from line_discount
+        $editable = app(PurchaseDraftBuilder::class)->editableData($draft);
+        $this->assertSame('15.000000', $editable['lines'][0]['manual_discount_amount']);
+        $this->assertSame('0.000000', $editable['lines'][0]['allocated_document_discount']);
+    }
+
+    public function test_targeted_witness_non_jod_three_decimal_discounted_return_preserves_frozen_precision(): void
+    {
+        // 1. Enable BHD currency (Bahraini Dinar, standard 3 minor units) for company
+        $bhd = Currency::where('code', 'BHD')->first();
+        if ($bhd === null) {
+            $bhd = Currency::create([
+                'code' => 'BHD',
+                'name' => 'Bahraini Dinar',
+                'symbol' => 'BD',
+                'minor_units' => 3,
+                'active' => true,
+            ]);
+        } else {
+            $bhd->update(['minor_units' => 3, 'active' => true]);
+        }
+        CompanyCurrency::firstOrCreate(
+            ['company_id' => $this->company->id, 'currency_code' => 'BHD'],
+            ['enabled' => true, 'is_base' => false]
+        );
+        app(CurrencyMinorUnitsResolver::class)->flush();
+
+        // 2. Create and post a BHD purchase (precision = 3) with document discount
+        // 3 items at 10.000 = 30.000 with 0.500 fixed document discount => grand total = 29.500
+        $payload = [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'BHD',
+            'exchange_rate' => '1.3300000000',
+            'discount_type' => 'fixed',
+            'discount_value' => '0.500',
+            'lines' => [
+                [
+                    'product_id' => $this->soap->id,
+                    'quantity' => '3.000000',
+                    'unit_cost' => '10.000',
+                ],
+            ],
+        ];
+
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $this->assertSame(3, $draft->currency_minor_units);
+        $this->assertSame('29.500000', (string) $draft->grand_total_currency);
+
+        $posted = app(PostPurchaseAction::class)->execute($draft, $this->owner);
+        $this->assertSame(3, $posted->currency_minor_units);
+
+        // 3. Create partial return of 1 out of 3 units
+        // 1 / 3 of 29.500 = 9.833333... -> rounded to 3 minor units: 9.833 (non-zero 3rd decimal!)
+        $returnDraftAction = app(CreatePurchaseReturnDraftAction::class);
+        $origLine = $posted->lines->firstOrFail();
+
+        $return1 = $returnDraftAction->execute($this->company, $this->owner, [
+            'purchase_id' => $posted->id,
+            'return_date' => '2026-11-24',
+            'lines' => [
+                [
+                    'purchase_line_id' => $origLine->id,
+                    'quantity' => '1.000000',
+                ],
+            ],
+        ]);
+
+        $this->assertSame(3, $return1->currency_minor_units);
+        $this->assertSame('9.833000', (string) $return1->grand_total_currency);
+
+        $postedReturn1 = app(PostPurchaseReturnAction::class)->execute($return1, $this->owner);
+        $this->assertSame(PurchaseReturn::STATUS_POSTED, $postedReturn1->status);
+
+        // 4. Mutate current BHD scale in currencies table to 2 decimal places
+        $bhd->update(['minor_units' => 2]);
+        app(CurrencyMinorUnitsResolver::class)->flush();
+        $this->assertSame(2, app(CurrencyMinorUnitsResolver::class)->resolve('BHD'));
+
+        // 5. Validate posted return 1 using PurchaseReturnPostedIntegrityValidator
+        // Must succeed using frozen precision (3) rather than mutated table scale (2)
+        app(PurchaseReturnPostedIntegrityValidator::class)->validate($postedReturn1);
+
+        // 6. Post final remainder return (return remaining 2 out of 3 units)
+        // Remainder: 29.500 - 9.833 = 19.667 (also non-zero 3rd decimal!)
+        $return2 = $returnDraftAction->execute($this->company, $this->owner, [
+            'purchase_id' => $posted->id,
+            'return_date' => '2026-11-24',
+            'lines' => [
+                [
+                    'purchase_line_id' => $origLine->id,
+                    'quantity' => '2.000000',
+                ],
+            ],
+        ]);
+
+        $this->assertSame(3, $return2->currency_minor_units);
+        $this->assertSame('19.667000', (string) $return2->grand_total_currency);
+
+        $postedReturn2 = app(PostPurchaseReturnAction::class)->execute($return2, $this->owner);
+        $this->assertSame(PurchaseReturn::STATUS_POSTED, $postedReturn2->status);
+
+        // Validate posted return 2 at frozen precision
+        app(PurchaseReturnPostedIntegrityValidator::class)->validate($postedReturn2);
+
+        // 7. Verify exact conservation
+        $totalReturned = BigDecimal::of((string) $postedReturn1->grand_total_currency)
+            ->plus((string) $postedReturn2->grand_total_currency);
+        $this->assertTrue($totalReturned->isEqualTo(BigDecimal::of('29.500000')));
+        $this->assertTrue($totalReturned->isEqualTo(BigDecimal::of((string) $posted->grand_total_currency)));
     }
 }

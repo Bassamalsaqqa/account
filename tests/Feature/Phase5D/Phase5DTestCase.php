@@ -128,7 +128,8 @@ abstract class Phase5DTestCase extends TestCase
             }
         }
 
-        $purchase = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload);
+        $options = ($payload['discount_scope'] ?? null) === 'line' ? ['allow_legacy_scope' => true] : [];
+        $purchase = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, $payload, $options);
 
         return app(PostPurchaseAction::class)->execute($purchase, $this->owner);
     }

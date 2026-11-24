@@ -13,6 +13,7 @@ use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
 use App\Models\CompanyPurchaseSetting;
+use App\Models\Currency;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
 use App\Models\PostingBatch;
@@ -26,6 +27,7 @@ use App\Models\User;
 use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Inventory\ProductCatalogService;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Purchasing\PurchaseFormConfirmation;
 use App\Services\Purchasing\VendorCatalogService;
 use App\Support\Tenancy\CompanyContext;
@@ -240,7 +242,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
                     'discount_value' => '5.00',
                 ],
             ],
-        ]);
+        ], ['allow_legacy_scope' => true]);
 
         $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
 
@@ -336,7 +338,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
                     'discount_value' => '5.00',
                 ],
             ],
-        ]);
+        ], ['allow_legacy_scope' => true]);
 
         $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
 
@@ -490,7 +492,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
                     'discount_value' => '5.00',
                 ],
             ],
-        ]);
+        ], ['allow_legacy_scope' => true]);
 
         $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
 
@@ -577,7 +579,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
                     'discount_value' => '5.00',
                 ],
             ],
-        ]);
+        ], ['allow_legacy_scope' => true]);
 
         $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
         $origPublicId = $test->get('lines.0.public_id');
@@ -950,7 +952,59 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         ];
 
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Purchase drafts created by AI must use document discount scope.');
+        $this->expectExceptionMessage('Legacy line discount scope is not selectable via AI assistant.');
         $intent->canonicalize($payloadWithLineScope);
+    }
+
+    public function test_component_preview_uses_frozen_draft_precision_when_currency_scale_mutates(): void
+    {
+        $bhd = Currency::firstOrCreate(
+            ['code' => 'BHD'],
+            ['name' => 'Bahraini Dinar', 'symbol' => 'BD', 'minor_units' => 3, 'exchange_rate' => '1.0000000000']
+        );
+        $this->company->currencies()->updateOrCreate(
+            ['currency_code' => 'BHD'],
+            ['exchange_rate' => '1.0000000000', 'is_base' => false]
+        );
+        app(CurrencyMinorUnitsResolver::class)->flush();
+        $this->assertSame(3, app(CurrencyMinorUnitsResolver::class)->resolve('BHD'));
+
+        // Create a draft with BHD: 3 units at 10.000 = 30.000, fixed discount 0.500 => grand total 29.500
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'BHD',
+            'exchange_rate' => '1.0000000000',
+            'discount_type' => 'fixed',
+            'discount_value' => '0.500',
+            'discount_scope' => 'document',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '3.000000',
+                    'unit_cost' => '10.000',
+                ],
+            ],
+        ]);
+
+        $this->assertSame(3, $draft->currency_minor_units);
+        $this->assertSame('29.500000', (string) $draft->grand_total_currency);
+
+        // Mutate current BHD scale in currencies table to 2 decimal places
+        $bhd->update(['minor_units' => 2]);
+        app(CurrencyMinorUnitsResolver::class)->flush();
+        $this->assertSame(2, app(CurrencyMinorUnitsResolver::class)->resolve('BHD'));
+
+        // Mount the draft in PurchaseForm component
+        $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
+
+        // Component must preserve frozen precision of draft (3) instead of mutated table scale (2)
+        $test->assertSet('currency_minor_units', 3);
+        $this->assertSame('29.500', $test->get('previewGrandTotal'));
+
+        // Re-calculate must also respect frozen precision
+        $test->call('recalculate');
+        $this->assertSame('29.500', $test->get('previewGrandTotal'));
     }
 }

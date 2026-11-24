@@ -72,6 +72,7 @@ class PurchasePostingTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['app.key' => config('app.key') ?: 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=']);
         app(CompanyContext::class)->clear();
         $this->owner = User::factory()->create(['locale' => 'ar']);
         $this->company = app(CreateCompanyAction::class)->execute($this->owner, ['name_ar' => 'شركة الترحيل', 'name_en' => 'Posting Company']);

@@ -8,6 +8,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Services\Sales\DocumentDescription;
 use App\Services\Sales\SalesActorGuard;
+use Brick\Math\BigDecimal;
 use Illuminate\Support\Facades\DB;
 
 final class PurchaseReadModel
@@ -27,7 +28,8 @@ final class PurchaseReadModel
     /** @return array<string, mixed> */
     private function buildDetail(Purchase $purchase, bool $withCost): array
     {
-        $data = $purchase->only(['public_id', 'purchase_number', 'vendor_invoice_number', 'status', 'currency_code', 'document_locale', 'notes']);
+        $data = $purchase->only(['public_id', 'purchase_number', 'vendor_invoice_number', 'status', 'currency_code', 'currency_minor_units', 'document_locale', 'notes']);
+        $data['currency_minor_units'] = $purchase->currency_minor_units ?? ($purchase->currency_code === 'JOD' ? 3 : 2);
         $data['posted_at'] = $purchase->posted_at?->format('Y-m-d H:i');
         $data['purchase_date'] = $purchase->purchase_date->format('Y-m-d');
         $data['due_date'] = $purchase->due_date?->format('Y-m-d');
@@ -54,18 +56,26 @@ final class PurchaseReadModel
         $fields = ['id', 'public_id', 'company_id', 'purchase_id', 'line_number', 'item_description', 'quantity', 'quantity_base',
             'unit_name_ar', 'unit_name_en', 'product_sku', 'product_name_ar', 'product_name_en'];
         if ($withCost) {
-            $fields = [...$fields, 'unit_cost', 'line_discount', 'manual_discount_amount', 'allocated_document_discount', 'line_tax', 'line_total', 'landed_cost_allocated_base', 'inventory_unit_cost_base'];
+            $fields = [...$fields, 'unit_cost', 'line_discount', 'manual_discount_amount', 'allocated_document_discount', 'line_tax', 'line_total', 'landed_cost_allocated_base', 'inventory_unit_cost_base', 'discount_type', 'discount_value'];
         }
         $data['lines'] = $purchase->lines()->where('company_id', $purchase->company_id)->select($fields)
             ->with(['lots' => fn ($q) => $q->where('company_id', $purchase->company_id)->select(['id', 'public_id', 'purchase_line_id', 'lot_number', 'expiry_date', 'quantity'])])
-            ->get()->map(function (PurchaseLine $line) use ($withCost): array {
+            ->get()->map(function (PurchaseLine $line) use ($withCost, $purchase): array {
                 $data = $line->only(['id', 'public_id', 'item_description', 'quantity', 'quantity_base', 'product_sku']);
                 $data['item_description'] = DocumentDescription::choose($line->item_description, $line->product_name_ar, $line->product_name_en, app()->getLocale());
                 $data['unit_name'] = app()->getLocale() === 'en' ? ($line->unit_name_en ?? $line->unit_name_ar) : $line->unit_name_ar;
                 $data['lots'] = $line->lots->map(fn ($lot) => ['public_id' => $lot->public_id,
                     'lot_number' => $lot->lot_number, 'expiry_date' => $lot->expiry_date?->format('Y-m-d'), 'quantity' => $lot->quantity])->all();
                 if ($withCost) {
-                    $data += $line->only(['unit_cost', 'line_discount', 'manual_discount_amount', 'allocated_document_discount', 'line_tax', 'line_total', 'landed_cost_allocated_base', 'inventory_unit_cost_base']);
+                    $lineData = $line->only(['unit_cost', 'line_discount', 'manual_discount_amount', 'allocated_document_discount', 'line_tax', 'line_total', 'landed_cost_allocated_base', 'inventory_unit_cost_base', 'discount_type', 'discount_value']);
+                    if (($purchase->discount_scope ?? 'document') === 'line') {
+                        $manAmt = (string) $lineData['manual_discount_amount'];
+                        if (BigDecimal::of($manAmt)->isZero() && ! BigDecimal::of((string) $line->line_discount)->isZero()) {
+                            $lineData['manual_discount_amount'] = (string) $line->line_discount;
+                        }
+                        $lineData['allocated_document_discount'] = '0.000000';
+                    }
+                    $data += $lineData;
                 }
 
                 return $data;
