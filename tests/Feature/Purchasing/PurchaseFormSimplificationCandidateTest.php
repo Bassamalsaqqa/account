@@ -22,6 +22,7 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\PurchaseConfirmationReceipt;
+use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
@@ -34,6 +35,7 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -1095,6 +1097,43 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
 
         $this->assertTrue($draft->fresh()->isPosted());
         $this->assertSame('2.125000', $draft->lines()->sole()->discount_value);
+    }
+
+    public function test_discounted_purchase_preview_batches_tax_queries_for_many_lines(): void
+    {
+        $tax = TaxRate::create([
+            'company_id' => $this->company->id,
+            'code' => 'VAT16',
+            'name_ar' => 'ضريبة',
+            'rate' => '16',
+            'calculation' => TaxRate::CALC_EXCLUSIVE,
+            'active' => true,
+        ]);
+
+        $form = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '10');
+
+        $line = [
+            ...$form->get('lines')[0],
+            'product_id' => $this->product->id,
+            'quantity' => '2',
+            'unit_cost' => '25.00',
+            'tax_rate_id' => $tax->id,
+        ];
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $form->set('lines', array_fill(0, 20, $line))
+                ->assertSet('previewGrandTotal', '1044.00');
+            $taxQueries = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from `tax_rates`'));
+            self::assertLessThanOrEqual(2, count($taxQueries));
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
     }
 
     public function test_component_preview_uses_frozen_draft_precision_when_currency_scale_mutates(): void

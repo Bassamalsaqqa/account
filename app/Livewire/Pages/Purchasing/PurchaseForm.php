@@ -995,8 +995,14 @@ class PurchaseForm extends Component
                 }
             }
 
-            $taxes = TaxRate::where('company_id', $this->pageCompanyId)->where('active', true)
-                ->whereIn('id', collect($this->lines)->pluck('tax_rate_id')->filter()->unique())->get()->keyBy('id');
+            $lineTaxIds = array_map(static fn (array $line): int|false => filter_var($line['tax_rate_id'] ?? null, FILTER_VALIDATE_INT), $this->lines);
+            $taxIds = array_values(array_unique(array_filter($lineTaxIds)));
+            $taxes = $taxIds === [] ? collect() : TaxRate::query()
+                ->where('company_id', $company->id)
+                ->where('active', true)
+                ->whereKey($taxIds)
+                ->get()
+                ->keyBy('id');
             $discountScope = $this->discount_scope;
             $minor = $this->currency_minor_units;
             $allocationResult = null;
@@ -1007,7 +1013,7 @@ class PurchaseForm extends Component
                     $qty = Quantity::of($line['quantity'])->toBigDecimal();
                     $price = MoneyAmount::from($line['unit_cost'])->getAmount();
                     $subtotal = $qty->multipliedBy($price)->toScale($minor, RoundingMode::HALF_UP);
-                    $tax = ! empty($line['tax_rate_id']) ? $taxes->get($line['tax_rate_id']) : null;
+                    $tax = $taxes->get($lineTaxIds[$index] ?: 0);
 
                     $candidates[] = new DocumentDiscountLineCandidate(
                         lineNumber: $index + 1,
@@ -1030,7 +1036,7 @@ class PurchaseForm extends Component
             }
 
             foreach ($this->lines as $index => $line) {
-                $tax = ! empty($line['tax_rate_id']) ? $taxes->get($line['tax_rate_id']) : null;
+                $tax = $taxes->get($lineTaxIds[$index] ?: 0);
                 $qty = $line['quantity'];
                 $cost = $line['unit_cost'];
 
