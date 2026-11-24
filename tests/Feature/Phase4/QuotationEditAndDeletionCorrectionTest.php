@@ -73,6 +73,44 @@ class QuotationEditAndDeletionCorrectionTest extends TestCase
         $this->assertSame($sentAt, $quote->fresh()->sent_at->toDateTimeString());
     }
 
+    public function test_percentage_discount_matches_preview_and_saved_quotation(): void
+    {
+        $quote = $this->quote();
+
+        Livewire::test(QuotationForm::class, ['publicId' => $quote->public_id])
+            ->assertSeeHtml('value="percent"')
+            ->set('lines.0.discount_type', 'percent')
+            ->set('lines.0.discount_value', '10')
+            ->call('recalculate')
+            ->assertSet('previewGrandTotal', '90.00')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $quote->refresh();
+        $this->assertSame('90.000000', $quote->grand_total_currency);
+        $this->assertSame('10.000000', $quote->discount_total_currency);
+        $this->assertSame('percent', $quote->lines()->sole()->discount_type);
+    }
+
+    public function test_old_percentage_discount_is_corrected_when_the_draft_is_saved_again(): void
+    {
+        $quote = $this->quote();
+        DB::table('quotation_lines')->where('quotation_id', $quote->id)->update([
+            'discount_type' => 'percentage',
+            'discount_value' => '10',
+        ]);
+        $this->assertSame('100.000000', $quote->grand_total_currency);
+
+        $form = Livewire::test(QuotationForm::class, ['publicId' => $quote->public_id])
+            ->assertSet('lines.0.discount_type', 'percent')
+            ->assertSet('previewGrandTotal', '90.00');
+        $this->assertSame('100.000000', $quote->fresh()->grand_total_currency);
+
+        $form->call('save')->assertHasNoErrors();
+        $this->assertSame('90.000000', $quote->fresh()->grand_total_currency);
+        $this->assertSame('percent', $quote->lines()->sole()->discount_type);
+    }
+
     public static function closedStates(): array
     {
         return [['accepted'], ['rejected'], ['expired'], ['converted']];

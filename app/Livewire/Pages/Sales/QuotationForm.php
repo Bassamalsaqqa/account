@@ -187,7 +187,7 @@ class QuotationForm extends Component
                     'item_description' => $line->item_description,
                     'quantity' => (string) $line->quantity,
                     'unit_price' => (string) $line->unit_price,
-                    'discount_type' => $line->discount_type ?? 'none',
+                    'discount_type' => $this->quotationDiscountType($line->discount_type) ?? 'none',
                     'discount_value' => (string) ($line->discount_value ?? '0'),
                     'tax_rate_id' => $line->tax_rate_id,
                     'subtotal' => (string) $line->line_subtotal,
@@ -559,7 +559,7 @@ class QuotationForm extends Component
             $input = new SalesLineCalculationInput(
                 quantity: $line['quantity'] ?: '0',
                 unitPrice: $line['unit_price'] ?: '0',
-                discountType: $line['discount_type'] !== 'none' ? $line['discount_type'] : null,
+                discountType: $this->quotationDiscountType($line['discount_type']),
                 discountValue: $line['discount_value'] ?: '0',
                 taxRate: $taxRate,
                 taxInclusive: $taxInclusive,
@@ -583,6 +583,15 @@ class QuotationForm extends Component
         $this->previewTaxTotal = (string) $totals->taxTotalCurrency;
         $this->previewGrandTotal = SalesMoneyFormatter::formatMoneyInput($totals->grandTotalCurrency);
         $this->documentTotalsValid = true;
+    }
+
+    private function quotationDiscountType(?string $type): ?string
+    {
+        return match ($type) {
+            'percentage' => 'percent', // Previously saved by the quotation form.
+            'none' => null,
+            default => $type,
+        };
     }
 
     public function save(CreateQuotationAction $createAction, UpdateQuotationAction $updateAction): mixed
@@ -615,7 +624,7 @@ class QuotationForm extends Component
                 'item_description' => $line['item_description'],
                 'quantity' => (string) $line['quantity'],
                 'unit_price' => (string) $line['unit_price'],
-                'discount_type' => $line['discount_type'] !== 'none' ? $line['discount_type'] : null,
+                'discount_type' => $this->quotationDiscountType($line['discount_type']),
                 'discount_value' => (string) $line['discount_value'],
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
             ];

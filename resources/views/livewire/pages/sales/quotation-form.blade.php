@@ -286,7 +286,7 @@
                                                 class="w-20 h-8 px-1 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
                                             <option value="none">{{ __('sales.none') }}</option>
                                             <option value="fixed">{{ __('sales.fixed') }}</option>
-                                            <option value="percentage">%</option>
+                                            <option value="percent">%</option>
                                         </select>
                                         @if (($line['discount_type'] ?? 'none') !== 'none')
                                             <input type="number" inputmode="decimal"
@@ -440,7 +440,7 @@
                                             class="w-16 h-8 px-1 rounded-control border border-border bg-surface text-sm" :disabled="documentBusy || saving">
                                         <option value="none">{{ __('sales.none') }}</option>
                                         <option value="fixed">{{ __('sales.fixed') }}</option>
-                                        <option value="percentage">%</option>
+                                        <option value="percent">%</option>
                                     </select>
                                     @if (($line['discount_type'] ?? 'none') !== 'none')
                                         <input type="number" inputmode="decimal"
