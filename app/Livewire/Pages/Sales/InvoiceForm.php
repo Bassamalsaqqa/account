@@ -194,10 +194,13 @@ class InvoiceForm extends Component
     #[Locked]
     public bool $settlementPreview = false;
 
+    #[Locked]
     public ?string $prospectiveRemainingBalance = null;
 
+    #[Locked]
     public ?string $prospectiveRemainingExact = null;
 
+    #[Locked]
     public ?string $prospectiveBalanceError = null;
 
     public function mount(CompanyContext $context, ?string $publicId = null, ?int $customer_id = null): void
@@ -635,6 +638,7 @@ class InvoiceForm extends Component
     public function recalculate(): void
     {
         $this->documentTotalsValid = false;
+        $this->recalculateSettlementPreview();
         if ($this->showPreview) {
             $this->cancelPreview();
         }
@@ -994,12 +998,11 @@ class InvoiceForm extends Component
         $this->executeKey = null;
         $this->previewDigest = null;
         $this->settlementPreview = false;
-        $this->recalculateSettlementPreview();
     }
 
-    public function recalculateSettlementPreview(): void
+    private function recalculateSettlementPreview(): void
     {
-        if (($this->settlement['mode'] ?? 'unpaid') !== 'partial') {
+        if (! $this->documentTotalsValid || ($this->settlement['mode'] ?? 'unpaid') !== 'partial') {
             $this->prospectiveRemainingBalance = null;
             $this->prospectiveRemainingExact = null;
             $this->prospectiveBalanceError = null;
@@ -1009,10 +1012,6 @@ class InvoiceForm extends Component
 
         $company = app(CompanyContext::class)->company();
         $paymentCurrency = $this->settlementPaymentCurrency();
-        if ($paymentCurrency === $this->currency_code && ($this->settlement['amount'] ?? '') !== '') {
-            $this->settlement['invoice_amount'] = $this->settlement['amount'];
-        }
-
         $preview = app(ImmediateSettlementPreview::class)->calculate(
             grandTotal: $this->previewGrandTotal,
             documentCurrency: $this->currency_code ?: $company->base_currency_code,
@@ -1027,7 +1026,7 @@ class InvoiceForm extends Component
 
         if ($preview['error'] !== null && $preview['error_field'] !== null) {
             $this->addError('settlement.'.$preview['error_field'], $preview['error']);
-        } elseif ($preview['valid']) {
+        } else {
             $this->resetErrorBag(['settlement.amount', 'settlement.invoice_amount', 'settlement.payment_currency_amount', 'settlement.exchange_rate']);
         }
     }

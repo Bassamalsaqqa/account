@@ -158,7 +158,7 @@
                         </span>
                         <span class="font-mono text-base font-bold tabular-nums text-text-primary" dir="ltr">
                             @if ($prospectiveRemainingBalance !== null)
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($prospectiveRemainingBalance, $currency_code) }} {{ $currency_code }}
+                                {{ $prospectiveRemainingBalance }} {{ $currency_code }}
                             @else
                                 —
                             @endif
