@@ -189,7 +189,7 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $test->assertSet('previewGrandTotal', '50.00');
     }
 
-    public function test_switching_line_discount_to_none_resets_discount_value_to_zero_and_preserves_valid_recalculation(): void
+    public function test_new_lines_strictly_enforce_no_line_discount_and_reset_to_zero(): void
     {
         $test = Livewire::test(PurchaseForm::class)
             ->set('vendor_id', $this->vendor->id)
@@ -198,16 +198,11 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
             ->set('lines.0.quantity', '2')
             ->set('lines.0.unit_cost', '25.00');
 
-        // Set active line discount
+        // New lines must not accept individual discounts (superseded by global discount)
         $test->set('lines.0.discount_type', 'percent')
-            ->set('lines.0.discount_value', '10')
-            ->call('recalculate');
+            ->set('lines.0.discount_value', '10');
 
-        $this->assertTrue($test->get('documentTotalsValid'));
-        $this->assertSame('45.00', $test->get('previewGrandTotal'));
-
-        // Switching discount_type to 'none' resets discount_value to '0'
-        $test->set('lines.0.discount_type', 'none');
+        $this->assertSame('none', $test->get('lines.0.discount_type'));
         $this->assertSame('0', $test->get('lines.0.discount_value'));
 
         $test->call('recalculate');
@@ -215,36 +210,30 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertSame('50.00', $test->get('previewGrandTotal'));
     }
 
-    public function test_blank_or_invalid_active_line_discount_invalidates_preview_totals_and_fails_validation(): void
+    public function test_legacy_draft_with_line_discount_calculates_correctly_and_preserves_totals(): void
     {
-        app()->setLocale('ar');
-        $test = Livewire::test(PurchaseForm::class)
-            ->set('vendor_id', $this->vendor->id)
-            ->set('warehouse_id', $this->warehouse->id)
-            ->call('selectProduct', 0, $this->product->id)
-            ->set('lines.0.quantity', '2')
-            ->set('lines.0.unit_cost', '25.00')
-            ->set('lines.0.discount_type', 'fixed')
-            ->set('lines.0.discount_value', '');
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '2',
+                    'unit_cost' => '25.00',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '5.00',
+                ],
+            ],
+        ]);
 
-        // Recalculation with blank discount on active line marks totals invalid
-        $test->call('recalculate');
-        $this->assertFalse($test->get('documentTotalsValid'));
-        $this->assertSame([], $test->get('totals'));
+        $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
 
-        // Save fails with localized field error on discount_value
-        $test->call('save', false);
-        $test->assertHasErrors(['lines.0.discount_value']);
-
-        $error = $test->errors()->first('lines.0.discount_value');
-        $this->assertStringContainsString('البند', $error);
-        $this->assertStringContainsString('الخصم', $error);
-
-        // Explicit zero '0' is valid
-        $test->set('lines.0.discount_value', '0')
-            ->call('recalculate');
+        // Hydrates legacy discount and calculates correctly
         $this->assertTrue($test->get('documentTotalsValid'));
-        $this->assertSame('50.00', $test->get('previewGrandTotal'));
+        $this->assertSame('45.00', $test->get('previewGrandTotal'));
     }
 
     public function test_header_discount_binding_and_validation_without_ui_only_mock_calculation(): void
@@ -259,27 +248,121 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         // Initial defaults
         $test->assertSet('discount_type', 'none');
         $test->assertSet('discount_value', '0');
-        $test->assertSet('showDiscountControl', false);
 
-        // Toggle opens discount control
-        $test->call('toggleDiscountControl');
-        $test->assertSet('showDiscountControl', true);
-
-        // Bound properties
+        // Layout-only intermediate stage: nonzero global discount fails closed
         $test->set('discount_type', 'percent');
-        $test->set('discount_value', '150');
-        $test->call('save', false);
-        $test->assertHasErrors(['discount_value']);
-
-        $test->set('discount_value', '-10');
-        $test->call('save', false);
-        $test->assertHasErrors(['discount_value']);
-
-        // Valid discount value passes validation
         $test->set('discount_value', '10');
+        $test->call('recalculate');
+
+        // Recalculation invalidates preview totals to prevent misleading amounts before domain integration
+        $this->assertFalse($test->get('documentTotalsValid'));
+        $this->assertSame([], $test->get('totals'));
+        $this->assertSame('0', $test->get('previewGrandTotal'));
+
+        // Save fails with short field error on discount_value
+        $test->call('save', false);
+        $test->assertHasErrors(['discount_value']);
+
+        // Explicit zero or none passes and preserves valid recalculation
+        $test->set('discount_value', '0');
+        $test->call('recalculate');
+        $this->assertTrue($test->get('documentTotalsValid'));
+        $this->assertSame('50.00', $test->get('previewGrandTotal'));
+
         $test->call('saveDraft');
         $test->assertHasNoErrors(['discount_value']);
         $this->assertNotNull($test->get('savedDraftPublicId'));
+    }
+
+    public function test_legacy_line_discounts_cannot_be_tampered_by_client_request_or_new_lines(): void
+    {
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '2',
+                    'unit_cost' => '25.00',
+                    'discount_type' => 'fixed',
+                    'discount_value' => '5.00',
+                ],
+            ],
+        ]);
+
+        $test = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id]);
+
+        // Attempt to tamper with legacy line discount via client state
+        $test->set('lines.0.discount_type', 'percent');
+        $test->set('lines.0.discount_value', '50.00');
+
+        // Add a second line with attempted client discount
+        $test->call('addLine');
+        $test->call('selectProduct', 1, $this->product->id);
+        $test->set('lines.1.quantity', '1');
+        $test->set('lines.1.unit_cost', '20.00');
+        $test->set('lines.1.discount_type', 'percent');
+        $test->set('lines.1.discount_value', '10.00');
+
+        // Trigger updatedLines / draft save
+        $test->call('saveDraft');
+        $test->assertHasNoErrors();
+
+        $reloaded = Purchase::where('id', $draft->id)->firstOrFail();
+        $this->assertCount(2, $reloaded->lines);
+
+        $line0 = $reloaded->lines->sortBy('id')->first();
+        $line1 = $reloaded->lines->sortBy('id')->last();
+
+        // Line 0 strictly preserves database-persisted legacy values
+        $this->assertSame('fixed', $line0->discount_type);
+        $this->assertTrue(BigDecimal::of($line0->discount_value)->isEqualTo('5.00'));
+
+        // Line 1 (new line) strictly resets to none / 0
+        $this->assertContains($line1->discount_type, [null, 'none']);
+        $this->assertTrue(BigDecimal::of($line1->discount_value)->isZero());
+    }
+
+    public function test_collapsible_drawer_contains_optional_fields_and_auto_expands_on_error(): void
+    {
+        $test = Livewire::test(PurchaseForm::class);
+        $html = $test->html();
+
+        // Both optional fields are inside extendedDetailsDrawer
+        $drawerHtml = strstr($html, 'id="extendedDetailsDrawer"');
+        $this->assertNotFalse($drawerHtml);
+        $this->assertStringContainsString('id="supplier-number"', $drawerHtml);
+        $this->assertStringContainsString('id="purchase-due_date"', $drawerHtml);
+
+        // Neither is rendered in the top primary block before the drawer
+        $topBlock = substr($html, 0, strpos($html, 'id="extendedDetailsDrawer"'));
+        $this->assertStringNotContainsString('id="supplier-number"', $topBlock);
+        $this->assertStringNotContainsString('id="purchase-due_date"', $topBlock);
+
+        // Drawer auto-expands when drawer fields have validation errors
+        $test->set('vendor_invoice_number', str_repeat('V', 150));
+        $test->call('save', false);
+        $test->assertHasErrors(['vendor_invoice_number']);
+
+        $errorHtml = $test->html();
+        $this->assertStringContainsString('x-show="true"', $errorHtml);
+    }
+
+    public function test_lines_table_action_bar_is_clean_of_shortcuts_and_counters_and_global_discount_input_hidden_in_intermediate_stage(): void
+    {
+        $test = Livewire::test(PurchaseForm::class);
+        $html = $test->html();
+
+        // No Alt+N shortcut badge or item counter clutter
+        $this->assertStringNotContainsString('Alt+N', $html);
+        $this->assertStringNotContainsString('· 1 Items', $html);
+
+        // Global discount input is hidden from UI during layout-only intermediate stage
+        $this->assertStringNotContainsString('id="purchase-discount-type"', $html);
+        $this->assertStringNotContainsString('id="purchase-discount-value"', $html);
     }
 
     public function test_legacy_line_discount_renders_read_only_badge_and_persists_without_silent_reset(): void

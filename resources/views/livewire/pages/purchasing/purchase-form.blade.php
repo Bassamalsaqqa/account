@@ -66,65 +66,69 @@
             </button>
         </div>
 
-        <!-- Primary Core Inputs Row -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
-            <!-- Supplier Combobox (Span 6) -->
-            <div class="sm:col-span-2 lg:col-span-6 space-y-1">
-                <div class="flex items-center justify-between mb-1">
-                    <label for="purchase-vendor" class="block text-xs font-bold text-text-primary">
-                        {{ __('purchasing.vendor') }} <span class="text-danger">*</span>
-                    </label>
-                </div>
-                @php
-                    $selectedVendor = $vendor_id ? $vendors->firstWhere('id', $vendor_id) : null;
-                    $vendorLabel = $selectedVendor ? $selectedVendor->displayName() : '';
-                @endphp
-                <div class="party-picker flex gap-2 items-center">
-                    <x-searchable-combobox
-                        id="purchase-vendor"
-                        type="vendor"
-                        context="purchasing"
-                        wire-model="vendor_id"
-                        :selected-id="$vendor_id"
-                        :selected-label="$vendorLabel"
-                        :placeholder="__('purchasing.select_vendor')"
-                        :aria-label="__('purchasing.vendor')"
-                        :has-error="$errors->has('vendor_id')"
-                        required
-                    />
-                    @if ($canManageVendors)
-                        <button type="button" wire:click="openQuickVendorModal" class="party-create-button shrink-0 min-h-11 px-3 py-2 bg-surface-blue hover:bg-surface-blue/80 text-primary border border-primary/20 rounded-control font-medium text-xs flex items-center gap-1 transition-colors cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
-                            + {{ __('workflow.quick_vendor') }}
-                        </button>
-                    @endif
-                </div>
-                @error('vendor_id') <span id="purchase-vendor-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        <!-- Primary Core Input: Supplier / Vendor -->
+        <div class="space-y-1">
+            <div class="flex items-center justify-between mb-1">
+                <label for="purchase-vendor" class="block text-xs font-bold text-text-primary">
+                    {{ __('purchasing.vendor') }} <span class="text-danger">*</span>
+                </label>
             </div>
+            @php
+                $selectedVendor = $vendor_id ? $vendors->firstWhere('id', $vendor_id) : null;
+                $vendorLabel = $selectedVendor ? $selectedVendor->displayName() : '';
+            @endphp
+            <div class="party-picker flex gap-2 items-center">
+                <x-searchable-combobox
+                    id="purchase-vendor"
+                    type="vendor"
+                    context="purchasing"
+                    wire-model="vendor_id"
+                    :selected-id="$vendor_id"
+                    :selected-label="$vendorLabel"
+                    :placeholder="__('purchasing.select_vendor')"
+                    :aria-label="__('purchasing.vendor')"
+                    :has-error="$errors->has('vendor_id')"
+                    required
+                />
+                @if ($canManageVendors)
+                    <button type="button" wire:click="openQuickVendorModal" class="party-create-button shrink-0 min-h-11 px-3 py-2 bg-surface-blue hover:bg-surface-blue/80 text-primary border border-primary/20 rounded-control font-medium text-xs flex items-center gap-1 transition-colors cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
+                        + {{ __('workflow.quick_vendor') }}
+                    </button>
+                @endif
+            </div>
+            @error('vendor_id') <span id="purchase-vendor-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+        </div>
 
-            <!-- Supplier Bill # (Span 3) -->
-            <div class="lg:col-span-3 space-y-1">
-                <label for="supplier-number" class="block text-xs font-bold text-text-primary mb-1">
+        <!-- Collapsible More Details Drawer: Optional Bill #, Due Date & Contextual Fields -->
+        @php
+            $hasDrawerErrors = $errors->hasAny([
+                'vendor_invoice_number',
+                'due_date',
+                'warehouse_id',
+                'purchase_date',
+                'currency_code',
+                'exchange_rate',
+                'document_locale',
+                'notes',
+            ]);
+        @endphp
+        <div x-cloak x-show="{{ $showMoreDetails || $hasDrawerErrors ? 'true' : 'false' }}" class="pt-3 border-t border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-surface-soft p-3 rounded-control" id="extendedDetailsDrawer">
+            <div>
+                <label for="supplier-number" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.vendor_invoice_number') }}
                 </label>
-                <input id="supplier-number" @error('vendor_invoice_number') aria-invalid="true" aria-describedby="supplier-number-error" @enderror wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-11 px-3 border border-border bg-surface rounded-control text-xs font-mono" placeholder="PUR-..." :disabled="documentBusy || saving"/>
+                <input id="supplier-number" @error('vendor_invoice_number') aria-invalid="true" aria-describedby="supplier-number-error" @enderror wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs font-mono" placeholder="PUR-..." :disabled="documentBusy || saving"/>
                 @error('vendor_invoice_number') <span id="supplier-number-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
-            <!-- Due Date (Span 3) -->
-            <div class="lg:col-span-3 space-y-1">
-                <label for="purchase-due_date" class="block text-xs font-bold text-text-primary mb-1">
+            <div>
+                <label for="purchase-due_date" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.due_date') }}
                 </label>
-                <input id="purchase-due_date" @error('due_date') aria-invalid="true" aria-describedby="purchase-due_date-error" @enderror type="date" wire:model="due_date" class="w-full min-w-0 h-11 px-3 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving"/>
+                <input id="purchase-due_date" @error('due_date') aria-invalid="true" aria-describedby="purchase-due_date-error" @enderror type="date" wire:model="due_date" class="w-full min-w-0 h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving"/>
                 @error('due_date') <span id="purchase-due_date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
-        </div>
 
-        <!-- Collapsible More Details Drawer -->
-        @php
-            $hasDrawerErrors = $errors->hasAny(['warehouse_id', 'purchase_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes']);
-        @endphp
-        <div x-cloak x-show="{{ $showMoreDetails || $hasDrawerErrors ? 'true' : 'false' }}" class="pt-3 border-t border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-surface-soft p-3 rounded-control" id="extendedDetailsDrawer">
             <div>
                 <label for="purchase-warehouse" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.receiving_warehouse') }}
@@ -179,7 +183,7 @@
                 </select>
             </div>
 
-            <div class="{{ $currency_code !== $baseCurrencyCode ? 'sm:col-span-2 lg:col-span-1' : 'sm:col-span-2 lg:col-span-2' }}">
+            <div class="{{ $currency_code !== $baseCurrencyCode ? 'sm:col-span-2 lg:col-span-2' : 'sm:col-span-2 lg:col-span-2' }}">
                 <label for="purchase-notes" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.notes') }}
                 </label>
@@ -208,16 +212,11 @@
 
     <!-- 2. Invoice Lines Section -->
     <section class="space-y-3">
-        <!-- Table Action Bar -->
+        <!-- Table Action Bar (Clean: No visual shortcut/count clutter) -->
         <div class="px-4 py-2.5 bg-surface border border-border rounded-card flex items-center justify-between">
-            <div class="flex items-center gap-2">
-                <h2 class="font-bold text-sm text-text-primary">{{ __('purchasing.purchase_lines') }}</h2>
-                <span class="text-xs text-text-muted">·</span>
-                <span class="text-xs font-medium text-text-secondary">{{ count($lines) }} {{ __('purchasing.lines') ?? 'Items' }}</span>
-            </div>
-            <button type="button" @click="handleAddLine()" class="h-9 px-3 text-primary border border-border bg-surface hover:bg-surface-soft rounded-control text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
-                <span>+ {{ __('purchasing.add_line') }}</span>
-                <kbd class="px-1 py-0.5 text-[10px] font-mono rounded border border-border bg-surface-soft text-text-secondary leading-none">Alt+N</kbd>
+            <h2 class="font-bold text-sm text-text-primary">{{ __('purchasing.purchase_lines') }}</h2>
+            <button type="button" @click="handleAddLine()" class="h-9 px-3 text-primary border border-border bg-surface hover:bg-surface-soft rounded-control text-xs font-bold inline-flex items-center gap-1 cursor-pointer shadow-2xs transition-colors">
+                + {{ __('purchasing.add_line') }}
             </button>
         </div>
 
@@ -227,7 +226,16 @@
                 $lineProdLabel = $lineProd ? $lineProd->displayName() . ($lineProd->sku ? ' (' . $lineProd->sku . ')' : '') : ($line['item_description'] ?? '');
                 $selectedUnit = collect($unitOptions[$index] ?? [])->firstWhere('id', $line['product_unit_id'] ?? null);
                 $lineAllowsFraction = $selectedUnit?->unit?->allows_fraction ?? false;
-                $hasLegacyDiscount = ($line['discount_type'] ?? 'none') !== 'none' && !empty($line['discount_value']) && (float)$line['discount_value'] > 0;
+
+                $hasLegacyDiscount = false;
+                if (($line['discount_type'] ?? 'none') !== 'none' && ! empty($line['discount_value'])) {
+                    try {
+                        $hasLegacyDiscount = \Brick\Math\BigDecimal::of($line['discount_value'])->isPositive();
+                    } catch (\Throwable) {
+                        $hasLegacyDiscount = false;
+                    }
+                }
+
                 $hasRowOptionErrors = $errors->hasAny(["lines.{$index}.item_description", "lines.{$index}.tax_rate_id", "lines.{$index}.lots.*"]);
                 $isRowOptionsOpen = ($expandedRowOptions[$index] ?? false) || $hasRowOptionErrors;
             @endphp
@@ -415,7 +423,7 @@
             @endif
         </div>
 
-        <!-- RIGHT COLUMN: Summary Card & Global Document Discount -->
+        <!-- RIGHT COLUMN: Summary Card -->
         <div class="lg:col-span-5 space-y-4">
             <section class="bg-surface border border-border rounded-card p-4 space-y-3">
                 <div class="flex items-center justify-between pb-2 border-b border-border/60">
@@ -432,44 +440,25 @@
                         </span>
                     </div>
 
-                    <!-- Global Invoice Discount -->
-                    <div class="pt-2">
-                        @if (! $showDiscountControl)
-                            <div class="flex items-center justify-between">
-                                <span class="text-text-secondary">{{ __('purchasing.discount') }}</span>
-                                <button type="button" wire:click="toggleDiscountControl" class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer">
-                                    + {{ __('purchasing.add_discount') }}
-                                </button>
-                            </div>
-                        @else
-                            <div class="p-2.5 bg-surface-soft rounded-control border border-border space-y-2">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-xs font-bold text-text-primary">{{ __('purchasing.document_discount') }}</span>
-                                    <button type="button" wire:click="toggleDiscountControl" class="text-xs text-danger hover:underline cursor-pointer">
-                                        ✕ {{ __('purchasing.remove_discount') }}
-                                    </button>
-                                </div>
-                                <div class="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label for="purchase-discount-type" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount') }}</label>
-                                        <select id="purchase-discount-type" wire:model.live="discount_type" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
-                                            <option value="none">{{ __('purchasing.discount_none') }}</option>
-                                            <option value="percent">{{ __('purchasing.discount_percent') }}</option>
-                                            <option value="fixed">{{ __('purchasing.discount_fixed') }}</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label for="purchase-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount_value') }}</label>
-                                        <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model.blur="discount_value" wire:change="recalculate" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs font-mono" :disabled="documentBusy || saving" />
-                                    </div>
-                                </div>
-                                @error('discount_value') <span id="purchase-discount-value-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
-                            </div>
-                        @endif
-                    </div>
+                    <!-- Short field error if nonzero global discount is submitted before domain wiring -->
+                    @error('discount_value')
+                        <div class="pt-2">
+                            <span id="purchase-discount-value-error" role="alert" class="text-danger text-xs block">{{ $message }}</span>
+                        </div>
+                    @enderror
 
                     <!-- Tax (if applicable) -->
-                    @if($taxes->isNotEmpty() || ($documentTotalsValid && isset($totals['tax']) && (float)$totals['tax'] > 0))
+                    @php
+                        $hasTaxAmount = false;
+                        if ($documentTotalsValid && isset($totals['tax']) && $totals['tax'] !== '') {
+                            try {
+                                $hasTaxAmount = \Brick\Math\BigDecimal::of($totals['tax'])->isPositive();
+                            } catch (\Throwable) {
+                                $hasTaxAmount = false;
+                            }
+                        }
+                    @endphp
+                    @if($taxes->isNotEmpty() || $hasTaxAmount)
                     <div class="flex items-center justify-between pt-2">
                         <span class="text-text-secondary">{{ __('purchasing.tax') }}</span>
                         <span class="font-mono font-semibold text-text-secondary tabular-nums">

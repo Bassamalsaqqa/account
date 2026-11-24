@@ -29,6 +29,7 @@ use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
+use App\Models\PurchaseLine;
 use App\Models\TaxRate;
 use App\Models\Vendor;
 use App\Models\Warehouse;
@@ -390,8 +391,28 @@ class PurchaseForm extends Component
 
     public function updatedLines(): void
     {
+        $company = app(CompanyContext::class)->company();
+        $persistedLines = null;
+        $effectivePublicId = $this->publicId ?? $this->savedDraftPublicId;
+        if ($effectivePublicId !== null) {
+            $persistedPurchase = Purchase::where('company_id', $company->id)->where('public_id', $effectivePublicId)->first();
+            if ($persistedPurchase !== null) {
+                $persistedLines = PurchaseLine::where('company_id', $company->id)
+                    ->where('purchase_id', $persistedPurchase->id)
+                    ->get()
+                    ->keyBy('public_id');
+            }
+        }
+
         foreach ($this->lines as $index => &$line) {
-            if (($line['discount_type'] ?? 'none') === 'none') {
+            if (! empty($line['public_id']) && $persistedLines !== null && $persistedLines->has($line['public_id'])) {
+                $orig = $persistedLines->get($line['public_id']);
+                $line['discount_type'] = $orig->discount_type;
+                $line['discount_value'] = $orig->discount_type === 'percent'
+                    ? SalesMoneyFormatter::formatQuantity($orig->discount_value)
+                    : SalesMoneyFormatter::formatMoneyInput($orig->discount_value);
+            } else {
+                $line['discount_type'] = 'none';
                 $line['discount_value'] = '0';
             }
             if (! empty($line['product_id']) && ! ($this->expandedLotCustomization[$index] ?? false)) {
@@ -814,6 +835,30 @@ class PurchaseForm extends Component
                 return;
             }
 
+            if ($this->discount_type !== 'none' && $this->discount_value !== '0' && $this->discount_value !== '0.00' && trim($this->discount_value) !== '') {
+                try {
+                    if (! BigDecimal::of($this->discount_value)->isZero()) {
+                        $this->totals = [];
+                        foreach ($this->lines as &$l) {
+                            unset($l['preview_total']);
+                        }
+                        $this->previewGrandTotal = '0';
+                        $this->documentTotalsValid = false;
+
+                        return;
+                    }
+                } catch (\Throwable) {
+                    $this->totals = [];
+                    foreach ($this->lines as &$l) {
+                        unset($l['preview_total']);
+                    }
+                    $this->previewGrandTotal = '0';
+                    $this->documentTotalsValid = false;
+
+                    return;
+                }
+            }
+
             foreach ($this->lines as $index => $line) {
                 if (! isset($line['quantity']) || ! is_string($line['quantity']) || trim($line['quantity']) === ''
                     || ! isset($line['unit_cost']) || ! is_string($line['unit_cost']) || trim($line['unit_cost']) === '') {
@@ -833,7 +878,19 @@ class PurchaseForm extends Component
 
                 $lineDiscountType = $line['discount_type'] ?? 'none';
                 if ($lineDiscountType !== 'none') {
-                    if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '' || ! is_numeric(trim($line['discount_value']))) {
+                    if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '') {
+                        $this->totals = [];
+                        foreach ($this->lines as &$l) {
+                            unset($l['preview_total']);
+                        }
+                        $this->previewGrandTotal = '0';
+                        $this->documentTotalsValid = false;
+
+                        return;
+                    }
+                    try {
+                        BigDecimal::of($line['discount_value']);
+                    } catch (\Throwable) {
                         $this->totals = [];
                         foreach ($this->lines as &$l) {
                             unset($l['preview_total']);
@@ -898,7 +955,14 @@ class PurchaseForm extends Component
             }
             $lineDiscountType = $line['discount_type'] ?? 'none';
             if ($lineDiscountType !== 'none') {
-                if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '' || ! is_numeric(trim($line['discount_value']))) {
+                if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '') {
+                    $this->addError("lines.{$idx}.discount_value", __('validation.required', ['attribute' => __('purchasing.line_attribute_discount', ['index' => $humanIndex])]));
+
+                    return null;
+                }
+                try {
+                    BigDecimal::of($line['discount_value']);
+                } catch (\Throwable) {
                     $this->addError("lines.{$idx}.discount_value", __('validation.required', ['attribute' => __('purchasing.line_attribute_discount', ['index' => $humanIndex])]));
 
                     return null;
@@ -909,13 +973,15 @@ class PurchaseForm extends Component
         }
 
         $this->resetErrorBag('discount_value');
-        if ($this->discount_type !== 'none') {
-            if (trim($this->discount_value) === '' || ! is_numeric(trim($this->discount_value)) || (float) trim($this->discount_value) < 0) {
-                $this->addError('discount_value', __('purchasing.invalid_discount'));
+        if ($this->discount_type !== 'none' && $this->discount_value !== '0' && $this->discount_value !== '0.00' && trim($this->discount_value) !== '') {
+            // Layout-only intermediate: fail closed on nonzero global discount until canonical domain integration
+            try {
+                if (! BigDecimal::of($this->discount_value)->isZero()) {
+                    $this->addError('discount_value', __('purchasing.invalid_discount'));
 
-                return null;
-            }
-            if ($this->discount_type === 'percent' && (float) trim($this->discount_value) > 100) {
+                    return null;
+                }
+            } catch (\Throwable) {
                 $this->addError('discount_value', __('purchasing.invalid_discount'));
 
                 return null;
@@ -1316,6 +1382,36 @@ class PurchaseForm extends Component
         }
 
         $lines = $this->lines;
+        $effectivePublicId = $this->publicId ?? $this->savedDraftPublicId;
+        if ($effectivePublicId !== null) {
+            $persistedPurchase = Purchase::where('company_id', $company->id)->where('public_id', $effectivePublicId)->first();
+            if ($persistedPurchase !== null) {
+                $persistedLines = PurchaseLine::where('company_id', $company->id)
+                    ->where('purchase_id', $persistedPurchase->id)
+                    ->get()
+                    ->keyBy('public_id');
+
+                foreach ($lines as &$line) {
+                    if (! empty($line['public_id']) && $persistedLines->has($line['public_id'])) {
+                        $orig = $persistedLines->get($line['public_id']);
+                        $line['discount_type'] = $orig->discount_type;
+                        $line['discount_value'] = $orig->discount_type === 'percent'
+                            ? SalesMoneyFormatter::formatQuantity($orig->discount_value)
+                            : SalesMoneyFormatter::formatMoneyInput($orig->discount_value);
+                    } else {
+                        $line['discount_type'] = 'none';
+                        $line['discount_value'] = '0';
+                    }
+                }
+                unset($line);
+            }
+        } else {
+            foreach ($lines as &$line) {
+                $line['discount_type'] = 'none';
+                $line['discount_value'] = '0';
+            }
+            unset($line);
+        }
         $selectedProductIds = collect($lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = ! empty($selectedProductIds)
             ? Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)->get()->keyBy('id')
