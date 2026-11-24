@@ -194,6 +194,14 @@ $env:PHASE8_TEST_TIMEOUT="14400"
 php tests/Support/run-phase8-disposable.php -- tests
 ```
 
+To compare a synthetic upgrade from a recorded deployment commit with a fresh candidate schema, use the same disposable MariaDB settings and a clean candidate checkout. Supply the full reviewed Git SHA for the deployed baseline.
+
+```bash
+php tests/Support/rehearse-disposable-migration-upgrade.php "$baseline_sha"
+```
+
+The runner requires an additive migration history, compares the applied migration names and table definitions, and drops its two owned schemas. A populated recovery rehearsal remains a separate release gate.
+
 ### Windows Environment & Long-Run Guidelines
 
 1. **Awake Requirement**: Prevent Windows system sleep during test runs; system sleep pauses process clocks and causes false timeout errors in concurrent or time-sensitive test cases.
