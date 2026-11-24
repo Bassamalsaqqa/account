@@ -67,7 +67,7 @@ final class ReportController extends Controller
 
         // 1. Opening cash from canonical money ledger (as of start of day); never trust client float or invent zero on error
         $openingFloat = null;
-        if ($approvedCashAccount !== null && ($user->hasPermissionTo('reports.financial.view') || $user->hasPermissionTo('money.cash.view'))) {
+        if ($approvedCashAccount !== null) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
                 $openingBalances = $moneyBalanceQuery->forType($company, 'cash', $yesterday);
@@ -110,7 +110,7 @@ final class ReportController extends Controller
 
         // 6. Expected drawer cash must come from canonical CURRENT MoneyBalanceQuery for exact approved account
         $expectedCash = null;
-        if ($approvedCashAccount !== null && ($user->hasPermissionTo('reports.financial.view') || $user->hasPermissionTo('money.cash.view'))) {
+        if ($approvedCashAccount !== null) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
                 $currentBalances = $moneyBalanceQuery->forType($company, 'cash');

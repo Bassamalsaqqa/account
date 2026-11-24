@@ -910,7 +910,7 @@ final class SupplierController extends Controller
         $paymentCurrency = $request->has('currency') && is_string($request->input('currency')) && trim($request->input('currency')) !== ''
             ? strtoupper(trim($request->input('currency')))
             : (string) $company->base_currency_code;
-        if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
+        if (preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
         }
 
