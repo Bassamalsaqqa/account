@@ -202,6 +202,8 @@ php tests/Support/rehearse-disposable-migration-upgrade.php "$baseline_sha"
 
 The runner requires an additive migration history, compares the applied migration names and table definitions, and drops its two owned schemas. A populated recovery rehearsal remains a separate release gate.
 
+For a clean MariaDB 10.4 rehearsal, start the disposable server with `--explicit-defaults-for-timestamp=ON`. With the older server default, the existing strict-mode mobile migration can reject `mobile_auth_challenges.expires_at` with error 1067. Record the deployment server's value with `SHOW GLOBAL VARIABLES LIKE 'explicit_defaults_for_timestamp'` when comparing environments. [MariaDB system variable reference](https://mariadb.com/docs/server/server-management/variables-and-modes/server-system-variables#explicit_defaults_for_timestamp)
+
 ### Windows Environment & Long-Run Guidelines
 
 1. **Awake Requirement**: Prevent Windows system sleep during test runs; system sleep pauses process clocks and causes false timeout errors in concurrent or time-sensitive test cases.
