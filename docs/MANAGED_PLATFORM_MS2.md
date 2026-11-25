@@ -1,3 +1,5 @@
+> **HISTORICAL RECORD (MS-2 Subscriptions Candidate):** Point-in-time PR #68 verification record. Global and per-company subscription enforcement remains **OFF** by default. See [README.md](../README.md) for current platform status.
+
 # MS-2 — manual subscriptions and tenant write admission
 
 Status: **GO for independent review; release acceptance remains HOLD**. PR #68 stays draft; no merge, deployment or production enforcement is approved.

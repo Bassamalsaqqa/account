@@ -1,3 +1,5 @@
+> **HISTORICAL RECORD (PR88 Verification):** Point-in-time PR88 verification receipt. See [README.md](../../README.md) for current status.
+
 # PR88 correction verification
 
 Source baseline: `648e2968686f0f947eb6f72d96a80f305b31d4fc` (PR88 authorized published head). Authorized local base `c1576decf1a5a90a0bb13dc0d21b2ded91ba7fd0` (includes unpublished supervisor doc fix only). Resulting commit and tree are reported in the implementation handoff. No production or persistent database access.
@@ -50,7 +52,7 @@ git diff --check
 
 ## Retained task artifacts
 
-Final logs are deliberately retained outside the checkout in `/tmp/pr88-correction-evidence/`; they contain only synthetic test context.
+Final synthetic verification logs were retained outside Git in private local custody.
 
 | Log | SHA-256 | Description |
 |---|---|---|

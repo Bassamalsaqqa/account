@@ -1,3 +1,5 @@
+> **HISTORICAL RECORD (October 2026):** MS-1A implementation and acceptance record. See [README.md](../README.md) for current platform status.
+
 # MS-1A managed-platform candidate
 
 ## Owner-directed access correction — 2026-10-27

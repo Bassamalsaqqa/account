@@ -1,3 +1,5 @@
+> **HISTORICAL RECORD (7 November 2026):** Point-in-time implementation handback at baseline `06e4f6d`. See [README.md](../README.md) for current platform status.
+
 # Correction implementation handback — 7 November 2026
 
 Baseline remains `06e4f6d`. Existing dirty work and the designer's UI_REDESIGN_20261107.md were preserved. No commit, push, deploy, production access, external agents, hooks, worktrees or destructive Git operations.

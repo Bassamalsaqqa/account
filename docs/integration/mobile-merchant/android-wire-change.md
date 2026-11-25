@@ -1,3 +1,5 @@
+> **HISTORICAL WIRE SPEC:** Point-in-time V1 sales-invoice cursor pagination and read-ready business settings specification. See [README.md](../../../README.md) for current status.
+
 # Android Wire Change Specification: Sales Invoice Index Cursor Pagination
 
 ## 1. Overview & Context

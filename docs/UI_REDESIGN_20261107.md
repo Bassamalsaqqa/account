@@ -1,3 +1,5 @@
+> **HISTORICAL RECORD (7 November 2026):** Point-in-time UI redesign batch receipt at baseline `06e4f6d`. See [DESIGN.md](../DESIGN.md) and [UI_WORKFLOW_RULES.md](UI_WORKFLOW_RULES.md) for current UI standards.
+
 # Native UI redesign batch — 7 November 2026
 
 Baseline: `06e4f6d`. No commit, push, release, server startup or production access.

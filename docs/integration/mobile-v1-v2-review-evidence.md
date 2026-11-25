@@ -1,8 +1,9 @@
+> **HISTORICAL RECORD (Mobile V1/V2 Review):** Point-in-time review resolution evidence. See [README.md](../../README.md) for current status.
+
 # Mobile V1/V2 Review Resolution & Verification Evidence
 
 ## Scope & Provenance
 
-- **Worktree**: `/home/t3dev/.t3/worktrees/account/integration-mobile-backend-supervision`
 - **Branch**: `t3/mobile-v1-read-release-20261117`
 - **Baseline Commit**: `2bed72ebdf087a5aa3e258145c539dd7380b24c1`
 - **Authority / Objective**: Resolve and verify all findings from Huda's review report (`0bfbab3f-15a4-48f3-947a-68dd0758c9a7`), enforcing exact accounting, atomicity, idempotency, tenant boundaries, and immutable posting invariants.

@@ -1,295 +1,74 @@
-# Small Trader Accounting — Hostinger Production Deployment Guide
-**Target Domain:** `account.palsync.net`
-**Hosting Platform:** Hostinger Shared Hosting (Cloud / Business Web Hosting)
-**Execution Context:** Production Deployment Guide
+# Hostinger Production Deployment Guide
 
----
+- **Status:** **NOT DEPLOYED** — `account.palsync.net` docroot holds only Hostinger's `default.php` placeholder.
+- **Target Account / Subdomain:** `u556956644` / `account.palsync.net` (parent `palsync.net`, Hostinger Shared/Cloud Hosting, lifetime SSL + HTTPS redirect active).
+- **Authoritative Release Gates:** Complete [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) before any live change and before bringing the site out of maintenance.
 
-## 1. Historical Hostinger Hosting Facts (Initial Baseline Verification)
+## 1. Filesystem Layout & Public Root Rule
 
-*(Historical context preserved intact from baseline platform inspection)*
-These specifications were directly verified via the live Hostinger API/MCP read-only inspection:
-
-| Property | Value / Verified State | Verification Source |
-|---|---|---|
-| **Account Username** | `u556956644` | Live Hostinger API (`hosting_domains_list-website-subdomains`) |
-| **Parent Domain** | `palsync.net` | Live Hostinger API |
-| **Subdomain** | `account.palsync.net` | Live Hostinger API |
-| **Configured Document Root** | `/home/u556956644/domains/palsync.net/public_html/account` | Live Hostinger API |
-| **Current Document Root Content** | Only `default.php` (Hostinger placeholder). No application deployed. | Live Hostinger File Browser |
-| **Web PHP Support** | Hostinger currently runs PHP 8.3 on `palsync.net`, with **PHP 8.4 selectable** in hPanel | Live Hostinger API (`hosting_php_get`) |
-| **Required PHP Extensions** | `bcmath`, `curl`, `fileinfo`, `gd`, `intl`, `mbstring`, `openssl`, `pdo`, `nd_pdo_mysql`, `tokenizer`, `xml`, `zip` all enabled | Live Hostinger API (`hosting_php_get`) |
-| **Database Host** | `127.0.0.1:3306` (Local connection from PHP scripts). Do not use `srv*.hstgr.io` from PHP | Hostinger Hosting Architecture Rules |
-| **SSL / HTTPS** | Lifetime SSL active on `account.palsync.net`, HTTPS redirect enabled | Live Hostinger API (`hosting_ssl_status`) |
-| **Cron System** | System cron available via PHP CLI with standard 5-part cron syntax | Live Hostinger API (`hosting_cron-jobs_list`) |
-
----
-
-## 2. Secure Filesystem Architecture (Keeping Laravel Root Private)
-
-### The Security Imperative
-Under no circumstances should the entire Laravel application repository be cloned or copied directly into `/home/u556956644/domains/palsync.net/public_html/account`. If the project root is placed inside `public_html`, sensitive files such as `.env`, `storage/logs`, SQLite databases, composer files, and internal code become potentially reachable over HTTP if web server rewrites fail.
-
-### Approved Private Layout
-The application files must reside **outside** `public_html`, alongside it under the domain directory:
+Keep the Laravel root **outside** `public_html`. `bin/deploy.sh` requires `PUBLIC_DIR` to be a separate, real (non-symlinked) directory and refuses symlinked public roots.
 
 ```text
 /home/u556956644/domains/palsync.net/
-├── accounting/                         <-- PRIVATE APPLICATION ROOT (NOT WEB-ACCESSIBLE)
-│   ├── .env                            <-- Protected environment variables
-│   ├── app/
-│   ├── bootstrap/
-│   ├── config/
-│   ├── database/
-│   ├── routes/
-│   ├── storage/
-│   ├── vendor/
-│   ├── artisan
-│   └── public/                         <-- Source public assets & build artifact destination
-│       └── build/                      <-- Pre-compiled Vite assets (manifest.json, CSS, JS)
-│
-└── public_html/
-    └── account/                        <-- PUBLIC DOCUMENT ROOT (WEB-ACCESSIBLE)
-        ├── index.php                   <-- Front controller (bridges to ../../accounting)
-        ├── .htaccess                   <-- URL rewriting
-        ├── favicon.ico
-        ├── robots.txt
-        └── build/                      <-- Deployed Vite assets (manifest.json, assets/)
+├── accounting/                 # Private Laravel root (never web-accessible; holds .env, storage, vendor)
+│   └── public/build/           # Staged Vite assets + manifest.json (0755 dirs, 0644 files, zero .map)
+└── public_html/account/        # Public docroot (index.php, .htaccess, manifest.webmanifest, sw.js, icons/, build/)
 ```
 
-### Public Root Wiring Strategies
+`public/index.php` resolves `../../accounting` automatically (or `LARAVEL_APP_PATH`) and calls `$app->usePublicPath(__DIR__)`. Keep `.git`, `node_modules`, `tests`, `docs`, dumps, `.env`, and staging archives out of `public_html/account`.
 
-Our `public/index.php` is engineered to support both deployment methods cleanly and fails closed with an HTTP 500 error if the private application root cannot be resolved:
+## 2. Clean Server Initial Setup
 
-#### Method A: SSH Symlink (Recommended if SSH symlinks are enabled)
-If deploying via SSH shell, safely back up the initial placeholder directory and create a symbolic link pointing directly to the private application's `public/` directory:
-```bash
-cd /home/u556956644/domains/palsync.net/public_html
-# Safely archive initial placeholder directory if it exists
-if [ -d "account" ] && [ ! -L "account" ]; then
-    mv account account_initial_backup_$(date +%Y%m%d%H%M%S)
-fi
-ln -s /home/u556956644/domains/palsync.net/accounting/public account
-```
-*Note: Never use destructive `rm -rf` commands on live document root directories.*
-
-#### Method B: Separated Public Assets via Deployment Script (Robust & Portable)
-When symbolic links are restricted or undesirable, `public_html/account` remains a standard directory.
-The repository's `public/index.php` dynamically checks candidates:
-1. Standard local root (`__DIR__.'/..'`)
-2. Explicit `LARAVEL_APP_PATH` environment variable
-3. Two levels up (`dirname(__DIR__, 2).'/accounting'`), which resolves from `/home/u556956644/domains/palsync.net/public_html/account` directly to `/home/u556956644/domains/palsync.net/accounting`
-4. Three levels up (`dirname(__DIR__, 3).'/accounting'`) for home-directory private app layouts
-
-If public is separated, `public/index.php` automatically calls:
-```php
-$app->usePublicPath(__DIR__);
-```
-This guarantees that `asset()` URLs, Vite manifests, and file uploads correctly resolve to `public_html/account/`.
-
----
-
-## 3. Initial Production Setup Walkthrough (Linear & Runnable)
-
-Follow these steps in exact chronological order on a clean server:
-
-### Step 3.1: Switch Subdomain PHP Version to 8.4 & Verify CLI PHP
-1. In Hostinger hPanel, navigate to **Websites** → Select `palsync.net` (or manage subdomains).
-2. Go to **Advanced** → **PHP Configuration**.
-3. Select **PHP 8.4** and click **Update** (if updating globally for the domain is desired).
-4. **Subdomain Isolation Note:** If the parent domain (`palsync.net`) hosts other active subdomains running on PHP 8.3, `account.palsync.net` can be safely isolated to PHP 8.4 without impacting sibling sites by setting the CloudLinux Alt-PHP handler in its document root (`public_html/account/.htaccess`):
-   ```apache
-   <FilesMatch "\.(php4|php5|php3|php2|php|phtml)$">
-       SetHandler application/x-httpd-alt-php84
-   </FilesMatch>
-   ```
-   **Important .htaccess Preservation Rule:** The `bin/deploy.sh` script preserves live `.htaccess` directives byte-for-byte. It will never overwrite an existing live `.htaccess` or apply blind `sed` modifications. Instead, it inspects live `.htaccess` to verify that both the Alt-PHP 8.4 handler (`x-httpd-alt-php84`) and the PWA manifest MIME type (`application/manifest+json`) are present. If either is missing or contradictory, deployment fails closed with explicit manual review instructions. On a fresh installation where no live `.htaccess` exists, the script validates reviewed source from `accounting/public/.htaccess` (which includes `AddType application/manifest+json .webmanifest`) before copying it. If Hostinger requires the Alt-PHP 8.4 handler, the operator must review and prepare that directive before running the script; no automatic handler insertion occurs.
-5. **Important distinction:** Web PHP (handled by LiteSpeed/Apache) and SSH CLI PHP may differ on Hostinger shared servers. In SSH, check your CLI version:
+1. **PHP 8.4:** Select PHP 8.4 for `account.palsync.net` in hPanel (or isolate via `SetHandler application/x-httpd-alt-php84` in `public_html/account/.htaccess` while preserving sibling PHP 8.3 subdomains). Use `/opt/alt/php84/usr/bin/php` for all SSH CLI commands (`php -v` in SSH may point to 8.3).
+2. **MySQL Database:** Create DB + user in hPanel → Databases → Management. Connect from PHP via `127.0.0.1:3306` (never `srv*.hstgr.io`).
+3. **Clone & Install Dependencies:**
    ```bash
-   php -v
+   cd /home/u556956644/domains/palsync.net
+   git clone https://github.com/Bassamalsaqqa/account.git accounting
+   cd accounting
+   /opt/alt/php84/usr/bin/php $(which composer) install --no-dev --prefer-dist --optimize-autoloader --no-interaction
    ```
-   If `php -v` shows PHP 8.3 or older, locate and use the Hostinger CloudLinux PHP 8.4 binary:
+4. **Configure `.env` & App Key:**
    ```bash
-   /opt/alt/php84/usr/bin/php -v
+   cp .env.production.example .env
+   # Set exact DB_DATABASE, DB_USERNAME, DB_PASSWORD, SMTP settings, REGISTRATION_ENABLED=false
+   /opt/alt/php84/usr/bin/php artisan key:generate
    ```
-   Use the verified PHP 8.4 path explicitly for every command below. The examples use `/opt/alt/php84/usr/bin/php`; confirm that it exists on this account first.
+5. **Migrations:** Complete [mobile authority migration preflight](SETUP_AND_OPERATIONS_GUIDE.md#mobile-authority-migration-preflight) if pending, then run `/opt/alt/php84/usr/bin/php artisan migrate --force`.
+6. **Frontend Build:** Build locally (`npm run build`), verify `public/build/manifest.json` + zero `.map` files, and copy the complete directory to `accounting/public/build` (never overlay hashed chunks).
+7. **Bootstrap User & Deploy:**
+   ```bash
+   /opt/alt/php84/usr/bin/php artisan app:create-user --name="<Full Name>" --email="<email>" --locale=ar
+   chmod +x bin/deploy.sh
+   PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
+   ```
+   `bin/deploy.sh` leaves **maintenance mode held**. Only reopen after passing [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) and explicit Owner authorization: `/opt/alt/php84/usr/bin/php artisan up`.
+8. **Cron (`* * * * *` in hPanel):**
+   ```bash
+   /opt/alt/php84/usr/bin/php /home/u556956644/domains/palsync.net/accounting/artisan schedule:run >> /dev/null 2>&1
+   ```
 
-### Step 3.2: Create MySQL Production Database
-1. In hPanel, go to **Databases** → **Management**.
-2. Create a new MySQL database:
-   - Provide database name and username. Hostinger will prepend your account username (e.g., `u556956644_...`).
-   - Copy the exact database name and database username from the hPanel dashboard. Do not invent or guess them.
-   - Generate a strong random password (store securely).
-3. The internal database host is always `127.0.0.1` and port is `3306`.
+## 3. Standard Update & Safe Rollback
 
-### Step 3.3: Clone Repository to Private Path
-Connect via SSH to Hostinger:
-```bash
-cd /home/u556956644/domains/palsync.net
-git clone <repository-git-url> accounting
-cd accounting
-```
+### Update
+Follow pre-change backup, fingerprint, and maintenance rules in [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md), checkout the exact accepted release commit (never blind `git pull`), transfer its matching `public/build`, complete [mobile authority migration preflight](SETUP_AND_OPERATIONS_GUIDE.md#mobile-authority-migration-preflight) if needed, and run:
 
-### Step 3.4: Install Composer Production Dependencies under PHP 8.4
-*Crucial Prerequisite:* Artisan commands (`key:generate`, `migrate`, etc.) require `vendor/autoload.php`. Composer must be executed under PHP 8.4 before running any Artisan command:
-```bash
-# Explicitly run Composer using the verified PHP 8.4 binary
-/opt/alt/php84/usr/bin/php $(which composer) install --no-dev --prefer-dist --optimize-autoloader --no-interaction
-```
-If the `composer` target is not a PHP script that runs under the verified PHP binary, use a verified `composer.phar` instead. Do not fall back to a Composer wrapper using an older PHP runtime.
-
-### Step 3.5: Configure Production `.env` and Generate Application Key
-Copy the prepared production template:
-```bash
-cp .env.production.example .env
-```
-Edit `.env` using `nano .env` and configure:
-- `DB_DATABASE=<exact_db_name_from_hpanel>`
-- `DB_USERNAME=<exact_db_user_from_hpanel>`
-- `DB_PASSWORD=<actual_db_password>`
-- `REGISTRATION_ENABLED=false` (public self-registration disabled).
-- **Mail Configuration:** For password reset emails to reach user inboxes, configure a verified SMTP provider (e.g., Hostinger Business Email, Brevo, Postmark, Mailgun):
-  - `MAIL_MAILER=smtp`
-  - `MAIL_HOST=<smtp_host>`
-  - `MAIL_PORT=587`
-  - `MAIL_USERNAME=<smtp_user>`
-  - `MAIL_PASSWORD=<smtp_password>`
-  - `MAIL_ENCRYPTION=tls`
-  *(Note: Leaving `MAIL_MAILER=log` will write password resets to `storage/logs/laravel.log` without sending emails).*
-
-Now generate the encryption key (Artisan is now functional):
-```bash
-/opt/alt/php84/usr/bin/php artisan key:generate
-```
-
-### Step 3.6: Run Database Migrations
-Complete the [mobile authority migration preflight](SETUP_AND_OPERATIONS_GUIDE.md#mobile-authority-migration-preflight) before any release DDL when that migration is pending. Then run the database migrations:
-```bash
-/opt/alt/php84/usr/bin/php artisan migrate --force
-```
-
-### Step 3.7: Supply Pre-compiled Production Frontend Assets
-A fresh Git clone does not include `public/build` (it is `.gitignore`d). Shared hosting does not require and should not run a permanent Node server.
-
-Compile the production assets on your development/CI machine and transfer them to the private application's `public/build` directory:
-```bash
-# On your local machine:
-npm run build
-
-# Transfer into a NEW, private release staging directory, never over an old build:
-scp -r public/build <ssh-host>:<new-private-release-staging>/
-```
-Verify the staged manifest, every referenced file and asset hashes. The build must contain only its manifest and the files referenced by its entries (including imported chunks, CSS and other assets). Under controlled maintenance, replace the private application's whole `public/build` directory with the verified staged directory. Do not merge directories. Temporary archives must stay outside the public root and be removed after verification.
-
-Verify that `/home/u556956644/domains/palsync.net/accounting/public/build/manifest.json` exists before proceeding.
-
-During deployment, `bin/deploy.sh` stages a complete build beside the serving directory, verifies the copied manifest, and replaces the public build using same-filesystem renames while maintenance remains held. It restores the previous build if publication fails, then removes the obsolete build after successful publication. Directories use `0755` and files `0644`. Public-root symlinks are refused; uploads are not affected.
-
-Keep `.git`, `node_modules`, `tests`, `docs`, development configuration, backups, database dumps and archives out of `public_html/account`. The established private Git checkout remains outside the public document root; do not delete its history during an in-place deployment. Inventory private recovery copies as well: retain verified off-host recovery custody before pruning obsolete on-host copies, rather than accumulating unpacked vendor/source trees for every release. Never prune business uploads, credentials, unique files or the only recoverable backup. Record before/after file counts and verify no stale build chunks or temporary deployment files remain publicly served.
-
-For this subdomain, the reviewed rewrite configuration uses `RewriteBase /`. Preserve the live PHP handler and other site-specific directives. If the live file lacks this directive, review and back it up before the explicit configuration update; the deployment script otherwise preserves live `.htaccess` byte-for-byte.
-
-### Step 3.8: Bootstrap Initial Login User
-Because public self-registration is strictly disabled by default, run the interactive user creation command:
-```bash
-/opt/alt/php84/usr/bin/php artisan app:create-user --name="<Full Name>" --email="<user@example.com>" --locale="ar"
-```
-The command will prompt for the password using hidden input (`secret()`) so passwords never appear in shell history, logs, or process lists. It immediately activates and verifies the initial user.
-
-### Step 3.9: Synchronize Public Assets & Warm Caches (Leaves App in Maintenance Mode)
-Run the provided deployment script:
-```bash
-chmod +x bin/deploy.sh
-PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
-```
-The deployment script verifies all runtime prerequisites, non-destructively synchronizes public assets to `public_html/account` while preserving existing live `.htaccess` byte-for-byte, and warms production route, config, view, and event caches.
-
-**Controlled Release Boundary:**
-`bin/deploy.sh` operates under a fail-closed maintenance contract. Upon completion, **the application remains in maintenance mode**. The script does NOT automatically execute `artisan up` or claim the application is live and healthy.
-
-Before bringing the site online, follow the post-deployment verification procedures outlined in `docs/CONTROLLED_RELEASE_CHECKLIST.md`. Only after explicit Owner authorization should the site be brought online:
-```bash
-/opt/alt/php84/usr/bin/php artisan up
-```
-
----
-
-## 4. Automated Cron Job Configuration
-
-Hostinger supports scheduled cron tasks.
-
-In hPanel → **Advanced** → **Cron Jobs**, add a custom cron job:
-- **Type:** Custom
-- **Schedule:** `* * * * *` (Every minute)
-- **Command:**
-  ```bash
-  /opt/alt/php84/usr/bin/php /home/u556956644/domains/palsync.net/accounting/artisan schedule:run >> /dev/null 2>&1
-  ```
-  *(Or `/usr/bin/php` if confirmed to be PHP 8.4+)*.
-
----
-
-## 5. Deployment Update & Rollback Procedures
-
-### Standard Update Workflow
-By default, `bin/deploy.sh` operates conservatively:
-- **No migrations** are executed by default.
-- **No provisioning bootstraps** (`purchasing:bootstrap` or `documents:bootstrap`) are executed by default (UI and frontend asset releases need none).
-- **Maintenance mode is strictly held**: The script does not automatically bring the application up.
-- **Live `.htaccess` is preserved byte-for-byte**: Unrelated directives, custom rewrite rules, the Alt-PHP 8.4 handler, and PWA manifest MIME types are preserved. Missing required directives fail closed with manual review instructions rather than performing blind overwrites.
-
-When an explicit, reviewed release requires database schema or seed updates:
-- Pass `--run-migrations` to execute audited forward migrations (`artisan migrate --force`).
-- Pass `--run-bootstrap` to execute foundation provisioning (`purchasing:bootstrap --all` and `documents:bootstrap --all`).
-- The `--skip-migrate` flag is retained for backward compatibility and behaves identically to the safe default (skipping migrations).
-
-#### Execution Steps:
-1. Record the exact currently deployed and accepted replacement SHAs. Stage the matching replacement build privately. Establish coherent SQL/code/build/public/private-file backup custody, configuration dependencies, protected encryption-key history and known-good rollback artifacts **before** changing source or assets. A local backup does not establish off-host recovery.
-2. Using the current deployed code, enter maintenance under the approved operator scope. Verify its marker and unauthenticated maintenance response. If an owned guard already exists, retain it and its bypass configuration. Stop if it cannot be verified. The new deployment script cannot guard a `git pull` that happened before it ran.
-3. Capture full business-row/schema, private/public-file and configuration fingerprints. Preserve live web configuration independently. Only then update source to the exact accepted revision and transfer its matching `public/build`. Avoid a blind `git pull origin main` that can advance beyond the accepted release.
-4. Run the preparation script under PHP 8.4:
 ```bash
 cd /home/u556956644/domains/palsync.net/accounting
 PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 ```
-Add migration or bootstrap options only for the explicitly reviewed scope. Complete the [mobile authority migration preflight](SETUP_AND_OPERATIONS_GUIDE.md#mobile-authority-migration-preflight) before any release DDL when that migration is pending. The script verifies `.htaccess` custody before dependencies, migrations, caches and asset replacement; symlinked public roots are refused. It preserves an existing maintenance guard and leaves maintenance held.
-5. Complete [the controlled-release checklist](CONTROLLED_RELEASE_CHECKLIST.md): exact identities, full preservation fingerprints, the six real reconciliation domains, fresh logs, authenticated AR/EN/API/Livewire checks and actual HTTPS asset/MIME responses. `/manifest.webmanifest` is a published static public-root file, not a build file. The script does not execute or certify these operational checks.
-6. Only after all gates pass and explicit Owner reopening authorization:
+
+Defaults skip migrations and bootstraps; pass `--run-migrations`, `--run-purchasing-bootstrap`, `--run-documents-bootstrap`, or `--run-bootstrap` only for explicitly reviewed releases. `bin/deploy.sh` preserves live `.htaccess` byte-for-byte (requiring `x-httpd-alt-php84` and `application/manifest+json` for `.webmanifest`), atomically swaps `public_html/account/build`, and leaves maintenance held until `/opt/alt/php84/usr/bin/php artisan up`.
+
+### Rollback
+**NEVER restore an old SQL dump over subsequent live accounting activity or run `migrate:fresh` / `migrate:rollback`.** Retain forward migrations (or author an audited compensating migration):
+
 ```bash
+/opt/alt/php84/usr/bin/php artisan down --render="errors.503" --retry=60
+git checkout <known-good-commit-or-tag>
+/opt/alt/php84/usr/bin/php $(which composer) install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+# Restore matching public/build for that revision, then run deploy.sh without migrations:
+PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
+# Complete release checklist, then under Owner authorization:
 /opt/alt/php84/usr/bin/php artisan up
 ```
-
-### Safe Revision-Controlled Rollback Procedure
-If a deployment needs to be rolled back to a known-good commit or tag:
-1. **Retain or Enter Verified Maintenance Mode:**
-   Keep an already owned maintenance guard and bypass configuration unchanged. Otherwise enter maintenance using the current code and verify the marker and public maintenance response before any rollback source change. Stop on failure.
-   ```bash
-   /opt/alt/php84/usr/bin/php artisan down --render="errors.503" --retry=60
-   ```
-2. **Revert to a Known Good Git Revision / Tag:**
-   Do not use `git reset --hard HEAD~1` as it can discard uncommitted configurations or misidentify the intended target commit. Instead, inspect the history and check out the known-good release tag or commit hash:
-   ```bash
-   git log --oneline -n 5
-   git checkout <known-good-commit-or-tag>
-   ```
-3. **Re-install dependencies under PHP 8.4:**
-   ```bash
-   /opt/alt/php84/usr/bin/php $(which composer) install --no-dev --prefer-dist --optimize-autoloader --no-interaction
-   ```
-4. **Database Schema Considerations:**
-   *CRITICAL ACCOUNTING INVARIANT: NEVER BLINDLY RESTORE DATABASE SNAPSHOTS OVER LIVE DATA.*
-   - In an active accounting system, restoring a past database backup over live tables destroys subsequent financial transactions, party postings, sequences, and immutable audit logs.
-   - **Always preserve forward migrations.** If a release must be rolled back, keep existing applied migrations intact unless an audited, forward-compensating migration is deployed.
-   - Do NOT run blind `migrate:rollback` or `migrate:fresh`. If schema reversal is mandatory, author an audited forward migration that reverses schema elements safely while preserving transactional data.
-5. **Restore Frontend Build Artifacts for Rollback Revision:**
-   Ensure the `public/build` directory contains the build artifacts corresponding to the rollback revision.
-6. **Synchronize Public Assets & Warm Caches:**
-   Run `deploy.sh` (default skips migrations and bootstrap, preserving existing live `.htaccess`):
-   ```bash
-   PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
-   ```
-7. **Verify & Reopen Under Owner Authorization:**
-   Perform the verification checklist in `docs/CONTROLLED_RELEASE_CHECKLIST.md` before reopening:
-   ```bash
-   /opt/alt/php84/usr/bin/php artisan up
-   ```

@@ -1,3 +1,5 @@
+> **HISTORICAL & PROVENANCE NOTES (Slices 1–2):** Documents initial V1 contract mirror and Slice 1/2 security design. Current routes (`routes/mobile-v1.php`, `routes/mobile-v2.php`) remain default **OFF**; see [README.md](../../README.md) and [Mobile V2 Offline Pilot](mobile-v2-offline-sale-pilot.md).
+
 # Mobile V1 Contract Provenance & Backend Integration Notes
 
 ## 1. Mirrored Contract Provenance & Manifest Verification

@@ -1,3 +1,5 @@
+> **HISTORICAL RECORD (FIN-1 Candidate):** Point-in-time PR #69 verification record. See [README.md](../README.md) for current platform status.
+
 # FIN-1 - invoice and immediate settlement
 
 Production/baseline remains `12d32484fbbbdba4df1280e94b4e1891f9e4c44e` (MS-2, enforcement OFF). Development: `feature/fin1-immediate-sales-settlement-20261029`, [draft PR #69](https://github.com/Bassamalsaqqa/account/pull/69).

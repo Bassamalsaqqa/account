@@ -1,3 +1,5 @@
+> **HISTORICAL PROVENANCE RECORD (25 October 2026):** Bounded provenance inventory for upstream Laravel skeleton notices.
+
 # Laravel provenance audit — 2026-10-25
 
 This bounded engineering record addresses [issue #57](https://github.com/Bassamalsaqqa/account/issues/57). It preserves upstream notices; it does not change the commercial policy, determine legal ownership of every contribution, or revoke historical grants.

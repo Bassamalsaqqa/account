@@ -1,3 +1,5 @@
+> **HISTORICAL RECORD (PR88 Corrections):** Point-in-time decision note outside the frozen mirror. See [README.md](../../README.md) for current status.
+
 # PR88 correction decisions (outside the frozen mirror)
 
 Baseline: PR88 `22f0f60d7e69ce6b1d92a9925a823d7c93156497`, based on PR86 `614b1da44ef8715d64a2477e635246f760a3f84c`. Prepared checkout started at `f8a0cf7` and fast-forwarded to the assigned head. No frozen mirror files change.

@@ -1,3 +1,5 @@
+> **HISTORICAL MIGRATION NOTE (17 November 2026):** Documents the initial four-table mobile read API migration boundary (`2026_11_17_000001_create_mobile_read_api_tables.php`); subsequent migrations exist in `database/migrations/` and mobile APIs remain default **OFF**.
+
 # Mobile read API migration boundary
 
 This release installs only four new mobile tables through `2026_11_17_000001_create_mobile_read_api_tables.php`; it never alters `products` or canonical barcodes/tax storage. Offline authority remains disabled and limits unset.

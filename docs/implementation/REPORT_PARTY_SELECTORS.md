@@ -1,3 +1,5 @@
+> **HISTORICAL IMPLEMENTATION HANDOFF (13 November 2026):** Role C report selector handoff at baseline `912aa71`. See [README.md](../../README.md) for current platform status.
+
 # Role C report selectors — implementation handoff
 
 Base: PR87 `912aa71f557b314837e70138df22615902fc9d7b`, branch `t3/report-party-selector-canonical`.
