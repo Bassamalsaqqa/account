@@ -1,6 +1,6 @@
 # Hostinger Production Deployment Guide
 
-- **Status:** The site is live. This release candidate has not been deployed. Record the actual deployed SHA and asset hashes before each update.
+- **Status:** The web release was deployed from `main` on 2026-11-25. Record the actual deployed SHA and asset hashes in operator custody before each update.
 - **Target Account / Subdomain:** `u556956644` / `account.palsync.net` (parent `palsync.net`, Hostinger Shared/Cloud Hosting, lifetime SSL + HTTPS redirect active).
 - **Authoritative Release Gates:** Complete [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) before any live change and before bringing the site out of maintenance.
 

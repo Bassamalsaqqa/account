@@ -1,13 +1,13 @@
 # Phase 10 Backup & Disaster Recovery Runbook
 
-**Status:** Source tooling (`bin/recovery-preflight.php`, `tests/Deployment/recovery-preflight.php`: `46` tests / `113` assertions) is **inspection-only** (`exit 2`, `bootstrap_authorized=false`). **Actual restore, independent key retrieval, and off-host recovery remain NOT VERIFIED** until a completed rehearsal is recorded.
+**Status:** Source tooling (`bin/recovery-preflight.php`, `tests/Deployment/recovery-preflight.php`: `46` tests / `113` assertions) is **inspection-only** (`exit 2`, `bootstrap_authorized=false`). A current off-host production snapshot was restored and migrated forward successfully on 2026-11-25, with matching row/file fingerprints, protected-record decryption, login, and all six reconciliations for both companies. This proves that captured snapshot, not historical compatibility or independent recovery after loss of all application keys. Exact identities and private evidence remain in operator custody.
 
 ## 1. Two Independent Proofs Required
 
 | Lane | Required Proof | Current Status |
 |---|---|---|
 | **Historical compatibility** | Restore pre-Phase-9 baseline (`96c310f30a07e97ab8e04d5afbf0b2bb805f4317`: `80` tables / `61` migrations) and migrate forward to `83` / `63` | **NOT VERIFIED** |
-| **Current disaster recovery** | Restore a current coherent point (SQL + code/build + private uploads + public assets + encrypted issued records + config + external `APP_KEY`/`APP_PREVIOUS_KEYS`) from independent off-host custody after simulated host loss | **NOT VERIFIED** |
+| **Current snapshot recovery** | Restore coherent SQL, code/build, storage and configuration from off-host custody; verify decryption, login, fingerprints and six reconciliations | **VERIFIED 2026-11-25** for the captured snapshot; independent key-loss recovery remains unverified |
 
 For releases outside the inspector's legacy baseline list, operators MUST supply explicit external release pins at runtime (`--mode=current --expected-code=<40hex> --expected-build-sha256=<64hex> --expected-tables=<int> --expected-migrations=<int> --manifest-sha256=<64hex>`). Archives/manifests never self-select trusted identity, so release commits never require self-referential SHA allowlists.
 
