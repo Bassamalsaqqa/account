@@ -68,17 +68,29 @@ final class SalesDocumentRules
         return $selected;
     }
 
-    public function price(Product $product, ProductUnit $unit, User $actor, BigDecimal $rate, string $currency, BigDecimal $requested): void
+    /** Write precision for sales documents created before currency precision was persisted. */
+    public static function legacyCurrencyMinorUnits(string $currencyCode): int
     {
-        $suggestion = $unit->default_sale_price_base;
-        if ($suggestion === null && $product->default_sale_price_base !== null) {
-            $suggestion = (string) BigDecimal::of((string) $product->default_sale_price_base)->multipliedBy($unit->conversion_to_base);
+        return in_array($currencyCode, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+    }
+
+    public function suggestedPrice(Product $product, ProductUnit $unit, BigDecimal $rate): ?BigDecimal
+    {
+        $base = $unit->default_sale_price_base;
+        if ($base === null && $product->default_sale_price_base !== null) {
+            $base = (string) BigDecimal::of($product->default_sale_price_base)->multipliedBy($unit->conversion_to_base);
         }
+
+        return $base === null ? null : BigDecimal::of($base)->dividedBy($rate, 2, RoundingMode::HALF_UP);
+    }
+
+    public function price(Product $product, ProductUnit $unit, User $actor, BigDecimal $rate, BigDecimal $requested): void
+    {
         if ($actor->hasPermissionTo('sales.invoice.change_price')) {
             return;
         }
-        if ($suggestion === null || ! $requested->toScale($currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP)
-            ->isEqualTo(BigDecimal::of((string) $suggestion)->dividedBy($rate, $currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP))) {
+        $suggestion = $this->suggestedPrice($product, $unit, $rate);
+        if ($suggestion === null || ! $requested->isEqualTo($suggestion)) {
             throw new AuthorizationException('Manual price permission is required when there is no matching suggested price.');
         }
     }

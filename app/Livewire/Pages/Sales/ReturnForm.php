@@ -10,7 +10,9 @@ use App\Models\Company;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
+use App\Models\SalesReturnLine;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesReturnAmounts;
 use App\Support\DocumentIdentity;
 use App\Support\QuantityStep;
 use App\Support\Tenancy\CompanyContext;
@@ -55,6 +57,24 @@ class ReturnForm extends Component
      */
     public array $lines = [];
 
+    public string $currencyCode = '';
+
+    public ?string $preReturnTotal = null;
+
+    public ?string $returnSubtotal = null;
+
+    public ?string $returnDiscount = null;
+
+    public ?string $returnTax = null;
+
+    public ?string $returnTotal = null;
+
+    public ?string $postReturnTotal = null;
+
+    public bool $hasReturnQuantities = false;
+
+    public ?string $returnCalculationError = null;
+
     public function boot(CompanyContext $context): void
     {
         if (isset($this->pageCompanyId)) {
@@ -96,6 +116,7 @@ class ReturnForm extends Component
                 $line['return_quantity'] = (string) ($quantities[$line['sales_invoice_line_id']] ?? '0');
             }
             unset($line);
+            $this->recalculateTotals();
 
             return;
         }
@@ -111,10 +132,18 @@ class ReturnForm extends Component
         $this->loadInvoiceLines();
     }
 
+    public function updated(string $property): void
+    {
+        if (str_starts_with($property, 'lines.') && str_ends_with($property, '.return_quantity')) {
+            $this->recalculateTotals();
+        }
+    }
+
     public function loadInvoiceLines(): void
     {
         if ($this->sales_invoice_id === null) {
             $this->lines = [];
+            $this->resetTotals();
 
             return;
         }
@@ -127,21 +156,27 @@ class ReturnForm extends Component
 
         if ($invoice === null || ! $invoice->isPosted()) {
             $this->lines = [];
+            $this->resetTotals();
 
             return;
         }
 
         $this->lines = [];
 
-        foreach ($invoice->lines as $line) {
-            $alreadyReturned = DB::table('sales_return_lines')
-                ->join('sales_returns', 'sales_return_lines.sales_return_id', '=', 'sales_returns.id')
-                ->where('sales_returns.status', SalesReturn::STATUS_POSTED)
-                ->where('sales_return_lines.sales_invoice_line_id', $line->id)
-                ->sum('sales_return_lines.quantity');
+        $lineIds = $invoice->lines->pluck('id')->all();
+        $priorReturnsByLine = empty($lineIds) ? collect() : DB::table('sales_return_lines')
+            ->join('sales_returns', 'sales_return_lines.sales_return_id', '=', 'sales_returns.id')
+            ->where('sales_returns.company_id', $company->id)
+            ->where('sales_returns.status', SalesReturn::STATUS_POSTED)
+            ->whereIn('sales_return_lines.sales_invoice_line_id', $lineIds)
+            ->select('sales_return_lines.sales_invoice_line_id', DB::raw('SUM(sales_return_lines.quantity) as total_returned'))
+            ->groupBy('sales_return_lines.sales_invoice_line_id')
+            ->pluck('total_returned', 'sales_invoice_line_id');
 
+        foreach ($invoice->lines as $line) {
+            $alreadyReturned = (string) ($priorReturnsByLine[$line->id] ?? '0');
             $lineQty = BigDecimal::of((string) $line->quantity);
-            $priorQty = BigDecimal::of((string) ($alreadyReturned ?: 0));
+            $priorQty = BigDecimal::of($alreadyReturned);
             $maxReturnable = $lineQty->minus($priorQty);
 
             if ($maxReturnable->isPositive()) {
@@ -158,6 +193,8 @@ class ReturnForm extends Component
                 ];
             }
         }
+
+        $this->recalculateTotals();
     }
 
     /**
@@ -226,7 +263,8 @@ class ReturnForm extends Component
             }
         }
 
-        if (! is_string($expectedQuantity) || preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', trim($expectedQuantity)) !== 1) {
+        $trimmedExpected = is_string($expectedQuantity) ? trim($expectedQuantity) : null;
+        if ($trimmedExpected === null || ($trimmedExpected !== '' && preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $trimmedExpected) !== 1)) {
             return $refuse(__('mobile.quantity_stale'));
         }
 
@@ -337,6 +375,7 @@ class ReturnForm extends Component
         $formatted = $maxDecimals > 0 ? (string) $currentBd : (string) $currentBd->toBigInteger();
         $this->lines[$index]['return_quantity'] = $formatted;
         $this->resetErrorBag("lines.{$index}.return_quantity");
+        $this->recalculateTotals();
 
         return ['ok' => true, 'quantity' => $formatted, 'minimumReached' => $currentBd->isZero()];
     }
@@ -418,6 +457,184 @@ class ReturnForm extends Component
         $formatted = $maxDecimals > 0 ? (string) $freshMaxReturnable : (string) $freshMaxReturnable->toBigInteger();
         $this->lines[$index]['return_quantity'] = $formatted;
         $this->resetErrorBag("lines.{$index}.return_quantity");
+        $this->recalculateTotals();
+    }
+
+    public function recalculate(): void
+    {
+        $this->recalculateTotals();
+    }
+
+    public function recalculateTotals(): void
+    {
+        if ($this->sales_invoice_id === null) {
+            $this->resetTotals();
+
+            return;
+        }
+
+        $company = app(CompanyContext::class)->company();
+        /** @var SalesInvoice|null $invoice */
+        $invoice = SalesInvoice::where('company_id', $company->id)
+            ->where('id', $this->sales_invoice_id)
+            ->where('status', SalesInvoice::STATUS_POSTED)
+            ->first();
+
+        if ($invoice === null) {
+            $this->resetTotals();
+
+            return;
+        }
+
+        $this->currencyCode = (string) $invoice->currency_code;
+
+        $priorReturnsQuery = DB::table('sales_returns')
+            ->where('company_id', $company->id)
+            ->where('sales_invoice_id', $this->sales_invoice_id)
+            ->where('status', SalesReturn::STATUS_POSTED);
+
+        if ($this->draftPublicId !== null) {
+            $priorReturnsQuery->where('public_id', '!=', $this->draftPublicId);
+        }
+
+        $priorReturnsTotal = (string) $priorReturnsQuery->sum('grand_total_currency');
+
+        $origInvoiceTotal = BigDecimal::of((string) $invoice->grand_total_currency);
+        $preReturn = $origInvoiceTotal->minus(BigDecimal::of($priorReturnsTotal ?: '0'));
+        $this->preReturnTotal = (string) $preReturn->toScale(6);
+
+        $sourceLineIds = [];
+        foreach ($this->lines as $line) {
+            $sourceLineIds[] = (int) $line['sales_invoice_line_id'];
+        }
+
+        if (empty($sourceLineIds)) {
+            $this->resetCalculatedTotals();
+
+            return;
+        }
+
+        $salesReturnAmounts = app(SalesReturnAmounts::class);
+        $sourceLines = SalesInvoiceLine::where('company_id', $company->id)
+            ->where('sales_invoice_id', $this->sales_invoice_id)
+            ->whereIn('id', $sourceLineIds)
+            ->get()
+            ->keyBy('id');
+
+        $allPriorReturnLines = SalesReturnLine::where('company_id', $company->id)
+            ->whereIn('sales_invoice_line_id', $sourceLines->keys())
+            ->when($this->draftPublicId !== null, fn ($q) => $q->whereHas('salesReturn', fn ($r) => $r->where('public_id', '!=', $this->draftPublicId)))
+            ->whereHas('salesReturn', fn ($q) => $q->where('company_id', $company->id)->where('status', SalesReturn::STATUS_POSTED))
+            ->get()
+            ->groupBy('sales_invoice_line_id');
+
+        $returnSubtotal = BigDecimal::zero();
+        $returnDiscount = BigDecimal::zero();
+        $returnTax = BigDecimal::zero();
+        $returnTotal = BigDecimal::zero();
+        $hasPositiveReturn = false;
+
+        foreach ($this->lines as $line) {
+            $qtyStr = trim((string) $line['return_quantity']);
+            if ($qtyStr === '' || $qtyStr === '0') {
+                continue;
+            }
+
+            if (preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $qtyStr) !== 1) {
+                $this->returnCalculationError = __('sales.invalid_return_quantity');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            try {
+                $qty = BigDecimal::of($qtyStr);
+            } catch (\Throwable) {
+                $this->returnCalculationError = __('sales.invalid_return_quantity');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            if (! $qty->isPositive()) {
+                continue;
+            }
+
+            $salesInvoiceLineId = (int) $line['sales_invoice_line_id'];
+            $sourceLine = $sourceLines->get($salesInvoiceLineId);
+            if ($sourceLine === null) {
+                $this->returnCalculationError = __('refinement.source_line_not_found');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            $priorLinesForLine = $allPriorReturnLines->get($sourceLine->id, collect());
+            $priorQty = BigDecimal::zero();
+            foreach ($priorLinesForLine as $prev) {
+                $priorQty = $priorQty->plus($prev->quantity);
+            }
+            $serverMaxReturnable = BigDecimal::max('0', BigDecimal::of((string) $sourceLine->quantity)->minus($priorQty));
+
+            if ($qty->isGreaterThan($serverMaxReturnable)) {
+                $this->returnCalculationError = __('sales.return_quantity_exceeds_remaining');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            try {
+                $lineAmounts = $salesReturnAmounts->calculateLine(
+                    $sourceLine,
+                    $qty,
+                    $priorLinesForLine,
+                    $invoice
+                );
+                $returnSubtotal = $returnSubtotal->plus($lineAmounts['subtotal']);
+                $returnDiscount = $returnDiscount->plus($lineAmounts['discount']);
+                $returnTax = $returnTax->plus($lineAmounts['tax']);
+                $returnTotal = $returnTotal->plus($lineAmounts['total']);
+                $hasPositiveReturn = true;
+            } catch (\Throwable) {
+                $this->returnCalculationError = __('sales.return_calculation_failed');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+        }
+
+        if (! $hasPositiveReturn) {
+            $this->returnCalculationError = null;
+            $this->resetCalculatedTotals();
+
+            return;
+        }
+
+        $this->returnCalculationError = null;
+        $this->hasReturnQuantities = $hasPositiveReturn;
+        $this->returnSubtotal = (string) $returnSubtotal->toScale(6);
+        $this->returnDiscount = (string) $returnDiscount->toScale(6);
+        $this->returnTax = (string) $returnTax->toScale(6);
+        $this->returnTotal = (string) $returnTotal->toScale(6);
+        $this->postReturnTotal = (string) $preReturn->minus($returnTotal)->toScale(6);
+    }
+
+    private function resetCalculatedTotals(): void
+    {
+        $this->returnSubtotal = null;
+        $this->returnDiscount = null;
+        $this->returnTax = null;
+        $this->returnTotal = null;
+        $this->postReturnTotal = null;
+        $this->hasReturnQuantities = false;
+    }
+
+    private function resetTotals(): void
+    {
+        $this->currencyCode = '';
+        $this->preReturnTotal = null;
+        $this->returnCalculationError = null;
+        $this->resetCalculatedTotals();
     }
 
     public function save(
@@ -477,7 +694,29 @@ class ReturnForm extends Component
         ];
 
         $existing = $this->draftPublicId === null ? null : SalesReturn::where('company_id', $company->id)->where('public_id', $this->draftPublicId)->firstOrFail();
-        $return = $createAction->execute($company, $user, $payload, $existing);
+        try {
+            $return = $createAction->execute($company, $user, $payload, $existing);
+        } catch (\InvalidArgumentException $e) {
+            $matchedField = false;
+            if (preg_match('/for line \[(\d+)\]/', $e->getMessage(), $matches)) {
+                $failedLineId = (int) $matches[1];
+                foreach ($this->lines as $idx => $l) {
+                    if ((int) $l['sales_invoice_line_id'] === $failedLineId) {
+                        $this->addError("lines.{$idx}.return_quantity", __('sales.return_quantity_exceeds_remaining'));
+                        $matchedField = true;
+                        break;
+                    }
+                }
+            }
+            if (! $matchedField) {
+                $msg = str_contains($e->getMessage(), 'exceeds maximum returnable quantity')
+                    ? __('sales.return_quantity_exceeds_remaining')
+                    : $e->getMessage();
+                $this->addError('lines', $msg);
+            }
+
+            return null;
+        }
 
         if ($andPost) {
             try {

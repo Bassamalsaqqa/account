@@ -202,7 +202,6 @@
                             <th class="py-2 px-2 text-start w-24">{{ __('sales.unit') }}</th>
                             <th class="py-2 px-2 text-start w-36">{{ __('sales.quantity') }}</th>
                             <th class="py-2 px-2 text-start w-24">{{ __('sales.unit_price') }}</th>
-                            <th class="py-2 px-2 text-start w-32">{{ __('sales.discount') }}</th>
                             @if ($taxes->isNotEmpty())
                                 <th class="py-2 px-2 text-start w-28">{{ __('sales.tax') }}</th>
                             @endif
@@ -241,6 +240,24 @@
                                            required
                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-sm text-text-primary"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.item_description') <span id="invoice-desktop-line-{{ $index }}-item-description-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
 
+                                    @php
+                                        $hasLegacyDiscount = false;
+                                        if (($line['discount_type'] ?? 'none') !== 'none' && ! empty($line['discount_value'])) {
+                                            try {
+                                                $hasLegacyDiscount = \Brick\Math\BigDecimal::of((string) $line['discount_value'])->isPositive();
+                                            } catch (\Throwable) {
+                                                $hasLegacyDiscount = false;
+                                            }
+                                        }
+                                    @endphp
+                                    @if($hasLegacyDiscount)
+                                        <div class="mt-1">
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-xs font-medium">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                                {{ __('sales.legacy_discount_badge', ['value' => $line['discount_value'] . ($line['discount_type'] === 'percent' ? '%' : ' ' . $currency_code)]) }}
+                                            </span>
+                                        </div>
+                                    @endif
 </div>
 </td>
 
@@ -249,7 +266,7 @@
                                         <select id="invoice-desktop-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)"
                                                 class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
                                             @foreach ($selectedProduct->productUnits as $pu)
-                                                <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
+                                                 <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
                                                     {{ $pu->unit?->name() ?? $pu->unit?->code ?? 'Unit' }}
                                                 </option>
                                             @endforeach
@@ -290,28 +307,6 @@
                                            @if (! $canChangePrice) readonly title="{{ __('sales.price_permission_required') }}" @endif
                                            class="w-full h-8 px-2 rounded-control border border-border bg-canvas text-sm font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/>
 <x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" /> @error('lines.'.$index.'.unit_price') <span id="invoice-desktop-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                                </td>
-
-                                <td class="py-2 px-2 align-top space-y-1">
-                                    <div class="flex gap-1">
-                                        <select id="invoice-desktop-line-{{ $index }}-discount-type" aria-label="{{ __('sales.discount_type') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_type') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-discount-type-error" @enderror wire:model.change="lines.{{ $index }}.discount_type"
-                                                wire:change="recalculate"
-                                                @if (! $canChangeDiscount) disabled title="{{ __('sales.discount_permission_required') }}" @endif
-                                                class="w-20 h-8 px-1 rounded-control border border-border bg-canvas text-sm {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" :disabled="documentBusy || saving || {{ ! $canChangeDiscount ? 'true' : 'false' }}">
-                                            <option value="none">{{ __('sales.none') }}</option>
-                                            <option value="fixed">{{ __('sales.fixed') }}</option>
-                                            <option value="percent">%</option>
-                                        </select> @error('lines.'.$index.'.discount_type') <span id="invoice-desktop-line-{{ $index }}-discount-type-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                                        @if (($line['discount_type'] ?? 'none') !== 'none')
-                                            <input id="invoice-desktop-line-{{ $index }}-discount-value" aria-label="{{ __('sales.discount_val') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_value') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-discount-value-error" @enderror type="number" inputmode="decimal"
-                                                   step="any"
-                                                   wire:model.blur="lines.{{ $index }}.discount_value"
-                                                   wire:change="recalculate"
-                                                   dir="ltr"
-                                                   @if (! $canChangeDiscount) readonly @endif
-                                                   class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-sm font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.discount_value') <span id="invoice-desktop-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                                        @endif
-                                    </div>
                                 </td>
 
                                 @if ($taxes->isNotEmpty())
@@ -357,10 +352,26 @@
                 @foreach ($lines as $index => $line)
                     @php
                         $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
+                        $hasLegacyDiscount = false;
+                        if (($line['discount_type'] ?? 'none') !== 'none' && ! empty($line['discount_value'])) {
+                            try {
+                                $hasLegacyDiscount = \Brick\Math\BigDecimal::of((string) $line['discount_value'])->isPositive();
+                            } catch (\Throwable) {
+                                $hasLegacyDiscount = false;
+                            }
+                        }
                     @endphp
                     <div wire:key="inv-card-{{ $index }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
                         <div class="flex items-center justify-between">
-                            <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
+                                @if($hasLegacyDiscount)
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-xs font-medium">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                        {{ __('sales.legacy_discount_badge', ['value' => $line['discount_value'] . ($line['discount_type'] === 'percent' ? '%' : ' ' . $currency_code)]) }}
+                                    </span>
+                                @endif
+                            </div>
                             @if (count($lines) > 1)
                                 <button type="button" wire:click="removeLine({{ $index }})" class="min-h-[44px] px-3 text-danger text-sm font-bold cursor-pointer hover:bg-danger/10 rounded-control inline-flex items-center" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                                     {{ __('sales.remove_line') }}
@@ -434,43 +445,19 @@
                             </div>
                         </div>
 
-                        <!-- Unit Price & Discount -->
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label for="invoice-mobile-line-{{ $index }}-unit-price" class="block text-sm font-bold text-text-secondary">{{ __('sales.unit_price') }}</label>
-                                <input id="invoice-mobile-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-unit-price-error" @enderror type="number" inputmode="decimal"
-                                       step="any"
-                                       wire:model.blur="lines.{{ $index }}.unit_price"
-                                       wire:change="recalculate"
-                                       required
-                                       min="0"
-                                       dir="ltr"
-                                       @if (! $canChangePrice) readonly @endif
-                                       class="w-full h-8 px-2 rounded-control border border-border bg-surface text-sm font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/>
+                        <!-- Unit Price -->
+                        <div>
+                            <label for="invoice-mobile-line-{{ $index }}-unit-price" class="block text-sm font-bold text-text-secondary">{{ __('sales.unit_price') }}</label>
+                            <input id="invoice-mobile-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-unit-price-error" @enderror type="number" inputmode="decimal"
+                                   step="any"
+                                   wire:model.blur="lines.{{ $index }}.unit_price"
+                                   wire:change="recalculate"
+                                   required
+                                   min="0"
+                                   dir="ltr"
+                                   @if (! $canChangePrice) readonly @endif
+                                   class="w-full h-8 px-2 rounded-control border border-border bg-surface text-sm font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/>
 <x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" /> @error('lines.'.$index.'.unit_price') <span id="invoice-mobile-line-{{ $index }}-unit-price-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                            </div>
-                            <div>
-                                <label for="invoice-mobile-line-{{ $index }}-discount-type" class="block text-sm font-bold text-text-secondary">{{ __('sales.discount') }}</label>
-                                <div class="flex gap-1">
-                                    <select id="invoice-mobile-line-{{ $index }}-discount-type" aria-label="{{ __('sales.discount_type') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_type') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-discount-type-error" @enderror wire:model.change="lines.{{ $index }}.discount_type"
-                                            wire:change="recalculate"
-                                            @if (! $canChangeDiscount) disabled @endif
-                                            class="w-16 h-8 px-1 rounded-control border border-border bg-surface text-sm {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}" :disabled="documentBusy || saving || {{ ! $canChangeDiscount ? 'true' : 'false' }}">
-                                        <option value="none">{{ __('sales.none') }}</option>
-                                        <option value="fixed">{{ __('sales.fixed') }}</option>
-                                        <option value="percent">%</option>
-                                    </select> @error('lines.'.$index.'.discount_type') <span id="invoice-mobile-line-{{ $index }}-discount-type-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                                    @if (($line['discount_type'] ?? 'none') !== 'none')
-                                        <input id="invoice-mobile-line-{{ $index }}-discount-value" aria-label="{{ __('sales.discount_val') }} {{ $index + 1 }}" @error('lines.'.$index.'.discount_value') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-discount-value-error" @enderror type="number" inputmode="decimal"
-                                               step="any"
-                                               wire:model.blur="lines.{{ $index }}.discount_value"
-                                               wire:change="recalculate"
-                                               dir="ltr"
-                                               @if (! $canChangeDiscount) readonly @endif
-                                               class="w-full h-8 px-1.5 rounded-control border border-border bg-surface text-sm font-mono {{ ! $canChangeDiscount ? 'opacity-70 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/> @error('lines.'.$index.'.discount_value') <span id="invoice-mobile-line-{{ $index }}-discount-value-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                                    @endif
-                                </div>
-                            </div>
                         </div>
 
                         @if ($taxes->isNotEmpty())
@@ -530,10 +517,66 @@
                     <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
                     <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
                 </div>
-                <div class="flex justify-between py-1 border-b border-border/50">
-                    <span class="text-text-muted">{{ __('sales.discount') }}:</span>
-                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewDiscountTotal, $currency_code) }} {{ $currency_code }}</span>
-                </div>
+
+                <!-- Global Document Discount Control -->
+                @if($canChangeDiscount && $discount_scope === 'document')
+                    <div class="py-2 border-b border-border/50">
+                        @if (! $showDiscountControl)
+                            <div class="flex items-center justify-between">
+                                <span class="text-text-muted text-xs">{{ __('sales.discount') }}</span>
+                                <button type="button" wire:click="toggleDiscountControl" aria-expanded="false" aria-controls="sales-document-discount-container" class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer min-h-[44px] min-w-[44px] py-2">
+                                    + {{ __('sales.add_discount') }}
+                                </button>
+                            </div>
+                        @else
+                            <div id="sales-document-discount-container" class="p-2.5 bg-surface rounded-control border border-border space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-text-primary">{{ __('sales.document_discount') }}</span>
+                                    <button type="button" wire:click="toggleDiscountControl" aria-expanded="true" aria-controls="sales-document-discount-container" class="text-xs text-danger hover:underline cursor-pointer min-h-[44px] min-w-[44px] inline-flex items-center justify-center p-2">
+                                        ✕ {{ __('sales.remove_discount') }}
+                                    </button>
+                                </div>
+                                <div class="grid @if($discount_type !== 'none') grid-cols-2 @else grid-cols-1 @endif gap-2">
+                                    <div>
+                                        <label for="sales-discount-type" class="block text-[11px] text-text-secondary mb-0.5">{{ __('sales.discount') }}</label>
+                                        <select id="sales-discount-type" wire:model.live="discount_type" wire:change="recalculate" class="w-full h-8 px-2 border border-border bg-canvas rounded-control text-xs" :disabled="documentBusy || saving">
+                                            <option value="none">{{ __('sales.discount_none') }}</option>
+                                            <option value="percent">{{ __('sales.discount_percent') }}</option>
+                                            <option value="fixed">{{ __('sales.discount_fixed') }}</option>
+                                        </select>
+                                    </div>
+                                    @if ($discount_type !== 'none')
+                                        <div>
+                                            <label for="sales-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('sales.discount_value') }}</label>
+                                            <input id="sales-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="sales-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" wire:change="recalculate" class="w-full h-8 px-2 border border-border bg-canvas rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
+                                        </div>
+                                    @endif
+                                </div>
+                                @error('discount_value')
+                                    <span x-init="$nextTick(() => document.getElementById('sales-discount-value')?.focus())"></span>
+                                    <span id="sales-discount-value-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span>
+                                @enderror
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
+                @php
+                    $hasDiscountAmount = false;
+                    if ($documentTotalsValid && isset($previewDiscountTotal) && $previewDiscountTotal !== '') {
+                        try {
+                            $hasDiscountAmount = \Brick\Math\BigDecimal::of($previewDiscountTotal)->isPositive();
+                        } catch (\Throwable) {
+                            $hasDiscountAmount = false;
+                        }
+                    }
+                @endphp
+                @if($hasDiscountAmount)
+                    <div class="flex justify-between py-1 border-b border-border/50 text-danger">
+                        <span>{{ ($discount_scope ?? 'document') === 'line' ? __('sales.manual_discount') : __('sales.discount') }}:</span>
+                        <span class="font-mono font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewDiscountTotal, $currency_code) }} {{ $currency_code }}</span>
+                    </div>
+                @endif
                 <div class="flex justify-between py-1 border-b border-border/50">
                     <span class="text-text-muted">{{ __('sales.tax') }}:</span>
                     <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewTaxTotal, $currency_code) }} {{ $currency_code }}</span>

@@ -309,7 +309,7 @@ final class AiFormCorrections
                 app(PurchaseDocumentRules::class)->selectedUnit($product, $line['product_unit_id'], $line['quantity']);
             } else {
                 $unit = $rules->selectedUnit($product, $line['product_unit_id'], Quantity::of($line['quantity']));
-                $rules->price($product, $unit, $actor, $rate, $payload['currency_code'], BigDecimal::of($line['unit_price']));
+                $rules->price($product, $unit, $actor, $rate, BigDecimal::of($line['unit_price']));
             }
             if ($line['tax_rate_id'] !== null && ! TaxRate::where('company_id', $company->id)->where('active', true)->whereKey($line['tax_rate_id'])->exists()) {
                 throw new AssistantUnavailable('choice_invalid');

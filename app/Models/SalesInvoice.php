@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -37,6 +38,12 @@ use Illuminate\Support\Str;
  * @property string $discount_total_currency
  * @property string $tax_total_currency
  * @property string $grand_total_currency
+ * @property int|null $currency_minor_units
+ * @property string|null $discount_type
+ * @property string|null $discount_value
+ * @property string $discount_scope
+ * @property string $discount_basis
+ * @property int $discount_calculation_version
  * @property string|null $notes
  * @property string|null $terms
  * @property string $document_locale
@@ -88,6 +95,12 @@ class SalesInvoice extends Model
         'warehouse_id',
         'quotation_id',
         'currency_code',
+        'currency_minor_units',
+        'discount_type',
+        'discount_value',
+        'discount_scope',
+        'discount_basis',
+        'discount_calculation_version',
         'exchange_rate',
         'issue_date',
         'due_date',
@@ -125,6 +138,9 @@ class SalesInvoice extends Model
         return [
             'issue_date' => 'date:Y-m-d',
             'due_date' => 'date:Y-m-d',
+            'currency_minor_units' => 'integer',
+            'discount_value' => 'string',
+            'discount_calculation_version' => 'integer',
             'exchange_rate' => 'string',
             'subtotal_base' => 'string',
             'discount_total_base' => 'string',
@@ -140,6 +156,11 @@ class SalesInvoice extends Model
             'posted_at' => 'datetime',
             'voided_at' => 'datetime',
         ];
+    }
+
+    public function resolvedCurrencyMinorUnits(): int
+    {
+        return $this->currency_minor_units ?? SalesDocumentRules::legacyCurrencyMinorUnits($this->currency_code);
     }
 
     private bool $completingPost = false;

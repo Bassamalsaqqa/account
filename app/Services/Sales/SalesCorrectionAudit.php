@@ -53,12 +53,21 @@ final class SalesCorrectionAudit
             }
         }
         foreach (DB::table('sales_invoice_lines as l')->join('sales_invoices as i', 'i.id', '=', 'l.sales_invoice_id')
-            ->where('i.company_id', $companyId)->get(['l.*', 'i.currency_code', 'i.exchange_rate']) as $line) {
+            ->where('i.company_id', $companyId)->get(['l.*', 'i.currency_code', 'i.exchange_rate', 'i.currency_minor_units']) as $line) {
             try {
+                $discountType = $line->discount_type;
+                $discountValue = $line->discount_value ?? '0';
+                if (isset($line->allocated_document_discount) && BigDecimal::of((string) $line->allocated_document_discount)->isPositive()) {
+                    $discountType = 'fixed';
+                    $discountValue = (string) $line->allocated_document_discount;
+                }
+                $minorUnits = isset($line->currency_minor_units)
+                    ? (int) $line->currency_minor_units
+                    : SalesDocumentRules::legacyCurrencyMinorUnits($line->currency_code);
                 $result = app(SalesLineCalculator::class)->calculate(new SalesLineCalculationInput(
-                    quantity: $line->quantity, unitPrice: $line->unit_price, discountType: $line->discount_type,
-                    discountValue: $line->discount_value ?? '0', taxRate: $line->tax_rate_snapshot, taxInclusive: (bool) $line->tax_inclusive,
-                    currencyMinorUnits: $line->currency_code === 'JOD' ? 3 : 2, exchangeRate: $line->exchange_rate));
+                    quantity: $line->quantity, unitPrice: $line->unit_price, discountType: $discountType,
+                    discountValue: $discountValue, taxRate: $line->tax_rate_snapshot, taxInclusive: (bool) $line->tax_inclusive,
+                    currencyMinorUnits: $minorUnits, exchangeRate: $line->exchange_rate));
                 if (! $result->tax->isEqualTo($line->line_tax) || ! $result->total->isEqualTo($line->line_total)) {
                     $errors[] = "Invoice line [{$line->id}] exact percentage-point tax calculation mismatch.";
                 }

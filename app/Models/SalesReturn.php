@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\BelongsToCompany;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
@@ -22,6 +23,7 @@ use Illuminate\Support\Str;
  * @property int|null $sales_invoice_id
  * @property int $customer_id
  * @property int|null $warehouse_id
+ * @property int|null $currency_minor_units
  * @property string $currency_code
  * @property string $exchange_rate
  * @property \Illuminate\Support\Carbon|Carbon|string $issue_date
@@ -78,6 +80,7 @@ class SalesReturn extends Model
         'customer_id',
         'warehouse_id',
         'currency_code',
+        'currency_minor_units',
         'exchange_rate',
         'issue_date',
         'status',
@@ -112,6 +115,7 @@ class SalesReturn extends Model
     protected function casts(): array
     {
         return [
+            'currency_minor_units' => 'integer',
             'issue_date' => 'date:Y-m-d',
             'exchange_rate' => 'string',
             'subtotal_base' => 'string',
@@ -128,6 +132,11 @@ class SalesReturn extends Model
             'posted_at' => 'datetime',
             'voided_at' => 'datetime',
         ];
+    }
+
+    public function resolvedCurrencyMinorUnits(): int
+    {
+        return $this->currency_minor_units ?? SalesDocumentRules::legacyCurrencyMinorUnits($this->currency_code);
     }
 
     private bool $completingPost = false;

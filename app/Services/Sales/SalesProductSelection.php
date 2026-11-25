@@ -16,21 +16,19 @@ use Illuminate\Support\Facades\DB;
 final class SalesProductSelection
 {
     /** @return array{product_id: int, product_unit_id: int, item_description: string, unit_price: string, available_quantity: ?string} */
-    public function select(int $productId, ?int $unitId, string $currency, string $exchangeRate, ?int $warehouseId = null): array
+    public function select(int $productId, ?int $unitId, string $exchangeRate, ?int $warehouseId = null): array
     {
         $company = app(CompanyContext::class)->company();
 
-        return DB::transaction(function () use ($company, $productId, $unitId, $currency, $exchangeRate, $warehouseId): array {
+        return DB::transaction(function () use ($company, $productId, $unitId, $exchangeRate, $warehouseId): array {
             $product = Product::where('company_id', $company->id)->findOrFail($productId);
-            $unit = app(SalesDocumentRules::class)->selectedUnit($product, $unitId, Quantity::of('1'));
+            $rules = app(SalesDocumentRules::class);
+            $unit = $rules->selectedUnit($product, $unitId, Quantity::of('1'));
             $rate = BigDecimal::of($exchangeRate);
             if (! $rate->isPositive()) {
                 throw new \InvalidArgumentException('A positive exchange rate is required.');
             }
-            $basePrice = $unit->default_sale_price_base === null
-                ? BigDecimal::of($product->default_sale_price_base ?? '0')->multipliedBy($unit->conversion_to_base)
-                : BigDecimal::of($unit->default_sale_price_base);
-            $price = $basePrice->dividedBy($rate, $currency === 'JOD' ? 3 : 2, RoundingMode::HALF_UP);
+            $price = $rules->suggestedPrice($product, $unit, $rate) ?? BigDecimal::zero()->toScale(2);
             $available = null;
             if ($product->track_stock) {
                 $query = InventoryBalance::where('company_id', $company->id)->where('product_id', $productId);

@@ -40,6 +40,11 @@ final class SalesDraftIntent
         'notes',
         'terms',
         'document_locale',
+        'discount_type',
+        'discount_value',
+        'discount_scope',
+        'discount_basis',
+        'discount_calculation_version',
         'lines',
     ];
 
@@ -52,6 +57,8 @@ final class SalesDraftIntent
         'discount_type',
         'discount_value',
         'tax_rate_id',
+        'manual_discount_amount',
+        'allocated_document_discount',
     ];
 
     /**
@@ -75,7 +82,7 @@ final class SalesDraftIntent
         // 1. Reject unknown header keys
         foreach (array_keys($payload) as $key) {
             if (! in_array($key, self::ALLOWED_HEADER_KEYS, true)) {
-                throw new InvalidArgumentException('Unknown header field present.');
+                throw new InvalidArgumentException("Unknown header field [{$key}].");
             }
         }
 
@@ -185,6 +192,48 @@ final class SalesDraftIntent
                     throw new InvalidArgumentException('Field [document_locale] must be "ar" or "en".');
                 }
                 $canonical['document_locale'] = trim($val);
+            }
+        }
+
+        $hasType = array_key_exists('discount_type', $payload);
+        $hasValue = array_key_exists('discount_value', $payload);
+        $hasScope = array_key_exists('discount_scope', $payload);
+        if ($hasType || $hasValue || $hasScope) {
+            $type = $payload['discount_type'] ?? null;
+            if (is_string($type)) {
+                $type = trim($type);
+            }
+            if (! in_array($type, [null, 'none', 'fixed', 'percent'], true)) {
+                throw new InvalidArgumentException("Field [discount_type] must be 'none', 'fixed', 'percent', or null.");
+            }
+            $type = $type === 'none' ? null : $type;
+            $value = isset($payload['discount_value'])
+                ? $this->validateMoneyString($payload['discount_value'], 'discount_value', allowZero: true)
+                : '0.000000';
+            if ($hasType && $type === null) {
+                $value = '0.000000';
+            }
+            $scope = $payload['discount_scope'] ?? null;
+            if ($hasScope && ! in_array($scope, ['line', 'document'], true)) {
+                throw new InvalidArgumentException("Field [discount_scope] must be 'document' or 'line'.");
+            }
+            if ($type === 'percent' && BigDecimal::of($value)->isGreaterThan(100)) {
+                throw new InvalidArgumentException('Discount percent cannot exceed 100%.');
+            }
+            if ($scope === 'line' && BigDecimal::of($value)->isPositive()) {
+                throw new InvalidArgumentException("Header discount cannot have 'line' discount scope.");
+            }
+            if ($hasType || ! $isUpdate) {
+                $canonical['discount_type'] = $type;
+            }
+            if ($hasValue || ($hasType && $type === null) || ! $isUpdate) {
+                $canonical['discount_value'] = $value;
+            }
+            if ($hasScope || ! $isUpdate) {
+                $scope ??= $type !== null ? 'document' : 'line';
+                $canonical['discount_scope'] = $scope;
+                $canonical['discount_basis'] = 'subtotal';
+                $canonical['discount_calculation_version'] = $scope === 'document' ? 2 : 1;
             }
         }
 

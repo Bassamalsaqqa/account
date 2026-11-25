@@ -14,6 +14,9 @@ use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Domain\Sales\DocumentDiscountAllocator;
+use App\Domain\Sales\DocumentDiscountIntent;
+use App\Domain\Sales\DocumentDiscountLineCandidate;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
@@ -32,6 +35,7 @@ use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Sales\ImmediateSettlementPreview;
 use App\Services\Sales\SalesActorGuard;
@@ -39,6 +43,7 @@ use App\Services\Sales\SalesProductSelection;
 use App\Support\InvoiceConfirmation;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
@@ -157,6 +162,28 @@ class InvoiceForm extends Component
 
     public string $previewGrandTotal = '0.00';
 
+    #[Locked]
+    public string $discount_scope = 'document';
+
+    #[Locked]
+    public int $discount_calculation_version = 2;
+
+    #[Locked]
+    public ?int $currency_minor_units = null;
+
+    /** @var array<int|string, array{discount_type: string, discount_value: string}> */
+    #[Locked]
+    public array $persistedLineDiscounts = [];
+
+    public string $discount_type = 'none';
+
+    public mixed $discount_value = '0';
+
+    public bool $showDiscountControl = false;
+
+    #[Locked]
+    public ?string $previousCurrencyCode = null;
+
     // Phase 11 Command Parity & State Guarding
     #[Locked]
     public ?string $createRequestKey = null;
@@ -166,6 +193,9 @@ class InvoiceForm extends Component
 
     #[Locked]
     public ?string $lastSavedPayloadDigest = null;
+
+    #[Locked]
+    public bool $sentDocumentDiscount = false;
 
     #[Locked]
     public ?string $confirmationToken = null;
@@ -238,13 +268,28 @@ class InvoiceForm extends Component
             $this->notes = $this->invoice->notes;
             $this->terms = $this->invoice->terms;
             $this->document_locale = $this->invoice->document_locale ?? 'ar';
+            $this->discount_type = $this->invoice->discount_type ?? 'none';
+            $this->sentDocumentDiscount = $this->discount_type !== 'none';
+            $this->discount_value = (string) ($this->invoice->discount_value ?? '0');
+            $this->discount_scope = $this->invoice->discount_scope ?? 'document';
+            $this->discount_calculation_version = (int) ($this->invoice->discount_calculation_version ?? 2);
+            $this->currency_minor_units = $this->invoice->resolvedCurrencyMinorUnits();
+            $this->previousCurrencyCode = $this->currency_code;
+            if ($this->discount_type !== 'none' || ($this->discount_scope === 'document' && ! BigDecimal::of((string) ($this->discount_value ?: '0'))->isZero())) {
+                $this->showDiscountControl = true;
+            }
 
             $this->lines = [];
+            $this->persistedLineDiscounts = [];
             foreach ($this->invoice->lines as $line) {
                 $discountType = $line->discount_type ?? 'none';
                 if ($discountType === 'percentage') {
                     $discountType = 'percent';
                 }
+                $this->persistedLineDiscounts[$line->id] = [
+                    'discount_type' => $discountType,
+                    'discount_value' => (string) ($line->discount_value ?? '0'),
+                ];
                 $this->lines[] = [
                     'id' => $line->id,
                     'product_id' => $line->product_id,
@@ -261,6 +306,12 @@ class InvoiceForm extends Component
                     'line_total' => (string) $line->line_total,
                 ];
             }
+            if ($this->discount_scope === 'line'
+                && ! collect($this->persistedLineDiscounts)->contains(fn (array $discount): bool => in_array($discount['discount_type'], ['fixed', 'percent'], true)
+                    && BigDecimal::of($discount['discount_value'])->isPositive())) {
+                $this->discount_scope = 'document';
+                $this->discount_calculation_version = DocumentDiscountIntent::VERSION_CANONICAL;
+            }
         } else {
             if (! $user->hasPermissionTo('sales.invoice.create')) {
                 abort(403, 'Unauthorized.');
@@ -268,6 +319,13 @@ class InvoiceForm extends Component
 
             $this->customer_id = $customer_id;
             $this->currency_code = $company->base_currency_code;
+            $this->previousCurrencyCode = $this->currency_code;
+            $this->currency_minor_units = app(CurrencyMinorUnitsResolver::class)->resolveForCompany($company, $this->currency_code);
+            $this->discount_scope = 'document';
+            $this->discount_calculation_version = 2;
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->showDiscountControl = false;
             $this->issue_date = Carbon::now($company->timezone)->toDateString();
             $this->due_date = Carbon::now($company->timezone)->addDays(30)->toDateString();
             $currentLocale = app()->getLocale();
@@ -303,6 +361,17 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
+    public function toggleDiscountControl(): void
+    {
+        $this->showDiscountControl = ! $this->showDiscountControl;
+        if (! $this->showDiscountControl) {
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->resetErrorBag('discount_value');
+            $this->recalculate();
+        }
+    }
+
     public function updated(?string $property = null): void
     {
         if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError', 'productSearch'], true)) {
@@ -318,24 +387,49 @@ class InvoiceForm extends Component
     public function updatedCustomerId(): void
     {
         if ($this->customer_id !== null) {
-            $customer = Customer::find($this->customer_id);
+            $customer = Customer::where('company_id', app(CompanyContext::class)->companyId())->find($this->customer_id);
             if ($customer !== null) {
                 $previousCurrency = $this->currency_code;
-                $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
-                $company = app(CompanyContext::class)->company();
-                if ($this->currency_code === $company->base_currency_code) {
-                    $this->exchange_rate = '1.0000000000';
-                } elseif ($previousCurrency !== $this->currency_code) {
-                    $this->exchange_rate = '';
+                $newCurrency = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
+                if ($newCurrency !== $previousCurrency && $this->discount_scope === 'line'
+                    && collect($this->persistedLineDiscounts)->contains(fn ($discount) => ! BigDecimal::of((string) $discount['discount_value'])->isZero())) {
+                    $this->addError('currency_code', __('sales.currency_change_legacy_discount'));
+                } else {
+                    $this->currency_code = $newCurrency;
+                    if ($newCurrency !== $previousCurrency && $this->discount_type === 'fixed') {
+                        $this->discount_value = '0';
+                    }
+                    $this->previousCurrencyCode = $this->currency_code;
+                    $company = app(CompanyContext::class)->company();
+                    if ($this->currency_code === $company->base_currency_code) {
+                        $this->exchange_rate = '1.0000000000';
+                    } elseif ($previousCurrency !== $this->currency_code) {
+                        $this->exchange_rate = '';
+                    }
+                    $this->syncSettlementDefaults('currency_code');
+                    $this->recalculate();
                 }
-                $this->syncSettlementDefaults('currency_code');
-                $this->recalculate();
             }
         }
     }
 
     public function updatedCurrencyCode(): void
     {
+        $changed = $this->currency_code !== $this->previousCurrencyCode;
+        if ($changed && $this->discount_scope === 'line'
+            && collect($this->persistedLineDiscounts)->contains(fn ($discount) => ! BigDecimal::of((string) $discount['discount_value'])->isZero())) {
+            $this->currency_code = $this->previousCurrencyCode;
+            $this->recalculate();
+            $this->addError('currency_code', __('sales.currency_change_legacy_discount'));
+
+            return;
+        }
+
+        if ($changed && $this->discount_type === 'fixed') {
+            $this->discount_value = '0';
+        }
+
+        $this->previousCurrencyCode = $this->currency_code;
         $company = app(CompanyContext::class)->company();
         if ($this->currency_code === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
@@ -435,7 +529,6 @@ class InvoiceForm extends Component
             $selected = app(SalesProductSelection::class)->select(
                 (int) $product->id,
                 $productUnit?->id,
-                $this->currency_code,
                 $this->exchange_rate,
                 $this->warehouse_id
             );
@@ -591,7 +684,6 @@ class InvoiceForm extends Component
         $selected = app(SalesProductSelection::class)->select(
             $productId,
             $productUnitId,
-            $this->currency_code,
             $this->exchange_rate,
             $this->warehouse_id
         );
@@ -611,7 +703,7 @@ class InvoiceForm extends Component
         if ($productId === null) {
             return;
         }
-        $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->currency_code, $this->exchange_rate, $this->warehouse_id);
+        $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->exchange_rate, $this->warehouse_id);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
     }
@@ -625,8 +717,7 @@ class InvoiceForm extends Component
         foreach ($this->lines as $idx => $line) {
             if (! empty($line['product_id'])) {
                 $selected = app(SalesProductSelection::class)->select(
-                    (int) $line['product_id'], ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
-                    $this->currency_code, $this->exchange_rate, $this->warehouse_id);
+                    (int) $line['product_id'], ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null, $this->exchange_rate, $this->warehouse_id);
                 $this->lines[$idx]['available_quantity'] = $selected['available_quantity'];
             }
         }
@@ -645,19 +736,35 @@ class InvoiceForm extends Component
 
         $company = app(CompanyContext::class)->company();
         foreach ($this->lines as $index => $line) {
-            foreach (['quantity', 'unit_price', 'discount_value'] as $field) {
+            foreach (['quantity', 'unit_price'] as $field) {
                 if (! is_string($line[$field]) || preg_match('/^\d{1,14}(?:\.\d{1,6})?$/D', $line[$field]) !== 1) {
                     $this->addError("lines.{$index}.{$field}", __('commands.exact_string_required'));
 
                     return;
                 }
             }
+            if (! is_string($line['discount_value']) || preg_match('/^\d{1,14}(?:\.\d{1,6})?$/D', $line['discount_value']) !== 1) {
+                $this->addError("lines.{$index}.discount_value", __('commands.exact_string_required'));
+
+                return;
+            }
         }
         $lineCalculator = app(SalesLineCalculator::class);
         $totalsCalculator = app(SalesDocumentTotalsCalculator::class);
 
-        $minorUnits = in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-        $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+        try {
+            $document = $this->invoice;
+            $minorUnits = $document !== null && $document->currency_code === $this->currency_code
+                ? $document->resolvedCurrencyMinorUnits()
+                : app(CurrencyMinorUnitsResolver::class)->resolveForCompany($company, $this->currency_code);
+            $this->currency_minor_units = $minorUnits;
+        } catch (\InvalidArgumentException) {
+            $this->currency_minor_units = null;
+            $this->addError('currency_code', __('commands.code_validation_failed'));
+
+            return;
+        }
+        $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
         $fx = BigDecimal::of($this->exchange_rate ?: '1.0');
 
         $lineTaxIds = array_map(static fn (array $line): int|false => filter_var($line['tax_rate_id'] ?? null, FILTER_VALIDATE_INT), $this->lines);
@@ -668,6 +775,57 @@ class InvoiceForm extends Component
             ->get()
             ->keyBy('id');
 
+        $discountScope = $this->discount_scope;
+        $allocationResult = null;
+        $this->resetErrorBag('discount_value');
+
+        if ($discountScope === 'document' && $this->discount_type !== 'none') {
+            $rawDiscVal = trim((string) ($this->discount_value ?: '0'));
+            if ($rawDiscVal !== '' && preg_match('/^\d+(\.\d{1,6})?$/D', $rawDiscVal) !== 1) {
+                $this->addError('discount_value', __('commands.exact_string_required'));
+                $this->previewDiscountTotal = '0.00';
+                $this->documentTotalsValid = false;
+
+                return;
+            }
+            if (! BigDecimal::of($rawDiscVal ?: '0')->isZero()) {
+                $candidates = [];
+                foreach ($this->lines as $index => $line) {
+                    $qty = BigDecimal::of((string) ($line['quantity'] ?: '0'));
+                    $price = BigDecimal::of((string) ($line['unit_price'] ?: '0'));
+                    $subtotal = $qty->multipliedBy($price)->toScale($minorUnits, RoundingMode::HALF_UP);
+                    $tax = $taxes->get($lineTaxIds[$index] ?: 0);
+
+                    $candidates[] = new DocumentDiscountLineCandidate(
+                        lineNumber: $index + 1,
+                        unitPrice: $price,
+                        quantity: $qty,
+                        subtotal: $subtotal,
+                        taxInclusive: $tax?->calculation === TaxRate::CALC_INCLUSIVE,
+                        taxRate: $tax?->rate !== null ? (string) $tax->rate : null,
+                        identity: $index + 1,
+                    );
+                }
+
+                try {
+                    $intent = new DocumentDiscountIntent(
+                        discountType: $this->discount_type,
+                        discountValue: $rawDiscVal,
+                        discountScope: 'document',
+                        discountBasis: 'subtotal',
+                        version: $this->discount_calculation_version,
+                    );
+                    $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $this->currency_code, $minorUnits);
+                } catch (\InvalidArgumentException $e) {
+                    $this->addError('discount_value', $e->getMessage());
+                    $this->previewDiscountTotal = '0.00';
+                    $this->documentTotalsValid = false;
+
+                    return;
+                }
+            }
+        }
+
         $calcResults = [];
 
         foreach ($this->lines as $idx => $line) {
@@ -675,22 +833,37 @@ class InvoiceForm extends Component
             $taxRate = $tax === null ? null : BigDecimal::of((string) $tax->rate);
             $taxInclusive = $tax?->calculation === TaxRate::CALC_INCLUSIVE;
 
-            $discountType = $line['discount_type'];
-            if ($discountType === 'percentage') {
-                $discountType = 'percent';
-            }
+            if ($discountScope === 'document' && $allocationResult !== null) {
+                $allocatedDiscount = $allocationResult->forLine($idx + 1);
+                $input = new SalesLineCalculationInput(
+                    quantity: $line['quantity'],
+                    unitPrice: $line['unit_price'],
+                    discountType: 'fixed',
+                    discountValue: (string) $allocatedDiscount,
+                    taxRate: $taxRate,
+                    taxInclusive: $taxInclusive,
+                    currencyMinorUnits: $minorUnits,
+                    exchangeRate: $fx,
+                    baseCurrencyMinorUnits: $baseMinorUnits,
+                );
+            } else {
+                $discountType = (string) $line['discount_type'];
+                if ($discountType === 'percentage') {
+                    $discountType = 'percent';
+                }
 
-            $input = new SalesLineCalculationInput(
-                quantity: $line['quantity'],
-                unitPrice: $line['unit_price'],
-                discountType: $discountType !== 'none' ? $discountType : null,
-                discountValue: $line['discount_value'],
-                taxRate: $taxRate,
-                taxInclusive: $taxInclusive,
-                currencyMinorUnits: $minorUnits,
-                exchangeRate: $fx,
-                baseCurrencyMinorUnits: $baseMinorUnits,
-            );
+                $input = new SalesLineCalculationInput(
+                    quantity: $line['quantity'],
+                    unitPrice: $line['unit_price'],
+                    discountType: $discountType !== 'none' ? $discountType : null,
+                    discountValue: (string) $line['discount_value'],
+                    taxRate: $taxRate,
+                    taxInclusive: $taxInclusive,
+                    currencyMinorUnits: $minorUnits,
+                    exchangeRate: $fx,
+                    baseCurrencyMinorUnits: $baseMinorUnits,
+                );
+            }
 
             $res = $lineCalculator->calculate($input);
             $calcResults[] = $res;
@@ -837,7 +1010,14 @@ class InvoiceForm extends Component
 
         $dtoLines = [];
         foreach ($this->lines as $line) {
-            $discountType = $line['discount_type'];
+            $lineId = $line['id'] ?? null;
+            if ($lineId !== null && isset($this->persistedLineDiscounts[$lineId])) {
+                $discountType = $this->persistedLineDiscounts[$lineId]['discount_type'];
+                $discountVal = $this->persistedLineDiscounts[$lineId]['discount_value'];
+            } else {
+                $discountType = (string) $line['discount_type'];
+                $discountVal = (string) $line['discount_value'];
+            }
             if ($discountType === 'percentage') {
                 $discountType = 'percent';
             }
@@ -848,7 +1028,7 @@ class InvoiceForm extends Component
                 'quantity' => $line['quantity'],
                 'unit_price' => $line['unit_price'],
                 'discount_type' => $discountType !== 'none' ? $discountType : null,
-                'discount_value' => $line['discount_value'],
+                'discount_value' => $discountVal,
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
             ];
         }
@@ -864,7 +1044,7 @@ class InvoiceForm extends Component
             'terms' => $this->terms,
             'document_locale' => $this->document_locale,
             'lines' => $dtoLines,
-        ];
+        ] + $this->headerDiscountInput();
 
         $currentDigest = $this->computePayloadDigest();
 
@@ -875,16 +1055,17 @@ class InvoiceForm extends Component
                 }
                 $key = $this->updateRequestKey ?? (string) Str::uuid();
                 $this->updateRequestKey = $key;
-                $this->lastSavedPayloadDigest = $currentDigest;
 
-                $this->invoice = $commands->update($this->invoice, $user, $payload, $key);
+                $savedInvoice = $commands->update($this->invoice, $user, $payload, $key);
+                $this->invoice = $savedInvoice;
+                $this->lastSavedPayloadDigest = $currentDigest;
+                $this->sentDocumentDiscount = $this->sentDocumentDiscount || isset($payload['discount_type']);
             } else {
                 if ($this->lastSavedPayloadDigest !== null && $this->lastSavedPayloadDigest !== $currentDigest) {
                     $this->createRequestKey = (string) Str::uuid();
                 }
                 $key = $this->createRequestKey ?? (string) Str::uuid();
                 $this->createRequestKey = $key;
-                $this->lastSavedPayloadDigest = $currentDigest;
 
                 $this->invoice = DB::transaction(function () use ($commands, $company, $user, $payload, $key): SalesInvoice {
                     if ($this->aiFormToken !== null && $this->aiFormKey !== null) {
@@ -897,6 +1078,8 @@ class InvoiceForm extends Component
 
                     return $created;
                 });
+                $this->lastSavedPayloadDigest = $currentDigest;
+                $this->sentDocumentDiscount = $this->sentDocumentDiscount || isset($payload['discount_type']);
                 $this->discardAiInput();
                 $this->isEditing = true;
             }
@@ -956,7 +1139,12 @@ class InvoiceForm extends Component
         }
 
         // Reject stale/edited form
-        if ($this->previewDigest === null || $this->previewDigest !== $this->settlementDigest()) {
+        $digestMatches = $this->previewDigest !== null && (
+            $this->previewDigest === $this->settlementDigest()
+            || ($this->legacySettlementDigest() !== null && $this->previewDigest === $this->legacySettlementDigest())
+        );
+
+        if (! $digestMatches) {
             $this->cancelPreview();
             $this->previewError = __('commands.form_changed_repreview_required');
 
@@ -1192,22 +1380,50 @@ class InvoiceForm extends Component
         return $choice;
     }
 
+    /** @return array{discount_type?: ?string, discount_value?: string, discount_scope?: string} */
+    private function headerDiscountInput(): array
+    {
+        $type = $this->discount_type === 'percentage' ? 'percent' : $this->discount_type;
+        $value = trim((string) $this->discount_value) ?: '0';
+        if ($this->discount_scope !== 'document') {
+            return [];
+        }
+        if ($type !== 'none' && ! preg_match('/^0+(?:\.0+)?$/D', $value)) {
+            return ['discount_type' => $type, 'discount_value' => $value, 'discount_scope' => 'document'];
+        }
+
+        return $this->sentDocumentDiscount
+            ? ['discount_type' => null, 'discount_value' => '0', 'discount_scope' => 'document']
+            : [];
+    }
+
     public function computePayloadDigest(): string
+    {
+        return $this->payloadDigest($this->headerDiscountInput());
+    }
+
+    public function computeLegacyPayloadDigest(): ?string
+    {
+        return $this->headerDiscountInput() === [] ? $this->payloadDigest([]) : null;
+    }
+
+    /** @param array<string, string|null> $discount */
+    private function payloadDigest(array $discount): string
     {
         $normalizedLines = [];
         foreach ($this->lines as $line) {
-            $discountType = $line['discount_type'];
+            $discountType = (string) $line['discount_type'];
             if ($discountType === 'percentage') {
                 $discountType = 'percent';
             }
             $normalizedLines[] = [
                 'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
                 'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
-                'item_description' => trim($line['item_description']),
-                'quantity' => trim($line['quantity']),
-                'unit_price' => trim($line['unit_price']),
+                'item_description' => trim((string) $line['item_description']),
+                'quantity' => trim((string) $line['quantity']),
+                'unit_price' => trim((string) $line['unit_price']),
                 'discount_type' => $discountType !== 'none' ? $discountType : null,
-                'discount_value' => trim($line['discount_value']),
+                'discount_value' => trim((string) $line['discount_value']),
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
             ];
         }
@@ -1222,10 +1438,19 @@ class InvoiceForm extends Component
             'notes' => $this->notes !== null ? trim($this->notes) : null,
             'terms' => $this->terms !== null ? trim($this->terms) : null,
             'document_locale' => $this->document_locale,
-            'lines' => $normalizedLines,
-        ];
+        ] + $discount + ['lines' => $normalizedLines];
 
         return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function legacySettlementDigest(): ?string
+    {
+        $legacyPayload = $this->computeLegacyPayloadDigest();
+        if ($legacyPayload === null) {
+            return null;
+        }
+
+        return hash('sha256', $legacyPayload.'|'.json_encode($this->settlement, JSON_THROW_ON_ERROR));
     }
 
     protected function resolveUserErrorMessage(\Throwable $e): string

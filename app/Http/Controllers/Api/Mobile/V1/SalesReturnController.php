@@ -8,14 +8,12 @@ use App\Actions\Sales\ExecuteNativeSalesReturnAction;
 use App\Actions\Sales\SalesReturnInput;
 use App\Domain\Inventory\Exceptions\IdempotencyConflictException;
 use App\Domain\Money\ValueObjects\ExchangeRate;
-use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturnLine;
 use App\Models\User;
-use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\ReceivableBookValue;
 use App\Services\Sales\SalesReturnAmounts;
 use Brick\Math\BigDecimal;
@@ -110,6 +108,9 @@ final class SalesReturnController extends Controller
                     );
                 }
 
+                $amountsCalculator = app(SalesReturnAmounts::class);
+                $cmu = $invoice->resolvedCurrencyMinorUnits();
+                $calculated = [];
                 $restockItems = [];
                 $totalReturnAmount = BigDecimal::zero();
                 $restockWarehouseId = $invoice->warehouse ? (string) $invoice->warehouse->public_id : (string) $invoice->warehouse_id;
@@ -125,7 +126,8 @@ final class SalesReturnController extends Controller
                     $seen[$original->id] = true;
                     $prior = $priorReturns->get($original->id, collect());
                     $quantity = BigDecimal::of($input['quantity']);
-                    $amounts = app(SalesReturnAmounts::class)->calculateLine($original, $quantity, $prior, (string) $invoice->currency_code);
+                    $amounts = $amountsCalculator->calculateLine($original, $quantity, $prior, $invoice);
+                    $calculated[] = $amounts;
                     $totalReturnAmount = $totalReturnAmount->plus($amounts['total']);
                     $tax = $amounts['tax'];
                     if (! $tax->isZero()) {
@@ -137,7 +139,6 @@ final class SalesReturnController extends Controller
                             $taxComponents[$taxAccId]['neg'] = $taxComponents[$taxAccId]['neg']->plus($tax);
                         }
                     }
-                    $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
                     $restockItems[] = [
                         'sales_invoice_line_id' => (string) $original->public_id,
                         'product_id' => $original->product?->public_id,
@@ -151,20 +152,11 @@ final class SalesReturnController extends Controller
                     ];
                 }
 
-                $taxTotalCurrency = BigDecimal::zero();
-                $taxTotalBase = BigDecimal::zero();
-                foreach ($taxComponents as $comp) {
-                    $taxTotalCurrency = $taxTotalCurrency->plus($comp['pos']->plus($comp['neg']));
-                    $posB = $fx->toBase(MoneyAmount::from($comp['pos']))->getAmount();
-                    $negB = $fx->toBase(MoneyAmount::from($comp['neg']->abs()))->getAmount();
-                    $taxTotalBase = $taxTotalBase->plus($posB->minus($negB));
-                }
+                $totals = $amountsCalculator->totals($invoice, $calculated);
                 $reliefBase = app(ReceivableBookValue::class)->relief($invoice, $totalReturnAmount);
-                $subtotalCurrency = $totalReturnAmount->minus($taxTotalCurrency);
-                $subtotalBase = $reliefBase->minus($taxTotalBase);
-                app(SalesReturnAmounts::class)->validateRepresentability($fx, $totalReturnAmount, $reliefBase, $taxComponents, $subtotalCurrency, $subtotalBase);
-
-                $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $invoice->currency_code, $company);
+                $subtotalCurrency = $totalReturnAmount->minus($totals['tax_total_currency']);
+                $subtotalBase = $reliefBase->minus($totals['tax_total_base']);
+                $amountsCalculator->validateRepresentability($fx, $totalReturnAmount, $reliefBase, $taxComponents, $subtotalCurrency, $subtotalBase);
 
                 return response()->json([
                     'sales_invoice_id' => (string) $invoice->public_id,

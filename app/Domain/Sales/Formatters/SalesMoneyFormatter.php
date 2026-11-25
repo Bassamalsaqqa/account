@@ -20,7 +20,8 @@ final class SalesMoneyFormatter
             return (string) $amount;
         }
 
-        return self::format($amount, scale: $scale);
+        // Shared money display policy: TWO decimals across UI entry and display
+        return self::format($amount, scale: 2);
     }
 
     public static function displayQuantity(string|int|BigDecimal|null $quantity): string
@@ -50,7 +51,7 @@ final class SalesMoneyFormatter
         }
         $decimal = BigDecimal::of($str)->strippedOfTrailingZeros();
 
-        return (string) $decimal->toScale(max($minimumScale, $decimal->getScale()));
+        return (string) $decimal->toScale(max(2, $decimal->getScale()));
     }
 
     /**
@@ -114,11 +115,11 @@ final class SalesMoneyFormatter
     }
 
     /**
-     * Format a monetary amount with currency.
+     * Format a monetary amount with currency using the shared two-decimal display policy.
      */
     public static function formatCurrency(string|int|BigDecimal|null $amount, ?string $currencyCode = null): string
     {
-        return self::format($amount, $currencyCode);
+        return self::format($amount, $currencyCode, scale: 2);
     }
 
     /**

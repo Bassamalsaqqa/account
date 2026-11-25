@@ -48,7 +48,7 @@
                         </option>
                     @endforeach
                 </select>
-                @error('sales_invoice_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                @error('sales_invoice_id') <span role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div>
@@ -59,7 +59,7 @@
                        wire:model="issue_date"
                        required
                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                @error('issue_date') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                @error('issue_date') <span role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div class="md:col-span-3">
@@ -79,7 +79,7 @@
                 {{ __('sales.return_details') }}
             </h2>
 
-            @error('lines') <span class="text-danger text-xs font-bold mt-2 block">{{ $message }}</span> @enderror
+            @error('lines') <span role="alert" aria-live="assertive" class="text-danger text-xs font-bold mt-2 block">{{ $message }}</span> @enderror
 
             @if (empty($lines))
                 <div class="py-8 text-center text-text-muted text-xs">
@@ -143,6 +143,57 @@
                 </div>
             @endif
         </div>
+
+        @if ($sales_invoice_id && $preReturnTotal !== null)
+            <div class="rounded-card border border-border bg-surface-soft p-4 space-y-3" data-testid="return-totals-summary">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-text-secondary">
+                        {{ __('sales.return_summary') }}
+                    </h3>
+                    @if ($returnCalculationError)
+                        <span role="alert" aria-live="polite" class="text-xs font-semibold text-danger flex items-center gap-1" data-testid="return-totals-error">
+                            {{ $returnCalculationError }}
+                        </span>
+                    @endif
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div class="bg-surface rounded-control p-3 border border-border">
+                        <span class="text-xs text-text-secondary block">{{ __('sales.pre_return_total') }}</span>
+                        <div class="mt-1 font-mono text-base font-bold tabular-nums text-text-primary" dir="ltr">
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($preReturnTotal, $currencyCode) }}
+                            <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                        </div>
+                    </div>
+                    <div class="bg-surface rounded-control p-3 border border-border">
+                        <span class="text-xs text-text-secondary block">{{ __('sales.current_return_total') }}</span>
+                        <div class="mt-1 font-mono text-base font-bold tabular-nums text-primary" dir="ltr">
+                            @if ($returnCalculationError || $returnTotal === null)
+                                <span class="text-text-muted text-sm font-normal">—</span>
+                            @else
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTotal, $currencyCode) }}
+                                <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                            @endif
+                        </div>
+                        @if (! $returnCalculationError && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($returnTax))
+                            <span class="text-xs text-text-muted block mt-0.5">
+                                {{ __('sales.tax') }}: <span dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTax, $currencyCode) }}</span> <span class="text-text-secondary">{{ $currencyCode }}</span>
+                            </span>
+                        @endif
+                    </div>
+                    <div class="bg-surface rounded-control p-3 border border-border">
+                        <span class="text-xs text-text-secondary block">{{ __('sales.post_return_remaining') }}</span>
+                        <div class="mt-1 font-mono text-base font-bold tabular-nums text-text-primary" dir="ltr">
+                            @if ($returnCalculationError || $postReturnTotal === null)
+                                <span class="text-text-muted text-sm font-normal">—</span>
+                            @else
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($postReturnTotal, $currencyCode) }}
+                                <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
 
         <div>
             <label class="block text-sm font-bold text-text-primary mb-1">

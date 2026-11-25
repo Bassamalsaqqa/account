@@ -18,6 +18,7 @@ use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnAllocation;
 use App\Models\PurchaseReturnLine;
+use App\Services\Purchasing\PurchaseReturnAmounts;
 use App\Services\Purchasing\PurchaseReturnValidationException;
 use App\Support\DocumentIdentity;
 use App\Support\QuantityStep;
@@ -80,7 +81,6 @@ class PurchaseReturnForm extends Component
      *     purchased_quantity: string,
      *     prior_returned_quantity: string,
      *     remaining_quantity: string,
-     *     unit_cost: string,
      *     return_quantity: string,
      *     track_expiry: bool,
      *     allocations: list<array{
@@ -98,6 +98,22 @@ class PurchaseReturnForm extends Component
      * }>
      */
     public array $lines = [];
+
+    public ?string $preReturnTotal = null;
+
+    public ?string $returnSubtotal = null;
+
+    public ?string $returnDiscount = null;
+
+    public ?string $returnTax = null;
+
+    public ?string $returnTotal = null;
+
+    public ?string $postReturnTotal = null;
+
+    public bool $hasReturnQuantities = false;
+
+    public ?string $returnCalculationError = null;
 
     public function mount(string $publicId, CompanyContext $context): void
     {
@@ -144,14 +160,39 @@ class PurchaseReturnForm extends Component
         $this->return_date = $today >= $this->purchaseDate ? $today : $this->purchaseDate;
 
         $this->lines = [];
-        foreach ($purchase->lines as $line) {
-            $prior = (string) DB::table('purchase_return_lines')
-                ->join('purchase_returns', 'purchase_return_lines.purchase_return_id', '=', 'purchase_returns.id')
-                ->where('purchase_returns.company_id', $company->id)
-                ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                ->where('purchase_return_lines.purchase_line_id', $line->id)
-                ->sum('purchase_return_lines.quantity');
+        $purchaseLineIds = $purchase->lines->pluck('id')->all();
+        $priorReturnsByLine = empty($purchaseLineIds) ? collect() : DB::table('purchase_return_lines')
+            ->join('purchase_returns', 'purchase_return_lines.purchase_return_id', '=', 'purchase_returns.id')
+            ->where('purchase_returns.company_id', $company->id)
+            ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+            ->whereIn('purchase_return_lines.purchase_line_id', $purchaseLineIds)
+            ->select('purchase_return_lines.purchase_line_id', DB::raw('SUM(purchase_return_lines.quantity) as total_returned'))
+            ->groupBy('purchase_return_lines.purchase_line_id')
+            ->pluck('total_returned', 'purchase_line_id');
 
+        $allLotIds = $purchase->lines->flatMap(fn ($l) => $l->lots->pluck('id'))->all();
+        $priorReturnsByLot = empty($allLotIds) ? collect() : DB::table('purchase_return_allocations')
+            ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+            ->where('purchase_returns.company_id', $company->id)
+            ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+            ->whereIn('purchase_return_allocations.purchase_line_lot_id', $allLotIds)
+            ->select('purchase_return_allocations.purchase_line_lot_id', DB::raw('SUM(purchase_return_allocations.quantity) as total_returned'))
+            ->groupBy('purchase_return_allocations.purchase_line_lot_id')
+            ->pluck('total_returned', 'purchase_line_lot_id');
+
+        $allCreatedInventoryLotIds = $purchase->lines
+            ->flatMap(fn ($l) => $l->lots->pluck('created_inventory_lot_id'))
+            ->filter()
+            ->unique()
+            ->all();
+
+        $lotBalancesByLotId = empty($allCreatedInventoryLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+            ->where('warehouse_id', $purchase->warehouse_id)
+            ->whereIn('lot_id', $allCreatedInventoryLotIds)
+            ->pluck('quantity_base', 'lot_id');
+
+        foreach ($purchase->lines as $line) {
+            $prior = (string) ($priorReturnsByLine[$line->id] ?? '0');
             $origQty = BigDecimal::of((string) $line->quantity);
             $priorQty = BigDecimal::of($prior);
             $remQty = $origQty->minus($priorQty);
@@ -159,22 +200,12 @@ class PurchaseReturnForm extends Component
             $allocations = [];
             if ($line->product->track_expiry) {
                 foreach ($line->lots as $lot) {
-                    $lotPrior = (string) DB::table('purchase_return_allocations')
-                        ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
-                        ->where('purchase_returns.company_id', $company->id)
-                        ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                        ->where('purchase_return_allocations.purchase_line_lot_id', $lot->id)
-                        ->sum('purchase_return_allocations.quantity');
-
+                    $lotPrior = (string) ($priorReturnsByLot[$lot->id] ?? '0');
                     $lotOrig = BigDecimal::of((string) $lot->quantity);
                     $lotPriorQty = BigDecimal::of($lotPrior);
                     $lotRem = $lotOrig->minus($lotPriorQty);
 
-                    $lotBalanceBase = (string) (InventoryLotBalance::where('company_id', $company->id)
-                        ->where('product_id', $line->product_id)
-                        ->where('warehouse_id', $purchase->warehouse_id)
-                        ->where('lot_id', $lot->created_inventory_lot_id)
-                        ->value('quantity_base') ?? '0');
+                    $lotBalanceBase = (string) ($lotBalancesByLotId[$lot->created_inventory_lot_id] ?? '0');
 
                     $ratio = BigDecimal::of((string) $line->unit_conversion_ratio);
                     $onHand = $ratio->isPositive()
@@ -205,12 +236,13 @@ class PurchaseReturnForm extends Component
                 'prior_returned_quantity' => (string) $priorQty,
                 'remaining_quantity' => (string) $remQty,
                 'quantity_step' => QuantityStep::forUnit($line->productUnit->unit, [(string) $origQty, (string) $remQty]),
-                'unit_cost' => (string) $line->unit_cost,
                 'return_quantity' => '',
                 'track_expiry' => (bool) $line->product->track_expiry,
                 'allocations' => $allocations,
             ];
         }
+
+        $this->recalculateTotals();
     }
 
     private function initEdit(string $returnPublicId): void
@@ -244,14 +276,41 @@ class PurchaseReturnForm extends Component
         $existingLinesByPurchaseLine = $return->lines->keyBy('purchase_line_id');
 
         $this->lines = [];
-        foreach ($purchase->lines as $line) {
-            $prior = (string) DB::table('purchase_return_lines')
-                ->join('purchase_returns', 'purchase_return_lines.purchase_return_id', '=', 'purchase_returns.id')
-                ->where('purchase_returns.company_id', $company->id)
-                ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                ->where('purchase_return_lines.purchase_line_id', $line->id)
-                ->sum('purchase_return_lines.quantity');
+        $purchaseLineIds = $purchase->lines->pluck('id')->all();
+        $priorReturnsByLine = empty($purchaseLineIds) ? collect() : DB::table('purchase_return_lines')
+            ->join('purchase_returns', 'purchase_return_lines.purchase_return_id', '=', 'purchase_returns.id')
+            ->where('purchase_returns.company_id', $company->id)
+            ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+            ->where('purchase_returns.id', '!=', $return->id)
+            ->whereIn('purchase_return_lines.purchase_line_id', $purchaseLineIds)
+            ->select('purchase_return_lines.purchase_line_id', DB::raw('SUM(purchase_return_lines.quantity) as total_returned'))
+            ->groupBy('purchase_return_lines.purchase_line_id')
+            ->pluck('total_returned', 'purchase_line_id');
 
+        $allLotIds = $purchase->lines->flatMap(fn ($l) => $l->lots->pluck('id'))->all();
+        $priorReturnsByLot = empty($allLotIds) ? collect() : DB::table('purchase_return_allocations')
+            ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+            ->where('purchase_returns.company_id', $company->id)
+            ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+            ->where('purchase_returns.id', '!=', $return->id)
+            ->whereIn('purchase_return_allocations.purchase_line_lot_id', $allLotIds)
+            ->select('purchase_return_allocations.purchase_line_lot_id', DB::raw('SUM(purchase_return_allocations.quantity) as total_returned'))
+            ->groupBy('purchase_return_allocations.purchase_line_lot_id')
+            ->pluck('total_returned', 'purchase_line_lot_id');
+
+        $allCreatedInventoryLotIds = $purchase->lines
+            ->flatMap(fn ($l) => $l->lots->pluck('created_inventory_lot_id'))
+            ->filter()
+            ->unique()
+            ->all();
+
+        $lotBalancesByLotId = empty($allCreatedInventoryLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+            ->where('warehouse_id', $purchase->warehouse_id)
+            ->whereIn('lot_id', $allCreatedInventoryLotIds)
+            ->pluck('quantity_base', 'lot_id');
+
+        foreach ($purchase->lines as $line) {
+            $prior = (string) ($priorReturnsByLine[$line->id] ?? '0');
             $origQty = BigDecimal::of((string) $line->quantity);
             $priorQty = BigDecimal::of($prior);
             $remQty = $origQty->minus($priorQty);
@@ -264,22 +323,12 @@ class PurchaseReturnForm extends Component
             if ($line->product->track_expiry) {
                 $draftAllocByLotId = $draftLine !== null ? $draftLine->allocations->keyBy('purchase_line_lot_id') : collect();
                 foreach ($line->lots as $lot) {
-                    $lotPrior = (string) DB::table('purchase_return_allocations')
-                        ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
-                        ->where('purchase_returns.company_id', $company->id)
-                        ->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                        ->where('purchase_return_allocations.purchase_line_lot_id', $lot->id)
-                        ->sum('purchase_return_allocations.quantity');
-
+                    $lotPrior = (string) ($priorReturnsByLot[$lot->id] ?? '0');
                     $lotOrig = BigDecimal::of((string) $lot->quantity);
                     $lotPriorQty = BigDecimal::of($lotPrior);
                     $lotRem = $lotOrig->minus($lotPriorQty);
 
-                    $lotBalanceBase = (string) (InventoryLotBalance::where('company_id', $company->id)
-                        ->where('product_id', $line->product_id)
-                        ->where('warehouse_id', $purchase->warehouse_id)
-                        ->where('lot_id', $lot->created_inventory_lot_id)
-                        ->value('quantity_base') ?? '0');
+                    $lotBalanceBase = (string) ($lotBalancesByLotId[$lot->created_inventory_lot_id] ?? '0');
 
                     $ratio = BigDecimal::of((string) $line->unit_conversion_ratio);
                     $onHand = $ratio->isPositive()
@@ -314,12 +363,13 @@ class PurchaseReturnForm extends Component
                 'prior_returned_quantity' => (string) $priorQty,
                 'remaining_quantity' => (string) $remQty,
                 'quantity_step' => QuantityStep::forUnit($line->productUnit->unit, [(string) $origQty, (string) $remQty]),
-                'unit_cost' => (string) $line->unit_cost,
                 'return_quantity' => $draftQty,
                 'track_expiry' => (bool) $line->product->track_expiry,
                 'allocations' => $allocations,
             ];
         }
+
+        $this->recalculateTotals();
     }
 
     public function boot(): void
@@ -399,7 +449,8 @@ class PurchaseReturnForm extends Component
             }
         }
 
-        if (! is_string($expectedQuantity) || preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', trim($expectedQuantity)) !== 1) {
+        $trimmedExpected = is_string($expectedQuantity) ? trim($expectedQuantity) : null;
+        if ($trimmedExpected === null || ($trimmedExpected !== '' && preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $trimmedExpected) !== 1)) {
             return $refuse(__('mobile.quantity_stale'));
         }
 
@@ -463,14 +514,25 @@ class PurchaseReturnForm extends Component
         }
         if ($sourceLine->lots->isNotEmpty() && $ratio->isPositive()) {
             $lotCapacity = BigDecimal::zero();
+            $lineLotIds = $sourceLine->lots->pluck('id')->all();
+            $priorLots = empty($lineLotIds) ? collect() : DB::table('purchase_return_allocations')
+                ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+                ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+                ->whereIn('purchase_return_allocations.purchase_line_lot_id', $lineLotIds)
+                ->select('purchase_return_allocations.purchase_line_lot_id', DB::raw('SUM(purchase_return_allocations.quantity) as total_returned'))
+                ->groupBy('purchase_return_allocations.purchase_line_lot_id')
+                ->pluck('total_returned', 'purchase_line_lot_id');
+
+            $createdLotIds = $sourceLine->lots->pluck('created_inventory_lot_id')->filter()->unique()->all();
+            $lotBalances = empty($createdLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+                ->where('warehouse_id', $warehouseId)
+                ->whereIn('lot_id', $createdLotIds)
+                ->pluck('quantity_base', 'lot_id');
+
             foreach ($sourceLine->lots as $originalLot) {
-                $priorLot = (string) DB::table('purchase_return_allocations')
-                    ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
-                    ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                    ->where('purchase_return_allocations.purchase_line_lot_id', $originalLot->id)->sum('purchase_return_allocations.quantity');
+                $priorLot = (string) ($priorLots[$originalLot->id] ?? '0');
                 $lotRemaining = BigDecimal::max('0', BigDecimal::of((string) $originalLot->quantity)->minus($priorLot));
-                $lotBase = (string) (InventoryLotBalance::where('company_id', $company->id)->where('product_id', $sourceLine->product_id)
-                    ->where('warehouse_id', $warehouseId)->where('lot_id', $originalLot->created_inventory_lot_id)->value('quantity_base') ?? '0');
+                $lotBase = (string) ($lotBalances[$originalLot->created_inventory_lot_id] ?? '0');
                 $lotAvailable = BigDecimal::max('0', BigDecimal::of($lotBase)->dividedBy($ratio, 6, RoundingMode::DOWN));
                 $lotCapacity = $lotCapacity->plus(BigDecimal::min($lotRemaining, $lotAvailable));
             }
@@ -533,6 +595,7 @@ class PurchaseReturnForm extends Component
         $formatted = (string) $currentBd->toScale($maxDecimals, RoundingMode::DOWN);
         $this->lines[$index]['return_quantity'] = $formatted;
         $this->resetErrorBag("lines.{$index}.return_quantity");
+        $this->recalculateTotals();
 
         return ['ok' => true, 'quantity' => $formatted, 'minimumReached' => $currentBd->isZero()];
     }
@@ -615,14 +678,25 @@ class PurchaseReturnForm extends Component
         }
         if ($sourceLine->lots->isNotEmpty() && $ratio->isPositive()) {
             $lotCapacity = BigDecimal::zero();
+            $lineLotIds = $sourceLine->lots->pluck('id')->all();
+            $priorLots = empty($lineLotIds) ? collect() : DB::table('purchase_return_allocations')
+                ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+                ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+                ->whereIn('purchase_return_allocations.purchase_line_lot_id', $lineLotIds)
+                ->select('purchase_return_allocations.purchase_line_lot_id', DB::raw('SUM(purchase_return_allocations.quantity) as total_returned'))
+                ->groupBy('purchase_return_allocations.purchase_line_lot_id')
+                ->pluck('total_returned', 'purchase_line_lot_id');
+
+            $createdLotIds = $sourceLine->lots->pluck('created_inventory_lot_id')->filter()->unique()->all();
+            $lotBalances = empty($createdLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+                ->where('warehouse_id', $warehouseId)
+                ->whereIn('lot_id', $createdLotIds)
+                ->pluck('quantity_base', 'lot_id');
+
             foreach ($sourceLine->lots as $originalLot) {
-                $priorLot = (string) DB::table('purchase_return_allocations')
-                    ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
-                    ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                    ->where('purchase_return_allocations.purchase_line_lot_id', $originalLot->id)->sum('purchase_return_allocations.quantity');
+                $priorLot = (string) ($priorLots[$originalLot->id] ?? '0');
                 $lotRemaining = BigDecimal::max('0', BigDecimal::of((string) $originalLot->quantity)->minus($priorLot));
-                $lotBase = (string) (InventoryLotBalance::where('company_id', $company->id)->where('product_id', $sourceLine->product_id)
-                    ->where('warehouse_id', $warehouseId)->where('lot_id', $originalLot->created_inventory_lot_id)->value('quantity_base') ?? '0');
+                $lotBase = (string) ($lotBalances[$originalLot->created_inventory_lot_id] ?? '0');
                 $lotAvailable = BigDecimal::max('0', BigDecimal::of($lotBase)->dividedBy($ratio, 6, RoundingMode::DOWN));
                 $lotCapacity = $lotCapacity->plus(BigDecimal::min($lotRemaining, $lotAvailable));
             }
@@ -643,6 +717,206 @@ class PurchaseReturnForm extends Component
         $formatted = $maxDecimals > 0 ? (string) $freshMaxReturnable : (string) $freshMaxReturnable->toScale(0, RoundingMode::DOWN);
         $this->lines[$index]['return_quantity'] = $formatted;
         $this->resetErrorBag("lines.{$index}.return_quantity");
+        $this->recalculateTotals();
+    }
+
+    public function recalculate(): void
+    {
+        $this->recalculateTotals();
+    }
+
+    public function updated(string $property): void
+    {
+        if (str_starts_with($property, 'lines.') && str_ends_with($property, '.return_quantity')) {
+            $this->recalculateTotals();
+        }
+    }
+
+    public function recalculateTotals(): void
+    {
+        if (! isset($this->purchaseId)) {
+            $this->resetTotals();
+
+            return;
+        }
+
+        $company = app(CompanyContext::class)->company();
+
+        /** @var Purchase|null $purchase */
+        $purchase = Purchase::where('company_id', $company->id)
+            ->where('id', $this->purchaseId)
+            ->where('status', Purchase::STATUS_POSTED)
+            ->first();
+
+        if ($purchase === null) {
+            $this->resetTotals();
+
+            return;
+        }
+
+        // Avoid leaking restricted cost values: verify purchasing.cost.view
+        if (auth()->check() && ! auth()->user()->hasPermissionTo('purchasing.cost.view')) {
+            $this->resetTotals();
+
+            return;
+        }
+
+        $this->currencyCode = (string) $purchase->currency_code;
+
+        $priorReturnsQuery = DB::table('purchase_returns')
+            ->where('company_id', $company->id)
+            ->where('purchase_id', $this->purchaseId)
+            ->where('status', PurchaseReturn::STATUS_POSTED);
+
+        if ($this->returnId !== null) {
+            $priorReturnsQuery->where('id', '!=', $this->returnId);
+        }
+
+        $priorReturnsTotal = (string) $priorReturnsQuery->sum('grand_total_currency');
+        $origPurchaseTotal = BigDecimal::of((string) $purchase->grand_total_currency);
+        $preReturn = $origPurchaseTotal->minus(BigDecimal::of($priorReturnsTotal ?: '0'));
+        $this->preReturnTotal = (string) $preReturn->toScale(6);
+
+        $sourceLineIds = [];
+        foreach ($this->lines as $line) {
+            $sourceLineIds[] = (int) $line['purchase_line_id'];
+        }
+
+        if (empty($sourceLineIds)) {
+            $this->resetCalculatedTotals();
+
+            return;
+        }
+
+        $sourceLines = PurchaseLine::where('company_id', $company->id)
+            ->where('purchase_id', $this->purchaseId)
+            ->whereIn('id', $sourceLineIds)
+            ->get()
+            ->keyBy('id');
+
+        $allPriorReturnLines = PurchaseReturnLine::where('company_id', $company->id)
+            ->whereIn('purchase_line_id', $sourceLines->keys())
+            ->when($this->returnId !== null, fn ($q) => $q->where('purchase_return_id', '!=', $this->returnId))
+            ->whereHas('purchaseReturn', fn ($q) => $q->where('company_id', $company->id)->where('status', PurchaseReturn::STATUS_POSTED))
+            ->get()
+            ->groupBy('purchase_line_id');
+
+        $returnSubtotal = BigDecimal::zero();
+        $returnDiscount = BigDecimal::zero();
+        $returnTax = BigDecimal::zero();
+        $returnTotal = BigDecimal::zero();
+        $hasPositiveReturn = false;
+
+        $calculator = app(PurchaseReturnAmounts::class);
+
+        foreach ($this->lines as $line) {
+            $qtyStr = trim((string) $line['return_quantity']);
+            if ($qtyStr === '' || $qtyStr === '0') {
+                continue;
+            }
+
+            if (preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $qtyStr) !== 1) {
+                $this->returnCalculationError = __('purchasing.invalid_return_quantity');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            try {
+                $qty = BigDecimal::of($qtyStr);
+            } catch (\Throwable) {
+                $this->returnCalculationError = __('purchasing.invalid_return_quantity');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            if (! $qty->isPositive()) {
+                continue;
+            }
+
+            $purchaseLineId = (int) $line['purchase_line_id'];
+            $sourceLine = $sourceLines->get($purchaseLineId);
+            if ($sourceLine === null) {
+                $this->returnCalculationError = __('refinement.source_line_not_found');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            $priorLinesForLine = $allPriorReturnLines->get($sourceLine->id, collect());
+            $priorQty = BigDecimal::zero();
+            foreach ($priorLinesForLine as $prev) {
+                $priorQty = $priorQty->plus($prev->quantity);
+            }
+            $serverMaxReturnable = BigDecimal::max('0', BigDecimal::of((string) $sourceLine->quantity)->minus($priorQty));
+
+            if ($qty->isGreaterThan($serverMaxReturnable)) {
+                $this->returnCalculationError = __('purchasing.return_quantity_exceeds_remaining');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+
+            try {
+                $returnRecord = $this->returnId !== null
+                    ? PurchaseReturn::where('company_id', $company->id)->where('id', $this->returnId)->first()
+                    : null;
+                /** @var int|null $frozenPrecision */
+                $frozenPrecision = $returnRecord?->getAttribute('currency_minor_units')
+                    ?? $purchase->getAttribute('currency_minor_units');
+                $lineAmounts = $calculator->calculateLine(
+                    $sourceLine,
+                    $qty,
+                    $priorLinesForLine,
+                    $purchase->currency_code,
+                    $frozenPrecision
+                );
+                $returnSubtotal = $returnSubtotal->plus($lineAmounts['subtotal']);
+                $returnDiscount = $returnDiscount->plus($lineAmounts['discount']);
+                $returnTax = $returnTax->plus($lineAmounts['tax']);
+                $returnTotal = $returnTotal->plus($lineAmounts['total']);
+                $hasPositiveReturn = true;
+            } catch (\Throwable) {
+                $this->returnCalculationError = __('purchasing.return_calculation_failed');
+                $this->resetCalculatedTotals();
+
+                return;
+            }
+        }
+
+        if (! $hasPositiveReturn) {
+            $this->returnCalculationError = null;
+            $this->resetCalculatedTotals();
+
+            return;
+        }
+
+        $this->returnCalculationError = null;
+        $this->hasReturnQuantities = $hasPositiveReturn;
+        $this->returnSubtotal = (string) $returnSubtotal->toScale(6);
+        $this->returnDiscount = (string) $returnDiscount->toScale(6);
+        $this->returnTax = (string) $returnTax->toScale(6);
+        $this->returnTotal = (string) $returnTotal->toScale(6);
+        $this->postReturnTotal = (string) $preReturn->minus($returnTotal)->toScale(6);
+    }
+
+    private function resetCalculatedTotals(): void
+    {
+        $this->returnSubtotal = null;
+        $this->returnDiscount = null;
+        $this->returnTax = null;
+        $this->returnTotal = null;
+        $this->postReturnTotal = null;
+        $this->hasReturnQuantities = false;
+    }
+
+    private function resetTotals(): void
+    {
+        $this->currencyCode = '';
+        $this->preReturnTotal = null;
+        $this->returnCalculationError = null;
+        $this->resetCalculatedTotals();
     }
 
     public function saveAndConfirm(): void
@@ -772,6 +1046,15 @@ class PurchaseReturnForm extends Component
             }
         } catch (PurchaseReturnValidationException $e) {
             $this->addError('save', __($e->translationKey, $e->translationParams));
+            if (preg_match('/for (?:purchase )?line \[(\d+)\]/', $e->getMessage(), $matches)) {
+                $failedLineId = (int) $matches[1];
+                foreach ($this->lines as $idx => $l) {
+                    if ((int) $l['purchase_line_id'] === $failedLineId) {
+                        $this->addError("lines.{$idx}.return_quantity", __($e->translationKey, $e->translationParams));
+                        break;
+                    }
+                }
+            }
 
             return;
         } catch (InvalidArgumentException $e) {
@@ -794,6 +1077,15 @@ class PurchaseReturnForm extends Component
                 default => __('purchasing.draft_save_failed'),
             };
             $this->addError('save', $msg);
+            if (preg_match('/for (?:purchase )?line \[(\d+)\]/', $e->getMessage(), $matches)) {
+                $failedLineId = (int) $matches[1];
+                foreach ($this->lines as $idx => $l) {
+                    if ((int) $l['purchase_line_id'] === $failedLineId) {
+                        $this->addError("lines.{$idx}.return_quantity", __('purchasing.return_quantity_exceeds_remaining'));
+                        break;
+                    }
+                }
+            }
 
             return;
         }

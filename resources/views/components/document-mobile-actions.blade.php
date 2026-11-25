@@ -5,7 +5,7 @@
             <div class="min-w-0">
                 <span class="block text-xs text-text-secondary">{{ __('mobile.grand_total') }}</span>
                 @if ($valid)
-                    <bdi data-document-total class="block truncate font-mono text-sm font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total, $currency, $currencyScale) }} {{ $currency }}</bdi>
+                    <bdi data-document-total class="block truncate font-mono text-sm font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total, $currency) }} {{ $currency }}</bdi>
                 @else
                     <span role="status" class="text-xs text-text-secondary">{{ __('camera.totals_unavailable') }}</span>
                 @endif

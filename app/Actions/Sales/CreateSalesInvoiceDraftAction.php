@@ -10,6 +10,9 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Domain\Sales\DocumentDiscountAllocator;
+use App\Domain\Sales\DocumentDiscountIntent;
+use App\Domain\Sales\DocumentDiscountLineCandidate;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CompanyInventorySettings;
@@ -20,11 +23,14 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -33,6 +39,7 @@ class CreateSalesInvoiceDraftAction
     public function __construct(
         protected SalesLineCalculator $lineCalculator,
         protected SalesDocumentTotalsCalculator $totalsCalculator,
+        protected DocumentDiscountAllocator $discountAllocator,
     ) {}
 
     /**
@@ -47,6 +54,10 @@ class CreateSalesInvoiceDraftAction
      *     notes?: ?string,
      *     terms?: ?string,
      *     document_locale?: string,
+     *     discount_type?: ?string,
+     *     discount_value?: string|BigDecimal,
+     *     discount_scope?: ?string,
+     *     discount_calculation_version?: ?int,
      *     lines: list<array{
      *         product_id?: ?int,
      *         product_unit_id?: ?int,
@@ -130,10 +141,57 @@ class CreateSalesInvoiceDraftAction
                 }
             }
 
-            $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-            $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
+            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
+
+            $intent = DocumentDiscountIntent::fromDocumentInput($data);
+            $discountScope = $intent->discountScope;
+
+            $hasLineDiscounts = false;
+            foreach ($data['lines'] as $lineData) {
+                $lineDiscVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
+                if ($lineDiscVal->isPositive()) {
+                    $hasLineDiscounts = true;
+                    break;
+                }
+            }
+
+            if ($intent->isDocumentScope() && $hasLineDiscounts) {
+                throw new InvalidArgumentException(__('sales.manual_line_discount_forbidden'));
+            }
+
+            if (! $intent->isNone()) {
+                if (! $user->hasPermissionTo('sales.invoice.change_discount')) {
+                    throw new AuthorizationException('User does not have permission to apply discounts.');
+                }
+            }
+
+            // Document discount allocation pass
+            $allocationResult = null;
+            if ($discountScope === 'document') {
+                $candidates = [];
+                foreach ($data['lines'] as $idx => $lineData) {
+                    $taxRateModel = null;
+                    if (! empty($lineData['tax_rate_id'])) {
+                        $taxRateModel = TaxRate::where('company_id', $company->id)->where('id', $lineData['tax_rate_id'])->where('active', true)->first();
+                    }
+                    $qtyDecimal = BigDecimal::of((string) $lineData['quantity']);
+                    $priceDecimal = MoneyAmount::from($lineData['unit_price'])->getAmount();
+                    $lineSubtotal = $qtyDecimal->multipliedBy($priceDecimal)->toScale($minorUnits, RoundingMode::HALF_UP);
+                    $candidates[] = new DocumentDiscountLineCandidate(
+                        lineNumber: $idx + 1,
+                        unitPrice: $priceDecimal,
+                        quantity: $qtyDecimal,
+                        subtotal: $lineSubtotal,
+                        taxInclusive: $taxRateModel ? $taxRateModel->calculation === TaxRate::CALC_INCLUSIVE : false,
+                        taxRate: $taxRateModel ? BigDecimal::of((string) $taxRateModel->rate) : null,
+                    );
+                }
+                $allocationResult = $this->discountAllocator->allocate($intent, $candidates, $currency, $minorUnits);
+            }
+
             $lineResults = [];
             $preparedLines = [];
 
@@ -148,18 +206,12 @@ class CreateSalesInvoiceDraftAction
                         ! empty($lineData['product_unit_id']) ? (int) $lineData['product_unit_id'] : null,
                         app(SalesDocumentRules::class)->quantity($lineData['quantity']));
                     $conversionRatio = BigDecimal::of((string) $productUnit->conversion_to_base);
-                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']));
+                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, BigDecimal::of($lineData['unit_price']));
                 } else {
                     app(SalesDocumentRules::class)->quantity($lineData['quantity']);
                     if (! $user->hasPermissionTo('sales.invoice.change_price')) {
                         throw new AuthorizationException('Manual service price requires price-change permission.');
                     }
-                }
-
-                // Enforce discount authorization
-                $discountVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
-                if ($discountVal->isPositive() && ! $user->hasPermissionTo('sales.invoice.change_discount')) {
-                    throw new AuthorizationException('User does not have permission to apply discounts.');
                 }
 
                 $taxRate = null;
@@ -172,19 +224,46 @@ class CreateSalesInvoiceDraftAction
 
                 $taxInclusive = $taxRateModel ? $taxRateModel->calculation === TaxRate::CALC_INCLUSIVE : false;
 
-                $calcInput = new SalesLineCalculationInput(
-                    quantity: $lineData['quantity'],
-                    unitPrice: $lineData['unit_price'],
-                    discountType: $lineData['discount_type'] ?? null,
-                    discountValue: $discountVal,
-                    taxRate: $taxRate,
-                    taxInclusive: $taxInclusive,
-                    currencyMinorUnits: $minorUnits,
-                    exchangeRate: $fx,
-                    baseCurrencyMinorUnits: $baseMinorUnits,
-                );
-
-                $calcResult = $this->lineCalculator->calculate($calcInput);
+                if ($discountScope === 'document') {
+                    $allocatedDiscount = $allocationResult->forLine($idx + 1);
+                    $calcInput = new SalesLineCalculationInput(
+                        quantity: $lineData['quantity'],
+                        unitPrice: $lineData['unit_price'],
+                        discountType: 'fixed',
+                        discountValue: $allocatedDiscount,
+                        taxRate: $taxRate,
+                        taxInclusive: $taxInclusive,
+                        currencyMinorUnits: $minorUnits,
+                        exchangeRate: $fx,
+                        baseCurrencyMinorUnits: $baseMinorUnits,
+                    );
+                    $calcResult = $this->lineCalculator->calculate($calcInput);
+                    $lineDiscountType = null;
+                    $lineDiscountValue = '0.000000';
+                    $manualDiscountAmount = '0.000000';
+                    $allocatedDocDiscount = (string) $allocatedDiscount;
+                } else {
+                    $discountVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
+                    if ($discountVal->isPositive() && ! $user->hasPermissionTo('sales.invoice.change_discount')) {
+                        throw new AuthorizationException('User does not have permission to apply discounts.');
+                    }
+                    $calcInput = new SalesLineCalculationInput(
+                        quantity: $lineData['quantity'],
+                        unitPrice: $lineData['unit_price'],
+                        discountType: $lineData['discount_type'] ?? null,
+                        discountValue: $discountVal,
+                        taxRate: $taxRate,
+                        taxInclusive: $taxInclusive,
+                        currencyMinorUnits: $minorUnits,
+                        exchangeRate: $fx,
+                        baseCurrencyMinorUnits: $baseMinorUnits,
+                    );
+                    $calcResult = $this->lineCalculator->calculate($calcInput);
+                    $lineDiscountType = $lineData['discount_type'] ?? null;
+                    $lineDiscountValue = (string) $discountVal->toScale(6);
+                    $manualDiscountAmount = (string) $calcResult->discount;
+                    $allocatedDocDiscount = '0.000000';
+                }
                 $lineResults[] = $calcResult;
 
                 $qtyDecimal = BigDecimal::of((string) $lineData['quantity']);
@@ -197,8 +276,10 @@ class CreateSalesInvoiceDraftAction
                     'item_description' => $lineData['item_description'],
                     'quantity' => (string) $qtyDecimal->toScale(6),
                     'unit_price' => (string) MoneyAmount::from($lineData['unit_price'])->getAmount()->toScale(6),
-                    'discount_type' => $lineData['discount_type'] ?? null,
-                    'discount_value' => (string) $discountVal->toScale(6),
+                    'discount_type' => $lineDiscountType,
+                    'discount_value' => $lineDiscountValue,
+                    'manual_discount_amount' => $manualDiscountAmount,
+                    'allocated_document_discount' => $allocatedDocDiscount,
                     'tax_rate_id' => $taxRateModel?->id,
                     'tax_rate_snapshot' => $taxRate ? (string) $taxRate->toScale(6) : null,
                     'tax_inclusive' => $taxInclusive,
@@ -252,6 +333,12 @@ class CreateSalesInvoiceDraftAction
                 'warehouse_id' => $warehouseId,
                 'quotation_id' => null,
                 'currency_code' => $currency,
+                'currency_minor_units' => $minorUnits,
+                'discount_type' => ! $intent->isNone() ? $intent->discountType : null,
+                'discount_value' => (string) $intent->discountValue->toScale(6),
+                'discount_scope' => $discountScope,
+                'discount_basis' => $intent->discountBasis,
+                'discount_calculation_version' => $intent->version,
                 'exchange_rate' => (string) $fx->toScale(10),
                 'issue_date' => $issueDate,
                 'due_date' => $dueDate,

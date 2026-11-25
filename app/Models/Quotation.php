@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
 use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\BelongsToCompany;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +36,12 @@ use Illuminate\Support\Str;
  * @property string $discount_total_currency
  * @property string $tax_total_currency
  * @property string $grand_total_currency
+ * @property int|null $currency_minor_units
+ * @property string|null $discount_type
+ * @property string|null $discount_value
+ * @property string $discount_scope
+ * @property string $discount_basis
+ * @property int $discount_calculation_version
  * @property string|null $notes
  * @property string|null $terms
  * @property string $document_locale
@@ -75,6 +82,12 @@ class Quotation extends Model
         'quotation_number',
         'customer_id',
         'currency_code',
+        'currency_minor_units',
+        'discount_type',
+        'discount_value',
+        'discount_scope',
+        'discount_basis',
+        'discount_calculation_version',
         'exchange_rate',
         'issue_date',
         'expiry_date',
@@ -107,6 +120,9 @@ class Quotation extends Model
         return [
             'issue_date' => 'date:Y-m-d',
             'expiry_date' => 'date:Y-m-d',
+            'currency_minor_units' => 'integer',
+            'discount_value' => 'string',
+            'discount_calculation_version' => 'integer',
             'exchange_rate' => 'string',
             'subtotal_base' => 'string',
             'discount_total_base' => 'string',
@@ -120,6 +136,11 @@ class Quotation extends Model
             'company_snapshot' => 'array',
             'converted_at' => 'datetime', 'sent_at' => 'datetime', 'accepted_at' => 'datetime', 'include_product_images' => 'boolean',
         ];
+    }
+
+    public function resolvedCurrencyMinorUnits(): int
+    {
+        return $this->currency_minor_units ?? SalesDocumentRules::legacyCurrencyMinorUnits($this->currency_code);
     }
 
     private bool $transitioning = false;

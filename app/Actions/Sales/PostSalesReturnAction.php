@@ -103,7 +103,7 @@ class PostSalesReturnAction implements StockEventOwner
             /** @var Customer $customer */
             $customer = Customer::where('company_id', $company->id)->where('id', $lockedReturn->customer_id)->lockForUpdate()->firstOrFail();
 
-            app(SalesReturnAmounts::class)->refresh($lockedReturn);
+            app(SalesReturnAmounts::class)->refresh($lockedReturn, $invoice);
             $lines = $lockedReturn->lines;
             if ($lines->isEmpty()) {
                 throw new InvalidArgumentException('Sales return must have at least one line.');

@@ -10,6 +10,9 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Domain\Sales\DocumentDiscountAllocator;
+use App\Domain\Sales\DocumentDiscountIntent;
+use App\Domain\Sales\DocumentDiscountLineCandidate;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\Customer;
@@ -19,11 +22,14 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -32,6 +38,7 @@ class UpdateSalesInvoiceDraftAction
     public function __construct(
         protected SalesLineCalculator $lineCalculator,
         protected SalesDocumentTotalsCalculator $totalsCalculator,
+        protected DocumentDiscountAllocator $discountAllocator,
     ) {}
 
     /**
@@ -43,6 +50,10 @@ class UpdateSalesInvoiceDraftAction
      *     issue_date?: string,
      *     due_date?: string,
      *     document_locale?: string,
+     *     discount_type?: ?string,
+     *     discount_value?: string|BigDecimal,
+     *     discount_scope?: ?string,
+     *     discount_calculation_version?: ?int,
      *     notes?: ?string,
      *     terms?: ?string,
      *     lines?: list<array{
@@ -123,15 +134,62 @@ class UpdateSalesInvoiceDraftAction
             if (! isset($data['lines']) && ($currency !== $lockedInvoice->currency_code || ! $fx->isEqualTo($lockedInvoice->exchange_rate))) {
                 throw new InvalidArgumentException('Currency/rate changes require the draft lines to be recalculated together.');
             }
+            if (! isset($data['lines']) && array_intersect(['discount_type', 'discount_value', 'discount_scope'], array_keys($data)) !== []) {
+                throw new InvalidArgumentException(__('sales.discount_change_requires_lines'));
+            }
             if (isset($data['lines'])) {
                 if (empty($data['lines'])) {
                     throw new InvalidArgumentException('Sales invoice must contain at least one line.');
                 }
 
-                $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-                $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+                if ($currency === $lockedInvoice->currency_code) {
+                    $minorUnits = $lockedInvoice->resolvedCurrencyMinorUnits();
+                } else {
+                    $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
+                }
+                $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
+
+                $intent = DocumentDiscountIntent::fromDocumentInput($data, $lockedInvoice->discount_type, $lockedInvoice->discount_value, $lockedInvoice->discount_scope);
+                $discountScope = $intent->discountScope;
+
+                $hasLineDiscounts = false;
+                foreach ($data['lines'] as $lineData) {
+                    $lineDiscVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
+                    if ($lineDiscVal->isPositive()) {
+                        $hasLineDiscounts = true;
+                        break;
+                    }
+                }
+
+                if ($intent->isDocumentScope() && $hasLineDiscounts) {
+                    throw new InvalidArgumentException(__('sales.manual_line_discount_forbidden'));
+                }
+
+                $allocationResult = null;
+                if ($discountScope === 'document') {
+                    $candidates = [];
+                    foreach ($data['lines'] as $idx => $lineData) {
+                        $taxRateModel = null;
+                        if (! empty($lineData['tax_rate_id'])) {
+                            $taxRateModel = TaxRate::where('company_id', $company->id)->where('id', $lineData['tax_rate_id'])->where('active', true)->first();
+                        }
+                        $qtyDecimal = BigDecimal::of((string) $lineData['quantity']);
+                        $priceDecimal = MoneyAmount::from($lineData['unit_price'])->getAmount();
+                        $lineSubtotal = $qtyDecimal->multipliedBy($priceDecimal)->toScale($minorUnits, RoundingMode::HALF_UP);
+                        $candidates[] = new DocumentDiscountLineCandidate(
+                            lineNumber: $idx + 1,
+                            unitPrice: $priceDecimal,
+                            quantity: $qtyDecimal,
+                            subtotal: $lineSubtotal,
+                            taxInclusive: $taxRateModel ? $taxRateModel->calculation === TaxRate::CALC_INCLUSIVE : false,
+                            taxRate: $taxRateModel ? BigDecimal::of((string) $taxRateModel->rate) : null,
+                        );
+                    }
+                    $allocationResult = $this->discountAllocator->allocate($intent, $candidates, $currency, $minorUnits);
+                }
+
                 $lineResults = [];
                 $preparedLines = [];
 
@@ -146,17 +204,12 @@ class UpdateSalesInvoiceDraftAction
                             ! empty($lineData['product_unit_id']) ? (int) $lineData['product_unit_id'] : null,
                             app(SalesDocumentRules::class)->quantity($lineData['quantity']));
                         $conversionRatio = BigDecimal::of((string) $productUnit->conversion_to_base);
-                        app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']));
+                        app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, BigDecimal::of($lineData['unit_price']));
                     } else {
                         app(SalesDocumentRules::class)->quantity($lineData['quantity']);
                         if (! $user->hasPermissionTo('sales.invoice.change_price')) {
                             throw new AuthorizationException('Manual service price requires price-change permission.');
                         }
-                    }
-
-                    $discountVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
-                    if ($discountVal->isPositive() && ! $user->hasPermissionTo('sales.invoice.change_discount')) {
-                        throw new AuthorizationException('User does not have permission to apply discounts.');
                     }
 
                     $taxRate = null;
@@ -169,19 +222,43 @@ class UpdateSalesInvoiceDraftAction
 
                     $taxInclusive = $taxRateModel ? $taxRateModel->calculation === TaxRate::CALC_INCLUSIVE : false;
 
-                    $calcInput = new SalesLineCalculationInput(
-                        quantity: $lineData['quantity'],
-                        unitPrice: $lineData['unit_price'],
-                        discountType: $lineData['discount_type'] ?? null,
-                        discountValue: $discountVal,
-                        taxRate: $taxRate,
-                        taxInclusive: $taxInclusive,
-                        currencyMinorUnits: $minorUnits,
-                        exchangeRate: $fx,
-                        baseCurrencyMinorUnits: $baseMinorUnits,
-                    );
-
-                    $calcResult = $this->lineCalculator->calculate($calcInput);
+                    if ($discountScope === 'document') {
+                        $allocatedDiscount = $allocationResult !== null ? $allocationResult->forLine($idx + 1) : BigDecimal::zero()->toScale(6);
+                        $calcInput = new SalesLineCalculationInput(
+                            quantity: $lineData['quantity'],
+                            unitPrice: $lineData['unit_price'],
+                            discountType: 'fixed',
+                            discountValue: $allocatedDiscount,
+                            taxRate: $taxRate,
+                            taxInclusive: $taxInclusive,
+                            currencyMinorUnits: $minorUnits,
+                            exchangeRate: $fx,
+                            baseCurrencyMinorUnits: $baseMinorUnits,
+                        );
+                        $calcResult = $this->lineCalculator->calculate($calcInput);
+                        $lineDiscountType = null;
+                        $lineDiscountValue = '0.000000';
+                        $manualDiscountAmount = '0.000000';
+                        $allocatedDocDiscount = (string) $allocatedDiscount;
+                    } else {
+                        $discountVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
+                        $calcInput = new SalesLineCalculationInput(
+                            quantity: $lineData['quantity'],
+                            unitPrice: $lineData['unit_price'],
+                            discountType: $lineData['discount_type'] ?? null,
+                            discountValue: $discountVal,
+                            taxRate: $taxRate,
+                            taxInclusive: $taxInclusive,
+                            currencyMinorUnits: $minorUnits,
+                            exchangeRate: $fx,
+                            baseCurrencyMinorUnits: $baseMinorUnits,
+                        );
+                        $calcResult = $this->lineCalculator->calculate($calcInput);
+                        $lineDiscountType = $lineData['discount_type'] ?? null;
+                        $lineDiscountValue = (string) $discountVal->toScale(6);
+                        $manualDiscountAmount = (string) $calcResult->discount;
+                        $allocatedDocDiscount = '0.000000';
+                    }
                     $lineResults[] = $calcResult;
 
                     $qtyDecimal = BigDecimal::of((string) $lineData['quantity']);
@@ -194,8 +271,10 @@ class UpdateSalesInvoiceDraftAction
                         'item_description' => $lineData['item_description'],
                         'quantity' => (string) $qtyDecimal->toScale(6),
                         'unit_price' => (string) MoneyAmount::from($lineData['unit_price'])->getAmount()->toScale(6),
-                        'discount_type' => $lineData['discount_type'] ?? null,
-                        'discount_value' => (string) $discountVal->toScale(6),
+                        'discount_type' => $lineDiscountType,
+                        'discount_value' => $lineDiscountValue,
+                        'manual_discount_amount' => $manualDiscountAmount,
+                        'allocated_document_discount' => $allocatedDocDiscount,
                         'tax_rate_id' => $taxRateModel?->id,
                         'tax_rate_snapshot' => $taxRate ? (string) $taxRate->toScale(6) : null,
                         'tax_inclusive' => $taxInclusive,
@@ -219,6 +298,36 @@ class UpdateSalesInvoiceDraftAction
                     ];
                 }
 
+                if (! $user->hasPermissionTo('sales.invoice.change_discount')) {
+                    $previousIntent = DocumentDiscountIntent::fromDocumentInput(
+                        [], $lockedInvoice->discount_type, $lockedInvoice->discount_value, $lockedInvoice->discount_scope
+                    );
+                    $headerChanged = (! $intent->isNone() || ! $previousIntent->isNone())
+                        && ($intent->discountType !== $previousIntent->discountType
+                            || ! $intent->discountValue->isEqualTo($previousIntent->discountValue));
+                    $discounts = static function (iterable $lines): array {
+                        $result = [];
+                        foreach ($lines as $line) {
+                            if (BigDecimal::of($line['line_discount'])->isPositive()
+                                || ($line['discount_type'] !== null && BigDecimal::of($line['discount_value'])->isPositive())) {
+                                $result[(int) $line['line_number']] = [
+                                    $line['product_id'] === null ? null : (int) $line['product_id'],
+                                    $line['product_unit_id'] === null ? null : (int) $line['product_unit_id'],
+                                    $line['discount_type'],
+                                    (string) BigDecimal::of($line['discount_value'])->toScale(6),
+                                    (string) BigDecimal::of($line['line_discount'])->toScale(6),
+                                ];
+                            }
+                        }
+                        ksort($result);
+
+                        return $result;
+                    };
+                    if ($headerChanged || $discounts($lockedInvoice->lines()->lockForUpdate()->get()) !== $discounts($preparedLines)) {
+                        throw new AuthorizationException('User does not have permission to change discounts.');
+                    }
+                }
+
                 $totals = $this->totalsCalculator->calculate($lineResults, $fx);
 
                 SalesInvoiceLine::where('sales_invoice_id', $lockedInvoice->id)->delete();
@@ -230,6 +339,12 @@ class UpdateSalesInvoiceDraftAction
                     ]));
                 }
 
+                $lockedInvoice->currency_minor_units = $minorUnits;
+                $lockedInvoice->discount_type = ! $intent->isNone() ? $intent->discountType : null;
+                $lockedInvoice->discount_value = (string) $intent->discountValue->toScale(6);
+                $lockedInvoice->discount_scope = $discountScope;
+                $lockedInvoice->discount_basis = $intent->discountBasis;
+                $lockedInvoice->discount_calculation_version = $intent->version;
                 $lockedInvoice->subtotal_base = (string) $totals->subtotalBase;
                 $lockedInvoice->discount_total_base = (string) $totals->discountTotalBase;
                 $lockedInvoice->tax_total_base = (string) $totals->taxTotalBase;
