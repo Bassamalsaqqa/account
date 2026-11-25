@@ -146,9 +146,16 @@
 
         @if ($sales_invoice_id && $preReturnTotal !== null)
             <div class="rounded-card border border-border bg-surface-soft p-4 space-y-3" data-testid="return-totals-summary">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-text-secondary">
-                    {{ __('sales.return_summary') }}
-                </h3>
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-text-secondary">
+                        {{ __('sales.return_summary') }}
+                    </h3>
+                    @if ($returnCalculationError)
+                        <span class="text-xs font-semibold text-danger flex items-center gap-1" data-testid="return-totals-error">
+                            {{ $returnCalculationError }}
+                        </span>
+                    @endif
+                </div>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                     <div class="bg-surface rounded-control p-3 border border-border">
                         <span class="text-xs text-text-secondary block">{{ __('sales.pre_return_total') }}</span>
@@ -160,10 +167,14 @@
                     <div class="bg-surface rounded-control p-3 border border-border">
                         <span class="text-xs text-text-secondary block">{{ __('sales.current_return_total') }}</span>
                         <div class="mt-1 font-mono text-base font-bold tabular-nums text-primary" dir="ltr">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTotal, $currencyCode) }}
-                            <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                            @if ($returnCalculationError || $returnTotal === null)
+                                <span class="text-text-muted text-sm font-normal">—</span>
+                            @else
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTotal, $currencyCode) }}
+                                <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                            @endif
                         </div>
-                        @if (\App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($returnTax))
+                        @if (! $returnCalculationError && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($returnTax))
                             <span class="text-xs text-text-muted block mt-0.5" dir="ltr">
                                 {{ __('sales.tax') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTax, $currencyCode) }} {{ $currencyCode }}
                             </span>
@@ -172,8 +183,12 @@
                     <div class="bg-surface rounded-control p-3 border border-border">
                         <span class="text-xs text-text-secondary block">{{ __('sales.post_return_remaining') }}</span>
                         <div class="mt-1 font-mono text-base font-bold tabular-nums text-text-primary" dir="ltr">
-                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($postReturnTotal, $currencyCode) }}
-                            <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                            @if ($returnCalculationError || $postReturnTotal === null)
+                                <span class="text-text-muted text-sm font-normal">—</span>
+                            @else
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($postReturnTotal, $currencyCode) }}
+                                <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                            @endif
                         </div>
                     </div>
                 </div>

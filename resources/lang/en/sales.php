@@ -322,5 +322,8 @@ return [
     'return_summary' => 'Return Summary',
     'pre_return_total' => 'Invoice Total Before Return',
     'current_return_total' => 'Return Total',
-    'post_return_remaining' => 'Invoice Balance After Return',
+    'post_return_remaining' => 'Remaining Invoice Goods Value',
+    'return_calculation_failed' => 'Return totals could not be calculated. Please check line quantities.',
+    'invalid_return_quantity' => 'Invalid return quantity.',
+    'return_quantity_exceeds_remaining' => 'Requested return quantity exceeds remaining returnable quantity.',
 ];

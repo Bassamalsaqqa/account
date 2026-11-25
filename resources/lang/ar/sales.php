@@ -322,5 +322,8 @@ return [
     'return_summary' => 'ملخص المردود',
     'pre_return_total' => 'إجمالي الفاتورة قبل الإرجاع',
     'current_return_total' => 'إجمالي المردود',
-    'post_return_remaining' => 'رصيد الفاتورة بعد الإرجاع',
+    'post_return_remaining' => 'قيمة بضاعة الفاتورة بعد الإرجاع',
+    'return_calculation_failed' => 'تعذر احتساب إجمالي المردود. يرجى التحقق من الكميات.',
+    'invalid_return_quantity' => 'كمية مردود غير صالحة.',
+    'return_quantity_exceeds_remaining' => 'الكمية المطلوبة تتجاوز الكمية المتبقية القابلة للإرجاع.',
 ];

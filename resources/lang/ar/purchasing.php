@@ -351,4 +351,10 @@ return [
     'void_blocked_insufficient_company_stock' => 'المخزون ما بكفي للصنف :product_id.',
     'void_blocked_carrying_value_mismatch' => 'قيمة المخزون بتمنع تصحيح الصنف :product_id.',
     'void_blocked_insufficient_lot_stock' => 'المخزون ما بكفي بالتشغيلة :lot_id.',
+    'return_summary' => 'ملخص المردود',
+    'pre_return_total' => 'إجمالي فاتورة الشراء قبل الإرجاع',
+    'current_return_total' => 'إجمالي المردود',
+    'post_return_remaining' => 'قيمة بضاعة الشراء بعد الإرجاع',
+    'return_calculation_failed' => 'تعذر احتساب إجمالي المردود. يرجى التحقق من الكميات.',
+    'invalid_return_quantity' => 'كمية مردود غير صالحة.',
 ];

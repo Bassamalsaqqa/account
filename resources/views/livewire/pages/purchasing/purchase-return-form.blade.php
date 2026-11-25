@@ -172,6 +172,57 @@
         @endforeach
     </section>
 
+    @if ($purchaseId && $preReturnTotal !== null)
+        <div class="rounded-card border border-border bg-surface-soft p-4 space-y-3" data-testid="return-totals-summary">
+            <div class="flex items-center justify-between">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-text-secondary">
+                    {{ __('purchasing.return_summary') }}
+                </h3>
+                @if ($returnCalculationError)
+                    <span class="text-xs font-semibold text-danger flex items-center gap-1" data-testid="return-totals-error">
+                        {{ $returnCalculationError }}
+                    </span>
+                @endif
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                <div class="bg-surface rounded-control p-3 border border-border">
+                    <span class="text-xs text-text-secondary block">{{ __('purchasing.pre_return_total') }}</span>
+                    <div class="mt-1 font-mono text-base font-bold tabular-nums text-text-primary" dir="ltr">
+                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($preReturnTotal, $currencyCode) }}
+                        <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                    </div>
+                </div>
+                <div class="bg-surface rounded-control p-3 border border-border">
+                    <span class="text-xs text-text-secondary block">{{ __('purchasing.current_return_total') }}</span>
+                    <div class="mt-1 font-mono text-base font-bold tabular-nums text-primary" dir="ltr">
+                        @if ($returnCalculationError || $returnTotal === null)
+                            <span class="text-text-muted text-sm font-normal">—</span>
+                        @else
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTotal, $currencyCode) }}
+                            <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                        @endif
+                    </div>
+                    @if (! $returnCalculationError && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($returnTax))
+                        <span class="text-xs text-text-muted block mt-0.5" dir="ltr">
+                            {{ __('purchasing.tax') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTax, $currencyCode) }} {{ $currencyCode }}
+                        </span>
+                    @endif
+                </div>
+                <div class="bg-surface rounded-control p-3 border border-border">
+                    <span class="text-xs text-text-secondary block">{{ __('purchasing.post_return_remaining') }}</span>
+                    <div class="mt-1 font-mono text-base font-bold tabular-nums text-text-primary" dir="ltr">
+                        @if ($returnCalculationError || $postReturnTotal === null)
+                            <span class="text-text-muted text-sm font-normal">—</span>
+                        @else
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($postReturnTotal, $currencyCode) }}
+                            <span class="text-xs font-normal text-text-secondary">{{ $currencyCode }}</span>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
     <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
             <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap justify-end gap-3 rounded-control border border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
         <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">

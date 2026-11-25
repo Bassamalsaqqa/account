@@ -351,4 +351,10 @@ return [
     'void_blocked_insufficient_company_stock' => 'Not enough stock for product :product_id.',
     'void_blocked_carrying_value_mismatch' => 'Inventory value prevents correction for product :product_id.',
     'void_blocked_insufficient_lot_stock' => 'Not enough stock in lot :lot_id.',
+    'return_summary' => 'Return Summary',
+    'pre_return_total' => 'Purchase Total Before Return',
+    'current_return_total' => 'Return Total',
+    'post_return_remaining' => 'Remaining Purchase Goods Value',
+    'return_calculation_failed' => 'Return totals could not be calculated. Please check line quantities.',
+    'invalid_return_quantity' => 'Invalid return quantity.',
 ];
