@@ -456,13 +456,63 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertStringNotContainsString('id="supplier-number"', $topBlock);
         $this->assertStringNotContainsString('id="purchase-due_date"', $topBlock);
 
+        // Drawer is initially collapsed via CSS class (no stale Alpine x-show literal)
+        $this->assertMatchesRegularExpression('/id="extendedDetailsDrawer"[^>]*class="[^"]*\bhidden\b/', $html);
+        $this->assertStringNotContainsString('x-show="false"', $html);
+
+        // Toggling more details switches visibility class and aria-expanded without x-show literal
+        $test->call('toggleMoreDetails');
+        $expandedHtml = $test->html();
+        $this->assertMatchesRegularExpression('/aria-controls="extendedDetailsDrawer"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*aria-controls="extendedDetailsDrawer"/', $expandedHtml);
+        $this->assertMatchesRegularExpression('/id="extendedDetailsDrawer"[^>]*class="[^"]*\bgrid\b/', $expandedHtml);
+        $this->assertDoesNotMatchRegularExpression('/id="extendedDetailsDrawer"[^>]*class="[^"]*\bhidden\b/', $expandedHtml);
+
+        $test->call('toggleMoreDetails');
+        $collapsedHtml = $test->html();
+        $this->assertMatchesRegularExpression('/id="extendedDetailsDrawer"[^>]*class="[^"]*\bhidden\b/', $collapsedHtml);
+
         // Drawer auto-expands when drawer fields have validation errors
         $test->set('vendor_invoice_number', str_repeat('V', 150));
         $test->call('save', false);
         $test->assertHasErrors(['vendor_invoice_number']);
 
         $errorHtml = $test->html();
-        $this->assertStringContainsString('x-show="true"', $errorHtml);
+        $this->assertMatchesRegularExpression('/id="extendedDetailsDrawer"[^>]*class="[^"]*\bgrid\b/', $errorHtml);
+        $this->assertDoesNotMatchRegularExpression('/id="extendedDetailsDrawer"[^>]*class="[^"]*\bhidden\b/', $errorHtml);
+        $this->assertMatchesRegularExpression('/aria-controls="extendedDetailsDrawer"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*aria-controls="extendedDetailsDrawer"/', $errorHtml);
+    }
+
+    public function test_row_options_toggle_updates_visibility_and_auto_expands_on_error(): void
+    {
+        $test = Livewire::test(PurchaseForm::class);
+        $initialHtml = $test->html();
+
+        $this->assertMatchesRegularExpression('/aria-controls="purchase-line-options-0"[^>]*aria-expanded="false"|aria-expanded="false"[^>]*aria-controls="purchase-line-options-0"/', $initialHtml);
+        $this->assertMatchesRegularExpression('/id="purchase-line-options-0"[^>]*class="[^"]*\bhidden\b/', $initialHtml);
+        $this->assertStringNotContainsString('x-show="false"', $initialHtml);
+
+        $test->call('toggleRowOptions', 0);
+        $openHtml = $test->html();
+        $this->assertTrue($test->get('expandedRowOptions.0'));
+        $this->assertMatchesRegularExpression('/aria-controls="purchase-line-options-0"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*aria-controls="purchase-line-options-0"/', $openHtml);
+        $this->assertDoesNotMatchRegularExpression('/id="purchase-line-options-0"[^>]*class="[^"]*\bhidden\b/', $openHtml);
+
+        $test->call('toggleRowOptions', 0);
+        $closedHtml = $test->html();
+        $this->assertFalse($test->get('expandedRowOptions.0'));
+        $this->assertMatchesRegularExpression('/id="purchase-line-options-0"[^>]*class="[^"]*\bhidden\b/', $closedHtml);
+
+        // Auto-expands on row option validation error even when collapsed
+        $test->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.item_description', str_repeat('D', 505))
+            ->call('save', false);
+
+        $test->assertHasErrors(['lines.0.item_description']);
+        $errorHtml = $test->html();
+        $this->assertDoesNotMatchRegularExpression('/id="purchase-line-options-0"[^>]*class="[^"]*\bhidden\b/', $errorHtml);
+        $this->assertMatchesRegularExpression('/aria-controls="purchase-line-options-0"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*aria-controls="purchase-line-options-0"/', $errorHtml);
     }
 
     public function test_lines_table_action_bar_is_clean_of_shortcuts_and_counters_and_global_discount_controls_toggle(): void

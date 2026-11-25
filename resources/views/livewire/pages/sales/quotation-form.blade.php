@@ -156,15 +156,17 @@
         <!-- Lines Section -->
         <div>
             <div class="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-border">
-                <div class="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                <div class="flex w-full md:w-auto min-w-0 md:flex-1 flex-wrap items-center gap-3">
                     <h2 class="text-sm font-bold text-text-primary">
                         {{ __('sales.quotation_details') }}
                     </h2>
-                    <div class="flex items-center gap-2 flex-1 max-w-md">
-                        <input type="text"
+                    <div class="flex w-full md:w-auto min-w-0 md:flex-1 max-w-md items-center gap-2">
+                        <input id="quotation-product-search"
+                               type="text"
                                wire:model.live.debounce.300ms="productSearch"
                                placeholder="{{ __('workflow.search_products') }}"
-                               class="flex-1 min-w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                               aria-label="{{ __('workflow.search_products') }}"
+                               class="flex-1 min-w-0 w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                         @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
                             <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                                 + {{ __('quick_product.create') }}

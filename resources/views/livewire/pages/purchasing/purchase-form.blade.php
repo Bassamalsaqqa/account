@@ -88,11 +88,12 @@
                     'document_locale',
                     'notes',
                 ]);
+                $isMoreDetailsOpen = $showMoreDetails || $hasDrawerErrors;
             @endphp
-            <button type="button" wire:click="toggleMoreDetails" aria-expanded="{{ ($showMoreDetails || $hasDrawerErrors) ? 'true' : 'false' }}" aria-controls="extendedDetailsDrawer" class="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] bg-surface-soft hover:bg-surface-soft/80 text-text-primary rounded-control font-medium text-xs border border-border transition-colors cursor-pointer">
+            <button type="button" wire:click="toggleMoreDetails" aria-expanded="{{ $isMoreDetailsOpen ? 'true' : 'false' }}" aria-controls="extendedDetailsDrawer" class="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] bg-surface-soft hover:bg-surface-soft/80 text-text-primary rounded-control font-medium text-xs border border-border transition-colors cursor-pointer">
                 <x-icon name="tune" class="w-3.5 h-3.5 text-text-secondary" />
-                <span>{{ $showMoreDetails ? __('purchasing.hide_more_details') : __('purchasing.more_details') }}</span>
-                <x-icon name="chevron-down" class="w-3.5 h-3.5 text-text-secondary transition-transform duration-200 {{ $showMoreDetails ? 'rotate-180' : '' }}" />
+                <span>{{ $isMoreDetailsOpen ? __('purchasing.hide_more_details') : __('purchasing.more_details') }}</span>
+                <x-icon name="chevron-down" class="w-3.5 h-3.5 text-text-secondary transition-transform duration-200 {{ $isMoreDetailsOpen ? 'rotate-180' : '' }}" />
             </button>
         </div>
 
@@ -130,19 +131,11 @@
         </div>
 
         <!-- Collapsible More Details Drawer: Optional Bill #, Due Date & Contextual Fields -->
-        @php
-            $hasDrawerErrors = $errors->hasAny([
-                'vendor_invoice_number',
-                'due_date',
-                'warehouse_id',
-                'purchase_date',
-                'currency_code',
-                'exchange_rate',
-                'document_locale',
-                'notes',
-            ]);
-        @endphp
-        <div x-cloak x-show="{{ $showMoreDetails || $hasDrawerErrors ? 'true' : 'false' }}" class="pt-3 border-t border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-surface-soft p-3 rounded-control" id="extendedDetailsDrawer">
+        <div id="extendedDetailsDrawer" @class([
+            'pt-3 border-t border-border bg-surface-soft p-3 rounded-control',
+            'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3' => $isMoreDetailsOpen,
+            'hidden' => ! $isMoreDetailsOpen,
+        ])>
             <div>
                 <label for="supplier-number" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.vendor_invoice_number') }}
@@ -281,7 +274,7 @@
                         @endif
                     </div>
                     <div class="flex items-center gap-2">
-                        <button type="button" wire:click="toggleRowOptions({{ $index }})" class="px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary border border-border rounded-control hover:bg-surface-soft transition-colors cursor-pointer">
+                        <button type="button" wire:click="toggleRowOptions({{ $index }})" aria-expanded="{{ $isRowOptionsOpen ? 'true' : 'false' }}" aria-controls="purchase-line-options-{{ $index }}" class="px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary border border-border rounded-control hover:bg-surface-soft transition-colors cursor-pointer">
                             {{ __('purchasing.row_options') }}
                         </button>
                         <button type="button" wire:click="removeLine({{ $index }})" class="min-h-[36px] px-2.5 text-danger text-xs font-bold cursor-pointer hover:bg-danger/10 rounded-control transition-colors" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
@@ -363,7 +356,10 @@
                 </div>
 
                 <!-- Collapsible Row Options (Description, Tax, Expiry) -->
-                <div x-cloak x-show="{{ $isRowOptionsOpen ? 'true' : 'false' }}" class="border-t border-border/60 pt-3 space-y-3 bg-surface-soft p-3 rounded-control">
+                <div id="purchase-line-options-{{ $index }}" @class([
+                    'border-t border-border/60 pt-3 space-y-3 bg-surface-soft p-3 rounded-control',
+                    'hidden' => ! $isRowOptionsOpen,
+                ])>
                     <div class="grid sm:grid-cols-2 gap-3">
                         <div>
                             <label for="line-description-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.description') }}</label>
