@@ -165,7 +165,7 @@ Required environment configuration for the test runner:
 - `PHASE8_TEST_TIMEOUT=900` (optional configurable timeout in seconds; strictly positive integer up to 14400; default 900s for focused runs)
 
 > [!IMPORTANT]
-> The test database user requires `CREATE`, `DROP`, `ALTER`, `INDEX`, `INSERT`, `SELECT`, `UPDATE`, and `DELETE` privileges to create, migrate, and drop temporary schemas matching `accounting_p8_tmp_%`. Never point the test runner at a production database or the persistent development preview database (port 3353).
+> The test database user requires `CREATE`, `DROP`, `ALTER`, `INDEX`, `INSERT`, `SELECT`, `UPDATE`, `DELETE`, and `TRIGGER` privileges to create, migrate, and drop temporary schemas matching `accounting_p8_tmp_%`. Never point the test runner at a production database or the persistent development preview database (port 3353).
 
 ```bash
 # POSIX / Bash — focused test target
@@ -204,9 +204,25 @@ php tests/Support/rehearse-disposable-migration-upgrade.php "$baseline_sha"
 
 The runner requires an additive migration history, compares the applied migration names and table definitions, and drops its two owned schemas. A populated recovery rehearsal remains a separate release gate.
 
-The migration for mobile authority and offline policy revocation requires database trigger creation permission on the migration connection. It retires legacy mobile bearers and offline leases while preserving committed receipts and their original event bytes. Staff can sign in again on the same device to recover a committed receipt, subject to current permissions. Use a forward correction once the migration has recorded authority or issued lease history.
+#### Mobile authority migration preflight
 
-`MOBILE_V2_OFFLINE_SALES_ENABLED=false` pauses offline intake. With Mobile V2 and its cash slice available, committed receipt status remains accessible. Disabling a company's offline policy revokes its leases in the same transaction. Re-enabling the policy requires a fresh lease.
+Before any release DDL, rehearse `2026_11_25_100002_track_mobile_authority_and_offline_policy_revocation` on a disposable, deployment-equivalent database with the same engine/version, binlog settings, SQL mode, effective migration grants and runtime grants. Use a synthetic baseline with a mobile bearer, an issued lease and a committed receipt, and the same account relationship between the migrator, definer and runtime as the planned deployment.
+
+Record the following read-only evidence for the planned deployment connection under the approved release procedure. Compare it with the disposable rehearsal before running `artisan migrate`.
+
+```sql
+SELECT VERSION(), CURRENT_USER(), CURRENT_ROLE(), @@global.log_bin,
+       @@global.log_bin_trust_function_creators, @@session.binlog_format,
+       @@session.sql_mode;
+SHOW GRANTS;
+```
+
+- Verify that the migration account already has the required ALTER and data privileges and `TRIGGER` on both `users` and `company_mobile_settings`. Verify actual trigger creation and metadata visibility on the disposable database under the matched grants. Binlog settings can require elevated privileges even with the table-level grant. A root-only or binlog-disabled rehearsal does not qualify a more restricted deployment. [MariaDB trigger privileges](https://mariadb.com/docs/server/server-usage/triggers-events/triggers/create-trigger) [MariaDB binlog rules](https://mariadb.com/docs/server/server-usage/stored-routines/binary-logging-of-stored-routines)
+- The migration connection's `CURRENT_USER()` becomes the definer. Use the same account for retries and verify that it will remain present with the effective privileges needed when triggers fire, including changing `users.mobile_authority_revision` and reading/updating the lease rows. Exercise a credential change and mobile-settings update and delete using the deployment-equivalent application account. Inspect the three definitions with `SHOW CREATE TRIGGER`. If privileges, binlog policy, definer lifetime or the rehearsal cannot be verified, hold migrations before any DDL. This procedure does not grant privileges or alter server settings.
+- Keep maintenance held and quiesce legacy writers and mobile clients during the migration and any retry. MariaDB commits each DDL step independently. After an interruption, rerun the same forward migration under the same definer. A mismatched definition or unexpected step order requires operator review with maintenance held. Verify that Artisan recorded the migration and the three trigger definitions match before reopening traffic. Mobile authentication fails closed until the migration is recorded.
+- The migration retires legacy bearers and leases and preserves committed receipts and their original event bytes. Staff can sign in again on the same device and look up a committed receipt with current permissions. Use a forward correction once the migration has recorded authority changes or issued lease history.
+
+`MOBILE_V2_OFFLINE_SALES_ENABLED=false` pauses offline intake. With Mobile V2 and its cash slice available, committed receipt status remains accessible. Disabling a company's offline policy retires its leases in the same transaction. Changing the approved cash routing or default tax selection, toggling availability of the approved cash account, or changing the configured tax rate, calculation, availability or output ledger also retires the company's leases. Restoring the original setup requires a fresh lease.
 
 For a clean MariaDB 10.4 rehearsal, start the disposable server with `--explicit-defaults-for-timestamp=ON`. With the older server default, the existing strict-mode mobile migration can reject `mobile_auth_challenges.expires_at` with error 1067. Record the deployment server's value with `SHOW GLOBAL VARIABLES LIKE 'explicit_defaults_for_timestamp'` when comparing environments. [MariaDB system variable reference](https://mariadb.com/docs/server/server-management/variables-and-modes/server-system-variables#explicit_defaults_for_timestamp)
 

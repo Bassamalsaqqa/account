@@ -7,10 +7,13 @@ namespace Tests\Feature\Mobile\V2;
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Company\UpdateRolePermissionsAction;
 use App\Actions\Inventory\PostOpeningStockAction;
+use App\Actions\Sales\CreateMoneyAccountAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Actions\Sales\SaveTaxRateAction;
+use App\Actions\Sales\UpdateMoneyAccountAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Models\Company;
@@ -18,6 +21,7 @@ use App\Models\CompanyMobileSetting;
 use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
+use App\Models\LedgerAccount;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\MobileEventReceipt;
@@ -55,6 +59,7 @@ use App\Support\Tenancy\CompanyScope;
 use Closure;
 use Error;
 use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
@@ -898,7 +903,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertEquals($before, DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->first());
     }
 
-    public function test_offline_lease_migration_empty_roundtrip(): void
+    public function test_offline_authority_migration_resumes_after_each_ddl_and_preserves_history(): void
     {
         $schema = DisposableMariaDbSchema::create();
         $primaryCompany = $this->company;
@@ -907,7 +912,39 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $schema->switchLaravelConnection();
             $migration = require database_path('migrations/2026_11_25_100002_track_mobile_authority_and_offline_policy_revocation.php');
             $leaseMigration = require database_path('migrations/2026_11_25_100001_create_mobile_offline_sale_leases_table.php');
+            $failure = new class
+            {
+                public ?string $afterDdl = null;
+
+                public int $invalidations = 0;
+            };
+            DB::listen(static function (QueryExecuted $query) use ($failure): void {
+                if (str_starts_with($query->sql, 'update `users` set `mobile_authority_revision`')
+                    || str_starts_with($query->sql, 'update `mobile_offline_sale_leases` set `revoked_at`')) {
+                    $failure->invalidations++;
+                }
+                if ($failure->afterDdl !== null && str_starts_with($query->sql, $failure->afterDdl)) {
+                    $failure->afterDdl = null;
+                    throw new RuntimeException('Interrupted after committed DDL.');
+                }
+            });
+
             $this->assertDatabaseCount('mobile_offline_sale_leases', 0);
+            foreach ([
+                'DROP TRIGGER `company_mobile_settings_revoke_leases_on_delete`',
+                'DROP TRIGGER `company_mobile_settings_revoke_leases_on_update`',
+                'DROP TRIGGER `users_advance_mobile_authority`',
+                'ALTER TABLE `mobile_offline_sale_leases` DROP COLUMN',
+                'ALTER TABLE `users` DROP COLUMN',
+            ] as $ddl) {
+                $failure->afterDdl = $ddl;
+                try {
+                    $migration->down();
+                    $this->fail("Missing failure injection after {$ddl}.");
+                } catch (RuntimeException $exception) {
+                    $this->assertSame('Interrupted after committed DDL.', $exception->getMessage());
+                }
+            }
             $migration->down();
             $leaseMigration->down();
             $this->assertFalse(DB::getSchemaBuilder()->hasTable('mobile_offline_sale_leases'));
@@ -936,16 +973,78 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $this->assertFalse(DB::getSchemaBuilder()->hasColumn('mobile_offline_sale_leases', 'revoked_at'));
             unset($leaseRow['revoked_at']);
             DB::table('mobile_offline_sale_leases')->insert($leaseRow);
+            $migrationName = '2026_11_25_100002_track_mobile_authority_and_offline_policy_revocation';
+            $migrationRecord = DB::table('migrations')->where('migration', $migrationName);
+            $batch = $migrationRecord->value('batch');
+            $migrationRecord->delete();
+            $status = $url.'/'.$wire['client_event_id'].'/status';
+            $this->get($status)->assertStatus(503);
+
+            DB::statement('ALTER TABLE users ADD COLUMN mobile_authority_revision BIGINT UNSIGNED NOT NULL DEFAULT 9');
+            try {
+                $migration->up();
+                $this->fail('A column with the wrong default passed validation.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame('Unexpected definition for users.mobile_authority_revision.', $exception->getMessage());
+            }
+            $this->assertFalse(DB::getSchemaBuilder()->hasColumn('mobile_offline_sale_leases', 'revoked_at'));
+            DB::statement('ALTER TABLE users DROP COLUMN mobile_authority_revision');
+
+            $failure->invalidations = 0;
+            $revokedAt = null;
+            foreach ([
+                'ALTER TABLE `users` ADD COLUMN',
+                'ALTER TABLE `mobile_offline_sale_leases` ADD COLUMN',
+                'CREATE TRIGGER users_advance_mobile_authority',
+                'CREATE TRIGGER company_mobile_settings_revoke_leases_on_update',
+                'CREATE TRIGGER company_mobile_settings_revoke_leases_on_delete',
+            ] as $step => $ddl) {
+                $failure->afterDdl = $ddl;
+                try {
+                    $migration->up();
+                    $this->fail("Missing failure injection after {$ddl}.");
+                } catch (RuntimeException $exception) {
+                    $this->assertSame('Interrupted after committed DDL.', $exception->getMessage());
+                }
+                $this->assertSame($step < 2 ? 0 : 2, $failure->invalidations);
+                $this->get($status)->assertStatus(503);
+                $this->assertEquals($receipt, DB::table('mobile_event_receipts')->where('client_event_id', $wire['client_event_id'])->first());
+                if ($step >= 2) {
+                    $revokedAt ??= $leaseQuery->value('revoked_at');
+                    $this->assertNotNull($revokedAt);
+                    $this->assertSame($revokedAt, $leaseQuery->value('revoked_at'));
+                    $this->assertSame(1, (int) DB::table('users')->where('id', $this->staff->id)->value('mobile_authority_revision'));
+                }
+            }
+
+            // A same-named but ineffective trigger cannot be accepted on retry.
+            DB::unprepared('DROP TRIGGER company_mobile_settings_revoke_leases_on_delete');
+            DB::unprepared('CREATE TRIGGER company_mobile_settings_revoke_leases_on_delete AFTER DELETE ON company_mobile_settings FOR EACH ROW SET @lease_trigger = 1');
+            try {
+                $migration->up();
+                $this->fail('A same-named trigger with a different body passed validation.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame('Unexpected definition or definer for trigger company_mobile_settings_revoke_leases_on_delete.', $exception->getMessage());
+            }
+            $this->get($status)->assertStatus(503);
+            DB::unprepared('DROP TRIGGER company_mobile_settings_revoke_leases_on_delete');
             $migration->up();
+            $this->assertSame(2, $failure->invalidations);
+            $this->get($status)->assertStatus(503);
+            app('migration.repository')->log($migrationName, (int) $batch);
 
             $after = (array) $leaseQuery->first();
             $this->assertNotNull($after['revoked_at']);
             unset($after['revoked_at']);
             $this->assertSame($leaseRow, $after);
             $this->assertEquals($receipt, DB::table('mobile_event_receipts')->where('client_event_id', $wire['client_event_id'])->first());
-            $status = $url.'/'.$wire['client_event_id'].'/status';
             $this->get($status)->assertUnauthorized();
             $this->loginOnOfflineDevice();
+            $this->get($status)->assertOk()->assertJsonPath('payload_digest', $wire['payload_digest']);
+            $newLease = $this->issueOfflineLease();
+            $migration->up();
+            $this->assertSame(2, $failure->invalidations);
+            $this->assertNull(DB::table('mobile_offline_sale_leases')->where('id', $newLease['lease_id'])->value('revoked_at'));
             $this->get($status)->assertOk()->assertJsonPath('payload_digest', $wire['payload_digest']);
             $this->assertSixReconciliations();
         } finally {
@@ -996,6 +1095,153 @@ final class OnlineCashSaleQualificationTest extends TestCase
             ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_POLICY_CHANGED');
         $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'posted_sales_count' => 1]);
         $this->assertDatabaseMissing('mobile_event_receipts', ['client_event_id' => $pending['client_event_id']]);
+    }
+
+    /** @param 'cash_active'|'cash_route'|'tax_route' $change */
+    #[TestWith(['cash_active'])]
+    #[TestWith(['cash_route'])]
+    #[TestWith(['tax_route'])]
+    public function test_offline_configuration_retires_leases_without_changing_committed_receipt(string $change): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $settings = CompanyMobileSetting::query()->whereKey($this->company->id);
+        $alternateCash = app(CreateMoneyAccountAction::class)->execute($this->company, $this->owner, [
+            'account_type' => MoneyAccount::TYPE_CASH,
+            'name_ar' => 'Alternate cash',
+            'currency_code' => 'ILS',
+        ]);
+        [$output, $alternateOutput] = $this->offlineTaxRoutes();
+        $taxData = $this->offlineTaxData($output->id);
+        app(SaveTaxRateAction::class)->execute($this->company, $this->owner, $taxData, $this->taxRate->id);
+        $cashData = ['name_ar' => 'Cash register', 'sort_order' => 0, 'is_active' => true];
+        auth()->forgetUser();
+
+        $lease = $this->issueOfflineLease();
+        $posted = $this->offlineSaleWire($lease);
+        $pending = $this->offlineSaleWire($lease);
+        $url = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+        $status = $url.'/'.$posted['client_event_id'].'/status';
+        $this->postJson($url, $posted)->assertOk();
+        $receiptQuery = DB::table('mobile_event_receipts')->where('client_event_id', $posted['client_event_id']);
+        $receipt = $receiptQuery->first();
+        $leaseQuery = DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id']);
+
+        $write = function (bool $restore) use ($change, $settings, $alternateCash, $cashData, $taxData, $alternateOutput): void {
+            match ($change) {
+                'cash_active' => app(UpdateMoneyAccountAction::class)->execute($this->company, $this->owner, $this->cashAccount->id,
+                    array_replace($cashData, ['is_active' => $restore])),
+                'cash_route' => $settings->update(['approved_cash_account_id' => $restore ? $this->cashAccount->id : $alternateCash->id]),
+                'tax_route' => app(SaveTaxRateAction::class)->execute($this->company, $this->owner,
+                    $restore ? $taxData : array_replace($taxData, ['sales_tax_account_id' => $alternateOutput->id]), $this->taxRate->id),
+            };
+        };
+
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        app(UpdateMoneyAccountAction::class)->execute($this->company, $this->owner, $alternateCash->id, array_replace($cashData, ['is_active' => false]));
+        app(UpdateMoneyAccountAction::class)->execute($this->company, $this->owner, $alternateCash->id, $cashData);
+        app(UpdateMoneyAccountAction::class)->execute($this->company, $this->owner, $this->cashAccount->id, $cashData);
+        app(SaveTaxRateAction::class)->execute($this->company, $this->owner, array_replace($taxData, ['name_en' => 'Renamed tax']), $this->taxRate->id);
+        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'revoked_at' => null]);
+
+        DB::beginTransaction();
+        try {
+            $write(false);
+            $this->assertDatabaseMissing('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'revoked_at' => null]);
+        } finally {
+            DB::rollBack();
+        }
+        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'revoked_at' => null]);
+
+        $write(false);
+        $retiredAt = $leaseQuery->value('revoked_at');
+        $this->assertNotNull($retiredAt);
+        $write(true);
+        $this->assertSame($retiredAt, $leaseQuery->value('revoked_at'));
+        auth()->forgetUser();
+
+        $this->postJson($url, $pending)->assertConflict()
+            ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_POLICY_CHANGED');
+        $this->get($status)->assertOk()->assertJsonPath('payload_digest', $posted['payload_digest']);
+        $this->assertEquals($receipt, $receiptQuery->first());
+        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'posted_sales_count' => 1, 'posted_total_amount' => '58.000000']);
+        $this->assertDatabaseMissing('mobile_event_receipts', ['client_event_id' => $pending['client_event_id']]);
+        $this->assertNotSame($lease['lease_id'], $this->issueOfflineLease()['lease_id']);
+    }
+
+    #[TestWith(['cash_active', false])]
+    #[TestWith(['cash_active', true])]
+    #[TestWith(['tax_route', false])]
+    #[TestWith(['tax_route', true])]
+    public function test_offline_configuration_writer_and_intake_serialize_on_company(string $change, bool $offlineWins): void
+    {
+        $lease = $this->issueOfflineLease();
+        $wire = $this->offlineSaleWire($lease);
+        $intake = [
+            'mode' => 'http',
+            'enable_offline_routes' => true,
+            'http' => [
+                'method' => 'POST',
+                'uri' => "/api/mobile/v2/companies/{$this->company->public_id}/offline-events",
+                'headers' => ['Accept' => 'application/json', 'Content-Type' => 'application/json', 'Authorization' => 'Bearer '.$this->rawToken],
+                'body' => $wire,
+            ],
+        ];
+        $taxData = [];
+        if ($change === 'tax_route') {
+            $this->actingAs($this->owner);
+            app(CompanyContext::class)->setCompany($this->company, $this->owner);
+            $taxData = $this->offlineTaxData($this->offlineTaxRoutes()[1]->id);
+            auth()->forgetUser();
+        }
+        $mutation = [
+            'mode' => $change,
+            'company_id' => $this->company->id,
+            'user_id' => $this->owner->id,
+            'target_id' => $change === 'cash_active' ? $this->cashAccount->id : $this->taxRate->id,
+            'data' => $change === 'cash_active'
+                ? ['name_ar' => 'Cash register', 'sort_order' => 0, 'is_active' => false]
+                : $taxData,
+        ];
+
+        [$first, $second] = $this->runOrderedOfflineRace($offlineWins ? $intake : $mutation, $offlineWins ? $mutation : $intake, 'companies');
+        [$sale, $writer] = $offlineWins ? [$first, $second] : [$second, $first];
+        $this->assertSame(['outcome' => $change], $writer);
+        $this->assertSame($offlineWins ? 200 : 409, $sale['status'], json_encode($sale));
+        if (! $offlineWins) {
+            $this->assertSame($change === 'cash_active' ? 'OFFLINE_POLICY_UNCONFIGURED' : 'LEASE_POLICY_CHANGED',
+                $sale['body']['error']['conflict_evidence']['reason']);
+        }
+        $this->assertNotNull(DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->value('revoked_at'));
+        $this->assertDatabaseHas('mobile_offline_sale_leases', [
+            'id' => $lease['lease_id'],
+            'posted_sales_count' => (int) $offlineWins,
+            'posted_total_amount' => $offlineWins ? '58.000000' : '0.000000',
+        ]);
+        $this->assertSame((int) $offlineWins, DB::table('mobile_event_receipts')->where('client_event_id', $wire['client_event_id'])->count());
+    }
+
+    /** @return array{LedgerAccount, LedgerAccount} */
+    private function offlineTaxRoutes(): array
+    {
+        $output = LedgerAccount::withoutGlobalScopes()->where('company_id', $this->company->id)->where('system_key', 'tax_output')->firstOrFail();
+        $alternate = $output->replicate(['public_id', 'system_key', 'code']);
+        $alternate->fill([
+            'public_id' => (string) Str::ulid(),
+            'code' => '2201-ALT',
+            'parent_id' => $output->id,
+            'is_system' => false,
+        ])->save();
+
+        return [$output, $alternate];
+    }
+
+    /** @return array<string, mixed> */
+    private function offlineTaxData(int $ledgerId): array
+    {
+        return $this->taxRate->only(['code', 'name_ar', 'name_en', 'calculation', 'active'])
+            + ['rate' => '16', 'sales_tax_account_id' => $ledgerId];
     }
 
     public function test_offline_authority_follows_fortify_and_recovery_login_even_within_one_second(): void

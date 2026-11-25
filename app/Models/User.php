@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
@@ -71,7 +72,13 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function mobilePasswordEpoch(): string
     {
-        $revision = (string) ($this->getAttribute('mobile_authority_revision') ?? '0');
+        $revision = $this->getAttribute('mobile_authority_revision');
+        // Artisan records the migration only after all authority triggers have been verified.
+        abort_unless($revision !== null && DB::table((string) config('database.migrations.table', 'migrations'))
+            ->useWritePdo()
+            ->where('migration', '2026_11_25_100002_track_mobile_authority_and_offline_policy_revocation')
+            ->exists(), 503, 'Mobile authentication is temporarily unavailable.');
+        $revision = (string) $revision;
         $epoch = 'epoch-'.substr(hash('sha256', (string) $this->getAuthPassword()), 0, 16);
 
         return $revision === '0' ? $epoch : $epoch.':'.$revision;

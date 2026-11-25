@@ -7,12 +7,14 @@ namespace App\Actions\Sales;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Sales\Calculators\TaxPercentage;
 use App\Models\Company;
+use App\Models\CompanyMobileSetting;
 use App\Models\LedgerAccount;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Purchasing\PurchaseInputTaxAccount;
 use App\Services\Sales\SalesActorGuard;
+use App\Support\Mobile\Offline\OfflineSaleLeaseService;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
@@ -34,6 +36,8 @@ final class SaveTaxRateAction
                 'purchase_tax_account_id' => ['nullable', 'integer', 'min:1'],
                 'active' => ['required', 'boolean'],
             ])->validate();
+
+            $settings = $id === null ? null : CompanyMobileSetting::query()->whereKey($company->id)->lockForUpdate()->first();
 
             // Validate output (sales) tax account
             $account = LedgerAccount::where('company_id', $company->id)->lockForUpdate()->find($values['sales_tax_account_id']);
@@ -60,6 +64,10 @@ final class SaveTaxRateAction
                 $tax->purchase_tax_account_id = $values['purchase_tax_account_id'] === null ? null : (int) $values['purchase_tax_account_id'];
             }
             $tax->save();
+            if ($settings !== null && (int) $settings->default_tax_rate_id === (int) $tax->id
+                && $tax->wasChanged(['active', 'rate', 'calculation', 'sales_tax_account_id'])) {
+                OfflineSaleLeaseService::retireCompanyLeases($settings);
+            }
             app(AuditService::class)->log((int) $company->id, 'settings.tax.saved', 'Tax configuration saved', $actor->id, $tax, $before, $tax->only(array_merge(array_keys($values), ['rate'])));
 
             return $tax;
