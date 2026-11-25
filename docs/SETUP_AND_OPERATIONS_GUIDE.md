@@ -153,6 +153,8 @@ Unit, feature, and integration tests MUST be executed against an isolated dispos
 
 Use the tracked `tests/Support/run-phase8-disposable.php` runner. It creates and migrates a temporary schema on an explicitly configured **local test-only MariaDB server**, applies isolated PHPUnit configuration, and drops its owned schema afterward. Provision that test-only server first; never point it at the application database, production credentials, or the persistent preview database.
 
+Run `npm ci` and `npm run build` in the checkout before testing routes that render the application layout. These tests use the generated `public/build/manifest.json`. For release qualification, retain a separate JUnit report per test batch so a later timeout leaves completed results available.
+
 Required environment configuration for the test runner:
 - `APP_ENV=testing`
 - `PHASE8_ALLOW_DISPOSABLE_DB=1`
@@ -183,7 +185,7 @@ php tests/Support/run-phase8-disposable.php -- tests/Feature/Phase1/CompanySetti
 ### Test Execution Budget & Configurable Timeout
 
 - **Focused Feature Tests**: The default 900-second timeout applies to focused test targets.
-- **Complete Suite Execution**: The complete test suite contains >3,800 tests / >44,000 assertions and requires 60–80 minutes of continuous runtime on an awake machine. To execute the entire suite under disposable configuration without false timeout terminations, supply a sufficient timeout budget via `PHASE8_TEST_TIMEOUT`:
+- **Complete Suite Execution**: Runtime depends on the host and the selected tests. A single full run can exceed the runner's four-hour limit. If running the suite in one invocation, set an explicit timeout budget:
 
 ```bash
 # POSIX: keep the dedicated test-server settings from Step 4.1
@@ -214,6 +216,25 @@ node --test tests/Frontend/*.test.js tests/Frontend/*.test.mjs tests/JavaScript/
 # 4. Dependency Security Audits
 composer audit
 npm audit
+```
+
+### Step 4.3 — Phase G Local Release Qualification Runner
+
+For automated, CI-free release qualification without monolithic timeouts, use the versioned qualification runner `tools/release/qualify`. It enforces clean git state, verifies locked dependencies, partitions test suites into bounded disjoint batches over disposable MariaDB schemas via `tests/Support/run-phase8-disposable.php`, isolates runtime JUnit/logs outside tracked source, and aggregates actual totals without filtering failures.
+
+```bash
+# 1. Refusal & preflight verification (commit verification, clean tree, lockfiles, platform)
+php tools/release/qualify --preflight-only --expected-commit=$(git rev-parse HEAD)
+
+# 2. Static analysis & frontend build verification (no DB required)
+php tools/release/qualify --static-only
+
+# 3. Disjoint complete test inventory inspection
+php tools/release/qualify --list-batches
+
+# 4. Bounded batch execution over disposable MariaDB (requires assigned DB resource slot)
+APP_ENV=testing PHASE8_ALLOW_DISPOSABLE_DB=1 PHASE8_TEST_DB_HOST=127.0.0.1 PHASE8_TEST_DB_PORT=3306 PHASE8_TEST_DB_USERNAME=test_runner PHASE8_TEST_DB_EMPTY_PASSWORD=1 \
+php tools/release/qualify --expected-commit=$(git rev-parse HEAD) --batch-size=25
 ```
 
 ---
