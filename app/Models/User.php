@@ -43,6 +43,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'remember_token',
         'two_factor_recovery_codes',
         'two_factor_secret',
+        'mobile_authority_revision',
     ];
 
     /**
@@ -66,6 +67,14 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function mobilePasswordEpoch(): string
+    {
+        $revision = (string) ($this->getAttribute('mobile_authority_revision') ?? '0');
+        $epoch = 'epoch-'.substr(hash('sha256', (string) $this->getAuthPassword()), 0, 16);
+
+        return $revision === '0' ? $epoch : $epoch.':'.$revision;
     }
 
     /**

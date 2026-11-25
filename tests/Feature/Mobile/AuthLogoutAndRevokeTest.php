@@ -90,6 +90,29 @@ final class AuthLogoutAndRevokeTest extends TestCase
             ->assertJsonPath('error.code', 'UNAUTHENTICATED');
     }
 
+    public function test_session_revocation_rolls_back_device_and_tokens_after_a_device_write_failure(): void
+    {
+        config(['mobile.merchant_api_enabled' => true]);
+        $deviceId = (string) Str::uuid();
+        $token = $this->issueToken($this->cashier, $deviceId);
+        $secondToken = $this->issueToken($this->cashier, $deviceId);
+        MobileDevice::updated(function (): void {
+            throw new \RuntimeException('Injected session revoke failure after device update.');
+        });
+        try {
+            $this->withToken($token)->deleteJson('/api/mobile/v1/sessions/'.$deviceId)->assertInternalServerError();
+        } finally {
+            MobileDevice::flushEventListeners();
+        }
+
+        $this->assertDatabaseHas('mobile_devices', ['device_id' => $deviceId, 'revoked_at' => null]);
+        $this->assertSame(2, MobileAccessToken::query()->where('device_id', $deviceId)->whereNull('revoked_at')->count());
+        $this->withToken($secondToken)->deleteJson('/api/mobile/v1/sessions/'.$deviceId)->assertOk();
+        $device = MobileDevice::query()->where('device_id', $deviceId)->firstOrFail();
+        $this->assertNotNull($device->revoked_at);
+        $this->assertSame(2, MobileAccessToken::query()->where('device_id', $deviceId)->where('revoked_at', $device->revoked_at)->count());
+    }
+
     public function test_uppercase_device_uuid_challenge_login_logout_round_trip(): void
     {
         $deviceId = strtoupper('aabbccdd-1234-4234-8234-aabbccddeeff');

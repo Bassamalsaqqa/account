@@ -44,7 +44,7 @@ final class MobileEventReceiptManager
 
     private static ?string $currentInvocationScopeId = null;
 
-    private const int MAX_DEADLOCK_RETRIES = 5;
+    private const int MAX_TRANSACTION_ATTEMPTS = 5;
 
     private const int MAX_PAYLOAD_BYTES = 1048576; // 1 MiB
 
@@ -194,9 +194,6 @@ final class MobileEventReceiptManager
                         $tentativeToken
                     ): array {
                         [$company, $user, $device, $token] = $this->lockIdentity($companyId, $tokenHash, $tentativeToken);
-                        if ($offlineSale !== null) {
-                            OfflineSaleLeaseService::assertFreshBearer($user, $token);
-                        }
 
                         if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
                             throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
@@ -494,9 +491,9 @@ final class MobileEventReceiptManager
                     });
                 } catch (QueryException|PDOException $e) {
                     $isDuplicate = self::isDuplicateConstraintError($e, 'mobile_event_receipts_company_client_event_unique');
-                    $isDeadlock = self::isDeadlockError($e);
+                    $isConcurrentChange = self::isRetryableConcurrencyError($e);
 
-                    if (($isDuplicate || $isDeadlock) && $attempts < self::MAX_DEADLOCK_RETRIES) {
+                    if (($isDuplicate || $isConcurrentChange) && $attempts < self::MAX_TRANSACTION_ATTEMPTS) {
                         usleep(random_int(10000, 30000));
 
                         continue;
@@ -569,7 +566,7 @@ final class MobileEventReceiptManager
             throw new MobileEventForeignScopeException('Token is bound to a different company.');
         }
 
-        $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
+        $expectedEpoch = $user->mobilePasswordEpoch();
         if (! hash_equals($expectedEpoch, $token->password_epoch)) {
             throw new MobileEventAuthenticationException('User credentials have changed since token establishment.');
         }
@@ -614,7 +611,6 @@ final class MobileEventReceiptManager
                 $this->verifyAndLockFreshRolePermissions($companyId, $user);
                 $this->getExecutor()->authorize($company, $user, $device, 'execute');
                 $this->getExecutor()->authorize($company, $user, $device, 'lookup');
-                OfflineSaleLeaseService::assertFreshBearer($user, $token);
                 app(TenantWriteAccess::class)->assertWritable($companyId);
 
                 return (Closure::bind(
@@ -622,7 +618,7 @@ final class MobileEventReceiptManager
                     null,
                     OfflineSaleLeaseService::class,
                 ))();
-            }, self::MAX_DEADLOCK_RETRIES);
+            }, self::MAX_TRANSACTION_ATTEMPTS);
         } finally {
             $context->clearSessionless();
             $context->restoreSessionless($priorContext);
@@ -690,7 +686,7 @@ final class MobileEventReceiptManager
                 $priorGuardUser,
                 $tentativeToken
             ): ?array {
-                [$company, $user, $device, $token] = $this->lockIdentity($companyId, $tokenHash, $tentativeToken);
+                [$company, $user, $device] = $this->lockIdentity($companyId, $tokenHash, $tentativeToken);
 
                 if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
                     throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
@@ -715,16 +711,12 @@ final class MobileEventReceiptManager
                     ->where('client_event_id', $clientEventId)
                     ->first();
 
-                if ($receipt === null || ($receipt->representation === OfflineSaleEvent::REPRESENTATION && ! OfflineSaleLeaseService::enabled())) {
+                if ($receipt === null) {
                     return null;
                 }
 
                 if ((int) $receipt->actor_id !== (int) $user->id || $receipt->device_id !== $device->device_id) {
                     throw new MobileEventForeignScopeException('Event scope does not match authorized actor and device context.');
-                }
-
-                if ($receipt->representation === OfflineSaleEvent::REPRESENTATION) {
-                    OfflineSaleLeaseService::assertFreshBearer($user, $token);
                 }
 
                 return [
@@ -739,7 +731,7 @@ final class MobileEventReceiptManager
                     'terminal_canonical_result' => $receipt->terminal_canonical_result,
                     'receipt_id' => $receipt->id,
                 ];
-            });
+            }, self::MAX_TRANSACTION_ATTEMPTS);
         } finally {
             $context->clearSessionless();
             $context->restoreSessionless($priorContext);
@@ -815,7 +807,7 @@ final class MobileEventReceiptManager
         return false;
     }
 
-    public static function isDeadlockError(Throwable $e): bool
+    private static function isRetryableConcurrencyError(Throwable $e): bool
     {
         if ($e instanceof DeadlockException) {
             return true;
@@ -826,8 +818,8 @@ final class MobileEventReceiptManager
             ? (int) $e->errorInfo[1]
             : null;
 
-        // MariaDB / InnoDB deadlock: SQLSTATE 40001 or error code 1213
-        return $errorCode === 1213 || $sqlState === '40001';
+        // InnoDB can also report ER_CHECKREAD when a locked row changes while we wait.
+        return $errorCode === 1213 || $errorCode === 1020 || $sqlState === '40001';
     }
 
     /**

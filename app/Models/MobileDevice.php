@@ -53,19 +53,6 @@ class MobileDevice extends Model
         return $this->revoked_at !== null;
     }
 
-    public function revoke(string $reason, ?User $revokedBy = null): void
-    {
-        $this->update([
-            'revoked_at' => now(),
-            'revoked_reason' => $reason,
-            'revoked_by_user_id' => $revokedBy?->id,
-        ]);
-
-        $this->tokens()->whereNull('revoked_at')->update([
-            'revoked_at' => now(),
-        ]);
-    }
-
     /**
      * @return BelongsTo<User, $this>
      */

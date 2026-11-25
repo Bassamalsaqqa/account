@@ -307,7 +307,7 @@ final class ReportController extends Controller
             if ($lockedToken->company_id !== null && (int) $lockedToken->company_id !== (int) $company->id) {
                 return MobileApiBoundary::buildErrorResponse('FORBIDDEN', 'Token is bound to a different company.', 403);
             }
-            $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $lockedUser->password), 0, 16);
+            $expectedEpoch = $lockedUser->mobilePasswordEpoch();
             if (! hash_equals($expectedEpoch, (string) $lockedToken->password_epoch)) {
                 return MobileApiBoundary::buildErrorResponse('UNAUTHENTICATED', 'User credentials have changed since token establishment.', 401);
             }

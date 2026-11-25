@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V2;
 
+use App\Domain\Inventory\Exceptions\InsufficientStockException;
 use App\Domain\Inventory\Exceptions\InvalidInventoryMovementException;
 use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Models\Company;
@@ -76,7 +77,7 @@ final class OfflineSaleController
             return $this->conflict($e->reason, $e->getMessage());
         } catch (MobileEventDuplicatePayloadException) {
             return $this->conflict('EVENT_PAYLOAD_CHANGED', 'The saved event ID has already been used with a different payload.');
-        } catch (InvalidInventoryMovementException) {
+        } catch (InsufficientStockException|InvalidInventoryMovementException) {
             return $this->conflict('STOCK_UNAVAILABLE', 'Current stock cannot fulfill the saved sale.');
         } catch (InvalidArgumentException|ModelNotFoundException) {
             return $this->conflict('SALE_REQUIRES_REVIEW', 'The saved sale cannot be posted with the current setup.');

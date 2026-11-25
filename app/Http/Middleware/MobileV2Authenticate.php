@@ -201,7 +201,7 @@ final class MobileV2Authenticate
             );
         }
 
-        $currentEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
+        $currentEpoch = $user->mobilePasswordEpoch();
         if (! hash_equals($currentEpoch, $token->password_epoch)) {
             $token->update(['revoked_at' => now()]);
 

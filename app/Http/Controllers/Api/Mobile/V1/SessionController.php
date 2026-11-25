@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
+use App\Actions\Mobile\RevokeMobileDeviceAction;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\Company;
@@ -116,12 +117,11 @@ final class SessionController extends Controller
      * DELETE /api/mobile/v1/sessions/{deviceId}
      * Revoke specific device session.
      */
-    public function destroy(Request $request, string $deviceId): JsonResponse
+    public function destroy(Request $request, string $deviceId, RevokeMobileDeviceAction $action): JsonResponse
     {
-        /** @var User|null $user */
-        $user = $request->attributes->get('mobile_user');
-
-        if ($user === null) {
+        /** @var MobileAccessToken|null $token */
+        $token = $request->attributes->get('mobile_token');
+        if ($token === null) {
             return MobileApiBoundary::buildErrorResponse(
                 code: 'UNAUTHENTICATED',
                 message: 'Authentication required.',
@@ -129,9 +129,7 @@ final class SessionController extends Controller
             );
         }
 
-        $device = MobileDevice::where('device_id', $deviceId)
-            ->where('user_id', $user->id)
-            ->first();
+        $device = $action->execute($token, strtolower($deviceId), 'Revoked by user via session management');
 
         if ($device === null) {
             return MobileApiBoundary::buildErrorResponse(
@@ -140,15 +138,6 @@ final class SessionController extends Controller
                 status: 404
             );
         }
-
-        $device->update([
-            'revoked_at' => now(),
-            'revoked_reason' => 'Revoked by user via session management',
-            'revoked_by_user_id' => $user->id,
-        ]);
-
-        MobileAccessToken::where('device_id', $device->device_id)
-            ->update(['revoked_at' => now()]);
 
         return response()->json([
             'revoked' => true,

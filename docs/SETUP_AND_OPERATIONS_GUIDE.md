@@ -204,6 +204,10 @@ php tests/Support/rehearse-disposable-migration-upgrade.php "$baseline_sha"
 
 The runner requires an additive migration history, compares the applied migration names and table definitions, and drops its two owned schemas. A populated recovery rehearsal remains a separate release gate.
 
+The migration for mobile authority and offline policy revocation requires database trigger creation permission on the migration connection. It retires legacy mobile bearers and offline leases while preserving committed receipts and their original event bytes. Staff can sign in again on the same device to recover a committed receipt, subject to current permissions. Use a forward correction once the migration has recorded authority or issued lease history.
+
+`MOBILE_V2_OFFLINE_SALES_ENABLED=false` pauses offline intake. With Mobile V2 and its cash slice available, committed receipt status remains accessible. Disabling a company's offline policy revokes its leases in the same transaction. Re-enabling the policy requires a fresh lease.
+
 For a clean MariaDB 10.4 rehearsal, start the disposable server with `--explicit-defaults-for-timestamp=ON`. With the older server default, the existing strict-mode mobile migration can reject `mobile_auth_challenges.expires_at` with error 1067. Record the deployment server's value with `SHOW GLOBAL VARIABLES LIKE 'explicit_defaults_for_timestamp'` when comparing environments. [MariaDB system variable reference](https://mariadb.com/docs/server/server-management/variables-and-modes/server-system-variables#explicit_defaults_for_timestamp)
 
 ### Windows Environment & Long-Run Guidelines

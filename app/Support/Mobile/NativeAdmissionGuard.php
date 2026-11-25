@@ -89,7 +89,7 @@ final class NativeAdmissionGuard
             throw new AuthorizationException('Token is bound to a different company.');
         }
 
-        $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $lockedUser->password), 0, 16);
+        $expectedEpoch = $lockedUser->mobilePasswordEpoch();
         if (! hash_equals($expectedEpoch, (string) $lockedToken->password_epoch)) {
             $lockedToken->update(['revoked_at' => now()]);
             throw new AuthenticationException('User credentials have changed since token establishment.');

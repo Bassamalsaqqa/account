@@ -59,7 +59,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Laravel\Fortify\Fortify;
 use PHPUnit\Framework\Attributes\TestWith;
+use PragmaRX\Google2FA\Google2FA;
 use ReflectionClass;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
@@ -147,8 +149,8 @@ final class OnlineCashSaleQualificationTest extends TestCase
                     DB::table('sales_invoices')->where('company_id', $companyId)->delete();
                     DB::table('inventory_lot_balances')->where('company_id', $companyId)->delete();
                     DB::table('inventory_balances')->where('company_id', $companyId)->delete();
-                    DB::table('inventory_lots')->where('company_id', $companyId)->delete();
                     DB::table('stock_movements')->where('company_id', $companyId)->delete();
+                    DB::table('inventory_lots')->where('company_id', $companyId)->delete();
                     DB::table('posting_lines')->where('company_id', $companyId)->delete();
                     DB::table('posting_batches')->where('company_id', $companyId)->delete();
                 }
@@ -882,17 +884,6 @@ final class OnlineCashSaleQualificationTest extends TestCase
         $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy);
     }
 
-    public function test_offline_lease_migration_empty_roundtrip(): void
-    {
-        $migration = require database_path('migrations/2026_11_25_100001_create_mobile_offline_sale_leases_table.php');
-        $this->assertDatabaseCount('mobile_offline_sale_leases', 0);
-        $migration->down();
-        $this->assertFalse(DB::getSchemaBuilder()->hasTable('mobile_offline_sale_leases'));
-        $migration->up();
-        $lease = $this->issueOfflineLease();
-        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id']]);
-    }
-
     public function test_offline_lease_migration_refuses_populated_rollback_without_changing_history(): void
     {
         $lease = $this->issueOfflineLease();
@@ -905,6 +896,263 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $this->assertSame('Issued offline leases require a forward correction.', $exception->getMessage());
         }
         $this->assertEquals($before, DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->first());
+    }
+
+    public function test_offline_lease_migration_empty_roundtrip(): void
+    {
+        $schema = DisposableMariaDbSchema::create();
+        $primaryCompany = $this->company;
+        try {
+            $schema->migrate();
+            $schema->switchLaravelConnection();
+            $migration = require database_path('migrations/2026_11_25_100002_track_mobile_authority_and_offline_policy_revocation.php');
+            $leaseMigration = require database_path('migrations/2026_11_25_100001_create_mobile_offline_sale_leases_table.php');
+            $this->assertDatabaseCount('mobile_offline_sale_leases', 0);
+            $migration->down();
+            $leaseMigration->down();
+            $this->assertFalse(DB::getSchemaBuilder()->hasTable('mobile_offline_sale_leases'));
+            $leaseMigration->up();
+            $migration->up();
+            $this->setupQualificationFixture();
+
+            $lease = $this->issueOfflineLease();
+            $wire = $this->offlineSaleWire($lease);
+            $url = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+            $this->postJson($url, $wire)->assertOk();
+            $receipt = DB::table('mobile_event_receipts')->where('client_event_id', $wire['client_event_id'])->first();
+            $leaseQuery = DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id']);
+            $leaseRow = (array) $leaseQuery->first();
+            try {
+                $migration->down();
+                $this->fail('Authority history was removed.');
+            } catch (RuntimeException $exception) {
+                $this->assertSame('Mobile authority or issued lease history requires a forward correction.', $exception->getMessage());
+            }
+
+            // Recreate the preceding schema, then upgrade a synthetic populated fixture.
+            $leaseQuery->delete();
+            $migration->down();
+            $this->assertFalse(DB::getSchemaBuilder()->hasColumn('users', 'mobile_authority_revision'));
+            $this->assertFalse(DB::getSchemaBuilder()->hasColumn('mobile_offline_sale_leases', 'revoked_at'));
+            unset($leaseRow['revoked_at']);
+            DB::table('mobile_offline_sale_leases')->insert($leaseRow);
+            $migration->up();
+
+            $after = (array) $leaseQuery->first();
+            $this->assertNotNull($after['revoked_at']);
+            unset($after['revoked_at']);
+            $this->assertSame($leaseRow, $after);
+            $this->assertEquals($receipt, DB::table('mobile_event_receipts')->where('client_event_id', $wire['client_event_id'])->first());
+            $status = $url.'/'.$wire['client_event_id'].'/status';
+            $this->get($status)->assertUnauthorized();
+            $this->loginOnOfflineDevice();
+            $this->get($status)->assertOk()->assertJsonPath('payload_digest', $wire['payload_digest']);
+            $this->assertSixReconciliations();
+        } finally {
+            $this->company = $primaryCompany;
+            $schema->drop();
+        }
+    }
+
+    public function test_offline_intake_pause_and_policy_revocation_preserve_committed_receipt(): void
+    {
+        $lease = $this->issueOfflineLease();
+        $posted = $this->offlineSaleWire($lease);
+        $pending = $this->offlineSaleWire($lease);
+        $url = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+        $status = $url.'/'.$posted['client_event_id'].'/status';
+        $first = $this->postJson($url, $posted)->assertOk();
+        $settings = CompanyMobileSetting::whereKey($this->company->id);
+
+        // The application flag pauses HTTP intake. Policy revocation is a durable tenant write.
+        config(['mobile.v2_offline_sales_enabled' => false]);
+        $this->postJson($url, $pending)->assertNotFound();
+        $this->get($status)->assertOk()->assertJsonPath('official_invoice.invoice_id', $first->json('outcome.invoice_id'));
+        $this->get($url.'/'.$pending['client_event_id'].'/status')->assertOk()->assertJsonPath('status', 'unknown');
+        config(['mobile.v2_offline_sales_enabled' => true]);
+
+        DB::beginTransaction();
+        try {
+            $settings->update(['offline_policy_enabled' => false]);
+            $this->assertNotNull(DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->value('revoked_at'));
+        } finally {
+            DB::rollBack();
+        }
+        $this->assertNull(DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->value('revoked_at'));
+
+        $settings->update(['offline_policy_enabled' => false]);
+        $this->postJson($url, $pending)->assertForbidden();
+        $this->get($status)->assertOk()->assertJsonPath('payload_digest', $posted['payload_digest']);
+        $settings->update(['offline_policy_enabled' => true]);
+        $this->postJson($url, $pending)->assertConflict()->assertJsonPath('error.conflict_evidence.reason', 'LEASE_POLICY_CHANGED');
+        $this->postJson($url, $posted)->assertOk()->assertExactJson($first->json());
+        $newLease = $this->issueOfflineLease();
+        $this->assertNotSame($lease['lease_id'], $newLease['lease_id']);
+
+        $settings->delete();
+        $newestLease = $this->issueOfflineLease();
+        $this->assertNotSame($newLease['lease_id'], $newestLease['lease_id']);
+        $this->postJson($url, $this->offlineSaleWire($newLease))->assertConflict()
+            ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_POLICY_CHANGED');
+        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'posted_sales_count' => 1]);
+        $this->assertDatabaseMissing('mobile_event_receipts', ['client_event_id' => $pending['client_event_id']]);
+    }
+
+    public function test_offline_authority_follows_fortify_and_recovery_login_even_within_one_second(): void
+    {
+        $this->freezeSecond();
+        $lease = $this->issueOfflineLease();
+        $originalToken = $this->rawToken;
+        $wire = $this->offlineSaleWire($lease);
+        $url = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+
+        $this->actingAs($this->staff)->withSession(['auth.password_confirmed_at' => time()]);
+        $this->postJson('/user/two-factor-authentication')->assertOk();
+        $this->staff->refresh();
+        $secret = Fortify::currentEncrypter()->decrypt($this->staff->two_factor_secret);
+        $totp = app(Google2FA::class)->getCurrentOtp($secret);
+        $this->postJson('/user/confirmed-two-factor-authentication', ['code' => $totp])->assertOk();
+        auth()->forgetUser();
+
+        $codes = $this->staff->fresh()->recoveryCodes();
+        $this->loginOnOfflineDevice(['recovery_code' => $codes[0]]);
+        $firstMfaToken = $this->rawToken;
+        $this->assertSame($this->staff->fresh()->two_factor_confirmed_at, $this->token->created_at->toDateTimeString());
+        $mfaLease = $this->issueOfflineLease();
+        $this->assertNotSame($lease['lease_id'], $mfaLease['lease_id']);
+        $this->postJson($url, $wire)->assertConflict()->assertJsonPath('error.conflict_evidence.reason', 'LEASE_INVALID');
+
+        $this->loginOnOfflineDevice(['recovery_code' => $codes[1]]);
+        $recoveryToken = $this->rawToken;
+        $recoveryLease = $this->issueOfflineLease();
+        $this->assertNotSame($mfaLease['lease_id'], $recoveryLease['lease_id']);
+        $this->withToken($firstMfaToken)->postJson($url, $this->offlineSaleWire($mfaLease))->assertUnauthorized();
+
+        $this->actingAs($this->staff->refresh())->withSession(['auth.password_confirmed_at' => time()]);
+        $this->postJson('/user/two-factor-recovery-codes')->assertOk();
+        auth()->forgetUser();
+        $this->withToken($recoveryToken)->postJson($url, $this->offlineSaleWire($recoveryLease))->assertUnauthorized();
+
+        $this->actingAs($this->staff->refresh())->withSession(['auth.password_confirmed_at' => time()]);
+        $this->deleteJson('/user/two-factor-authentication')->assertOk();
+        auth()->forgetUser();
+        $this->withToken($originalToken)->postJson($url, $wire)->assertUnauthorized();
+        $this->loginOnOfflineDevice();
+        $this->postJson($url, $wire)->assertConflict()->assertJsonPath('error.conflict_evidence.reason', 'LEASE_INVALID');
+        $passwordOnlyLease = $this->issueOfflineLease();
+
+        $this->actingAs($this->staff->refresh())->putJson('/user/password', [
+            'current_password' => 'StaffPass123!',
+            'password' => 'NewStaffPass123!',
+            'password_confirmation' => 'NewStaffPass123!',
+        ])->assertOk();
+        auth()->forgetUser();
+        $this->postJson($url, $this->offlineSaleWire($passwordOnlyLease))->assertUnauthorized();
+        $this->loginOnOfflineDevice(['password' => 'NewStaffPass123!']);
+        $this->postJson($url, $this->offlineSaleWire($passwordOnlyLease))->assertConflict()
+            ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_INVALID');
+        $this->postJson($url, $this->offlineSaleWire($this->issueOfflineLease()))->assertOk();
+    }
+
+    /** @param array<string, string> $overrides */
+    private function loginOnOfflineDevice(array $overrides = []): void
+    {
+        $challenge = $this->postJson('/api/mobile/v1/auth/challenge', [
+            'device_id' => $this->device->device_id,
+            'platform' => 'android',
+            'app_version' => '2.0.0',
+        ])->assertOk()->json();
+        $response = $this->postJson('/api/mobile/v1/auth/login', array_replace([
+            'challenge_id' => $challenge['challenge_id'],
+            'nonce' => $challenge['nonce'],
+            'device_id' => $this->device->device_id,
+            'device_name' => $this->device->device_name,
+            'email' => $this->staff->email,
+            'password' => 'StaffPass123!',
+        ], $overrides))->assertOk()->assertJsonPath('token_type', 'Bearer');
+        $this->rawToken = $response->json('token');
+        $this->token = MobileAccessToken::query()->where('token_hash', hash('sha256', $this->rawToken))->firstOrFail();
+        $this->withToken($this->rawToken);
+    }
+
+    public function test_offline_fefo_reserves_repeated_product_lines_and_rejects_expired_stock(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->baseUnit = Unit::query()->where('company_id', $this->company->id)->where('code', 'kg')->firstOrFail();
+        $this->product = $this->product->replicate(['public_id', 'sku']);
+        $this->product->forceFill(['sku' => 'EXPIRY-'.Str::ulid(), 'track_expiry' => true, 'base_unit_id' => $this->baseUnit->id])->save();
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'unit_id' => $this->baseUnit->id,
+            'conversion_to_base' => '1.000000',
+            'is_base' => true,
+            'is_default_sale' => true,
+            'is_default_purchase' => true,
+            'active' => true,
+            'default_sale_price_base' => '50.000000',
+        ]);
+        $postingDay = now($this->company->timezone ?: config('app.timezone'))->startOfDay();
+        foreach (['EXPIRED' => [-1, '9', '9'], 'EARLY' => [1, '1.5', '4'], 'LATER' => [2, '0.5', '6']] as $lot => [$days, $qty, $cost]) {
+            app(PostOpeningStockAction::class)->execute(
+                company: $this->company,
+                product: $this->product,
+                warehouse: $this->warehouse,
+                quantity: Quantity::of($qty),
+                unitCostBase: $cost,
+                user: $this->owner,
+                idempotencyKey: 'opening-'.Str::ulid(),
+                lotNumber: $lot,
+                expiryDate: $postingDay->copy()->addDays($days)->toDateString(),
+                movementDate: $postingDay->copy()->subDays(2)->toDateString(),
+            );
+        }
+        auth()->forgetUser();
+        app(CompanyContext::class)->clearSessionless();
+
+        $lease = $this->issueOfflineLease(maxCount: 3, maxAmount: '174.000000');
+        $url = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+        $wire = $this->offlineSaleWire($lease);
+        $wire['event']['lines'][] = $wire['event']['lines'][0];
+        $wire['event']['payment']['amount_tendered'] = '118.000000';
+        $wire['event']['payment']['amount_settled'] = '116.000000';
+        $wire['payload_digest'] = CanonicalJsonSerializer::computeDigest($wire['event']);
+        $this->postJson($url, $wire)->assertOk()->assertJsonPath('outcome.grand_total', '116.000000');
+        $allocations = DB::table('sales_invoice_lot_allocations')->where('company_id', $this->company->id)
+            ->orderBy('sales_invoice_line_id')->orderBy('id')
+            ->get(['sales_invoice_line_id', 'lot_number', 'quantity_allocated_base', 'total_cost_base']);
+        $this->assertSame([
+            ['EARLY', '1.000000', '8.181818'],
+            ['EARLY', '0.500000', '4.090909'],
+            ['LATER', '0.500000', '4.090909'],
+        ], $allocations->map(fn ($row) => [$row->lot_number, $row->quantity_allocated_base, $row->total_cost_base])->all());
+        $this->assertNotSame($allocations[0]->sales_invoice_line_id, $allocations[1]->sales_invoice_line_id);
+        $this->assertSame($allocations[1]->sales_invoice_line_id, $allocations[2]->sales_invoice_line_id);
+
+        $pending = $this->offlineSaleWire($lease);
+        $this->postJson($url, $pending)->assertConflict()->assertJsonPath('error.conflict_evidence.reason', 'STOCK_UNAVAILABLE');
+        $this->assertDatabaseMissing('mobile_event_receipts', ['client_event_id' => $pending['client_event_id']]);
+        $this->assertDatabaseHas('mobile_offline_sale_leases', [
+            'id' => $lease['lease_id'], 'posted_sales_count' => 1, 'posted_total_amount' => '116.000000',
+        ]);
+        $this->assertDatabaseHas('inventory_balances', [
+            'company_id' => $this->company->id, 'product_id' => $this->product->id, 'quantity_base' => '9.000000',
+        ]);
+        $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
+        $this->assertSixReconciliations();
+    }
+
+    private function assertSixReconciliations(): void
+    {
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $inventory = app(InventoryReconciliationService::class)->auditCompany($this->company);
+        $this->assertTrue($inventory->isHealthy, implode("\n", $inventory->discrepancies));
+        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy);
     }
 
     public function test_offline_charge_rolls_back_with_payment_and_can_be_retried(): void
@@ -1055,6 +1303,176 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'event' => $event,
             'payload_digest' => CanonicalJsonSerializer::computeDigest($event),
         ];
+    }
+
+    #[TestWith(['sessions', false])]
+    #[TestWith(['sessions', true])]
+    #[TestWith(['policy', false])]
+    #[TestWith(['policy', true])]
+    #[TestWith(['password', false])]
+    #[TestWith(['password', true])]
+    #[TestWith(['mfa', false])]
+    #[TestWith(['mfa', true])]
+    #[TestWith(['stock', false])]
+    #[TestWith(['stock', true])]
+    public function test_offline_sale_orders_against_authority_changes_and_web_stock(string $competitor, bool $offlineWins): void
+    {
+        $lease = $this->issueOfflineLease(maxCount: 1);
+        $wire = $this->offlineSaleWire($lease);
+        $headers = ['Accept' => 'application/json', 'Authorization' => 'Bearer '.$this->rawToken];
+        $intake = [
+            'mode' => 'http',
+            'enable_offline_routes' => true,
+            'http' => [
+                'method' => 'POST',
+                'uri' => "/api/mobile/v2/companies/{$this->company->public_id}/offline-events",
+                'headers' => $headers + ['Content-Type' => 'application/json'],
+                'body' => $wire,
+            ],
+        ];
+        [$lockTable, $other] = match ($competitor) {
+            'sessions' => ['users', ['mode' => 'http', 'http' => [
+                'method' => 'DELETE',
+                'uri' => '/api/mobile/v1/sessions/'.$this->device->device_id,
+                'headers' => $headers,
+                'body' => '',
+            ]]],
+            'policy' => ['company_mobile_settings', ['mode' => 'policy_disable', 'company_id' => $this->company->id]],
+            'password' => ['users', ['mode' => 'password_reset', 'user_id' => $this->staff->id]],
+            'mfa' => ['users', ['mode' => 'mfa_enable', 'user_id' => $this->staff->id]],
+            'stock' => ['companies', [
+                'mode' => 'web_sale',
+                'company_id' => $this->company->id,
+                'user_id' => $this->owner->id,
+                'invoice_id' => $this->draftWebSaleForAllStock()->id,
+            ]],
+        };
+
+        [$first, $second] = $this->runOrderedOfflineRace($offlineWins ? $intake : $other, $offlineWins ? $other : $intake, $lockTable);
+        [$sale, $opponent] = $offlineWins ? [$first, $second] : [$second, $first];
+        $expectedStatus = $offlineWins ? 200 : match ($competitor) {
+            'sessions', 'password', 'mfa' => 401,
+            'policy' => 403,
+            'stock' => 409,
+        };
+        $this->assertSame($expectedStatus, $sale['status'], json_encode($sale));
+
+        if ($competitor === 'sessions') {
+            $this->assertSame(200, $opponent['status'], json_encode($opponent));
+            $this->assertTrue($this->device->fresh()->isRevoked());
+            $this->assertNotNull($this->token->fresh()->revoked_at);
+        } elseif ($competitor === 'password') {
+            $this->assertSame('password_reset', $opponent['outcome']);
+            $this->assertTrue(Hash::check('ResetStaffPass123!', $this->staff->fresh()->password));
+        } elseif ($competitor === 'mfa') {
+            $this->assertSame('mfa_enable', $opponent['outcome']);
+            $this->assertNotNull($this->staff->fresh()->two_factor_secret);
+        } elseif ($competitor === 'policy') {
+            $this->assertSame('policy_disabled', $opponent['outcome']);
+            $this->assertNotNull(DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->value('revoked_at'));
+        } else {
+            $this->assertSame($offlineWins ? 'stock_unavailable' : 'posted', $opponent['outcome']);
+            $this->assertSame($offlineWins ? 'draft' : 'posted', SalesInvoice::withoutGlobalScopes()->findOrFail($other['invoice_id'])->status);
+            if (! $offlineWins) {
+                $this->assertSame('STOCK_UNAVAILABLE', $sale['body']['error']['conflict_evidence']['reason']);
+            }
+        }
+
+        $this->assertDatabaseHas('mobile_offline_sale_leases', [
+            'id' => $lease['lease_id'],
+            'posted_sales_count' => $offlineWins ? 1 : 0,
+            'posted_total_amount' => $offlineWins ? '58.000000' : '0.000000',
+        ]);
+        $this->assertSame((int) $offlineWins, DB::table('mobile_event_receipts')->where('client_event_id', $wire['client_event_id'])->count());
+        $this->assertSame((int) $offlineWins, DB::table('customer_payments')->where('company_id', $this->company->id)->count());
+        $this->assertSame($offlineWins || $competitor === 'stock' ? 1 : 0, DB::table('sales_invoices')
+            ->where('company_id', $this->company->id)->where('status', 'posted')->count());
+        $this->assertDatabaseHas('inventory_balances', [
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'quantity_base' => $offlineWins ? '99.000000' : ($competitor === 'stock' ? '0.000000' : '100.000000'),
+        ]);
+        $this->assertSixReconciliations();
+    }
+
+    private function draftWebSaleForAllStock(): SalesInvoice
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $unit = ProductUnit::query()->where('product_id', $this->product->id)->firstOrFail();
+
+        return app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => now()->toDateString(),
+            'due_date' => now()->toDateString(),
+            'document_locale' => 'ar',
+            'lines' => [[
+                'product_id' => $this->product->id,
+                'product_unit_id' => $unit->id,
+                'item_description' => 'Stock competition',
+                'quantity' => '100.000000',
+                'unit_price' => '50.000000',
+                'discount_value' => '0',
+                'discount_type' => null,
+                'tax_rate_id' => null,
+            ]],
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $holder
+     * @param  array<string, mixed>  $contender
+     * @return array{array<string, mixed>, array<string, mixed>}
+     */
+    private function runOrderedOfflineRace(array $holder, array $contender, string $table): array
+    {
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
+        try {
+            $first = $this->startWorkerProcess(null, $directory, 'worker-a', $holder + [
+                'hold_lock_table' => $table, 'wait_for_file' => 'release-holder',
+            ]);
+            touch($directory.'/go-worker-a');
+            StrictBarrier::await(fn (): bool => is_file($directory.'/worker-a.locked'), fn (): bool => $first->isRunning());
+
+            $second = $this->startWorkerProcess(null, $directory, 'worker-b', $contender);
+            touch($directory.'/go-worker-b');
+            $contenderId = trim((string) file_get_contents($directory.'/worker-b.connection'));
+            $database = DB::connection()->getDatabaseName();
+            StrictBarrier::await(function () use ($contenderId, $database, $table): bool {
+                foreach (DB::select('SHOW FULL PROCESSLIST') as $row) {
+                    $query = strtolower((string) ($row->Info ?? ''));
+                    if ((string) $row->Id === $contenderId && $row->db === $database
+                        && str_contains($query, "from `{$table}`") && str_contains($query, 'for update')) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }, fn (): bool => $first->isRunning() && $second->isRunning());
+            touch($directory.'/release-holder');
+
+            $outputs = [];
+            foreach ([$first, $second] as $worker) {
+                $this->assertSame(0, $worker->wait(), $worker->getErrorOutput().$worker->getOutput());
+                $result = json_decode($worker->getOutput(), true);
+                $this->assertIsArray($result, $worker->getErrorOutput().$worker->getOutput());
+                $outputs[] = $result;
+            }
+
+            return $outputs;
+        } finally {
+            foreach ([$first ?? null, $second ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+            array_map('unlink', glob($directory.'/*') ?: []);
+            rmdir($directory);
+        }
     }
 
     /**
@@ -2833,7 +3251,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
     /**
      * @param  array<string, mixed>  $input
      */
-    private function startWorkerProcess(DisposableMariaDbSchema $schema, string $directory, string $slot, array $input): Process
+    private function startWorkerProcess(?DisposableMariaDbSchema $schema, string $directory, string $slot, array $input): Process
     {
         file_put_contents($directory.'/'.$slot.'.json', json_encode($input, JSON_THROW_ON_ERROR));
         chmod($directory.'/'.$slot.'.json', 0600);
@@ -2847,7 +3265,12 @@ final class OnlineCashSaleQualificationTest extends TestCase
             'PHASE8_TEST_DB_USERNAME' => $settings['USERNAME'],
             'PHASE8_TEST_DB_PASSWORD' => $settings['PASSWORD'],
             'PHASE8_TEST_DB_EMPTY_PASSWORD' => $settings['PASSWORD'] === '' ? '1' : '0',
-        ], $schema->environment());
+        ], $schema?->environment() ?? []);
+        if ($input['enable_offline_routes'] ?? false) {
+            $env['MOBILE_V2_API_ENABLED'] = 'true';
+            $env['MOBILE_V2_CASH_SLICE_ENABLED'] = 'true';
+            $env['MOBILE_V2_OFFLINE_SALES_ENABLED'] = 'true';
+        }
 
         $process = new Process([PHP_BINARY, base_path('tests/Support/mobile-receipt-worker.php'), $directory, $slot], base_path(), $env);
         $process->setTimeout(90)->start();

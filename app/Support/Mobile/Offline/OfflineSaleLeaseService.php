@@ -15,7 +15,6 @@ use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\CatalogSnapshot;
 use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
-use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\NativeWriteContextResolver;
 use Brick\Math\BigDecimal;
 use Illuminate\Database\Query\Builder;
@@ -41,14 +40,6 @@ final class OfflineSaleLeaseService
             && (bool) config('mobile.enabled', false);
     }
 
-    public static function assertFreshBearer(User $actor, MobileAccessToken $token): void
-    {
-        $confirmedAt = $actor->getRawOriginal('two_factor_confirmed_at');
-        if ($confirmedAt !== null && ($token->created_at === null || $token->created_at <= Carbon::parse((string) $confirmedAt))) {
-            throw new MobileEventAuthenticationException('Sign in again with the current staff authentication settings.');
-        }
-    }
-
     /**
      * Invoked by the receipt manager through its private authority scope.
      *
@@ -59,15 +50,16 @@ final class OfflineSaleLeaseService
     private function issue(Company $company, User $actor, MobileDevice $device, MobileAccessToken $token, string $snapshot): array
     {
         $policy = $this->lockedPolicy($company);
-        $authority = $this->authorityFingerprint($actor, $token);
+        $authority = $this->authorityFingerprint($token);
         $policyFingerprint = hash('sha256', CanonicalJsonSerializer::serialize($policy));
 
         $now = now('UTC')->startOfSecond();
         $scope = $this->scope($company, $actor, $device);
-        $lease = (clone $scope)->where('expires_at', '>', $now->toDateTimeString())->lockForUpdate()->first();
+        $lease = $scope->whereNull('revoked_at')
+            ->where('authority_fingerprint', $authority)
+            ->where('expires_at', '>', $now->toDateTimeString())->lockForUpdate()->first();
         if ($lease !== null) {
             if ($lease->catalog_snapshot_version !== $snapshot
-                || $lease->authority_fingerprint !== $authority
                 || $lease->policy_fingerprint !== $policyFingerprint) {
                 throw new OfflineSaleConflict('LEASE_ALREADY_ACTIVE', 'Resolve the existing offline lease before requesting another.');
             }
@@ -124,8 +116,11 @@ final class OfflineSaleLeaseService
         if ($lease === null || $lease->id !== $event['device_lease_id']
             || $event['company_id'] !== $company->public_id || $event['actor_id'] !== $actor->public_id
             || $event['device_id'] !== $device->device_id
-            || $lease->authority_fingerprint !== $this->authorityFingerprint($actor, $token)) {
+            || $lease->authority_fingerprint !== $this->authorityFingerprint($token)) {
             throw new OfflineSaleConflict('LEASE_INVALID', 'The saved sale has no valid offline lease for this staff member and device.');
+        }
+        if ($lease->revoked_at !== null) {
+            throw new OfflineSaleConflict('LEASE_POLICY_CHANGED', 'The offline sale policy or cash setup has changed.');
         }
 
         $now = now('UTC');
@@ -220,13 +215,9 @@ final class OfflineSaleLeaseService
         ];
     }
 
-    private function authorityFingerprint(User $actor, MobileAccessToken $token): string
+    private function authorityFingerprint(MobileAccessToken $token): string
     {
-        return hash('sha256', json_encode([
-            $token->password_epoch,
-            $actor->getRawOriginal('two_factor_secret'),
-            $actor->getRawOriginal('two_factor_confirmed_at'),
-        ], JSON_THROW_ON_ERROR));
+        return hash('sha256', $token->password_epoch);
     }
 
     private function scope(Company $company, User $actor, MobileDevice $device): Builder
