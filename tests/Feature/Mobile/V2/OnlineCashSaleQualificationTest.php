@@ -849,7 +849,9 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
         DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->update(['expires_at' => now('UTC')->subSecond()->toDateTimeString()]);
         $this->postJson($root, $wire)->assertOk()->assertExactJson($first->json());
-        $this->getJson($root.'/'.$eventId.'/status')->assertOk()
+        $status = $this->get($root.'/'.$eventId.'/status', ['Accept' => 'application/json']);
+        $this->assertSame(200, $status->status(), $status->getContent());
+        $status->assertOk()
             ->assertJsonPath('official_invoice.invoice_id', $officialInvoice)
             ->assertJsonPath('payload_digest', $wire['payload_digest']);
 
@@ -870,6 +872,39 @@ final class OnlineCashSaleQualificationTest extends TestCase
             ->assertJsonPath('error.conflict_evidence.reason', 'EVENT_PAYLOAD_CHANGED');
         $this->postJson($root, $this->offlineSaleWire($lease))->assertStatus(409)
             ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_WINDOW_MISMATCH');
+
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy);
+        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy);
+    }
+
+    public function test_offline_lease_migration_empty_roundtrip(): void
+    {
+        $migration = require database_path('migrations/2026_11_25_100001_create_mobile_offline_sale_leases_table.php');
+        $this->assertDatabaseCount('mobile_offline_sale_leases', 0);
+        $migration->down();
+        $this->assertFalse(DB::getSchemaBuilder()->hasTable('mobile_offline_sale_leases'));
+        $migration->up();
+        $lease = $this->issueOfflineLease();
+        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id']]);
+    }
+
+    public function test_offline_lease_migration_refuses_populated_rollback_without_changing_history(): void
+    {
+        $lease = $this->issueOfflineLease();
+        $before = DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->first();
+        $migration = require database_path('migrations/2026_11_25_100001_create_mobile_offline_sale_leases_table.php');
+        try {
+            $migration->down();
+            $this->fail('Issued lease history was removed.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame('Issued offline leases require a forward correction.', $exception->getMessage());
+        }
+        $this->assertEquals($before, DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->first());
     }
 
     public function test_offline_charge_rolls_back_with_payment_and_can_be_retried(): void

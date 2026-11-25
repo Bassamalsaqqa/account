@@ -342,7 +342,7 @@ final class ExecuteImmediateOnlineCashSaleAction
             }
 
             if ($offlineSale !== null) {
-                if ($qty->multipliedBy($unit->conversion_to_base)->stripTrailingZeros()->getScale() > 6) {
+                if ($qty->multipliedBy($unit->conversion_to_base)->strippedOfTrailingZeros()->getScale() > 6) {
                     throw new OfflineSaleConflict('UNREPRESENTABLE_QUANTITY', 'The saved quantity cannot be represented in the stock unit.');
                 }
                 $price = $unit->default_sale_price_base !== null
