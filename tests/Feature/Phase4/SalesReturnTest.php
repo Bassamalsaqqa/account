@@ -15,16 +15,25 @@ use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\InventoryBalance;
+use App\Models\LedgerAccount;
 use App\Models\PostingBatch;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Accounting\AccountingReconciliationService;
+use App\Services\Accounting\Phase7ReconciliationService;
 use App\Services\Inventory\InventoryMovementService;
+use App\Services\Inventory\InventoryReconciliationService;
+use App\Services\Money\MoneyReconciliationService;
+use App\Services\Purchasing\PayablesReconciliationService;
+use App\Services\Sales\SalesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
+use Brick\Math\BigDecimal;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
@@ -352,5 +361,148 @@ class SalesReturnTest extends TestCase
         // Idempotent void check
         $voidAgain = $voidReturnAction->execute($voidedReturn, $this->user);
         $this->assertSame(SalesReturn::STATUS_VOID, $voidAgain->status);
+    }
+
+    public function test_inclusive_tax_partial_and_final_returns_preserve_gross_subtotal_and_net_revenue_posting(): void
+    {
+        $inclusiveTax = TaxRate::create([
+            'company_id' => $this->company->id,
+            'code' => 'INCL-15',
+            'name_ar' => 'ضريبة شاملة 15%',
+            'name_en' => 'Inclusive VAT 15%',
+            'rate' => '15.000000',
+            'calculation' => TaxRate::CALC_INCLUSIVE,
+            'active' => true,
+        ]);
+
+        app(PostOpeningStockAction::class)->execute(
+            company: $this->company,
+            product: $this->product,
+            warehouse: $this->warehouse,
+            quantity: Quantity::of('2.000000'),
+            unitCostBase: '20.000000',
+            user: $this->user,
+            idempotencyKey: 'seed_inclusive_stock_1',
+            unitId: $this->unitPiece->id,
+            movementDate: Carbon::now()->toDateString(),
+            reason: 'Initial stock for inclusive tax sales return witness',
+        );
+
+        $invoiceDraft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->user, [
+            'customer_id' => $this->customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1.0000000000',
+            'issue_date' => Carbon::now()->toDateString(),
+            'due_date' => Carbon::now()->addDays(30)->toDateString(),
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'product_unit_id' => $this->productUnit->id,
+                    'item_description' => 'سلعة شاملة للضريبة',
+                    'quantity' => '2.000000',
+                    'unit_price' => '115.000000',
+                    'discount_type' => 'none',
+                    'discount_value' => '0.000000',
+                    'tax_rate_id' => $inclusiveTax->id,
+                ],
+            ],
+        ]);
+        $postedInvoice = app(PostSalesInvoiceAction::class)->execute($invoiceDraft, $this->user);
+        $invoiceLine = $postedInvoice->lines()->sole();
+
+        $this->assertTrue((bool) $invoiceLine->tax_inclusive);
+        $this->assertSame('230.000000', (string) $postedInvoice->subtotal_currency);
+        $this->assertSame('30.000000', (string) $postedInvoice->tax_total_currency);
+        $this->assertSame('230.000000', (string) $postedInvoice->grand_total_currency);
+        $this->assertSame('230.000000', (string) $invoiceLine->line_subtotal);
+        $this->assertSame('30.000000', (string) $invoiceLine->line_tax);
+        $this->assertSame('230.000000', (string) $invoiceLine->line_total);
+
+        $salesReturnsAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'sales_returns')->firstOrFail();
+        $taxOutputAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'tax_output')->firstOrFail();
+        $arAccount = LedgerAccount::where('company_id', $this->company->id)->where('system_key', 'accounts_receivable')->firstOrFail();
+
+        $returns = [];
+        for ($i = 0; $i < 2; $i++) {
+            $draft = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->user, [
+                'sales_invoice_id' => $postedInvoice->id,
+                'issue_date' => Carbon::now()->toDateString(),
+                'lines' => [
+                    [
+                        'sales_invoice_line_id' => $invoiceLine->id,
+                        'quantity' => '1.000000',
+                    ],
+                ],
+            ]);
+            $posted = app(PostSalesReturnAction::class)->execute($draft, $this->user);
+            $returnLine = $posted->lines()->sole();
+
+            $this->assertSame('115.000000', (string) $posted->subtotal_currency);
+            $this->assertSame('115.000000', (string) $posted->subtotal_base);
+            $this->assertSame('15.000000', (string) $posted->tax_total_currency);
+            $this->assertSame('15.000000', (string) $posted->tax_total_base);
+            $this->assertSame('115.000000', (string) $posted->grand_total_currency);
+            $this->assertSame('115.000000', (string) $posted->grand_total_base);
+
+            $this->assertSame('115.000000', (string) $returnLine->line_subtotal);
+            $this->assertSame('115.000000', (string) $returnLine->line_subtotal_base);
+            $this->assertSame('15.000000', (string) $returnLine->line_tax);
+            $this->assertSame('15.000000', (string) $returnLine->line_tax_base);
+            $this->assertSame('115.000000', (string) $returnLine->line_total);
+            $this->assertSame('115.000000', (string) $returnLine->line_total_base);
+
+            $batch = PostingBatch::with('lines')->findOrFail($posted->posting_batch_id);
+            $glByAccount = [];
+            foreach ($batch->lines as $glLine) {
+                $glByAccount[$glLine->ledger_account_id] = [
+                    'dr' => (string) $glLine->debit_base,
+                    'cr' => (string) $glLine->credit_base,
+                ];
+            }
+            $this->assertSame(['dr' => '100.000000', 'cr' => '0.000000'], $glByAccount[$salesReturnsAccount->id]);
+            $this->assertSame(['dr' => '15.000000', 'cr' => '0.000000'], $glByAccount[$taxOutputAccount->id]);
+            $this->assertSame(['dr' => '0.000000', 'cr' => '115.000000'], $glByAccount[$arAccount->id]);
+
+            $returns[] = $posted;
+        }
+
+        $cumSubtotal = BigDecimal::zero();
+        $cumSubtotalBase = BigDecimal::zero();
+        $cumTax = BigDecimal::zero();
+        $cumTaxBase = BigDecimal::zero();
+        $cumTotal = BigDecimal::zero();
+        $cumTotalBase = BigDecimal::zero();
+        foreach ($returns as $ret) {
+            $cumSubtotal = $cumSubtotal->plus($ret->subtotal_currency);
+            $cumSubtotalBase = $cumSubtotalBase->plus($ret->subtotal_base);
+            $cumTax = $cumTax->plus($ret->tax_total_currency);
+            $cumTaxBase = $cumTaxBase->plus($ret->tax_total_base);
+            $cumTotal = $cumTotal->plus($ret->grand_total_currency);
+            $cumTotalBase = $cumTotalBase->plus($ret->grand_total_base);
+        }
+        $this->assertSame('230.000000', (string) $cumSubtotal->toScale(6));
+        $this->assertSame('230.000000', (string) $cumSubtotalBase->toScale(6));
+        $this->assertSame('30.000000', (string) $cumTax->toScale(6));
+        $this->assertSame('30.000000', (string) $cumTaxBase->toScale(6));
+        $this->assertSame('230.000000', (string) $cumTotal->toScale(6));
+        $this->assertSame('230.000000', (string) $cumTotalBase->toScale(6));
+
+        $this->assertSame('0.000000', (string) $postedInvoice->calculateOutstanding());
+        $this->assertSame(2, SalesReturn::where('company_id', $this->company->id)->count());
+        $this->assertSame(4, PostingBatch::where('company_id', $this->company->id)->count());
+
+        $whBalance = InventoryBalance::where('company_id', $this->company->id)
+            ->where('warehouse_id', $this->warehouse->id)
+            ->where('product_id', $this->product->id)
+            ->firstOrFail();
+        $this->assertSame('2.000000', $whBalance->quantity_base);
+
+        $this->assertTrue(app(AccountingReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(InventoryReconciliationService::class)->auditCompany($this->company)->isHealthy);
+        $this->assertTrue(app(SalesReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(PayablesReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy);
+        $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy);
     }
 }

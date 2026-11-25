@@ -116,6 +116,14 @@ class CreateSalesReturnDraftAction
                     ->where('sales_invoice_line_id', $invLine->id)
                     ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
                     ->get();
+                $alreadyReturned = BigDecimal::zero();
+                foreach ($prior as $prl) {
+                    $alreadyReturned = $alreadyReturned->plus(BigDecimal::of((string) $prl->quantity));
+                }
+                $maxReturnable = BigDecimal::of((string) $invLine->quantity)->minus($alreadyReturned);
+                if ($returnQty->isGreaterThan($maxReturnable)) {
+                    throw new InvalidArgumentException("Requested return quantity [{$returnQty}] exceeds maximum returnable quantity [{$maxReturnable}] for line [{$invLine->id}].");
+                }
                 $amounts = $amountsCalculator->calculateLine($invLine, $returnQty, $prior, $invoice);
                 $calculated[] = $amounts;
 

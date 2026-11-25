@@ -51,7 +51,14 @@ final class SalesReturnAmounts
             $entitlements[$field] = $final ? $originalAmount
                 : $originalAmount->multipliedBy($cumulativeQty)->dividedBy($originalQty, $scale, RoundingMode::HALF_UP);
         }
-        $entitlements['subtotal'] = $entitlements['total']->plus($entitlements['discount'])->minus($entitlements['tax']);
+        if ((bool) ($original->tax_inclusive ?? false)) {
+            $rawSubtotal = (string) ($original->getAttribute('line_subtotal') ?? '0');
+            $originalSubtotal = BigDecimal::of($rawSubtotal !== '' ? $rawSubtotal : '0');
+            $entitlements['subtotal'] = $final ? $originalSubtotal
+                : $originalSubtotal->multipliedBy($cumulativeQty)->dividedBy($originalQty, $scale, RoundingMode::HALF_UP);
+        } else {
+            $entitlements['subtotal'] = $entitlements['total']->plus($entitlements['discount'])->minus($entitlements['tax']);
+        }
 
         $amounts = [];
         foreach ($entitlements as $field => $amount) {

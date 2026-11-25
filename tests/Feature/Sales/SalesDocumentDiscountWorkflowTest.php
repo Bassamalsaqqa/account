@@ -319,9 +319,10 @@ class SalesDocumentDiscountWorkflowTest extends TestCase
         foreach (['create', 'update'] as $operation) {
             $editing = $operation === 'update';
             $form = $editing
-                ? Livewire::test(InvoiceForm::class, ['publicId' => $draft->public_id])->set('due_date', null)
+                ? Livewire::test(InvoiceForm::class, ['publicId' => $draft->public_id])->set('due_date', null)->set('warehouse_id', null)
                 : Livewire::test(InvoiceForm::class)
                     ->set('customer_id', $this->customer->id)
+                    ->set('warehouse_id', null)
                     ->set('issue_date', '2026-11-25')
                     ->set('due_date', null)
                     ->set('notes', null)
@@ -331,8 +332,8 @@ class SalesDocumentDiscountWorkflowTest extends TestCase
                     ->set('lines.0.unit_price', '100.00');
             $key = $form->get($editing ? 'updateRequestKey' : 'createRequestKey');
             $legacyCanonical = [
-                'customer_id' => $this->customer->id,
                 'currency_code' => 'ILS',
+                'customer_id' => $this->customer->id,
                 'document_locale' => 'en',
                 'due_date' => null,
                 'exchange_rate' => '1.0000000000',
@@ -354,6 +355,7 @@ class SalesDocumentDiscountWorkflowTest extends TestCase
             if ($editing) {
                 $legacyCanonical = ['__target_invoice_id' => $draft->id] + $legacyCanonical;
             }
+            ksort($legacyCanonical);
             // Independently transcribed sorted 3d82f1c command envelope.
             $hash = hash('sha256', json_encode($legacyCanonical, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
             $receipt = CommandReceipt::create([
