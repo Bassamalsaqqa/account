@@ -489,6 +489,7 @@ final class AccountQualificationRunner
 
         // Full release qualification strictly requires full scope, clean tree, no skips, 100% coverage
         $fullReleaseQualified = $allPassed
+            && $totals['total_skipped'] === 0
             && empty($skippedChecks)
             && $targetBatch === null
             && count($batchResults) === $totalBatchCount
