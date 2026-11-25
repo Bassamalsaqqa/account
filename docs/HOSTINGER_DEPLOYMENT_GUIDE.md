@@ -1,6 +1,6 @@
 # Hostinger Production Deployment Guide
 
-- **Status:** **NOT DEPLOYED** — `account.palsync.net` docroot holds only Hostinger's `default.php` placeholder.
+- **Status:** The site is live. This release candidate has not been deployed. Record the actual deployed SHA and asset hashes before each update.
 - **Target Account / Subdomain:** `u556956644` / `account.palsync.net` (parent `palsync.net`, Hostinger Shared/Cloud Hosting, lifetime SSL + HTTPS redirect active).
 - **Authoritative Release Gates:** Complete [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) before any live change and before bringing the site out of maintenance.
 
@@ -19,7 +19,7 @@ Keep the Laravel root **outside** `public_html`. `bin/deploy.sh` requires `PUBLI
 
 ## 2. Clean Server Initial Setup
 
-1. **PHP 8.4:** Select PHP 8.4 for `account.palsync.net` in hPanel (or isolate via `SetHandler application/x-httpd-alt-php84` in `public_html/account/.htaccess` while preserving sibling PHP 8.3 subdomains). Use `/opt/alt/php84/usr/bin/php` for all SSH CLI commands (`php -v` in SSH may point to 8.3).
+1. **PHP 8.4:** Select PHP 8.4 for `account.palsync.net` in hPanel (or isolate via `SetHandler application/x-httpd-alt-php84` in `public_html/account/.htaccess` while preserving sibling PHP 8.3 subdomains). Use `/opt/alt/php84/usr/bin/php` for all SSH CLI commands (`php -v` in SSH may point to an older version).
 2. **MySQL Database:** Create DB + user in hPanel → Databases → Management. Connect from PHP via `127.0.0.1:3306` (never `srv*.hstgr.io`).
 3. **Clone & Install Dependencies:**
    ```bash

@@ -1,6 +1,6 @@
 # Phase 10 Backup & Disaster Recovery Runbook
 
-**Status:** Source tooling (`bin/recovery-preflight.php`, `tests/Deployment/recovery-preflight.php`: `46` tests / `113` assertions) is **inspection-only** (`exit 2`, `bootstrap_authorized=false`). **Production restore, archive/key retrieval, and off-host recovery remain NOT VERIFIED** (blocked on external authorization).
+**Status:** Source tooling (`bin/recovery-preflight.php`, `tests/Deployment/recovery-preflight.php`: `46` tests / `113` assertions) is **inspection-only** (`exit 2`, `bootstrap_authorized=false`). **Actual restore, independent key retrieval, and off-host recovery remain NOT VERIFIED** until a completed rehearsal is recorded.
 
 ## 1. Two Independent Proofs Required
 

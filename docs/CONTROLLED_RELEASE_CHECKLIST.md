@@ -37,4 +37,4 @@ Hold maintenance and roll back on any failure or unexplained fingerprint mismatc
 /opt/alt/php84/usr/bin/php artisan up
 ```
 
-Then confirm public login, authorized AR/EN sessions, HTTPS assets, logs, and default-OFF flags (`SUBSCRIPTION_ENFORCEMENT_ENABLED`, `AI_ASSISTANT_ENABLED`, `MOBILE_*`). See [Hostinger Deployment Guide](HOSTINGER_DEPLOYMENT_GUIDE.md), [Backup & Restore Runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md), [Setup & Operations Guide](SETUP_AND_OPERATIONS_GUIDE.md), and [ADR-0005](adr/0005-purchasing-vendors-and-ap.md).
+Then confirm public login, authorized AR/EN sessions, HTTPS assets, logs, and the approved effective feature flags. Preserve existing AI and mobile V1 settings; keep subscription enforcement and mobile V2/offline sales OFF unless separately authorized. See [Hostinger Deployment Guide](HOSTINGER_DEPLOYMENT_GUIDE.md), [Backup & Restore Runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md), [Setup & Operations Guide](SETUP_AND_OPERATIONS_GUIDE.md), and [ADR-0005](adr/0005-purchasing-vendors-and-ap.md).
