@@ -37,25 +37,33 @@ The platform enforces economic invariants across six distinct domains. Each doma
   ```
 - If invoked while disabled, the scheduler skips execution, and the CLI command refuses to run unless the `--force` flag is explicitly provided.
 
-### C. Shared-Hosting Runtime Bounds
-- To prevent timeouts or resource exhaustion on shared hosting:
-  - `max_execution_seconds` (default: 180s) caps the run time.
-  - The orchestrator measures elapsed time per company and gracefully aborts (`TIMEOUT_ABORTED`) if the time budget is exhausted, alerting operators.
+### C. Shared-Hosting Runtime Bounds via Bounded Child Processes
+- PHP `set_time_limit()` on Unix does not bound blocking database calls or network/socket I/O.
+- The orchestrator executes each domain audit in a bounded child process via `ReconciliationProcessRunner` (`Symfony\Component\Process\Process`) using existing console commands.
+- If a child process reaches its allocated time budget (`per_task_timeout_seconds` or remaining overall budget), it is immediately and actually terminated via `SIGTERM` followed by `SIGKILL`.
+- Total run budget (`max_execution_seconds`, default: 180s) bounds overall execution time.
+- If the budget is exhausted, the orchestrator aborts (`TIMEOUT_ABORTED`), sends a failure/timeout alert, and never sends a false healthy heartbeat.
 
-### D. Mutex Non-Overlap Without Daemons
-- Standard cache mutex locks (`reconciliation:orchestration:mutex`, TTL: 300s) prevent concurrent runs even if external cron triggers overlap.
+### D. Mutex Safe TTL Exceeding Enforced Lifetime
+- Standard cache mutex locks (`reconciliation:orchestration:mutex`) prevent concurrent runs even if external cron triggers overlap.
+- The mutex lock TTL strictly exceeds the enforced lifetime budget (`max($lockTtl, $maxSeconds + 60)`), guaranteeing that the lock cannot expire while a bounded execution is actively running.
 - No long-running background workers, Supervisor processes, or WebSockets are required.
 
-### E. Zero Financial Values and Zero PII in Alerts
-- All alert messages undergo sanitization via `ReconciliationAlertSanitizer`.
-- **Absolute Redaction**:
-  - Currency symbols (`$`, `€`, `£`, `ILS`, `USD`, `JOD`, `BHD`, etc.) and monetary amounts are redacted to `[REDACTED_AMOUNT]`.
-  - Floating-point numbers, rates, and decimals are redacted to `[REDACTED_DECIMAL]`.
-  - Customer, vendor, and user emails are redacted to `[REDACTED_EMAIL]`.
-  - Phone numbers are redacted to `[REDACTED_PHONE]`.
-  - Personal business names are never included; companies are identified solely by their opaque public ULID.
+### E. Keyset Company Retrieval & Actual Completed Counts
+- To protect shared hosting memory, the orchestrator uses keyset chunking (`company_chunk_size`, default: 50), never loading all companies into memory simultaneously.
+- `companiesAudited` reflects only actual completed companies where all six domains finished execution. If an execution aborts mid-company, the incomplete company is excluded from the count.
+- Unknown company queries (`public_id`) fail immediately (`FAILURE`, 0 audited) without reporting false zero-healthy status.
 
-### F. Explicit Configurable Recipient
+### F. Strict Allowlisted Alert Sanitization
+- All alert messages undergo sanitization via `ReconciliationAlertSanitizer`.
+- Regex string stripping cannot guarantee removal of unformatted names or integer amounts. Therefore, alerts emit **allowlisted category, count, and status only**.
+- Zero raw finding text, customer names, vendor names, or monetary amounts are ever present in alert payloads or mailings.
+- Database exceptions (`QueryException`, `PDOException`) are automatically redacted in error results, CLI output, and logs to prevent raw SQL queries, table names, or credentials from leaking.
+
+### G. Ambient CompanyContext Restoration
+- `ReconciliationOrchestratorService` captures ambient `CompanyContext` prior to execution, clears it for cross-company isolation, and unconditionally restores the previous company and user in a `finally` block.
+
+### H. Explicit Configurable Recipient
 - External email alerts require an explicit recipient:
   ```env
   RECONCILIATION_ALERT_RECIPIENT=ops@example.com
@@ -74,8 +82,14 @@ return [
     // Execution time budget in seconds (default: 180s)
     'max_execution_seconds' => (int) env('RECONCILIATION_MAX_EXECUTION_SECONDS', 180),
 
-    // Lock TTL to prevent concurrent runs on shared hosting (default: 300s)
+    // Lock TTL to prevent concurrent runs (default: 300s, enforced > max_execution_seconds)
     'lock_ttl_seconds' => (int) env('RECONCILIATION_LOCK_TTL_SECONDS', 300),
+
+    // Bounded child process per-task timeout in seconds (default: 30s)
+    'per_task_timeout_seconds' => (int) env('RECONCILIATION_PER_TASK_TIMEOUT_SECONDS', 30),
+
+    // Keyset pagination chunk size (default: 50)
+    'company_chunk_size' => (int) env('RECONCILIATION_COMPANY_CHUNK_SIZE', 50),
 
     // Sync latest results into platform_company_health table (default: true)
     'record_platform_health' => (bool) env('RECONCILIATION_RECORD_PLATFORM_HEALTH', true),
@@ -152,3 +166,10 @@ Schedule::command('reconciliation:run')
 ```
 
 Both `ai-assistant:prune` and `subscriptions.enforcement_enabled = false` remain preserved and protected.
+
+---
+
+## 6. Database Integration & Verification Note
+
+> **Note on Environment Constraints:**
+> No database daemon slot is assigned in the current test environment. All reconciliation orchestration, bounded child process execution, mutex locking, allowlisted alert sanitization, unknown company failure, and timeout aborts are fully verified through isolated unit and process test suites. Full multi-tenant MariaDB integration verification remains to be run when a persistent database daemon slot is assigned.

@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use ReflectionClass;
+use Throwable;
+
 final class ReconciliationAlertSanitizer
 {
     /**
-     * Common violation categories for structured reporting without PII or financial amounts.
+     * Strict allowlisted violation and error categories.
+     * Guaranteed zero PII, customer names, financial values, or raw messages.
      */
     public const CATEGORY_TENANT_LEAK = 'TENANT_ISOLATION_LEAK';
 
@@ -31,36 +35,58 @@ final class ReconciliationAlertSanitizer
 
     public const CATEGORY_PHASE7_CLEARING = 'PHASE7_CLEARING_INTEGRITY_MISMATCH';
 
+    public const CATEGORY_TIMEOUT = 'TIMEOUT_ABORTED';
+
+    public const CATEGORY_EXECUTION_FAILURE = 'EXECUTION_FAILURE';
+
     public const CATEGORY_GENERAL = 'DOMAIN_INTEGRITY_VIOLATION';
 
+    public const ALLOWED_CATEGORIES = [
+        self::CATEGORY_TENANT_LEAK,
+        self::CATEGORY_CURRENCY_MISMATCH,
+        self::CATEGORY_SYSTEM_ACCOUNT,
+        self::CATEGORY_POSTING_BATCH,
+        self::CATEGORY_BALANCE_IMBALANCE,
+        self::CATEGORY_INVENTORY_VALUATION,
+        self::CATEGORY_INVENTORY_MOVEMENT,
+        self::CATEGORY_SALES_RECORD,
+        self::CATEGORY_PAYABLES_RECORD,
+        self::CATEGORY_MONEY_ROUTING,
+        self::CATEGORY_PHASE7_CLEARING,
+        self::CATEGORY_TIMEOUT,
+        self::CATEGORY_EXECUTION_FAILURE,
+        self::CATEGORY_GENERAL,
+    ];
+
     /**
-     * Sanitize a raw violation or discrepancy string:
-     * - Strips all currency symbols ($, €, £, ¥, ILS, USD, JOD, BHD, EUR, GBP, etc.)
-     * - Redacts all decimal numbers, prices, monetary amounts, and floating values.
-     * - Redacts email addresses and phone numbers.
-     * - Redacts bracketed values that contain digits or monetary content.
+     * Emits allowlisted category, count, and status only.
+     * Never emits raw finding, exception text, customer names, or numeric amounts.
      *
-     * @return array{category: string, detail: string}
+     * @return array{category: string, count: int, status: string}
      */
-    public function sanitize(string $domain, string $rawMessage): array
+    public function sanitize(string $domain, string $rawMessage = '', int $count = 1, string $status = 'UNHEALTHY'): array
     {
         $category = $this->classifyCategory($domain, $rawMessage);
-        $sanitizedDetail = $this->redactSensitiveData($rawMessage);
 
         return [
             'category' => $category,
-            'detail' => $sanitizedDetail,
+            'count' => max(1, $count),
+            'status' => in_array($status, ['HEALTHY', 'UNHEALTHY', 'TIMEOUT', 'FAILURE'], true) ? $status : 'UNHEALTHY',
         ];
     }
 
     /**
-     * Classifies a message into a safe domain category.
+     * Classifies a message or domain into a safe allowlisted category.
      */
     public function classifyCategory(string $domain, string $message): string
     {
         $lower = strtolower($message);
 
-        if (str_contains($lower, 'another company') || str_contains($lower, 'foreign') || str_contains($lower, 'cross-company') || str_contains($lower, 'tenant')) {
+        if (str_contains($lower, 'timeout') || str_contains($lower, 'timed out')) {
+            return self::CATEGORY_TIMEOUT;
+        }
+
+        if (str_contains($lower, 'another company') || str_contains($lower, 'cross-company') || str_contains($lower, 'tenant')) {
             return self::CATEGORY_TENANT_LEAK;
         }
 
@@ -78,6 +104,10 @@ final class ReconciliationAlertSanitizer
 
         if (str_contains($lower, 'out of balance') || str_contains($lower, 'debit sum') || str_contains($lower, 'credit sum') || str_contains($lower, 'imbalance') || str_contains($lower, 'does not match calculated')) {
             return self::CATEGORY_BALANCE_IMBALANCE;
+        }
+
+        if (str_contains($lower, 'phase 7') || str_contains($lower, 'phase7') || str_contains($lower, 'landed cost') || str_contains($lower, 'payroll') || str_contains($lower, 'clearing account')) {
+            return self::CATEGORY_PHASE7_CLEARING;
         }
 
         if (str_contains($lower, 'valuation') || str_contains($lower, 'moving average') || str_contains($lower, 'cost')) {
@@ -100,35 +130,42 @@ final class ReconciliationAlertSanitizer
     }
 
     /**
-     * Redacts financial amounts, currencies, decimal values, and personal identifiers.
+     * Redacts database exceptions, SQL queries, bindings, and sensitive tokens for logs, CLI, and error results.
      */
-    public function redactSensitiveData(string $text): string
+    public static function redactExceptionMessage(Throwable $e): string
     {
-        // 1. Redact email addresses
-        $text = (string) preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/', '[REDACTED_EMAIL]', $text);
+        $shortClass = (new ReflectionClass($e))->getShortName();
 
-        // 2. Redact phone numbers
-        $text = (string) preg_replace('/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/', '[REDACTED_PHONE]', $text);
+        $className = get_class($e);
+        if (str_contains($className, 'Database') || str_contains($className, 'PDO') || str_contains($className, 'QueryException')) {
+            $code = $e->getCode();
 
-        // 3. Redact currency labels and symbols with amounts (e.g. ILS 100.00, $50, 9.833 JOD)
-        $text = (string) preg_replace('/\b(ILS|USD|JOD|BHD|EUR|GBP|SAR|AED|EGP|QAR|KWD|OMR|\$|€|£|¥|₪)\s*[-+]?[0-9]+(\.[0-9]+)?\b/i', '[REDACTED_AMOUNT]', $text);
-        $text = (string) preg_replace('/[-+]?[0-9]+(\.[0-9]+)?\s*(ILS|USD|JOD|BHD|EUR|GBP|SAR|AED|EGP|QAR|KWD|OMR|\$|€|£|¥|₪)\b/i', '[REDACTED_AMOUNT]', $text);
+            return "DatabaseException [{$shortClass}]: Database operation failed (code: {$code}) [REDACTED]";
+        }
 
-        // 4. Redact percentages
-        $text = (string) preg_replace('/\b\d+(\.\d+)?%/', '[REDACTED_PCT]', $text);
+        $msg = $e->getMessage();
+        if (str_contains($msg, 'SQLSTATE') || str_contains($msg, 'Connection refused') || str_contains($msg, 'Access denied') || str_contains($msg, 'QueryException')) {
+            return "DatabaseException [{$shortClass}]: Database operation failed [REDACTED]";
+        }
 
-        // 5. Redact decimal numbers (which represent financial quantities, rates, prices, or balances)
-        $text = (string) preg_replace('/(?<![a-zA-Z0-9_])[-+]?[0-9]+\.[0-9]+(?![a-zA-Z0-9_])/', '[REDACTED_DECIMAL]', $text);
+        $sanitized = (string) preg_replace('/(password|secret|key|token)[=:][^,\s]+/i', '$1=[REDACTED]', $msg);
+        $sanitized = (string) preg_replace('/(\/[a-zA-Z0-9_\-\.]+)+/', '[PATH]', $sanitized);
 
-        // 6. Redact standalone bracketed values that contain digits or IDs: e.g. [123.45], [ID 45], [0.000000]
-        $text = (string) preg_replace('/\[(?:ID\s*)?\d+(?:\.\d+)?\]/', '[REF]', $text);
+        return "{$shortClass}: {$sanitized}";
+    }
 
-        // 7. Strip out raw currency codes even without numbers
-        $text = (string) preg_replace('/\b(ILS|USD|JOD|BHD|EUR|GBP|SAR|AED|EGP|QAR|KWD|OMR)\b/', '[CURRENCY]', $text);
+    /**
+     * Redacts console output that may contain database errors or credentials.
+     */
+    public static function redactOutput(string $output): string
+    {
+        if (str_contains($output, 'SQLSTATE') || str_contains($output, 'QueryException') || str_contains($output, 'PDOException')) {
+            return 'Database query exception occurred [REDACTED]';
+        }
 
-        // 8. Normalize spacing
-        $text = (string) preg_replace('/\s+/', ' ', $text);
+        $sanitized = (string) preg_replace('/(password|secret|key|token)[=:][^,\s]+/i', '$1=[REDACTED]', $output);
+        $sanitized = (string) preg_replace('/(\/[a-zA-Z0-9_\-\.]+)+/', '[PATH]', $sanitized);
 
-        return trim($text);
+        return $sanitized;
     }
 }

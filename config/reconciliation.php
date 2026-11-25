@@ -21,12 +21,16 @@ return [
     |--------------------------------------------------------------------------
     |
     | Strict bounds to protect shared hosting environments without daemons:
-    | - max_execution_seconds: maximum time budget for reconciliation run.
-    | - lock_ttl_seconds: non-overlapping mutex lock duration to prevent piling up.
+    | - max_execution_seconds: total maximum time budget for reconciliation run.
+    | - lock_ttl_seconds: non-overlapping mutex lock duration (must exceed lifetime).
+    | - per_task_timeout_seconds: bounded child process timeout per domain/company.
+    | - company_chunk_size: keyset pagination chunk size to prevent memory exhaustion.
     |
     */
     'max_execution_seconds' => (int) env('RECONCILIATION_MAX_EXECUTION_SECONDS', 180),
     'lock_ttl_seconds' => (int) env('RECONCILIATION_LOCK_TTL_SECONDS', 300),
+    'per_task_timeout_seconds' => (int) env('RECONCILIATION_PER_TASK_TIMEOUT_SECONDS', 30),
+    'company_chunk_size' => (int) env('RECONCILIATION_COMPANY_CHUNK_SIZE', 50),
 
     /*
     |--------------------------------------------------------------------------
@@ -50,7 +54,9 @@ return [
     | 3. Execution failures: unhandled exceptions or timeout.
     |
     | INVARIANTS:
+    | - Default OFF until approved configuration.
     | - ZERO financial values, money amounts, or PII in alert payloads.
+    | - Emits allowlisted category, count, and status only.
     | - Explicit configurable recipient. If null/empty, external alerts are disabled.
     |
     */

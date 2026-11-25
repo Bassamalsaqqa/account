@@ -6,11 +6,52 @@ namespace Tests\Feature\Operations;
 
 use App\Console\Commands\PayablesReconcileCommand;
 use App\Console\Commands\ReconcileAllDomainsCommand;
+use App\Models\Company;
+use App\Services\Operations\ReconciliationProcessRunner;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Mockery;
 use Tests\TestCase;
 
 class ReconciliationOperationalTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Config::set('database.default', 'sqlite');
+        Config::set('database.connections.sqlite', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+        ]);
+        DB::purge('sqlite');
+
+        Schema::create('companies', function ($table): void {
+            $table->id();
+            $table->string('public_id')->unique();
+            $table->string('name')->nullable();
+            $table->string('name_ar')->nullable();
+            $table->string('status')->default('active');
+            $table->timestamps();
+        });
+
+        Schema::create('platform_company_health', function ($table): void {
+            $table->id();
+            $table->unsignedBigInteger('company_id')->unique();
+            $table->json('domains');
+            $table->timestamp('checked_at')->nullable();
+        });
+    }
+
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
+
     public function test_scheduler_preserves_ai_assistant_prune_and_registers_reconciliation(): void
     {
         /** @var Schedule $schedule */
@@ -43,6 +84,40 @@ class ReconciliationOperationalTest extends TestCase
 
         $this->artisan('reconciliation:run')
             ->expectsOutputToContain('Reconciliation orchestration is disabled in configuration')
+            ->assertSuccessful();
+    }
+
+    public function test_reconciliation_command_fails_on_unknown_company(): void
+    {
+        config(['reconciliation.enabled' => true]);
+
+        $this->artisan('reconciliation:run', [
+            'companyPublicId' => '01JMUNKNOWN0000000000000000',
+            '--force' => true,
+        ])
+            ->expectsOutputToContain('not found')
+            ->assertFailed();
+    }
+
+    public function test_reconciliation_command_executes_and_displays_table_when_forced(): void
+    {
+        config(['reconciliation.enabled' => false]);
+
+        Company::create(['public_id' => '01JM0000000000000000000001', 'name' => 'Acme']);
+
+        $runnerMock = Mockery::mock(ReconciliationProcessRunner::class);
+        $runnerMock->shouldReceive('runDomain')->times(6)->andReturn([
+            'success' => true,
+            'timedOut' => false,
+            'exitCode' => 0,
+            'output' => 'Healthy',
+            'errorMessage' => null,
+        ]);
+        $this->app->instance(ReconciliationProcessRunner::class, $runnerMock);
+
+        $this->artisan('reconciliation:run', ['--force' => true])
+            ->expectsOutputToContain('Audit completed')
+            ->expectsOutputToContain('All six domains are healthy across all audited companies')
             ->assertSuccessful();
     }
 

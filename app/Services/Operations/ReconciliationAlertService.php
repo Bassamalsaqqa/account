@@ -8,15 +8,23 @@ use App\Mail\ReconciliationAlertMail;
 use App\Services\Operations\DTO\ReconciliationRunResult;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use ReflectionClass;
 use Throwable;
 
 class ReconciliationAlertService
 {
     /**
      * Dispatches a heartbeat notification for a clean zero-violation run.
+     * Invariant: Never dispatches a heartbeat if status is not HEALTHY (e.g. TIMEOUT_ABORTED, FAILURE).
      */
     public function sendHeartbeat(ReconciliationRunResult $result): void
     {
+        if ($result->status !== 'HEALTHY') {
+            Log::warning("Reconciliation heartbeat refused: result status is [{$result->status}], not HEALTHY.");
+
+            return;
+        }
+
         if (! (bool) config('reconciliation.alerts.enabled', false)) {
             return;
         }
@@ -43,18 +51,6 @@ class ReconciliationAlertService
      */
     public function sendNonzeroAlert(ReconciliationRunResult $result): void
     {
-        if (! (bool) config('reconciliation.alerts.enabled', false)) {
-            // Still log locally as warning for auditability even if external alert is disabled
-            Log::warning('Reconciliation integrity violations detected during audit.', [
-                'event' => 'RECONCILIATION_NONZERO_FINDINGS',
-                'companies_audited' => $result->companiesAudited,
-                'findings_count' => $result->totalViolations(),
-                'findings' => $result->findings,
-            ]);
-
-            return;
-        }
-
         $payload = [
             'event' => 'RECONCILIATION_NONZERO_FINDINGS',
             'status' => 'VIOLATIONS_DETECTED',
@@ -66,30 +62,40 @@ class ReconciliationAlertService
             'timestamp' => now()->toIso8601String(),
         ];
 
+        if (! (bool) config('reconciliation.alerts.enabled', false)) {
+            Log::warning('Reconciliation integrity violations detected during audit.', $payload);
+
+            return;
+        }
+
         $this->dispatch('ALERT: Reconciliation integrity violations detected across domains', $payload, 'warning');
     }
 
     /**
-     * Dispatches an alert when reconciliation run encounters an unhandled execution failure.
+     * Dispatches an alert when reconciliation run encounters an unhandled execution failure or timeout.
      */
-    public function sendFailureAlert(Throwable $e, ?ReconciliationRunResult $result = null): void
+    public function sendFailureAlert(Throwable|string $e, ?ReconciliationRunResult $result = null): void
     {
+        $exceptionClass = $e instanceof Throwable ? (new ReflectionClass($e))->getShortName() : 'ExecutionFailure';
+        $redactedMessage = $e instanceof Throwable
+            ? ReconciliationAlertSanitizer::redactExceptionMessage($e)
+            : (string) $e;
+
         $sanitizedError = [
-            'exception_class' => get_class($e),
-            'message' => 'Operational reconciliation execution failed: '.get_class($e),
-            'code' => $e->getCode(),
+            'exception_class' => $exceptionClass,
+            'message' => $redactedMessage,
+            'code' => $e instanceof Throwable ? (int) $e->getCode() : 1,
         ];
 
         $payload = [
             'event' => 'RECONCILIATION_EXECUTION_FAILURE',
-            'status' => 'FAILURE',
+            'status' => $result !== null ? $result->status : 'FAILURE',
             'duration_seconds' => $result !== null ? $result->durationSeconds : 0.0,
             'companies_audited' => $result !== null ? $result->companiesAudited : 0,
             'error' => $sanitizedError,
             'timestamp' => now()->toIso8601String(),
         ];
 
-        // Always log failure locally
         Log::error('Operational reconciliation execution failed.', $payload);
 
         if (! (bool) config('reconciliation.alerts.enabled', false)) {
@@ -112,7 +118,6 @@ class ReconciliationAlertService
             return;
         }
 
-        // Always write to operational log
         match ($level) {
             'info' => Log::info($subject, $payload),
             'warning' => Log::warning($subject, $payload),
@@ -133,7 +138,7 @@ class ReconciliationAlertService
             } catch (Throwable $mailException) {
                 Log::error('Failed to dispatch reconciliation alert email to recipient.', [
                     'recipient' => '[CONFIGURED_RECIPIENT]',
-                    'error' => get_class($mailException),
+                    'error' => ReconciliationAlertSanitizer::redactExceptionMessage($mailException),
                 ]);
             }
         }

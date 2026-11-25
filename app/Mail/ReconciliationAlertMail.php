@@ -57,17 +57,18 @@ class ReconciliationAlertMail extends Mailable
             $lines[] = " - {$domain}: {$healthy} ({$count} findings)";
         }
 
-        /** @var list<array{company_public_id: string, domain: string, category: string, detail: string}> $findings */
+        /** @var list<array{company_public_id: string, domain: string, category: string, status?: string, count?: int}> $findings */
         $findings = is_array($this->payload['findings'] ?? null) ? $this->payload['findings'] : [];
         if (! empty($findings)) {
             $lines[] = '';
-            $lines[] = 'Sanitized Findings (Financial figures and PII redacted):';
+            $lines[] = 'Allowlisted Findings (Zero raw finding or exception text):';
             foreach ($findings as $finding) {
                 $comp = $finding['company_public_id'];
                 $dom = $finding['domain'];
                 $cat = $finding['category'];
-                $detail = $finding['detail'];
-                $lines[] = " - [{$comp}] [{$dom}] {$cat}: {$detail}";
+                $status = $finding['status'] ?? 'UNHEALTHY';
+                $cnt = $finding['count'] ?? 1;
+                $lines[] = " - [{$comp}] [{$dom}] {$cat} (status: {$status}, count: {$cnt})";
             }
         }
 

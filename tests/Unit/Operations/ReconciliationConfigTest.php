@@ -33,6 +33,13 @@ class ReconciliationConfigTest extends TestCase
     {
         $this->assertSame(180, config('reconciliation.max_execution_seconds'));
         $this->assertSame(300, config('reconciliation.lock_ttl_seconds'));
+        $this->assertSame(30, config('reconciliation.per_task_timeout_seconds'));
+        $this->assertSame(50, config('reconciliation.company_chunk_size'));
+        $this->assertGreaterThan(
+            config('reconciliation.max_execution_seconds'),
+            config('reconciliation.lock_ttl_seconds'),
+            'Mutex lock TTL must exceed enforced lifetime budget.'
+        );
     }
 
     public function test_subscription_enforcement_remains_off_by_default(): void

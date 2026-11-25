@@ -63,7 +63,7 @@ class ReconcileAllDomainsCommand extends Command
         }
 
         if ($result->status === 'TIMEOUT_ABORTED') {
-            $this->warn('Reconciliation orchestration reached runtime budget and aborted remaining companies.');
+            $this->warn('Reconciliation orchestration reached runtime budget and aborted remaining audits.');
         }
 
         $this->newLine();
@@ -85,9 +85,15 @@ class ReconcileAllDomainsCommand extends Command
             $this->newLine();
             $this->error("INTEGRITY VIOLATIONS DETECTED ({$result->totalViolations()} findings):");
             foreach ($result->findings as $finding) {
-                $this->line("  [x] [{$finding['company_public_id']}] [{$finding['domain']}] {$finding['category']}: {$finding['detail']}");
+                $status = $finding['status'];
+                $count = $finding['count'];
+                $this->line("  [x] [{$finding['company_public_id']}] [{$finding['domain']}] {$finding['category']} (count: {$count}, status: {$status})");
             }
 
+            return self::FAILURE;
+        }
+
+        if ($result->status === 'TIMEOUT_ABORTED') {
             return self::FAILURE;
         }
 

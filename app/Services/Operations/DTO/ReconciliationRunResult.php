@@ -8,7 +8,7 @@ final readonly class ReconciliationRunResult
 {
     /**
      * @param  array<string, array{healthy: bool, violation_count: int}>  $domainSummary
-     * @param  list<array{company_public_id: string, domain: string, category: string, detail: string}>  $findings
+     * @param  list<array{company_public_id: string, domain: string, category: string, status: string, count: int}>  $findings
      */
     public function __construct(
         public string $status,
@@ -43,6 +43,11 @@ final readonly class ReconciliationRunResult
 
     public function totalViolations(): int
     {
-        return count($this->findings);
+        $sum = 0;
+        foreach ($this->findings as $finding) {
+            $sum += $finding['count'];
+        }
+
+        return $sum > 0 ? $sum : count($this->findings);
     }
 }

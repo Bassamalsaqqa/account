@@ -9,6 +9,7 @@ use App\Services\Purchasing\PayablesReconciliationService;
 use App\Support\Tenancy\CompanyContext;
 use App\Support\Tenancy\CompanyScope;
 use Illuminate\Console\Command;
+use Throwable;
 
 class PayablesReconcileCommand extends Command
 {
@@ -41,7 +42,7 @@ class PayablesReconcileCommand extends Command
         $prevCompany = $context->hasCompany() ? $context->company() : null;
         $prevUser = $context->user();
         if ($prevCompany !== null) {
-            $context->clear();
+            $context->clear(sessionless: true);
         }
 
         try {
@@ -56,39 +57,62 @@ class PayablesReconcileCommand extends Command
                         return self::FAILURE;
                     }
 
-                    $companies = collect([$company]);
-                } else {
-                    $companies = Company::all();
-                }
+                    $this->info("Auditing payables records for company: {$company->displayName()} ({$company->public_id})...");
+                    $report = $reconciler->reconcile($company, isSystem: true);
 
-                if ($companies->isEmpty()) {
-                    $this->info('No companies found in database.');
+                    if (! $report->isHealthy) {
+                        $this->error("INTEGRITY VIOLATIONS DETECTED for [{$company->displayName()}]:");
+                        foreach ($report->violations as $violation) {
+                            $this->line("  [x] {$violation}");
+                        }
+
+                        return self::FAILURE;
+                    }
+
+                    $this->info("Payables records integrity healthy for [{$company->displayName()}].");
 
                     return self::SUCCESS;
                 }
 
                 $hasAnyFailures = false;
+                $foundAny = false;
 
-                foreach ($companies as $company) {
-                    $this->info("Auditing payables records for company: {$company->displayName()} ({$company->public_id})...");
-                    $report = $reconciler->reconcile($company, isSystem: true);
+                // Keyset/chunked execution avoiding loading all companies at once
+                Company::query()->orderBy('id')->chunk(50, function ($companies) use ($reconciler, &$hasAnyFailures, &$foundAny): void {
+                    foreach ($companies as $company) {
+                        $foundAny = true;
+                        $this->info("Auditing payables records for company: {$company->displayName()} ({$company->public_id})...");
+                        $report = $reconciler->reconcile($company, isSystem: true);
 
-                    if (! $report->isHealthy) {
-                        $hasAnyFailures = true;
-                        $this->error("INTEGRITY VIOLATIONS DETECTED for [{$company->displayName()}]:");
-                        foreach ($report->violations as $violation) {
-                            $this->line("  [x] {$violation}");
+                        if (! $report->isHealthy) {
+                            $hasAnyFailures = true;
+                            $this->error("INTEGRITY VIOLATIONS DETECTED for [{$company->displayName()}]:");
+                            foreach ($report->violations as $violation) {
+                                $this->line("  [x] {$violation}");
+                            }
+                        } else {
+                            $this->info("Payables records integrity healthy for [{$company->displayName()}].");
                         }
-                    } else {
-                        $this->info("Payables records integrity healthy for [{$company->displayName()}].");
                     }
+                });
+
+                if (! $foundAny) {
+                    $this->info('No companies found in database.');
+
+                    return self::SUCCESS;
                 }
 
                 return $hasAnyFailures ? self::FAILURE : self::SUCCESS;
             });
         } finally {
-            if ($prevCompany !== null) {
-                $context->setCompany($prevCompany, $prevUser);
+            try {
+                if ($prevCompany !== null) {
+                    $context->setCompany($prevCompany, $prevUser);
+                } else {
+                    $context->clear(sessionless: true);
+                }
+            } catch (Throwable) {
+                // context restoration safety
             }
         }
     }
