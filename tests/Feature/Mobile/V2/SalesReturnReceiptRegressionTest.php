@@ -34,6 +34,7 @@ use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Models\SalesReturnLine;
 use App\Models\StockMovement;
 use App\Models\TaxRate;
 use App\Models\Unit;
@@ -1414,7 +1415,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertSame('58.000000', $row['returned_exact']);
     }
 
-    public function test_negative_tax_residual_canonical_journal_balanced(): void
+    public function test_jpy_final_fraction_has_zero_money_residual_and_balanced_stock_journal(): void
     {
         $this->restoreStaffPermissions();
         $this->actingAs($this->owner);
@@ -1435,7 +1436,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         ]);
 
         $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
-        // Create genuine sales invoice in JPY: 1 qty at 4.00 unit price + 15% tax (0.60) = 4.60 gross
+        // Create genuine sales invoice in JPY: 1 qty at 4 unit price + rounded 15% tax (1) = 5 gross
         $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
             'warehouse_id' => $this->warehouse->id,
@@ -1454,6 +1455,8 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ],
         ]);
         $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $this->assertSame(0, $invoice->resolvedCurrencyMinorUnits());
+        $this->assertSame('1.000000', (string) $invoice->tax_total_currency);
 
         // Step 1: Return 0.99 qty
         // In JPY (minor units 0): subtotal = 4, tax = 1, gross = 5
@@ -1473,9 +1476,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertSame('1.000000', (string) $return1->tax_total_currency);
         $this->assertSame('4.000000', (string) $return1->subtotal_currency);
 
-        // Step 2: Final 0.01 qty has negative tax residual:
-        // Invoice had gross 4.60, tax 0.60. Return 1 took 5.00 gross and 1.00 tax.
-        // Residual remaining: 4.60 - 5.00 = -0.40 gross, 0.60 - 1.00 = -0.40 tax, subtotal = 0.00!
+        // Step 2: The final 0.01 restores stock but has no monetary entitlement left.
         $invLine = $invoice->lines->first();
 
         // Native preview -> commit path for genuine partial JPY fixture
@@ -1496,7 +1497,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ->withHeader('Idempotency-Key', $return2Key)
             ->postJson("/api/mobile/v1/companies/{$this->company->public_id}/sales/returns", [
                 'sales_invoice_id' => $invoice->public_id,
-                'reason' => 'Final return 0.01 negative tax residual',
+                'reason' => 'Final return 0.01 zero monetary residual',
                 'lines' => [
                     [
                         'sales_invoice_line_id' => $invLine->public_id,
@@ -1523,16 +1524,13 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertTrue($totalDr->isEqualTo($totalCr), "Debits [{$totalDr}] must equal Credits [{$totalCr}]");
         $this->assertTrue($totalDr->isGreaterThan(0));
 
-        // Verify Dr AR exists with original currency components and Cr Sales Tax Reversal Adjustment exists
-        $arLine = $batchLines->firstWhere('description', "Sales Return {$return2->return_number} - {$this->customer->displayName()}");
-        $this->assertNotNull($arLine);
-        $this->assertSame('0.400000', (string) $arLine->debit_base);
-        $this->assertSame('JPY', $arLine->transaction_currency_code);
-        $this->assertSame('0.400000', (string) $arLine->transaction_amount);
-
-        $taxLine = $batchLines->firstWhere('description', "Sales Return {$return2->return_number} Tax Reversal Adjustment");
-        $this->assertNotNull($taxLine);
-        $this->assertSame('0.400000', (string) $taxLine->credit_base);
+        // JPY has zero minor units: the first return exhausted all money.
+        $this->assertSame('0.000000', (string) $return2->grand_total_currency);
+        $this->assertSame('0.000000', (string) $return2->tax_total_currency);
+        $this->assertSame('0.000000', (string) $return2->subtotal_currency);
+        $this->assertSame('0.010000', (string) SalesReturnLine::withoutGlobalScopes()->where('company_id', $this->company->id)->where('sales_return_id', $return2->id)->firstOrFail()->quantity);
+        $this->assertCount(2, $batchLines); // Inventory / COGS only.
+        $this->assertFalse($batchLines->contains(fn ($line) => str_contains((string) $line->description, 'Tax Reversal')));
 
         // Assert exact preview amounts match posted document totals
         $this->assertSame($previewResp->json('total_return_amount'), $return2Resp->json('total_amount'));
@@ -1576,8 +1574,8 @@ final class SalesReturnReceiptRegressionTest extends TestCase
 
         $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
         // Create genuine sales invoice in JPY with 2 lines sharing the same default tax output account:
-        // Line 1: 1 qty at 4.00 unit price + 15% tax (0.60) = 4.60 gross
-        // Line 2: 1 qty at 4.00 unit price + 10% tax (0.40) = 4.40 gross
+        // Line 1: 1 qty at 4 unit price + rounded 15% tax (1) = 5 gross
+        // Line 2: 1 qty at 4 unit price + rounded 10% tax (0) = 4 gross
         $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
             'warehouse_id' => $this->warehouse->id,
@@ -1604,6 +1602,8 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             ],
         ]);
         $invoice = app(PostSalesInvoiceAction::class)->execute($invoice, $this->owner);
+        $this->assertSame(0, $invoice->resolvedCurrencyMinorUnits());
+        $this->assertSame('1.000000', (string) $invoice->tax_total_currency);
 
         // First return: 0.99 qty on Line 1 only.
         // In JPY (minor units 0): subtotal = 4, tax = 1, gross = 5
@@ -1626,7 +1626,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertSame('1.000000', (string) $return1->tax_total_currency);
         $this->assertSame('4.000000', (string) $return1->subtotal_currency);
 
-        // Next remainder return: Line 1 remaining 0.01 (tax = -0.40) + Line 2 full 1.00 (tax = +0.40).
+        // Next return: Line 1 remaining 0.01 and Line 2 full 1.00 both have zero tax.
         // Both lines share the same tax account, so tax group net in transaction currency is exactly 0!
         // Canonical preview:
         $previewResp = $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
@@ -1694,20 +1694,9 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         $this->assertTrue($totalDr->isEqualTo($totalCr), "Debits [{$totalDr}] must equal Credits [{$totalCr}]");
         $this->assertTrue($totalDr->isGreaterThan(0));
 
-        // Verify signed tax legs:
-        // Debit tax line (+0.40 JPY from line 2)
-        $taxDrLine = $batchLines->first(fn ($l) => str_contains((string) $l->description, 'Tax Reversal') && BigDecimal::of((string) $l->debit_base)->isPositive());
-        $this->assertNotNull($taxDrLine);
-        $this->assertSame('0.400000', (string) $taxDrLine->debit_base);
-        $this->assertSame('JPY', $taxDrLine->transaction_currency_code);
-        $this->assertSame('0.400000', (string) $taxDrLine->transaction_amount);
-
-        // Credit tax line (-0.40 JPY from line 1 residual adjustment)
-        $taxCrLine = $batchLines->first(fn ($l) => str_contains((string) $l->description, 'Tax Reversal Adjustment') && BigDecimal::of((string) $l->credit_base)->isPositive());
-        $this->assertNotNull($taxCrLine);
-        $this->assertSame('0.400000', (string) $taxCrLine->credit_base);
-        $this->assertSame('JPY', $taxCrLine->transaction_currency_code);
-        $this->assertSame('0.400000', (string) $taxCrLine->transaction_amount);
+        $this->assertSame('4.000000', (string) $return2->grand_total_currency);
+        $this->assertSame('0.000000', (string) $return2->tax_total_currency);
+        $this->assertFalse($batchLines->contains(fn ($line) => str_contains((string) $line->description, 'Tax Reversal')));
 
         // Assert exact preview amounts match posted document totals
         $this->assertSame($previewResp->json('total_return_amount'), $return2Resp->json('total_amount'));
@@ -2296,8 +2285,8 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         app(CompanyContext::class)->setCompany($this->company, $this->owner);
         $this->baseUnit->update(['allows_fraction' => true, 'decimal_places' => 6]);
 
-        Currency::updateOrCreate(['code' => 'JPY'], ['name' => 'Japanese Yen', 'symbol' => '¥', 'minor_units' => 0, 'active' => true]);
-        CompanyCurrency::firstOrCreate(['company_id' => $this->company->id, 'currency_code' => 'JPY'], ['enabled' => true, 'is_base' => false]);
+        Currency::updateOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'symbol' => '$', 'minor_units' => 2, 'active' => true]);
+        CompanyCurrency::firstOrCreate(['company_id' => $this->company->id, 'currency_code' => 'USD'], ['enabled' => true, 'is_base' => false]);
 
         $tax10 = TaxRate::create([
             'company_id' => $this->company->id,
@@ -2310,11 +2299,11 @@ final class SalesReturnReceiptRegressionTest extends TestCase
         ]);
 
         $productUnit = ProductUnit::where('product_id', $this->product->id)->firstOrFail();
-        // 4 JPY with 10% tax = 0.40 JPY tax. At FX 0.000001, tax 0.40 * 0.000001 = 0.000000 base
+        // 4 USD with 10% tax = 0.40 USD tax. At FX 0.000001, tax 0.40 * 0.000001 = 0.000000 base
         $invoice = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
             'customer_id' => $this->customer->id,
             'warehouse_id' => $this->warehouse->id,
-            'currency_code' => 'JPY',
+            'currency_code' => 'USD',
             'exchange_rate' => '0.0000010000',
             'issue_date' => now()->format('Y-m-d'),
             'lines' => [
