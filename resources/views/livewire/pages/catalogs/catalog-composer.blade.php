@@ -555,6 +555,8 @@
                                             </label>
                                             <input id="catalog-item-{{ $idx }}-price"
                                                 type="text"
+                                                inputmode="decimal"
+                                                dir="ltr"
                                                 wire:model.live.debounce.400ms="items.{{ $idx }}.custom_price"
                                                 @disabled(! $canManage)
                                                 placeholder="{{ __('catalogs.price_on_request_short') }}"

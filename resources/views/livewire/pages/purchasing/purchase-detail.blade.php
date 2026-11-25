@@ -255,7 +255,7 @@
                                 @foreach($document['lines'] as $line)
                                     <div class="flex items-center justify-between gap-3 text-xs">
                                         <span>{{ $line['item_description'] }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['quantity']) }} {{ $line['unit_name'] }})</span>
-                                        <input type="text" wire:model="manualAllocations.{{ $line['id'] }}" placeholder="0.00" class="w-32 rounded border border-border bg-surface px-2 py-1 text-sm text-end font-mono">
+                                        <input type="text" inputmode="decimal" dir="ltr" wire:model="manualAllocations.{{ $line['id'] }}" placeholder="0.00" class="w-32 rounded border border-border bg-surface px-2 py-1 text-sm text-end font-mono">
                                     </div>
                                 @endforeach
                             </div>

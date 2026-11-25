@@ -434,6 +434,14 @@ class PurchaseForm extends Component
             $this->recalculate();
         } elseif ($this->discount_type === 'none') {
             $this->discount_type = 'percent';
+            try {
+                if (trim((string) $this->discount_value) === '' || BigDecimal::of(trim((string) $this->discount_value))->isZero()) {
+                    $this->discount_value = '0';
+                }
+            } catch (MathException) {
+                $this->discount_value = '0';
+            }
+            $this->resetErrorBag('discount_value');
         }
     }
 
@@ -1170,7 +1178,6 @@ class PurchaseForm extends Component
             }
         }
 
-        $this->resetErrorBag('discount_value');
         $data = $this->draftData();
         try {
             $purchase = $this->publicId === null
@@ -1198,6 +1205,7 @@ class PurchaseForm extends Component
             return null;
         }
 
+        $this->resetErrorBag('discount_value');
         $this->savedDraftPublicId = $purchase->public_id;
         $this->currency_minor_units = $purchase->resolvedCurrencyMinorUnits();
         $this->persistedLineDiscounts = [];

@@ -22,6 +22,8 @@ use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\PurchaseConfirmationReceipt;
+use App\Models\PurchaseLine;
+use App\Models\StockMovement;
 use App\Models\TaxRate;
 use App\Models\Unit;
 use App\Models\User;
@@ -1247,5 +1249,241 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         // Re-calculate must also respect frozen precision
         $test->call('recalculate');
         $this->assertSame('29.500', $test->get('previewGrandTotal'));
+    }
+
+    public function test_toggling_discount_on_saved_zero_discount_draft_normalizes_value_for_one_step_entry(): void
+    {
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '1',
+                    'unit_cost' => '100.00',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('0.000000', (string) $draft->discount_value);
+
+        $form = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id])
+            ->assertSet('showDiscountControl', false)
+            ->call('toggleDiscountControl')
+            ->assertSet('showDiscountControl', true)
+            ->assertSet('discount_type', 'percent')
+            ->assertSet('discount_value', '0')
+            ->assertHasNoErrors();
+
+        $form->set('discount_value', '10')
+            ->call('recalculate')
+            ->assertHasNoErrors()
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '90.00');
+    }
+
+    public function test_purchase_discount_validation_blocks_invalid_states_with_zero_writes_and_valid_edits_clear_stale_errors(): void
+    {
+        $form = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '1')
+            ->set('lines.0.unit_cost', '100.00')
+            ->call('toggleDiscountControl');
+
+        $purchasesBefore = Purchase::count();
+        $linesBefore = PurchaseLine::count();
+        $batchesBefore = PostingBatch::count();
+        $movementsBefore = StockMovement::count();
+
+        // Background recalculation errors do not inject auto-focus stealing markup ($focusFormErrors = false).
+        $form->set('discount_type', 'percent')
+            ->set('discount_value', '150')
+            ->call('recalculate')
+            ->assertHasErrors(['discount_value'])
+            ->assertSet('documentTotalsValid', false)
+            ->assertSet('focusFormErrors', false);
+        $this->assertStringNotContainsString(
+            "document.getElementById('purchase-discount-value')?.focus()",
+            $form->html(),
+        );
+
+        foreach ([
+            ['percent', '150'],
+            ['percent', '-5'],
+            ['percent', ''],
+            ['percent', 'abc'],
+            ['fixed', '150'],
+            ['fixed', '-1'],
+            ['fixed', ''],
+        ] as [$type, $value]) {
+            $form->set('discount_type', $type)
+                ->set('discount_value', $value)
+                ->call('recalculate')
+                ->assertHasErrors(['discount_value'])
+                ->assertSet('documentTotalsValid', false);
+
+            $form->call('saveDraft')
+                ->assertHasErrors(['discount_value'])
+                ->assertNoRedirect();
+
+            $form->call('saveAndConfirm')
+                ->assertHasErrors(['discount_value'])
+                ->assertNoRedirect();
+
+            $this->assertSame($purchasesBefore, Purchase::count());
+            $this->assertSame($linesBefore, PurchaseLine::count());
+            $this->assertSame($batchesBefore, PostingBatch::count());
+            $this->assertSame($movementsBefore, StockMovement::count());
+        }
+
+        // Fixed discount > current unit_cost becomes valid again when unit_cost increases.
+        $form->set('discount_type', 'fixed')
+            ->set('discount_value', '150')
+            ->call('recalculate')
+            ->assertHasErrors(['discount_value']);
+
+        $form->set('lines.0.unit_cost', '200.00')
+            ->call('recalculate')
+            ->assertHasNoErrors()
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '50.00');
+
+        // Lowering unit_cost below fixed discount re-triggers the error cleanly.
+        $form->set('lines.0.unit_cost', '100.00')
+            ->call('recalculate')
+            ->assertHasErrors(['discount_value'])
+            ->assertSet('documentTotalsValid', false);
+
+        // Switching to 'none' or toggling discount off clears stale discount error and recalculates truthfully.
+        $form->set('discount_type', 'none')
+            ->call('recalculate')
+            ->assertHasNoErrors()
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '100.00');
+
+        // Explicit save failure keeps focus flag active so submit focus still directs the user to the invalid field.
+        $form->set('discount_type', 'percent')
+            ->set('discount_value', '101')
+            ->call('saveDraft')
+            ->assertHasErrors(['discount_value'])
+            ->assertSet('focusFormErrors', true);
+        $this->assertStringContainsString(
+            "document.getElementById('purchase-discount-value')?.focus()",
+            $form->html(),
+        );
+
+        // Valid percentage discount clears stale error and saves cleanly.
+        $form->set('discount_value', '10')
+            ->call('recalculate')
+            ->assertHasNoErrors()
+            ->assertSet('previewGrandTotal', '90.00')
+            ->call('saveDraft')
+            ->assertHasNoErrors();
+
+        $saved = Purchase::latest('id')->firstOrFail();
+        $this->assertSame('percent', $saved->discount_type);
+        $this->assertSame('90.000000', (string) $saved->grand_total_currency);
+    }
+
+    public function test_existing_purchase_draft_and_zero_cost_discount_guards_block_invalid_and_clear_on_toggle_off(): void
+    {
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $this->vendor->id,
+            'warehouse_id' => $this->warehouse->id,
+            'purchase_date' => '2026-11-24',
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'discount_type' => 'fixed',
+            'discount_value' => '10',
+            'discount_scope' => 'document',
+            'lines' => [
+                [
+                    'product_id' => $this->product->id,
+                    'quantity' => '1',
+                    'unit_cost' => '100.00',
+                ],
+            ],
+        ]);
+
+        $batchesBefore = PostingBatch::count();
+        $movementsBefore = StockMovement::count();
+
+        $editForm = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id])
+            ->assertSet('showDiscountControl', true)
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '150')
+            ->call('saveDraft')
+            ->assertHasErrors(['discount_value'])
+            ->assertNoRedirect();
+
+        $draft->refresh();
+        $this->assertSame('fixed', $draft->discount_type);
+        $this->assertSame('10.000000', (string) $draft->discount_value);
+        $this->assertSame('90.000000', (string) $draft->grand_total_currency);
+        $this->assertSame($batchesBefore, PostingBatch::count());
+        $this->assertSame($movementsBefore, StockMovement::count());
+
+        $editForm->call('saveAndConfirm')
+            ->assertHasErrors(['discount_value'])
+            ->assertNoRedirect();
+        $this->assertSame('draft', $draft->fresh()->status);
+
+        // Removing the discount toggle from an invalid state clears stale errors and restores full total.
+        $editForm->call('toggleDiscountControl')
+            ->assertHasNoErrors()
+            ->assertSet('showDiscountControl', false)
+            ->assertSet('discount_type', 'none')
+            ->assertSet('discount_value', '0')
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '100.00')
+            ->call('saveDraft')
+            ->assertHasNoErrors();
+
+        $draft->refresh();
+        $this->assertNull($draft->discount_type);
+        $this->assertSame('0.000000', (string) $draft->discount_value);
+        $this->assertSame('100.000000', (string) $draft->grand_total_currency);
+
+        // Re-enabling discount and applying a valid discount updates cleanly.
+        $editForm2 = Livewire::test(PurchaseForm::class, ['publicId' => $draft->public_id])
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '20')
+            ->call('saveDraft')
+            ->assertHasNoErrors();
+
+        $draft->refresh();
+        $this->assertSame('percent', $draft->discount_type);
+        $this->assertSame('20.000000', (string) $draft->discount_value);
+        $this->assertSame('80.000000', (string) $draft->grand_total_currency);
+
+        // Zero-cost purchases block positive fixed discounts without persistence.
+        $purchasesBefore = Purchase::count();
+        Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $this->vendor->id)
+            ->set('warehouse_id', $this->warehouse->id)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.quantity', '1')
+            ->set('lines.0.unit_cost', '0.00')
+            ->set('discount_type', 'fixed')
+            ->set('discount_value', '10')
+            ->call('recalculate')
+            ->assertHasErrors(['discount_value'])
+            ->assertSet('documentTotalsValid', false)
+            ->call('saveDraft')
+            ->assertHasErrors(['discount_value'])
+            ->assertNoRedirect()
+            ->call('saveAndConfirm')
+            ->assertHasErrors(['discount_value'])
+            ->assertNoRedirect();
+
+        $this->assertSame($purchasesBefore, Purchase::count());
+        $this->assertSame($batchesBefore, PostingBatch::count());
+        $this->assertSame($movementsBefore, StockMovement::count());
     }
 }

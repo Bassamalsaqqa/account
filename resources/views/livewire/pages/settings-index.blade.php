@@ -271,7 +271,7 @@
                             <p class="text-sm text-text-secondary bg-surface-soft rounded-control p-3" role="note">{{ __('settings.optional_2fa_help') }}</p>
                             <div>
                                 <label for="public-share-expiry" class="block text-sm font-bold text-text-secondary mb-1">{{ __('settings.public_share_expiry_label') }}</label>
-                                <input id="public-share-expiry" type="number" min="1" max="365" wire:model="public_share_default_expiry_days"
+                                <input id="public-share-expiry" type="number" inputmode="numeric" dir="ltr" min="1" max="365" wire:model="public_share_default_expiry_days"
                                        @error('public_share_default_expiry_days') aria-invalid="true" aria-describedby="public-share-expiry-error" @enderror
                                        class="w-full text-sm rounded-control border border-border p-2.5 focus:border-primary focus:ring-1 focus:ring-primary num" />
                                 @error('public_share_default_expiry_days')<p id="public-share-expiry-error" role="alert" class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror

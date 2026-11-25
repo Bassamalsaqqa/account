@@ -9,6 +9,7 @@ import './financial-share-controls';
 import './mobile-shell';
 
 import './document-operations';
+import './numeric-select-on-focus';
 import './camera-scanner';
 import './global-search';
 import './searchable-combobox';

@@ -3,27 +3,43 @@
       class="space-y-4 pb-44 md:pb-6"
       x-data="{
           saving: false, documentBusy: false, operationFailed: false,
-          previewTimer: null, removePreviewInterceptor: null,
+          previewTimer: null, previewRevision: 0, previewPending: false, removePreviewInterceptor: null,
           init() {
-              // An outgoing form message already includes pending input edits.
+              // Cancel the pending timer only when no newer edit arrived after this message was created.
               this.removePreviewInterceptor = $wire.$interceptMessage(({ onSend }) => {
-                  onSend(() => clearTimeout(this.previewTimer));
+                  const rev = this.previewRevision;
+                  onSend(() => {
+                      if (this.previewRevision === rev) {
+                          clearTimeout(this.previewTimer);
+                          this.previewPending = false;
+                      }
+                  });
               });
           },
           schedulePurchasePreview() {
+              this.previewRevision++;
+              this.previewPending = true;
               clearTimeout(this.previewTimer);
-              this.previewTimer = setTimeout(() => {
-                  if (!this.saving && !this.documentBusy) $wire.$commit();
-              }, 350);
+              this.previewTimer = setTimeout(() => this.flushPendingPreview(), 350);
+          },
+          flushPendingPreview() {
+              if (this.previewPending && !this.saving && !this.documentBusy) {
+                  this.previewPending = false;
+                  clearTimeout(this.previewTimer);
+                  $wire.$commit();
+              }
           },
           destroy() {
               clearTimeout(this.previewTimer);
+              this.previewPending = false;
               this.removePreviewInterceptor?.();
           },
           handleSaveDraft() {
               if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBlocked($wire) || $wire.showQuickVendorModal) return;
+              clearTimeout(this.previewTimer);
+              this.previewPending = false;
               this.saving = true;
-              window.enqueueDocumentOperation($wire, 'saveDraft').catch(() => { this.operationFailed = true; }).finally(() => { this.saving = false; });
+              window.enqueueDocumentOperation($wire, 'saveDraft').catch(() => { this.operationFailed = true; }).finally(() => { this.saving = false; this.flushPendingPreview(); });
           },
           handleAddLine() {
               if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBlocked($wire) || $wire.showQuickVendorModal) return;
@@ -31,7 +47,7 @@
           }
       }"
       @input="if ($event.target.hasAttribute('data-purchase-preview-input')) schedulePurchasePreview()"
-      @document-operation-state.window="if ($event.detail.id === $wire.$id) documentBusy = $event.detail.busy"
+      @document-operation-state.window="if ($event.detail.id === $wire.$id) { documentBusy = $event.detail.busy; flushPendingPreview(); }"
       @keydown.window.prevent.ctrl.s="handleSaveDraft()"
       @keydown.window.prevent.meta.s="handleSaveDraft()"
       @keydown.window.prevent.alt.n="if (!$event.repeat) handleAddLine()">
@@ -503,7 +519,9 @@
                                         @endif
                                     </div>
                                     @error('discount_value')
-                                        <span x-init="$nextTick(() => document.getElementById('purchase-discount-value')?.focus())"></span>
+                                        @if ($focusFormErrors)
+                                            <span x-init="$nextTick(() => document.getElementById('purchase-discount-value')?.focus())"></span>
+                                        @endif
                                         <span id="purchase-discount-value-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span>
                                     @enderror
                                 </div>
@@ -580,7 +598,7 @@
     <!-- Footer Actions -->
     <footer class="flex flex-wrap items-center gap-3 pt-2">
         @can('purchasing.purchase.post')
-            <button type="button" @click="if (!saving && !window.isDocumentBlocked($wire)) { saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { operationFailed = true; }).finally(() => saving = false); }" :disabled="saving || documentBusy" class="min-h-11 px-5 bg-primary text-white font-bold text-sm rounded-control hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+            <button type="button" @click="if (!saving && !window.isDocumentBlocked($wire)) { clearTimeout(previewTimer); previewPending = false; saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { operationFailed = true; }).finally(() => { saving = false; flushPendingPreview(); }); }" :disabled="saving || documentBusy" class="min-h-11 px-5 bg-primary text-white font-bold text-sm rounded-control hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                 {{ __('purchasing.post_purchase') }}
             </button>
         @endcan
