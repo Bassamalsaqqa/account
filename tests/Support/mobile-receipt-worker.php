@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Fortify\ResetUserPassword;
 use App\Actions\Sales\PostSalesInvoiceAction;
+use App\Actions\Sales\SaveTaxRateAction;
+use App\Actions\Sales\UpdateMoneyAccountAction;
 use App\Domain\Inventory\Exceptions\InsufficientStockException;
 use App\Models\Company;
 use App\Models\CompanyMobileSetting;
@@ -140,6 +142,32 @@ if ($mode === 'web_sale') {
     } catch (InsufficientStockException) {
         echo json_encode(['outcome' => 'stock_unavailable'], JSON_THROW_ON_ERROR);
     }
+    exit(0);
+}
+
+if (in_array($mode, ['cash_active', 'tax_route'], true)) {
+    $company = Company::query()->findOrFail($input['company_id']);
+    $owner = User::query()->findOrFail($input['user_id']);
+    auth()->setUser($owner);
+    app(CompanyContext::class)->setCompany($company, $owner);
+
+    // Verify the real action acquires settings before any affected account or tax row.
+    $settingsLock = new StrictBarrier;
+    $targetLock = new StrictBarrier;
+    $target = $mode === 'cash_active' ? 'money_accounts' : 'ledger_accounts';
+    DB::listen(static function ($query) use ($settingsLock, $targetLock, $target): void {
+        $settingsLock->observe($query->sql, 'company_mobile_settings');
+        if ($targetLock->observe($query->sql, $target)) {
+            $settingsLock->requireHeld();
+        }
+    });
+    if ($mode === 'cash_active') {
+        app(UpdateMoneyAccountAction::class)->execute($company, $owner, $input['target_id'], $input['data']);
+    } else {
+        app(SaveTaxRateAction::class)->execute($company, $owner, $input['data'], $input['target_id']);
+    }
+    $targetLock->requireHeld();
+    echo json_encode(['outcome' => $mode], JSON_THROW_ON_ERROR);
     exit(0);
 }
 

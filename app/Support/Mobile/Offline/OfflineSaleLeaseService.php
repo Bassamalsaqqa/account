@@ -40,6 +40,15 @@ final class OfflineSaleLeaseService
             && (bool) config('mobile.enabled', false);
     }
 
+    /** Called by configuration writers while holding the company and mobile settings locks. */
+    public static function retireCompanyLeases(CompanyMobileSetting $setting): void
+    {
+        DB::table('mobile_offline_sale_leases')
+            ->where('company_id', $setting->company_id)
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => DB::raw('UTC_TIMESTAMP()')]);
+    }
+
     /**
      * Invoked by the receipt manager through its private authority scope.
      *

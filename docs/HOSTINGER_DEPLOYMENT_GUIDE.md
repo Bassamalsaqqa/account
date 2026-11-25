@@ -163,7 +163,7 @@ Now generate the encryption key (Artisan is now functional):
 ```
 
 ### Step 3.6: Run Database Migrations
-Run the database migrations:
+Complete the [mobile authority migration preflight](SETUP_AND_OPERATIONS_GUIDE.md#mobile-authority-migration-preflight) before any release DDL when that migration is pending. Then run the database migrations:
 ```bash
 /opt/alt/php84/usr/bin/php artisan migrate --force
 ```
@@ -252,7 +252,7 @@ When an explicit, reviewed release requires database schema or seed updates:
 cd /home/u556956644/domains/palsync.net/accounting
 PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 ```
-Add migration or bootstrap options only for the explicitly reviewed scope. The script verifies `.htaccess` custody before dependencies, migrations, caches and asset replacement; symlinked public roots are refused. It preserves an existing maintenance guard and leaves maintenance held.
+Add migration or bootstrap options only for the explicitly reviewed scope. Complete the [mobile authority migration preflight](SETUP_AND_OPERATIONS_GUIDE.md#mobile-authority-migration-preflight) before any release DDL when that migration is pending. The script verifies `.htaccess` custody before dependencies, migrations, caches and asset replacement; symlinked public roots are refused. It preserves an existing maintenance guard and leaves maintenance held.
 5. Complete [the controlled-release checklist](CONTROLLED_RELEASE_CHECKLIST.md): exact identities, full preservation fingerprints, the six real reconciliation domains, fresh logs, authenticated AR/EN/API/Livewire checks and actual HTTPS asset/MIME responses. `/manifest.webmanifest` is a published static public-root file, not a build file. The script does not execute or certify these operational checks.
 6. Only after all gates pass and explicit Owner reopening authorization:
 ```bash

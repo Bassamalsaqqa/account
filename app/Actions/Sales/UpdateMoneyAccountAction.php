@@ -6,11 +6,13 @@ namespace App\Actions\Sales;
 
 use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
+use App\Models\CompanyMobileSetting;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
 use App\Models\User;
 use App\Services\Audit\AuditService;
 use App\Services\Sales\SalesActorGuard;
+use App\Support\Mobile\Offline\OfflineSaleLeaseService;
 use Illuminate\Support\Facades\Validator;
 
 final class UpdateMoneyAccountAction
@@ -20,6 +22,7 @@ final class UpdateMoneyAccountAction
     {
         return app(TenantWriteAccess::class)->transaction((int) $company->id, function () use ($company, $actor, $id, $data): MoneyAccount {
             app(SalesActorGuard::class)->lockAndAuthorize((int) $company->id, $actor, 'settings.money_accounts.manage');
+            $settings = CompanyMobileSetting::query()->whereKey($company->id)->lockForUpdate()->first();
             $account = MoneyAccount::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
             foreach (['ledger_account_id', 'account_type', 'currency_code'] as $identity) {
                 if (array_key_exists($identity, $data) && (string) $data[$identity] !== (string) $account->$identity) {
@@ -45,6 +48,9 @@ final class UpdateMoneyAccountAction
             }
             $before = $account->only(array_keys($values));
             $account->update($values);
+            if ($settings !== null && (int) $settings->approved_cash_account_id === (int) $account->id && $account->wasChanged('is_active')) {
+                OfflineSaleLeaseService::retireCompanyLeases($settings);
+            }
             $ledger->update(['name_ar' => $account->name_ar, 'name_en' => $account->name_en]);
             app(AuditService::class)->log((int) $company->id, 'settings.money_account.updated', 'Money account configuration updated', $actor->id, $account, $before, $values);
 
