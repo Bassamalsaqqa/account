@@ -80,9 +80,10 @@ class QuotationEditAndDeletionCorrectionTest extends TestCase
         $quote = $this->quote();
 
         Livewire::test(QuotationForm::class, ['publicId' => $quote->public_id])
+            ->call('toggleDiscountControl')
             ->assertSeeHtml('value="percent"')
-            ->set('lines.0.discount_type', 'percent')
-            ->set('lines.0.discount_value', '10')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '10')
             ->call('recalculate')
             ->assertSet('previewGrandTotal', '90.00')
             ->call('save')
@@ -91,7 +92,10 @@ class QuotationEditAndDeletionCorrectionTest extends TestCase
         $quote->refresh();
         $this->assertSame('90.000000', $quote->grand_total_currency);
         $this->assertSame('10.000000', $quote->discount_total_currency);
-        $this->assertSame('percent', $quote->lines()->sole()->discount_type);
+        $this->assertSame('document', $quote->discount_scope);
+        $this->assertSame('percent', $quote->discount_type);
+        $this->assertSame('10.000000', (string) $quote->discount_value);
+        $this->assertSame('10.000000', (string) $quote->lines()->sole()->allocated_document_discount);
     }
 
     public function test_old_percentage_discount_is_corrected_when_the_draft_is_saved_again(): void

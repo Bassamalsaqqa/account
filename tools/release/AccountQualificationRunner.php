@@ -488,13 +488,15 @@ final class AccountQualificationRunner
             && $totals['total_errors'] === 0;
 
         // Full release qualification strictly requires full scope, clean tree, no skips, 100% coverage
-        $fullReleaseQualified = $allPassed
-            && $totals['total_skipped'] === 0
-            && empty($skippedChecks)
-            && $targetBatch === null
-            && count($batchResults) === $totalBatchCount
-            && $totalBatchCount > 0
-            && $fullCoverage;
+        $fullReleaseQualified = $this->isFullReleaseQualified(
+            $allPassed,
+            $totals,
+            $skippedChecks,
+            $targetBatch,
+            count($batchResults),
+            $totalBatchCount,
+            $fullCoverage
+        );
 
         $verdict = $fullReleaseQualified ? 'FULL_QUALIFICATION_PASSED' : ($allPassed ? 'PARTIAL_SCOPE_PASSED' : 'FAILED');
 
@@ -515,6 +517,30 @@ final class AccountQualificationRunner
         $this->printSummary($totals, $allPassed, $fullReleaseQualified, $coverage, $skippedChecks, $outDir);
 
         return $allPassed ? self::EXIT_SUCCESS : self::EXIT_TEST_FAILURE;
+    }
+
+    /**
+     * Evaluate whether a completed run qualifies as a full clean-tree zero-skip release qualification.
+     *
+     * @param  array{total_skipped: int}  $totals
+     * @param  list<string>  $skippedChecks
+     */
+    public function isFullReleaseQualified(
+        bool $allPassed,
+        array $totals,
+        array $skippedChecks,
+        ?int $targetBatch,
+        int $executedBatchCount,
+        int $totalBatchCount,
+        bool $fullCoverage
+    ): bool {
+        return $allPassed
+            && $totals['total_skipped'] === 0
+            && empty($skippedChecks)
+            && $targetBatch === null
+            && $executedBatchCount === $totalBatchCount
+            && $totalBatchCount > 0
+            && $fullCoverage;
     }
 
     /**

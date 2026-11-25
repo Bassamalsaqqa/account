@@ -498,6 +498,52 @@ $testRunner->runTest('Partial batch or skipped checks never label full release q
     shell_exec('rm -rf '.escapeshellarg($tempDir));
 });
 
+$testRunner->runTest('Positive skipped PHPUnit tests fail full release qualification even when failures and errors are zero', function () use ($runner) {
+    $xml = <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="Tests\Feature\SampleSkippedTest" file="/app/tests/Feature/SampleSkippedTest.php" tests="2" assertions="1" errors="0" failures="0" skipped="1" time="0.2">
+    <testcase name="test_passes" class="Tests\Feature\SampleSkippedTest" classname="Tests.Feature.SampleSkippedTest" file="/app/tests/Feature/SampleSkippedTest.php" line="10" assertions="1" time="0.1"/>
+    <testcase name="test_skipped" class="Tests\Feature\SampleSkippedTest" classname="Tests.Feature.SampleSkippedTest" file="/app/tests/Feature/SampleSkippedTest.php" line="20" assertions="0" time="0.1">
+      <skipped/>
+    </testcase>
+  </testsuite>
+</testsuites>
+XML;
+
+    $tempFile = tempnam(sys_get_temp_dir(), 'test_skipped_junit_');
+    file_put_contents($tempFile, $xml);
+    $stats = $runner->parseJunitReport($tempFile);
+    unlink($tempFile);
+
+    assertTrue($stats['valid']);
+    assertEquals(1, $stats['skipped'], 'Skipped test count must be preserved');
+
+    $totalsWithSkip = [
+        'total_batches' => 1,
+        'passed_batches' => 1,
+        'failed_batches' => 0,
+        'total_tests' => $stats['tests'],
+        'total_assertions' => $stats['assertions'],
+        'total_failures' => $stats['failures'],
+        'total_errors' => $stats['errors'],
+        'total_skipped' => $stats['skipped'],
+        'total_duration' => 0.2,
+        'failure_messages' => [],
+    ];
+    assertFalse(
+        $runner->isFullReleaseQualified(true, $totalsWithSkip, [], null, 1, 1, true),
+        'Positive total_skipped must refuse full release qualification'
+    );
+
+    $totalsWithoutSkip = $totalsWithSkip;
+    $totalsWithoutSkip['total_skipped'] = 0;
+    assertTrue(
+        $runner->isFullReleaseQualified(true, $totalsWithoutSkip, [], null, 1, 1, true),
+        'Clean full-coverage run with total_skipped === 0 should qualify'
+    );
+});
+
 // 15. CLI end-to-end refusal via process execution
 $testRunner->runTest('CLI entrypoint refuses on wrong commit with exit code 2', function () use ($rootDir) {
     $cmd = PHP_BINARY.' '.escapeshellarg($rootDir.'/tools/release/qualify').' --preflight-only --expected-commit=badc0ffee0000000000000000000000000000000 2>&1';

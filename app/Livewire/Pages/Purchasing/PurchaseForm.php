@@ -1473,7 +1473,7 @@ class PurchaseForm extends Component
                 'quantity' => trim((string) ($line['quantity'] ?? '')),
                 'unit_cost' => trim((string) ($line['unit_cost'] ?? '')),
                 'discount_type' => $discountType !== 'none' ? $discountType : null,
-                'discount_value' => trim((string) ($line['discount_value'] ?? '0')),
+                'discount_value' => $discountType !== 'none' ? trim((string) ($line['discount_value'] ?? '0')) : '0',
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
                 'lots' => $line['lots'] ?? [],
             ];
@@ -1523,7 +1523,7 @@ class PurchaseForm extends Component
                 'quantity' => trim((string) ($line['quantity'] ?? '')),
                 'unit_cost' => trim((string) ($line['unit_cost'] ?? '')),
                 'discount_type' => $discountType !== 'none' ? $discountType : null,
-                'discount_value' => trim((string) ($line['discount_value'] ?? '0')),
+                'discount_value' => $discountType !== 'none' ? trim((string) ($line['discount_value'] ?? '0')) : '0',
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
                 'lots' => $line['lots'] ?? [],
             ];

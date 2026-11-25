@@ -232,4 +232,12 @@ final class PurchaseCorrection
 
         return $data;
     }
+
+    public function hasReceiptForPurchase(int $companyId, int $purchaseId): bool
+    {
+        return DB::table('purchase_correction_receipts')
+            ->where('company_id', $companyId)
+            ->where(fn ($query) => $query->where('purchase_id', $purchaseId)->orWhere('replacement_id', $purchaseId))
+            ->exists();
+    }
 }

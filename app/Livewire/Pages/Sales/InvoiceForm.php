@@ -363,6 +363,8 @@ class InvoiceForm extends Component
 
     public function toggleDiscountControl(): void
     {
+        abort_unless(auth()->user()?->hasPermissionTo('sales.invoice.change_discount'), 403);
+
         $this->showDiscountControl = ! $this->showDiscountControl;
         if (! $this->showDiscountControl) {
             $this->discount_type = 'none';

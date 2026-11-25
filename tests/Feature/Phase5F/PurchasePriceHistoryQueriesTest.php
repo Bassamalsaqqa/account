@@ -311,15 +311,16 @@ class PurchasePriceHistoryQueriesTest extends TestCase
         // Net commercial total in base = 180 ILS.
         // Quantity base = 20.
         // Net commercial price per base unit = 180 / 20 = 9.000000 ILS per piece.
-        $this->createAndPostPurchase([
+        $purchase = $this->createAndPostPurchase([
+            'discount_scope' => 'document',
+            'discount_type' => 'percent',
+            'discount_value' => '10.000000',
             'lines' => [
                 [
                     'product_id' => $this->product->id,
                     'product_unit_id' => $this->boxUnit->id,
                     'quantity' => '2',
                     'unit_cost' => '100.000000',
-                    'discount_type' => 'percent',
-                    'discount_value' => '10.000000',
                 ],
             ],
         ]);
@@ -329,8 +330,10 @@ class PurchasePriceHistoryQueriesTest extends TestCase
 
         $this->assertNotNull($item);
         $this->assertSame('100.000000', $item->unit_cost);
-        $this->assertSame('percent', $item->discount_type);
-        $this->assertSame('10.000000', $item->discount_value);
+        $this->assertNull($item->discount_type);
+        $this->assertSame('0.000000', $item->discount_value);
+        $this->assertSame('percent', $purchase->discount_type);
+        $this->assertSame('10.000000', (string) $purchase->discount_value);
         $this->assertSame('20.000000', $item->line_discount);
         $this->assertSame('20.000000', $item->quantity_base);
         $this->assertSame('180.000000', $item->net_commercial_total_base);
@@ -351,14 +354,15 @@ class PurchasePriceHistoryQueriesTest extends TestCase
         $this->createAndPostPurchase([
             'currency_code' => 'USD',
             'exchange_rate' => '3.5000000000',
+            'discount_scope' => 'document',
+            'discount_type' => 'fixed',
+            'discount_value' => '10.000000',
             'lines' => [
                 [
                     'product_id' => $this->product->id,
                     'product_unit_id' => $this->boxUnit->id,
                     'quantity' => '4',
                     'unit_cost' => '40.000000',
-                    'discount_type' => 'fixed',
-                    'discount_value' => '10.000000',
                 ],
             ],
         ]);
@@ -652,13 +656,14 @@ class PurchasePriceHistoryQueriesTest extends TestCase
             'purchase_date' => '2026-10-02',
             'currency_code' => 'JOD',
             'exchange_rate' => '5.0000000000',
+            'discount_scope' => 'document',
+            'discount_type' => 'fixed',
+            'discount_value' => '1.000000',
             'lines' => [[
                 'product_id' => $this->product->id,
                 'product_unit_id' => $this->baseUnit->id,
                 'quantity' => '3',
                 'unit_cost' => '10.000000',
-                'discount_type' => 'fixed',
-                'discount_value' => '1.000000',
             ]],
         ]);
 

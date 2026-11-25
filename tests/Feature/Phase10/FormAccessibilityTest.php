@@ -63,16 +63,18 @@ final class FormAccessibilityTest extends TestCase
             ->call('selectProduct', 0, $this->product->id)
             ->call('addLine')
             ->call('selectProduct', 1, $this->product->id)
-            ->set('lines.0.discount_type', 'fixed')
-            ->set('lines.1.discount_type', 'fixed');
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'fixed');
         $this->assertNamedControls($invoice->html());
         foreach (['desktop', 'mobile'] as $layout) {
             foreach ([0, 1] as $index) {
                 $invoice->assertSee('id="invoice-'.$layout.'-line-'.$index.'-quantity"', false);
                 $invoice->assertSee('aria-label="'.__('sales.quantity').' '.($index + 1).'"', false);
-                $invoice->assertSee('id="invoice-'.$layout.'-line-'.$index.'-discount-value"', false);
             }
         }
+        $invoice->assertSee('id="sales-discount-type"', false);
+        $invoice->assertSee('id="sales-discount-value"', false);
+        $invoice->assertSee(__('sales.document_discount'));
     }
 
     #[DataProvider('locales')]
@@ -111,6 +113,25 @@ final class FormAccessibilityTest extends TestCase
         $this->assertError($invoice->html(), 'invoice-desktop-line-0-quantity');
         $this->assertError($invoice->html(), 'invoice-mobile-line-0-quantity');
         $this->assertNamedControls($invoice->html());
+
+        $discountErrorInvoice = Livewire::test(InvoiceForm::class)
+            ->call('selectProduct', 0, $this->product->id)
+            ->set('lines.0.unit_price', '25.00')
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'percent')
+            ->set('discount_value', '150')
+            ->call('recalculate')
+            ->assertHasErrors(['discount_value']);
+        $this->assertError($discountErrorInvoice->html(), 'sales-discount-value');
+
+        $this->owner->roles->firstOrFail()->revokePermissionTo('sales.invoice.change_discount');
+        $this->owner->unsetRelation('roles')->unsetRelation('permissions');
+        Livewire::test(InvoiceForm::class)
+            ->assertDontSee('id="sales-discount-type"', false)
+            ->assertDontSee('id="sales-discount-value"', false)
+            ->call('toggleDiscountControl')
+            ->assertForbidden();
+
         $this->assertSame($before, DB::table('posting_batches')->count());
         $this->assertSame(0, DB::table('stock_movements')->count());
         $this->assertSame(0, DB::table('sales_invoices')->count());

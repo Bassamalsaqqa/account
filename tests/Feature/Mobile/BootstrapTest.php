@@ -175,7 +175,7 @@ final class BootstrapTest extends TestCase
         $response->assertStatus(200)
             ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
 
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
         $validator->setInput($response->getContent())->run();
         $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
 
@@ -286,7 +286,7 @@ final class BootstrapTest extends TestCase
             ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/bootstrap");
 
         $response->assertStatus(200);
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'bootstrap-response']);
         $validator->setInput($response->getContent())->run();
         $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
 

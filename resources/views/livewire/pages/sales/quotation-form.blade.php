@@ -64,6 +64,7 @@
                         :selected-label="$customerLabel"
                         :placeholder="__('sales.select_customer')"
                         :aria-label="__('sales.customer')"
+                        :has-error="$errors->has('customer_id')"
                         required
                     />
                     @if ($canManageCustomers)
@@ -221,6 +222,7 @@
                                         compact
                                         :placeholder="__('sales.product')"
                                         :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                                        :has-error="$errors->has('lines.'.$index.'.product_id')"
                                     />
                                     <input type="text"
                                            wire:model="lines.{{ $index }}.item_description"
@@ -383,6 +385,7 @@
                                 :extra-args="[$index]"
                                 :placeholder="__('sales.product')"
                                 :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                                :has-error="$errors->has('lines.'.$index.'.product_id')"
                             />
                             <input type="text"
                                    wire:model="lines.{{ $index }}.item_description"
@@ -495,14 +498,6 @@
 
             <!-- Preview Calculation Card -->
             <div class="bg-surface-soft p-4 rounded-control border border-border space-y-2 text-xs">
-                @if (! $documentTotalsValid)
-                    <p role="status" class="text-warning font-semibold">{{ __('camera.totals_unavailable') }}</p>
-                @else
-                <div class="flex justify-between py-1 border-b border-border/50">
-                    <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
-                </div>
-
                 <!-- Global Document Discount Control -->
                 @if(($discount_scope ?? 'document') === 'document')
                     <div class="py-2 border-b border-border/50">
@@ -545,6 +540,14 @@
                         @endif
                     </div>
                 @endif
+
+                @if (! $documentTotalsValid)
+                    <p role="status" class="text-warning font-semibold">{{ __('camera.totals_unavailable') }}</p>
+                @else
+                <div class="flex justify-between py-1 border-b border-border/50">
+                    <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
+                </div>
 
                 @php
                     $hasDiscountAmount = false;

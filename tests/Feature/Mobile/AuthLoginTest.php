@@ -104,7 +104,7 @@ final class AuthLoginTest extends TestCase
         $response->assertStatus(200)
             ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
 
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'auth-login-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'auth-login-response']);
         $validator->setInput($response->getContent())->run();
         $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
         $data = $response->json();
@@ -293,7 +293,7 @@ final class AuthLoginTest extends TestCase
         $resp1->assertStatus(200)
             ->assertJsonPath('status', 'MFA_REQUIRED')
             ->assertJsonPath('retry', 'fresh_challenge');
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'auth-login-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'auth-login-response']);
         $validator->setInput($resp1->getContent())->run();
         $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
         $this->assertSame(0, MobileAccessToken::count());

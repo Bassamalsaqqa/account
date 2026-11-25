@@ -11,8 +11,15 @@ case "$FIXTURE" in
     *) echo 'Unexpected fixture path' >&2; exit 1 ;;
 esac
 
-mkdir -p "$FIXTURE/app/storage" "$FIXTURE/app/bootstrap/cache" "$FIXTURE/app/public/build/assets" "$FIXTURE/web"
-touch "$FIXTURE/app/.env" "$FIXTURE/app/composer.phar" "$FIXTURE/app/public/index.php" "$FIXTURE/app/public/.htaccess"
+mkdir -p "$FIXTURE/app/storage/framework" "$FIXTURE/app/bootstrap/cache" "$FIXTURE/app/public/build/assets" "$FIXTURE/app/public/icons" "$FIXTURE/web"
+touch "$FIXTURE/app/.env" "$FIXTURE/app/composer.phar" "$FIXTURE/app/public/index.php"
+printf 'AddType application/manifest+json .webmanifest\n' > "$FIXTURE/app/public/.htaccess"
+for asset in manifest.webmanifest sw.js offline.html favicon.svg og-image.png \
+    icons/apple-touch-icon.png icons/favicon-16x16.png icons/favicon-32x32.png \
+    icons/icon-192.png icons/icon-512.png icons/icon-maskable.png \
+    icons/icon-maskable.svg icons/icon.svg; do
+    touch "$FIXTURE/app/public/$asset"
+done
 printf '{}\n' > "$FIXTURE/app/public/build/manifest.json"
 printf 'body{}\n' > "$FIXTURE/app/public/build/assets/app.css"
 
@@ -27,6 +34,13 @@ fi
 if [ "$1" != 'artisan' ]; then exit 0; fi
 shift
 printf '%s\n' "$*" >> "$COMMAND_TRACE"
+if [ "$1" = 'down' ]; then
+    mkdir -p "$APP_DIR/storage/framework"
+    printf '{"retry":60}\n' > "$APP_DIR/storage/framework/down"
+fi
+if [ "$1" = 'up' ]; then
+    rm -f "$APP_DIR/storage/framework/down" "$APP_DIR/storage/framework/maintenance.php"
+fi
 if [ "$1" = 'purchasing:bootstrap' ] && [ "${FAIL_PROVISIONING:-0}" = 1 ]; then exit 23; fi
 if [ "$1" = 'documents:bootstrap' ] && [ "${FAIL_DOCUMENTS:-0}" = 1 ]; then exit 24; fi
 PHP
@@ -39,20 +53,23 @@ export COMMAND_TRACE="$FIXTURE/commands"
 verify_success() {
     local mode="$1"
     rm -rf "$FIXTURE/web" && mkdir -p "$FIXTURE/web"
+    rm -f "$FIXTURE/app/storage/framework/down" "$FIXTURE/app/storage/framework/maintenance.php"
     : > "$COMMAND_TRACE"
     if [ "$mode" = skip ]; then
-        bash "$REPO_DIR/bin/deploy.sh" --skip-migrate > "$FIXTURE/output" 2>&1
+        bash "$REPO_DIR/bin/deploy.sh" --skip-migrate --run-bootstrap > "$FIXTURE/output" 2>&1
     else
-        bash "$REPO_DIR/bin/deploy.sh" > "$FIXTURE/output" 2>&1
+        bash "$REPO_DIR/bin/deploy.sh" --run-migrations --run-bootstrap > "$FIXTURE/output" 2>&1
     fi
     local expected="$FIXTURE/expected"
-    printf '%s\n' 'down --retry=60' > "$expected"
+    printf '%s\n' 'down --retry=60 --render=errors.503' > "$expected"
     if [ "$mode" = normal ]; then printf '%s\n' 'migrate --force' >> "$expected"; fi
-    printf '%s\n' 'purchasing:bootstrap --all' 'documents:bootstrap --all' 'config:cache' 'route:cache' 'view:cache' 'event:cache' 'up' >> "$expected"
+    printf '%s\n' 'purchasing:bootstrap --all' 'documents:bootstrap --all' 'config:cache' 'route:cache' 'view:cache' 'event:cache' >> "$expected"
     diff -u "$expected" "$COMMAND_TRACE"
     [ -f "$FIXTURE/web/build/manifest.json" ]
     [ -f "$FIXTURE/web/index.php" ]
-    printf 'PASS: %s deployment provisions once before cache warming\n' "$mode"
+    [ -f "$FIXTURE/app/storage/framework/down" ]
+    grep -q 'CONTROLLED RELEASE STATUS: Application remains in MAINTENANCE MODE.' "$FIXTURE/output"
+    printf 'PASS: %s deployment provisions once before cache warming and remains fail-closed\n' "$mode"
 }
 
 verify_success normal
@@ -62,9 +79,9 @@ export FAIL_PROVISIONING=1
 export FAIL_DOCUMENTS=0
 for mode in normal skip; do
     rm -rf "$FIXTURE/web" && mkdir -p "$FIXTURE/web"
+    rm -f "$FIXTURE/app/storage/framework/down" "$FIXTURE/app/storage/framework/maintenance.php"
     : > "$COMMAND_TRACE"
-    options=()
-    if [ "$mode" = skip ]; then options=(--skip-migrate); fi
+    if [ "$mode" = skip ]; then options=(--skip-migrate --run-bootstrap); else options=(--run-migrations --run-bootstrap); fi
     set +e
     bash "$REPO_DIR/bin/deploy.sh" "${options[@]}" > "$FIXTURE/output" 2>&1
     result=$?
@@ -84,6 +101,7 @@ for mode in normal skip; do
         exit 1
     fi
     grep -q 'left in maintenance mode' "$FIXTURE/output"
+    [ -f "$FIXTURE/app/storage/framework/down" ]
     printf 'PASS: %s provisioning failure aborts deployment before caches/up\n' "$mode"
 done
 
@@ -91,9 +109,9 @@ export FAIL_PROVISIONING=0
 export FAIL_DOCUMENTS=1
 for mode in normal skip; do
     rm -rf "$FIXTURE/web" && mkdir -p "$FIXTURE/web"
+    rm -f "$FIXTURE/app/storage/framework/down" "$FIXTURE/app/storage/framework/maintenance.php"
     : > "$COMMAND_TRACE"
-    options=()
-    if [ "$mode" = skip ]; then options=(--skip-migrate); fi
+    if [ "$mode" = skip ]; then options=(--skip-migrate --run-bootstrap); else options=(--run-migrations --run-bootstrap); fi
     set +e
     bash "$REPO_DIR/bin/deploy.sh" "${options[@]}" > "$FIXTURE/output" 2>&1
     result=$?
@@ -118,6 +136,7 @@ export FAIL_DOCUMENTS=0
 rm -f "$FIXTURE/app/public/build/manifest.json"
 for mode in normal skip; do
     rm -rf "$FIXTURE/web" && mkdir -p "$FIXTURE/web"
+    rm -f "$FIXTURE/app/storage/framework/down" "$FIXTURE/app/storage/framework/maintenance.php"
     : > "$COMMAND_TRACE"
     options=()
     if [ "$mode" = skip ]; then options=(--skip-migrate); fi

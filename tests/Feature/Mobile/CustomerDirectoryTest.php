@@ -122,7 +122,7 @@ final class CustomerDirectoryTest extends TestCase
         $this->assertSame('+970599123456', $regItem['phone']);
         $this->assertFalse($regItem['is_walk_in']);
 
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'customer-directory-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'customer-directory-response']);
         $validator->setInput((string) $response->getContent())->mustRun();
     }
 
@@ -242,7 +242,7 @@ final class CustomerDirectoryTest extends TestCase
         $this->assertNull($item2['code']);
         $this->assertSame($emptyCodeCustomer->displayName(), $item2['name']);
 
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'customer-directory-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'customer-directory-response']);
         $validator->setInput((string) $response->getContent())->mustRun();
     }
 

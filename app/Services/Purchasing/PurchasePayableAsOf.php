@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Purchasing;
 
+use App\Domain\Purchasing\DocumentDiscountAllocator;
+use App\Domain\Purchasing\DocumentDiscountIntent;
+use App\Domain\Purchasing\DocumentDiscountLineCandidate;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Models\Company;
@@ -172,17 +175,75 @@ final class PurchasePayableAsOf
                 }
 
                 // Canonical line and header arithmetic integrity check beyond stored totals/provenance
+                $minorUnits = $zPurchase->resolvedCurrencyMinorUnits();
+                $isDocScope = ($zPurchase->discount_scope ?? 'document') === 'document';
+                $allocationResult = null;
+                if ($isDocScope) {
+                    $candidates = [];
+                    foreach ($zPurchase->lines as $line) {
+                        $candidates[] = new DocumentDiscountLineCandidate(
+                            lineNumber: (int) $line->line_number,
+                            unitCost: BigDecimal::of((string) $line->unit_cost),
+                            quantity: BigDecimal::of((string) $line->quantity),
+                            subtotal: BigDecimal::of((string) $line->line_subtotal),
+                            taxInclusive: (bool) $line->tax_inclusive,
+                            taxRate: $line->tax_rate_snapshot !== null ? BigDecimal::of((string) $line->tax_rate_snapshot) : null,
+                        );
+                    }
+                    try {
+                        $intent = new DocumentDiscountIntent(
+                            discountType: in_array($zPurchase->discount_type, [null, '', 'none'], true)
+                                ? DocumentDiscountIntent::TYPE_NONE
+                                : (string) $zPurchase->discount_type,
+                            discountValue: (string) ($zPurchase->discount_value ?? '0'),
+                            discountScope: 'document',
+                            discountBasis: (string) ($zPurchase->discount_basis ?? 'subtotal'),
+                            version: (int) ($zPurchase->discount_calculation_version ?? DocumentDiscountIntent::VERSION_CANONICAL),
+                        );
+                        $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $zPurchase->currency_code, $minorUnits);
+                    } catch (\Throwable) {
+                        throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                    }
+                } else {
+                    if ($zPurchase->discount_type !== null && $zPurchase->discount_type !== 'none' && $zPurchase->discount_type !== '') {
+                        throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                    }
+                    if (! BigDecimal::of((string) ($zPurchase->discount_value ?? '0'))->isZero()) {
+                        throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                    }
+                }
+
                 $calcResults = [];
                 foreach ($zPurchase->lines as $line) {
+                    if ($isDocScope) {
+                        $expectedDiscount = $allocationResult->forLine((int) $line->line_number);
+                        if (! BigDecimal::of((string) ($line->allocated_document_discount ?? '0'))->isEqualTo($expectedDiscount)
+                            || ! BigDecimal::of((string) ($line->manual_discount_amount ?? '0'))->isZero()
+                            || ($line->discount_type !== null && $line->discount_type !== 'none' && $line->discount_type !== '')
+                            || ! BigDecimal::of((string) ($line->discount_value ?? '0'))->isZero()
+                            || ! BigDecimal::of((string) $line->line_discount)->isEqualTo($expectedDiscount)) {
+                            throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                        }
+                        $calcType = 'fixed';
+                        $calcValue = (string) $expectedDiscount;
+                    } else {
+                        if (! BigDecimal::of((string) ($line->allocated_document_discount ?? '0'))->isZero()) {
+                            throw new InvalidArgumentException('Incoherent historical Purchase posting provenance.');
+                        }
+                        $calcType = $line->discount_type;
+                        $calcValue = $line->discount_value;
+                    }
+
                     $calcResult = app(PurchaseCalculator::class)->line(
                         $line->quantity,
                         $line->unit_cost,
-                        $line->discount_type,
-                        $line->discount_value,
+                        $calcType,
+                        $calcValue,
                         $line->tax_rate_snapshot,
-                        $line->tax_inclusive,
+                        (bool) $line->tax_inclusive,
                         $zPurchase->currency_code,
-                        $zPurchase->exchange_rate
+                        $zPurchase->exchange_rate,
+                        $minorUnits
                     );
                     foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
                         foreach (['' => $field, '_base' => $field.'Base'] as $suffix => $property) {

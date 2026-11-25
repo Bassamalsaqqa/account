@@ -169,7 +169,7 @@ final class ProductCatalogTest extends TestCase
         $response->assertStatus(200)
             ->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
 
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'product-catalog-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'product-catalog-response']);
         $validator->setInput($response->getContent())->run();
         $this->assertTrue($validator->isSuccessful(), $validator->getErrorOutput());
 
@@ -441,7 +441,7 @@ final class ProductCatalogTest extends TestCase
         $this->assertCount(1, $searchResponse->json('products'));
         $this->assertSame($unpricedProduct->public_id, $searchResponse->json('products.0.id'));
 
-        $validator = new Process(['python', base_path('tests/Support/Mobile/validate-response.py'), 'product-catalog-response']);
+        $validator = new Process([PHP_OS_FAMILY === 'Windows' ? 'python' : 'python3', base_path('tests/Support/Mobile/validate-response.py'), 'product-catalog-response']);
         $validator->setInput((string) $response->getContent())->mustRun();
     }
 

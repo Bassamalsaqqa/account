@@ -1419,14 +1419,15 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
             'purchase_date' => $companyToday,
             'currency_code' => $this->company->base_currency_code,
             'exchange_rate' => '1',
+            'discount_scope' => 'document',
+            'discount_type' => 'fixed',
+            'discount_value' => '10',
             'lines' => [
                 [
                     'product_id' => $product->id,
                     'product_unit_id' => $productUnit->id,
                     'quantity' => '1',
                     'unit_cost' => '10',
-                    'discount_type' => 'fixed',
-                    'discount_value' => '10',
                 ],
             ],
         ]);
@@ -1507,14 +1508,15 @@ final class PartyCatalogIdempotencyAndContractTest extends TestCase
             'purchase_date' => $companyToday,
             'currency_code' => $this->company->base_currency_code,
             'exchange_rate' => '1',
+            'discount_scope' => 'document',
+            'discount_type' => 'fixed',
+            'discount_value' => '10',
             'lines' => [
                 [
                     'product_id' => $product->id,
                     'product_unit_id' => $productUnit->id,
                     'quantity' => '2',
                     'unit_cost' => '5',
-                    'discount_type' => 'fixed',
-                    'discount_value' => '10',
                 ],
             ],
         ]);

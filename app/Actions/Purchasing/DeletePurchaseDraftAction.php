@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace App\Actions\Purchasing;
 
 use App\Application\Platform\TenantWriteAccess;
+use App\Models\AiPurchaseDraftReceipt;
+use App\Models\AssistantRequest;
+use App\Models\LandedCostAllocation;
+use App\Models\PostingBatch;
 use App\Models\Purchase;
+use App\Models\PurchaseConfirmationReceipt;
+use App\Models\PurchaseReturn;
+use App\Models\StockMovement;
 use App\Models\User;
+use App\Models\VendorPaymentAllocation;
 use App\Services\Audit\AuditService;
+use App\Services\Corrections\PurchaseCorrection;
 use App\Services\Sales\SalesActorGuard;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final class DeletePurchaseDraftAction
@@ -30,14 +38,23 @@ final class DeletePurchaseDraftAction
                 $blocked = $blocked || $locked->getAttribute($field) !== null;
             }
             // Preserve retry receipts, correction provenance and every dependent business event.
-            foreach (['purchase_returns', 'vendor_payment_allocations', 'landed_cost_allocations',
-                'ai_purchase_draft_receipts', 'purchase_confirmation_receipts', 'purchase_correction_receipts'] as $table) {
-                $blocked = $blocked || DB::table($table)->where('purchase_id', $locked->id)->exists();
+            $companyId = (int) $locked->company_id;
+            foreach ([
+                PurchaseReturn::class,
+                VendorPaymentAllocation::class,
+                LandedCostAllocation::class,
+                AiPurchaseDraftReceipt::class,
+                PurchaseConfirmationReceipt::class,
+                AssistantRequest::class,
+            ] as $modelClass) {
+                $blocked = $blocked || $modelClass::where('company_id', $companyId)->where('purchase_id', $locked->id)->exists();
             }
-            $blocked = $blocked || DB::table('purchase_correction_receipts')->where('replacement_id', $locked->id)->exists()
-                || DB::table('assistant_requests')->where('purchase_id', $locked->id)->exists();
-            foreach (['posting_batches', 'stock_movements'] as $table) {
-                $blocked = $blocked || DB::table($table)->where('source_type', 'purchase')->where('source_id', $locked->id)->exists();
+            $blocked = $blocked || app(PurchaseCorrection::class)->hasReceiptForPurchase($companyId, (int) $locked->id);
+            foreach ([PostingBatch::class, StockMovement::class] as $modelClass) {
+                $blocked = $blocked || $modelClass::where('company_id', $companyId)
+                    ->where('source_type', 'purchase')
+                    ->where('source_id', $locked->id)
+                    ->exists();
             }
             $blocked = $blocked || $locked->lines()->where('company_id', '!=', $locked->company_id)->exists();
             $blocked = $blocked || $locked->lines()->where(function ($query): void {

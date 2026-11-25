@@ -75,6 +75,7 @@
                         :selected-label="$customerLabel"
                         :placeholder="__('sales.select_customer')"
                         :aria-label="__('sales.customer')"
+                        :has-error="$errors->has('customer_id')"
                         required
                     />
                     @if ($canManageCustomers)
@@ -232,6 +233,7 @@
                                         compact
                                         :placeholder="__('sales.product')"
                                         :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                                        :has-error="$errors->has('lines.'.$index.'.product_id')"
                                     />
                                     @error('lines.'.$index.'.product_id') <span id="invoice-desktop-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
                                     <input id="invoice-desktop-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-item-description-error" @enderror type="text"
@@ -396,6 +398,7 @@
                                 :extra-args="[$index]"
                                 :placeholder="__('sales.product')"
                                 :aria-label="__('sales.product') . ' ' . ($index + 1)"
+                                :has-error="$errors->has('lines.'.$index.'.product_id')"
                             />
                             @error('lines.'.$index.'.product_id') <span id="invoice-mobile-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
                             <input id="invoice-mobile-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-item-description-error" @enderror type="text"
@@ -510,14 +513,6 @@
 
             <!-- Preview Calculation Card -->
             <div class="bg-surface-soft p-4 rounded-control border border-border space-y-2 text-xs">
-                @if (! $documentTotalsValid)
-                    <p role="status" class="text-warning font-semibold">{{ __('camera.totals_unavailable') }}</p>
-                @else
-                <div class="flex justify-between py-1 border-b border-border/50">
-                    <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
-                </div>
-
                 <!-- Global Document Discount Control -->
                 @if($canChangeDiscount && $discount_scope === 'document')
                     <div class="py-2 border-b border-border/50">
@@ -560,6 +555,14 @@
                         @endif
                     </div>
                 @endif
+
+                @if (! $documentTotalsValid)
+                    <p role="status" class="text-warning font-semibold">{{ __('camera.totals_unavailable') }}</p>
+                @else
+                <div class="flex justify-between py-1 border-b border-border/50">
+                    <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
+                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewSubtotal, $currency_code) }} {{ $currency_code }}</span>
+                </div>
 
                 @php
                     $hasDiscountAmount = false;
