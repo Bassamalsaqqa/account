@@ -48,7 +48,7 @@
                         </option>
                     @endforeach
                 </select>
-                @error('sales_invoice_id') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                @error('sales_invoice_id') <span role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div>
@@ -59,7 +59,7 @@
                        wire:model="issue_date"
                        required
                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                @error('issue_date') <span class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                @error('issue_date') <span role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div class="md:col-span-3">
@@ -79,7 +79,7 @@
                 {{ __('sales.return_details') }}
             </h2>
 
-            @error('lines') <span class="text-danger text-xs font-bold mt-2 block">{{ $message }}</span> @enderror
+            @error('lines') <span role="alert" aria-live="assertive" class="text-danger text-xs font-bold mt-2 block">{{ $message }}</span> @enderror
 
             @if (empty($lines))
                 <div class="py-8 text-center text-text-muted text-xs">
@@ -151,7 +151,7 @@
                         {{ __('sales.return_summary') }}
                     </h3>
                     @if ($returnCalculationError)
-                        <span class="text-xs font-semibold text-danger flex items-center gap-1" data-testid="return-totals-error">
+                        <span role="alert" aria-live="polite" class="text-xs font-semibold text-danger flex items-center gap-1" data-testid="return-totals-error">
                             {{ $returnCalculationError }}
                         </span>
                     @endif
@@ -175,8 +175,8 @@
                             @endif
                         </div>
                         @if (! $returnCalculationError && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($returnTax))
-                            <span class="text-xs text-text-muted block mt-0.5" dir="ltr">
-                                {{ __('sales.tax') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTax, $currencyCode) }} {{ $currencyCode }}
+                            <span class="text-xs text-text-muted block mt-0.5">
+                                {{ __('sales.tax') }}: <span dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTax, $currencyCode) }}</span> <span class="text-text-secondary">{{ $currencyCode }}</span>
                             </span>
                         @endif
                     </div>

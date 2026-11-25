@@ -9,6 +9,7 @@ use App\Models\Purchase;
 use App\Models\PurchaseLine;
 use App\Models\PurchaseReturn;
 use App\Models\PurchaseReturnLine;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use InvalidArgumentException;
@@ -26,10 +27,11 @@ final class PurchaseReturnAmounts
     /**
      * Pure commercial allocation for a single purchase return line.
      * Preserves exact canonical writer math, rounding (HALF_UP),
-     * currency scaling (JOD: 3, others: 2), independent base allocation,
-     * and final-return residual assignment.
+     * frozen currency scaling (source purchase/return or historical fallback),
+     * independent base allocation, and final-return residual assignment.
      *
      * @param  iterable<PurchaseReturnLine>  $prior
+     * @param  int|null  $currencyMinorUnits  Frozen currency minor units (canonical fallback only for legacy null)
      * @return array{
      *     subtotal: BigDecimal,
      *     discount: BigDecimal,
@@ -42,9 +44,16 @@ final class PurchaseReturnAmounts
      *     remaining_quantity: BigDecimal
      * }
      */
-    public function calculateLine(PurchaseLine $original, BigDecimal $lineQty, iterable $prior, string $currencyCode): array
-    {
-        $currencyScale = $currencyCode === 'JOD' ? 3 : 2;
+    public function calculateLine(
+        PurchaseLine $original,
+        BigDecimal $lineQty,
+        iterable $prior,
+        string $currencyCode,
+        ?int $currencyMinorUnits = null
+    ): array {
+        $currencyScale = $currencyMinorUnits !== null
+            ? $currencyMinorUnits
+            : app(CurrencyMinorUnitsResolver::class)->resolve($currencyCode);
 
         $priorQty = BigDecimal::zero();
         foreach ($prior as $prev) {
@@ -61,7 +70,7 @@ final class PurchaseReturnAmounts
         if ($lineQty->isGreaterThan($remainingQty)) {
             throw new PurchaseReturnValidationException(
                 'purchasing.return_quantity_exceeds_remaining',
-                "Requested return quantity [{$lineQty}] exceeds remaining returnable quantity [{$remainingQty}]."
+                "Requested return quantity [{$lineQty}] exceeds remaining returnable quantity [{$remainingQty}] for purchase line [{$original->id}]."
             );
         }
 
@@ -125,7 +134,14 @@ final class PurchaseReturnAmounts
             'total' => BigDecimal::zero(),
         ];
 
-        $currencyScale = $return->currency_code === 'JOD' ? 3 : 2;
+        /** @var int|null $returnPrecision */
+        $returnPrecision = $return->getAttribute('currency_minor_units');
+        /** @var int|null $purchasePrecision */
+        $purchasePrecision = $return->purchase?->getAttribute('currency_minor_units');
+
+        $currencyScale = $returnPrecision
+            ?? $purchasePrecision
+            ?? app(CurrencyMinorUnitsResolver::class)->resolve((string) $return->currency_code);
         $seen = [];
 
         foreach ($return->lines()->lockForUpdate()->get() as $line) {
@@ -151,7 +167,7 @@ final class PurchaseReturnAmounts
             $conversionRatio = BigDecimal::of((string) $line->unit_conversion_ratio);
             $line->quantity_base = (string) $lineQty->multipliedBy($conversionRatio)->toScale(6);
 
-            $lineAmounts = $this->calculateLine($original, $lineQty, $prior, (string) $return->currency_code);
+            $lineAmounts = $this->calculateLine($original, $lineQty, $prior, (string) $return->currency_code, $currencyScale);
 
             foreach (self::COMPONENTS as $field) {
                 $col = 'line_'.$field;
@@ -194,7 +210,14 @@ final class PurchaseReturnAmounts
             throw new InvalidArgumentException('Draft header does not match original purchase provenance.');
         }
 
-        $currencyScale = $return->currency_code === 'JOD' ? 3 : 2;
+        /** @var int|null $returnPrecision */
+        $returnPrecision = $return->getAttribute('currency_minor_units');
+        /** @var int|null $purchasePrecision */
+        $purchasePrecision = $purchase->getAttribute('currency_minor_units');
+
+        $currencyScale = $returnPrecision
+            ?? $purchasePrecision
+            ?? app(CurrencyMinorUnitsResolver::class)->resolve((string) $return->currency_code);
         $seen = [];
 
         $totalsCurrency = [

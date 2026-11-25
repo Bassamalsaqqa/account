@@ -584,12 +584,29 @@ class ReturnForm extends Component
             }
 
             try {
-                $lineAmounts = $salesReturnAmounts->calculateLine(
-                    $sourceLine,
-                    $qty,
-                    $priorLinesForLine,
-                    $invoice->currency_code
-                );
+                /** @var int|null $frozenPrecision */
+                $frozenPrecision = $invoice->getAttribute('currency_minor_units');
+                // Integration note: SalesReturnAmounts::calculateLine parameter count is being extended
+                // in the separate sales checkout by Adam (to accept optional $currencyMinorUnits).
+                // Use reflection invoke so ReturnForm cleanly bridges 4-param and 5-param signatures without static signature conflicts.
+                $refMethod = new \ReflectionMethod($salesReturnAmounts, 'calculateLine');
+                /** @var array{subtotal: BigDecimal, discount: BigDecimal, tax: BigDecimal, total: BigDecimal} $lineAmounts */
+                $lineAmounts = $refMethod->getNumberOfParameters() >= 5
+                    ? $refMethod->invoke(
+                        $salesReturnAmounts,
+                        $sourceLine,
+                        $qty,
+                        $priorLinesForLine,
+                        $invoice->currency_code,
+                        $frozenPrecision
+                    )
+                    : $refMethod->invoke(
+                        $salesReturnAmounts,
+                        $sourceLine,
+                        $qty,
+                        $priorLinesForLine,
+                        $invoice->currency_code
+                    );
                 $returnSubtotal = $returnSubtotal->plus($lineAmounts['subtotal']);
                 $returnDiscount = $returnDiscount->plus($lineAmounts['discount']);
                 $returnTax = $returnTax->plus($lineAmounts['tax']);
@@ -694,7 +711,29 @@ class ReturnForm extends Component
         ];
 
         $existing = $this->draftPublicId === null ? null : SalesReturn::where('company_id', $company->id)->where('public_id', $this->draftPublicId)->firstOrFail();
-        $return = $createAction->execute($company, $user, $payload, $existing);
+        try {
+            $return = $createAction->execute($company, $user, $payload, $existing);
+        } catch (\InvalidArgumentException $e) {
+            $matchedField = false;
+            if (preg_match('/for line \[(\d+)\]/', $e->getMessage(), $matches)) {
+                $failedLineId = (int) $matches[1];
+                foreach ($this->lines as $idx => $l) {
+                    if ((int) $l['sales_invoice_line_id'] === $failedLineId) {
+                        $this->addError("lines.{$idx}.return_quantity", __('sales.return_quantity_exceeds_remaining'));
+                        $matchedField = true;
+                        break;
+                    }
+                }
+            }
+            if (! $matchedField) {
+                $msg = str_contains($e->getMessage(), 'exceeds maximum returnable quantity')
+                    ? __('sales.return_quantity_exceeds_remaining')
+                    : $e->getMessage();
+                $this->addError('lines', $msg);
+            }
+
+            return null;
+        }
 
         if ($andPost) {
             try {

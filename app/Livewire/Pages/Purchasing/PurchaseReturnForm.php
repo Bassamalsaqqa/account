@@ -180,6 +180,17 @@ class PurchaseReturnForm extends Component
             ->groupBy('purchase_return_allocations.purchase_line_lot_id')
             ->pluck('total_returned', 'purchase_line_lot_id');
 
+        $allCreatedInventoryLotIds = $purchase->lines
+            ->flatMap(fn ($l) => $l->lots->pluck('created_inventory_lot_id'))
+            ->filter()
+            ->unique()
+            ->all();
+
+        $lotBalancesByLotId = empty($allCreatedInventoryLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+            ->where('warehouse_id', $purchase->warehouse_id)
+            ->whereIn('lot_id', $allCreatedInventoryLotIds)
+            ->pluck('quantity_base', 'lot_id');
+
         foreach ($purchase->lines as $line) {
             $prior = (string) ($priorReturnsByLine[$line->id] ?? '0');
             $origQty = BigDecimal::of((string) $line->quantity);
@@ -194,11 +205,7 @@ class PurchaseReturnForm extends Component
                     $lotPriorQty = BigDecimal::of($lotPrior);
                     $lotRem = $lotOrig->minus($lotPriorQty);
 
-                    $lotBalanceBase = (string) (InventoryLotBalance::where('company_id', $company->id)
-                        ->where('product_id', $line->product_id)
-                        ->where('warehouse_id', $purchase->warehouse_id)
-                        ->where('lot_id', $lot->created_inventory_lot_id)
-                        ->value('quantity_base') ?? '0');
+                    $lotBalanceBase = (string) ($lotBalancesByLotId[$lot->created_inventory_lot_id] ?? '0');
 
                     $ratio = BigDecimal::of((string) $line->unit_conversion_ratio);
                     $onHand = $ratio->isPositive()
@@ -291,6 +298,17 @@ class PurchaseReturnForm extends Component
             ->groupBy('purchase_return_allocations.purchase_line_lot_id')
             ->pluck('total_returned', 'purchase_line_lot_id');
 
+        $allCreatedInventoryLotIds = $purchase->lines
+            ->flatMap(fn ($l) => $l->lots->pluck('created_inventory_lot_id'))
+            ->filter()
+            ->unique()
+            ->all();
+
+        $lotBalancesByLotId = empty($allCreatedInventoryLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+            ->where('warehouse_id', $purchase->warehouse_id)
+            ->whereIn('lot_id', $allCreatedInventoryLotIds)
+            ->pluck('quantity_base', 'lot_id');
+
         foreach ($purchase->lines as $line) {
             $prior = (string) ($priorReturnsByLine[$line->id] ?? '0');
             $origQty = BigDecimal::of((string) $line->quantity);
@@ -310,11 +328,7 @@ class PurchaseReturnForm extends Component
                     $lotPriorQty = BigDecimal::of($lotPrior);
                     $lotRem = $lotOrig->minus($lotPriorQty);
 
-                    $lotBalanceBase = (string) (InventoryLotBalance::where('company_id', $company->id)
-                        ->where('product_id', $line->product_id)
-                        ->where('warehouse_id', $purchase->warehouse_id)
-                        ->where('lot_id', $lot->created_inventory_lot_id)
-                        ->value('quantity_base') ?? '0');
+                    $lotBalanceBase = (string) ($lotBalancesByLotId[$lot->created_inventory_lot_id] ?? '0');
 
                     $ratio = BigDecimal::of((string) $line->unit_conversion_ratio);
                     $onHand = $ratio->isPositive()
@@ -500,14 +514,25 @@ class PurchaseReturnForm extends Component
         }
         if ($sourceLine->lots->isNotEmpty() && $ratio->isPositive()) {
             $lotCapacity = BigDecimal::zero();
+            $lineLotIds = $sourceLine->lots->pluck('id')->all();
+            $priorLots = empty($lineLotIds) ? collect() : DB::table('purchase_return_allocations')
+                ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+                ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+                ->whereIn('purchase_return_allocations.purchase_line_lot_id', $lineLotIds)
+                ->select('purchase_return_allocations.purchase_line_lot_id', DB::raw('SUM(purchase_return_allocations.quantity) as total_returned'))
+                ->groupBy('purchase_return_allocations.purchase_line_lot_id')
+                ->pluck('total_returned', 'purchase_line_lot_id');
+
+            $createdLotIds = $sourceLine->lots->pluck('created_inventory_lot_id')->filter()->unique()->all();
+            $lotBalances = empty($createdLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+                ->where('warehouse_id', $warehouseId)
+                ->whereIn('lot_id', $createdLotIds)
+                ->pluck('quantity_base', 'lot_id');
+
             foreach ($sourceLine->lots as $originalLot) {
-                $priorLot = (string) DB::table('purchase_return_allocations')
-                    ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
-                    ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                    ->where('purchase_return_allocations.purchase_line_lot_id', $originalLot->id)->sum('purchase_return_allocations.quantity');
+                $priorLot = (string) ($priorLots[$originalLot->id] ?? '0');
                 $lotRemaining = BigDecimal::max('0', BigDecimal::of((string) $originalLot->quantity)->minus($priorLot));
-                $lotBase = (string) (InventoryLotBalance::where('company_id', $company->id)->where('product_id', $sourceLine->product_id)
-                    ->where('warehouse_id', $warehouseId)->where('lot_id', $originalLot->created_inventory_lot_id)->value('quantity_base') ?? '0');
+                $lotBase = (string) ($lotBalances[$originalLot->created_inventory_lot_id] ?? '0');
                 $lotAvailable = BigDecimal::max('0', BigDecimal::of($lotBase)->dividedBy($ratio, 6, RoundingMode::DOWN));
                 $lotCapacity = $lotCapacity->plus(BigDecimal::min($lotRemaining, $lotAvailable));
             }
@@ -653,14 +678,25 @@ class PurchaseReturnForm extends Component
         }
         if ($sourceLine->lots->isNotEmpty() && $ratio->isPositive()) {
             $lotCapacity = BigDecimal::zero();
+            $lineLotIds = $sourceLine->lots->pluck('id')->all();
+            $priorLots = empty($lineLotIds) ? collect() : DB::table('purchase_return_allocations')
+                ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
+                ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
+                ->whereIn('purchase_return_allocations.purchase_line_lot_id', $lineLotIds)
+                ->select('purchase_return_allocations.purchase_line_lot_id', DB::raw('SUM(purchase_return_allocations.quantity) as total_returned'))
+                ->groupBy('purchase_return_allocations.purchase_line_lot_id')
+                ->pluck('total_returned', 'purchase_line_lot_id');
+
+            $createdLotIds = $sourceLine->lots->pluck('created_inventory_lot_id')->filter()->unique()->all();
+            $lotBalances = empty($createdLotIds) ? collect() : InventoryLotBalance::where('company_id', $company->id)
+                ->where('warehouse_id', $warehouseId)
+                ->whereIn('lot_id', $createdLotIds)
+                ->pluck('quantity_base', 'lot_id');
+
             foreach ($sourceLine->lots as $originalLot) {
-                $priorLot = (string) DB::table('purchase_return_allocations')
-                    ->join('purchase_returns', 'purchase_return_allocations.purchase_return_id', '=', 'purchase_returns.id')
-                    ->where('purchase_returns.company_id', $company->id)->where('purchase_returns.status', PurchaseReturn::STATUS_POSTED)
-                    ->where('purchase_return_allocations.purchase_line_lot_id', $originalLot->id)->sum('purchase_return_allocations.quantity');
+                $priorLot = (string) ($priorLots[$originalLot->id] ?? '0');
                 $lotRemaining = BigDecimal::max('0', BigDecimal::of((string) $originalLot->quantity)->minus($priorLot));
-                $lotBase = (string) (InventoryLotBalance::where('company_id', $company->id)->where('product_id', $sourceLine->product_id)
-                    ->where('warehouse_id', $warehouseId)->where('lot_id', $originalLot->created_inventory_lot_id)->value('quantity_base') ?? '0');
+                $lotBase = (string) ($lotBalances[$originalLot->created_inventory_lot_id] ?? '0');
                 $lotAvailable = BigDecimal::max('0', BigDecimal::of($lotBase)->dividedBy($ratio, 6, RoundingMode::DOWN));
                 $lotCapacity = $lotCapacity->plus(BigDecimal::min($lotRemaining, $lotAvailable));
             }
@@ -823,11 +859,18 @@ class PurchaseReturnForm extends Component
             }
 
             try {
+                $returnRecord = $this->returnId !== null
+                    ? PurchaseReturn::where('company_id', $company->id)->where('id', $this->returnId)->first()
+                    : null;
+                /** @var int|null $frozenPrecision */
+                $frozenPrecision = $returnRecord?->getAttribute('currency_minor_units')
+                    ?? $purchase->getAttribute('currency_minor_units');
                 $lineAmounts = $calculator->calculateLine(
                     $sourceLine,
                     $qty,
                     $priorLinesForLine,
-                    $purchase->currency_code
+                    $purchase->currency_code,
+                    $frozenPrecision
                 );
                 $returnSubtotal = $returnSubtotal->plus($lineAmounts['subtotal']);
                 $returnDiscount = $returnDiscount->plus($lineAmounts['discount']);
@@ -1003,6 +1046,15 @@ class PurchaseReturnForm extends Component
             }
         } catch (PurchaseReturnValidationException $e) {
             $this->addError('save', __($e->translationKey, $e->translationParams));
+            if (preg_match('/for (?:purchase )?line \[(\d+)\]/', $e->getMessage(), $matches)) {
+                $failedLineId = (int) $matches[1];
+                foreach ($this->lines as $idx => $l) {
+                    if ((int) $l['purchase_line_id'] === $failedLineId) {
+                        $this->addError("lines.{$idx}.return_quantity", __($e->translationKey, $e->translationParams));
+                        break;
+                    }
+                }
+            }
 
             return;
         } catch (InvalidArgumentException $e) {
@@ -1025,6 +1077,15 @@ class PurchaseReturnForm extends Component
                 default => __('purchasing.draft_save_failed'),
             };
             $this->addError('save', $msg);
+            if (preg_match('/for (?:purchase )?line \[(\d+)\]/', $e->getMessage(), $matches)) {
+                $failedLineId = (int) $matches[1];
+                foreach ($this->lines as $idx => $l) {
+                    if ((int) $l['purchase_line_id'] === $failedLineId) {
+                        $this->addError("lines.{$idx}.return_quantity", __('purchasing.return_quantity_exceeds_remaining'));
+                        break;
+                    }
+                }
+            }
 
             return;
         }

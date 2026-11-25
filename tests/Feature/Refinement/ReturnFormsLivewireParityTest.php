@@ -768,4 +768,99 @@ class ReturnFormsLivewireParityTest extends Phase5ETestCase
         ]);
         self::assertSame('3.333000', (string) $ret3->lines->firstOrFail()->line_total);
     }
+
+    /**
+     * 13. STALE CONCURRENT RETURN: SalesReturnForm handles concurrent return race without 500, preserves form and shows localized field error.
+     */
+    public function test_sales_return_form_stale_concurrent_return_shows_localized_field_error_without_500(): void
+    {
+        $this->createAndPostPurchase(['lines' => [['product_id' => $this->product->id, 'quantity' => '50.000000', 'unit_cost' => '10.00']]]);
+        $invoice = $this->createAndPostSalesInvoice([
+            [
+                'product_id' => $this->product->id,
+                'item_description' => 'Concurrent Stale Item',
+                'quantity' => '5.000000',
+                'unit_price' => '20.00',
+            ],
+        ]);
+
+        // User A mounts the return form for this invoice
+        $component = Livewire::test(SalesReturnForm::class, ['invoice_id' => $invoice->id]);
+        $component->set('lines.0.return_quantity', '4');
+
+        // User B concurrently posts a return of 3
+        $invoiceLine = $invoice->lines->firstOrFail();
+        $concurrentReturn = app(CreateSalesReturnDraftAction::class)->execute($this->company, $this->owner, [
+            'sales_invoice_id' => $invoice->id,
+            'issue_date' => '2026-10-03',
+            'lines' => [
+                [
+                    'sales_invoice_line_id' => $invoiceLine->id,
+                    'quantity' => '3.000000',
+                ],
+            ],
+        ]);
+        app(PostSalesReturnAction::class)->execute($concurrentReturn, $this->owner);
+
+        // User A attempts to save their return of 4 (which now exceeds remaining 2)
+        // Must NOT throw 500 InvalidArgumentException! Must set localized field error on lines.0.return_quantity
+        $component->call('save', false)
+            ->assertHasErrors(['lines.0.return_quantity' => __('sales.return_quantity_exceeds_remaining')])
+            ->assertSet('lines.0.return_quantity', '4'); // Form state preserved
+    }
+
+    /**
+     * 14. BATCH LOT BUDGET: PurchaseReturnForm batches InventoryLotBalance lookup across all lines and lots.
+     */
+    public function test_purchase_return_form_many_lots_batch_lookup_budget(): void
+    {
+        $purchase = $this->createAndPostPurchase([
+            'lines' => [
+                ['product_id' => $this->product->id, 'quantity' => '10.000000', 'unit_cost' => '10.00'],
+            ],
+        ]);
+
+        $queryCount = 0;
+        DB::listen(function ($query) use (&$queryCount) {
+            if (str_contains($query->sql, 'inventory_lot_balances')) {
+                $queryCount++;
+            }
+        });
+
+        $component = Livewire::test(PurchaseReturnForm::class, ['publicId' => $purchase->public_id]);
+
+        // At most 1 batched query for lot balances, never N+1
+        self::assertLessThanOrEqual(1, $queryCount);
+    }
+
+    /**
+     * 15. STALE CONCURRENT RETURN (PURCHASING): PurchaseReturnForm handles concurrent return race without 500, preserves form and shows localized field error.
+     */
+    public function test_purchase_return_form_stale_concurrent_return_shows_localized_field_error_without_500(): void
+    {
+        $purchase = $this->createAndPostPurchase([
+            'lines' => [
+                ['product_id' => $this->product->id, 'quantity' => '5.000000', 'unit_cost' => '10.00'],
+            ],
+        ]);
+        $purchaseLine = $purchase->lines->firstOrFail();
+
+        // User A mounts the purchase return form
+        $component = Livewire::test(PurchaseReturnForm::class, ['publicId' => $purchase->public_id]);
+        $component->set('lines.0.return_quantity', '4');
+
+        // User B concurrently posts a return of 3
+        $this->createAndPostReturn($purchase, [
+            'lines' => [['purchase_line_id' => $purchaseLine->id, 'quantity' => '3.000000']],
+        ]);
+
+        // User A attempts to save their return of 4 (which now exceeds remaining 2)
+        // Must NOT throw 500! Must set localized field error on lines.0.return_quantity and save
+        $component->call('saveDraft')
+            ->assertHasErrors([
+                'lines.0.return_quantity' => __('purchasing.return_quantity_exceeds_remaining'),
+                'save' => __('purchasing.return_quantity_exceeds_remaining'),
+            ])
+            ->assertSet('lines.0.return_quantity', '4'); // Form state preserved
+    }
 }

@@ -74,14 +74,14 @@
                     {{ __('purchasing.return_date') }} *
                 </label>
                 <input type="date" id="return_date" wire:model="return_date" min="{{ $purchaseDate }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
-                @error('return_date') <p class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
+                @error('return_date') <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
             </div>
             <div>
                 <label for="reason" class="block text-sm font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.return_reason') }}
                 </label>
                 <input type="text" id="reason" wire:model="reason" placeholder="{{ __('purchasing.return_reason') }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
-                @error('reason') <p class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
+                @error('reason') <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
             </div>
         </div>
         <div>
@@ -89,7 +89,7 @@
                 {{ __('purchasing.notes') }}
             </label>
             <textarea id="notes" wire:model="notes" rows="2" class="w-full p-3 rounded-control border border-border text-sm" :disabled="documentBusy || saving"></textarea>
-            @error('notes') <p class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
+            @error('notes') <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
         </div>
     </section>
 
@@ -130,7 +130,7 @@
                 </div>
 
                 @error("lines.{$idx}.return_quantity")
-                    <p class="text-danger text-xs">{{ $message }}</p>
+                    <p role="alert" class="text-danger text-xs">{{ $message }}</p>
                 @enderror
 
                 @if($line['track_expiry'] && count($line['allocations']))
@@ -160,7 +160,7 @@
                                         <label for="alloc_qty_{{ $idx }}_{{ $aIdx }}" class="text-text-secondary block text-sm">{{ __('purchasing.return_quantity') }}</label>
                                         <input type="text" id="alloc_qty_{{ $idx }}_{{ $aIdx }}" wire:model="lines.{{ $idx }}.allocations.{{ $aIdx }}.quantity" placeholder="0" class="w-full min-h-11 px-2 rounded-control border border-border text-sm text-end" dir="ltr" inputmode="decimal"  :disabled="documentBusy || saving"/>
                                         @error("lines.{$idx}.allocations.{$aIdx}.quantity")
-                                            <p class="text-danger text-xs">{{ $message }}</p>
+                                            <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p>
                                         @enderror
                                     </div>
                                 </div>
@@ -179,7 +179,7 @@
                     {{ __('purchasing.return_summary') }}
                 </h3>
                 @if ($returnCalculationError)
-                    <span class="text-xs font-semibold text-danger flex items-center gap-1" data-testid="return-totals-error">
+                    <span role="alert" aria-live="polite" class="text-xs font-semibold text-danger flex items-center gap-1" data-testid="return-totals-error">
                         {{ $returnCalculationError }}
                     </span>
                 @endif
@@ -203,8 +203,8 @@
                         @endif
                     </div>
                     @if (! $returnCalculationError && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($returnTax))
-                        <span class="text-xs text-text-muted block mt-0.5" dir="ltr">
-                            {{ __('purchasing.tax') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTax, $currencyCode) }} {{ $currencyCode }}
+                        <span class="text-xs text-text-muted block mt-0.5">
+                            {{ __('purchasing.tax') }}: <span dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($returnTax, $currencyCode) }}</span> <span class="text-text-secondary">{{ $currencyCode }}</span>
                         </span>
                     @endif
                 </div>
