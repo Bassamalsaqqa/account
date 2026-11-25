@@ -1014,7 +1014,6 @@ class InvoiceForm extends Component
             ];
         }
 
-        $minorUnits = $this->currency_minor_units ?? (in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2);
         $headerDiscountType = $this->discount_type;
         if ($headerDiscountType === 'percentage') {
             $headerDiscountType = 'percent';
@@ -1023,7 +1022,6 @@ class InvoiceForm extends Component
             'customer_id' => (int) $this->customer_id,
             'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
             'currency_code' => $this->currency_code,
-            'currency_minor_units' => $minorUnits,
             'discount_type' => $headerDiscountType,
             'discount_value' => (string) ($this->discount_value ?: '0'),
             'discount_scope' => $this->discount_scope,
@@ -1047,16 +1045,16 @@ class InvoiceForm extends Component
                 }
                 $key = $this->updateRequestKey ?? (string) Str::uuid();
                 $this->updateRequestKey = $key;
-                $this->lastSavedPayloadDigest = $currentDigest;
 
-                $this->invoice = $commands->update($this->invoice, $user, $payload, $key);
+                $savedInvoice = $commands->update($this->invoice, $user, $payload, $key);
+                $this->invoice = $savedInvoice;
+                $this->lastSavedPayloadDigest = $currentDigest;
             } else {
                 if ($this->lastSavedPayloadDigest !== null && $this->lastSavedPayloadDigest !== $currentDigest) {
                     $this->createRequestKey = (string) Str::uuid();
                 }
                 $key = $this->createRequestKey ?? (string) Str::uuid();
                 $this->createRequestKey = $key;
-                $this->lastSavedPayloadDigest = $currentDigest;
 
                 $this->invoice = DB::transaction(function () use ($commands, $company, $user, $payload, $key): SalesInvoice {
                     if ($this->aiFormToken !== null && $this->aiFormKey !== null) {
@@ -1069,6 +1067,7 @@ class InvoiceForm extends Component
 
                     return $created;
                 });
+                $this->lastSavedPayloadDigest = $currentDigest;
                 $this->discardAiInput();
                 $this->isEditing = true;
             }
@@ -1396,20 +1395,37 @@ class InvoiceForm extends Component
         $hasHeaderDiscount = $headerDiscountType !== 'none' && ! BigDecimal::of((string) ($this->discount_value ?: '0'))->isZero();
         $headerDiscountValue = $hasHeaderDiscount ? trim((string) $this->discount_value) : null;
 
-        $normalized = [
-            'customer_id' => (int) $this->customer_id,
-            'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
-            'currency_code' => strtoupper(trim($this->currency_code)),
-            'exchange_rate' => trim($this->exchange_rate),
-            'issue_date' => trim($this->issue_date),
-            'due_date' => $this->due_date ? trim($this->due_date) : null,
-            'notes' => $this->notes !== null ? trim($this->notes) : null,
-            'terms' => $this->terms !== null ? trim($this->terms) : null,
-            'document_locale' => $this->document_locale,
-            'discount_type' => $hasHeaderDiscount ? $headerDiscountType : null,
-            'discount_value' => $headerDiscountValue,
-            'lines' => $normalizedLines,
-        ];
+        if ($hasHeaderDiscount) {
+            $normalized = [
+                'customer_id' => (int) $this->customer_id,
+                'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
+                'currency_code' => strtoupper(trim($this->currency_code)),
+                'exchange_rate' => trim($this->exchange_rate),
+                'issue_date' => trim($this->issue_date),
+                'due_date' => $this->due_date ? trim($this->due_date) : null,
+                'notes' => $this->notes !== null ? trim($this->notes) : null,
+                'terms' => $this->terms !== null ? trim($this->terms) : null,
+                'document_locale' => $this->document_locale,
+                'discount_type' => $headerDiscountType,
+                'discount_value' => $headerDiscountValue,
+                'discount_scope' => 'document',
+                'discount_calculation_version' => 2,
+                'lines' => $normalizedLines,
+            ];
+        } else {
+            $normalized = [
+                'customer_id' => (int) $this->customer_id,
+                'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
+                'currency_code' => strtoupper(trim($this->currency_code)),
+                'exchange_rate' => trim($this->exchange_rate),
+                'issue_date' => trim($this->issue_date),
+                'due_date' => $this->due_date ? trim($this->due_date) : null,
+                'notes' => $this->notes !== null ? trim($this->notes) : null,
+                'terms' => $this->terms !== null ? trim($this->terms) : null,
+                'document_locale' => $this->document_locale,
+                'lines' => $normalizedLines,
+            ];
+        }
 
         return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }

@@ -22,12 +22,14 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -137,19 +139,31 @@ class UpdateSalesInvoiceDraftAction
                     throw new InvalidArgumentException('Sales invoice must contain at least one line.');
                 }
 
-                $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-                $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+                if ($currency === $lockedInvoice->currency_code) {
+                    $minorUnits = $lockedInvoice->currency_minor_units ?? $lockedInvoice->resolvedCurrencyMinorUnits();
+                } else {
+                    $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
+                }
+                $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
 
-                $headerDiscountType = array_key_exists('discount_type', $data) ? $data['discount_type'] : $lockedInvoice->discount_type;
-                $headerDiscountVal = array_key_exists('discount_value', $data) ? $data['discount_value'] : $lockedInvoice->discount_value;
+                $discountTypeProvided = array_key_exists('discount_type', $data);
+                $discountValueProvided = array_key_exists('discount_value', $data);
+                $discountScopeProvided = array_key_exists('discount_scope', $data);
+
+                $headerDiscountType = $discountTypeProvided ? $data['discount_type'] : $lockedInvoice->discount_type;
+                $headerDiscountVal = $discountValueProvided ? $data['discount_value'] : $lockedInvoice->discount_value;
                 $intent = new DocumentDiscountIntent(
                     discountType: $headerDiscountType,
                     discountValue: $headerDiscountVal ?: '0',
                 );
 
-                $discountScope = $data['discount_scope'] ?? $lockedInvoice->discount_scope ?? (! $intent->isNone() ? 'document' : 'line');
+                $discountScope = $discountScopeProvided ? $data['discount_scope'] : ($lockedInvoice->discount_scope ?? (! $intent->isNone() ? 'document' : 'line'));
+
+                if ($discountScope === 'line' && ! $intent->isNone()) {
+                    throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
+                }
 
                 $hasLineDiscounts = false;
                 foreach ($data['lines'] as $lineData) {

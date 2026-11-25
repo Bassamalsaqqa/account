@@ -528,6 +528,16 @@ class SalesInvoiceCommands
             $blockers[] = $sb;
         }
 
+        // Explicit early preview guard under existing zero-value sales policy:
+        // A fully discounted service invoice produces no journal lines and cannot be posted.
+        $hasStockMovement = ! empty($requirements);
+        if (BigDecimal::of((string) $inv->grand_total_base)->isZero() && ! $hasStockMovement) {
+            $blockers[] = [
+                'code' => 'zero_journal_lines_cannot_post',
+                'message' => __('sales.zero_journal_lines_cannot_post'),
+            ];
+        }
+
         // Advisory warnings (never blockers)
         if ($customer !== null) {
             try {

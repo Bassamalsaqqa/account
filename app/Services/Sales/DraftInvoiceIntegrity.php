@@ -24,7 +24,7 @@ final class DraftInvoiceIntegrity
     public function validate(SalesInvoice $invoice, Collection $lines): void
     {
         $isDocScope = ($invoice->discount_scope ?? 'document') === 'document';
-        $minorUnits = $invoice->currency_minor_units ?? ($invoice->currency_code === 'JOD' ? 3 : 2);
+        $minorUnits = $invoice->currency_minor_units ?? $invoice->resolvedCurrencyMinorUnits();
 
         $allocationResult = null;
         if ($isDocScope && ($invoice->discount_type ?? 'none') !== 'none' && BigDecimal::of($invoice->discount_value ?? '0')->isPositive()) {

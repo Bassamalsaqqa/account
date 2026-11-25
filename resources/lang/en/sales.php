@@ -339,4 +339,6 @@ return [
     'legacy_discount_badge' => 'Legacy Discount: :value',
     'currency_change_discount' => 'Fixed discount has been cleared because the currency was changed.',
     'currency_change_legacy_discount' => 'Currency cannot be changed on an invoice with line-level discounts.',
+    'zero_journal_lines_cannot_post' => 'A fully discounted service invoice with no financial effect or inventory movement cannot be posted.',
+    'invalid_discount_scope' => 'Header discount cannot have line discount scope.',
 ];

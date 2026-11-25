@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -45,6 +46,49 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Refuse lossy rollback before any DDL if used document discount history exists
+        $hasInvoiceDiscountHistory = DB::table('sales_invoices')
+            ->where(function ($q): void {
+                $q->where('discount_scope', '!=', 'line')
+                    ->orWhere(function ($sub): void {
+                        $sub->whereNotNull('discount_type')
+                            ->where('discount_type', '!=', 'none')
+                            ->where('discount_value', '>', 0);
+                    })
+                    ->orWhere('discount_calculation_version', '!=', 1);
+            })
+            ->exists();
+
+        $hasInvoiceLineDiscountHistory = DB::table('sales_invoice_lines')
+            ->where(function ($q): void {
+                $q->where('allocated_document_discount', '>', 0)
+                    ->orWhere('manual_discount_amount', '>', 0);
+            })
+            ->exists();
+
+        $hasQuotationDiscountHistory = DB::table('quotations')
+            ->where(function ($q): void {
+                $q->where('discount_scope', '!=', 'line')
+                    ->orWhere(function ($sub): void {
+                        $sub->whereNotNull('discount_type')
+                            ->where('discount_type', '!=', 'none')
+                            ->where('discount_value', '>', 0);
+                    })
+                    ->orWhere('discount_calculation_version', '!=', 1);
+            })
+            ->exists();
+
+        $hasQuotationLineDiscountHistory = DB::table('quotation_lines')
+            ->where(function ($q): void {
+                $q->where('allocated_document_discount', '>', 0)
+                    ->orWhere('manual_discount_amount', '>', 0);
+            })
+            ->exists();
+
+        if ($hasInvoiceDiscountHistory || $hasInvoiceLineDiscountHistory || $hasQuotationDiscountHistory || $hasQuotationLineDiscountHistory) {
+            throw new RuntimeException('Cannot rollback migration: sales or quotation document discount history exists. Retain the additive schema during source rollback.');
+        }
+
         Schema::table('sales_returns', function (Blueprint $table): void {
             $table->dropColumn(['currency_minor_units']);
         });

@@ -795,7 +795,6 @@ class QuotationForm extends Component
             ];
         }
 
-        $minorUnits = $this->currency_minor_units ?? (in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2);
         $headerDiscountType = $this->discount_type;
         if ($headerDiscountType === 'percentage') {
             $headerDiscountType = 'percent';
@@ -803,7 +802,6 @@ class QuotationForm extends Component
         $payload = [
             'customer_id' => (int) $this->customer_id,
             'currency_code' => $this->currency_code,
-            'currency_minor_units' => $minorUnits,
             'discount_type' => $headerDiscountType,
             'discount_value' => (string) ($this->discount_value ?: '0'),
             'discount_scope' => $this->discount_scope,

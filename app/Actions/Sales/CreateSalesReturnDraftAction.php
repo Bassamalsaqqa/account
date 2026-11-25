@@ -16,6 +16,7 @@ use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
 use App\Models\User;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesReturnAmounts;
 use App\Support\Tenancy\CompanyContext;
@@ -92,8 +93,8 @@ class CreateSalesReturnDraftAction
             $customer = $invoice->customer;
             $currency = $invoice->currency_code;
             $fx = BigDecimal::of((string) $invoice->exchange_rate);
-            $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-            $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $minorUnits = $invoice->currency_minor_units ?? $invoice->resolvedCurrencyMinorUnits();
+            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
             $lineResults = [];
             $preparedLines = [];
@@ -207,6 +208,7 @@ class CreateSalesReturnDraftAction
                 'customer_id' => $customer->id,
                 'warehouse_id' => $invoice->warehouse_id,
                 'currency_code' => $currency,
+                'currency_minor_units' => $minorUnits,
                 'exchange_rate' => (string) $fx->toScale(10),
                 'issue_date' => $data['issue_date'],
                 'status' => SalesReturn::STATUS_DRAFT,

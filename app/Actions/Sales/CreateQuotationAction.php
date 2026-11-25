@@ -23,6 +23,7 @@ use App\Models\Quotation;
 use App\Models\QuotationLine;
 use App\Models\TaxRate;
 use App\Models\User;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\DocumentSequenceService;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
@@ -30,6 +31,7 @@ use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -129,8 +131,8 @@ class CreateQuotationAction
 
             // Process line calculations
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
-            $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-            $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
+            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
             $headerDiscountType = $data['discount_type'] ?? null;
             $intent = new DocumentDiscountIntent(
@@ -139,6 +141,10 @@ class CreateQuotationAction
             );
 
             $discountScope = $data['discount_scope'] ?? (! $intent->isNone() ? 'document' : 'line');
+
+            if ($discountScope === 'line' && ! $intent->isNone()) {
+                throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
+            }
 
             $hasLineDiscounts = false;
             foreach ($data['lines'] as $lineData) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Support\Tenancy\BelongsToCompany;
 use Brick\Math\BigDecimal;
@@ -159,7 +160,7 @@ class SalesInvoice extends Model
 
     public function resolvedCurrencyMinorUnits(): int
     {
-        return $this->currency_minor_units ?? (in_array(strtoupper(trim($this->currency_code)), ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2);
+        return $this->currency_minor_units ?? app(CurrencyMinorUnitsResolver::class)->resolveHistorical($this->currency_code);
     }
 
     private bool $completingPost = false;

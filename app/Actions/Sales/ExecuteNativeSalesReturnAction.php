@@ -14,7 +14,6 @@ use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
 use App\Models\User;
 use App\Services\Audit\AuditService;
-use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
@@ -87,7 +86,7 @@ final class ExecuteNativeSalesReturnAction
 
                 app(AuditService::class)->log((int) $company->id, 'sales_return.native_posted', 'Native sales return posted', (int) $actor->id, $posted);
 
-                $cmu = app(CurrencyMinorUnitsResolver::class)->resolve((string) $posted->currency_code, $company);
+                $cmu = $posted->currency_minor_units ?? $posted->resolvedCurrencyMinorUnits();
 
                 return ['snapshot' => [
                     'id' => (string) $posted->public_id,

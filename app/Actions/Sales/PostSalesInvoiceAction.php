@@ -449,6 +449,10 @@ class PostSalesInvoiceAction implements StockEventOwner
                 );
             }
 
+            if (empty($postingLines)) {
+                throw new InvalidArgumentException(__('sales.zero_journal_lines_cannot_post'));
+            }
+
             $postingCmd = new PostingCommand(
                 company: $company,
                 postingDate: Carbon::parse($issueDate),

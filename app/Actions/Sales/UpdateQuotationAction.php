@@ -21,12 +21,14 @@ use App\Models\Quotation;
 use App\Models\QuotationLine;
 use App\Models\TaxRate;
 use App\Models\User;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -128,17 +130,29 @@ class UpdateQuotationAction
                 }
 
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
-                $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-                $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+                if ($currency === $lockedQuote->currency_code) {
+                    $minorUnits = $lockedQuote->currency_minor_units ?? $lockedQuote->resolvedCurrencyMinorUnits();
+                } else {
+                    $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
+                }
+                $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
-                $headerDiscountType = array_key_exists('discount_type', $data) ? $data['discount_type'] : $lockedQuote->discount_type;
-                $headerDiscountVal = array_key_exists('discount_value', $data) ? $data['discount_value'] : $lockedQuote->discount_value;
+                $discountTypeProvided = array_key_exists('discount_type', $data);
+                $discountValueProvided = array_key_exists('discount_value', $data);
+                $discountScopeProvided = array_key_exists('discount_scope', $data);
+
+                $headerDiscountType = $discountTypeProvided ? $data['discount_type'] : $lockedQuote->discount_type;
+                $headerDiscountVal = $discountValueProvided ? $data['discount_value'] : $lockedQuote->discount_value;
                 $intent = new DocumentDiscountIntent(
                     discountType: $headerDiscountType,
                     discountValue: $headerDiscountVal ?: '0',
                 );
 
-                $discountScope = $data['discount_scope'] ?? $lockedQuote->discount_scope ?? (! $intent->isNone() ? 'document' : 'line');
+                $discountScope = $discountScopeProvided ? $data['discount_scope'] : ($lockedQuote->discount_scope ?? (! $intent->isNone() ? 'document' : 'line'));
+
+                if ($discountScope === 'line' && ! $intent->isNone()) {
+                    throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
+                }
 
                 $hasLineDiscounts = false;
                 foreach ($data['lines'] as $lineData) {

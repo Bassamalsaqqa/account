@@ -23,12 +23,14 @@ use App\Models\SalesInvoiceLine;
 use App\Models\TaxRate;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -139,8 +141,8 @@ class CreateSalesInvoiceDraftAction
                 }
             }
 
-            $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
-            $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
+            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
 
@@ -152,6 +154,10 @@ class CreateSalesInvoiceDraftAction
 
             // Determine discount scope: default 'document' if header discount provided, else check lines or explicit request
             $discountScope = $data['discount_scope'] ?? (! $intent->isNone() ? 'document' : 'line');
+
+            if ($discountScope === 'line' && ! $intent->isNone()) {
+                throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
+            }
 
             // Check if any line has explicit manual discount
             $hasLineDiscounts = false;

@@ -82,7 +82,7 @@ final class SalesDraftIntent
         // 1. Reject unknown header keys
         foreach (array_keys($payload) as $key) {
             if (! in_array($key, self::ALLOWED_HEADER_KEYS, true)) {
-                throw new InvalidArgumentException('Unknown header field present.');
+                throw new InvalidArgumentException("Unknown header field [{$key}].");
             }
         }
 
@@ -196,40 +196,101 @@ final class SalesDraftIntent
         }
 
         // 9b. Validate header discount fields
-        $discountType = null;
-        if (array_key_exists('discount_type', $payload) && $payload['discount_type'] !== null) {
-            $dt = trim((string) $payload['discount_type']);
-            if (! in_array($dt, ['none', 'fixed', 'percent'], true)) {
-                throw new InvalidArgumentException("Field [discount_type] must be 'none', 'fixed', 'percent', or null.");
-            }
-            $discountType = $dt !== 'none' ? $dt : null;
-        }
-        $canonical['discount_type'] = $discountType;
+        $hasHeaderDiscountFields = array_key_exists('discount_type', $payload)
+            || array_key_exists('discount_value', $payload)
+            || array_key_exists('discount_scope', $payload)
+            || array_key_exists('discount_basis', $payload)
+            || array_key_exists('discount_calculation_version', $payload);
 
-        $discountValue = '0.000000';
-        if (array_key_exists('discount_value', $payload) && $payload['discount_value'] !== null) {
-            $discVal = $this->validateMoneyString($payload['discount_value'], 'discount_value', allowZero: true);
-            if ($discountType === 'percent' && BigDecimal::of($discVal)->isGreaterThan(100)) {
-                throw new InvalidArgumentException('Discount percent cannot exceed 100%.');
+        if ($isUpdate) {
+            // Distinguish omitted update discount from explicit clear
+            if (array_key_exists('discount_type', $payload)) {
+                $rawDt = $payload['discount_type'];
+                if ($rawDt === null || trim((string) $rawDt) === '' || trim((string) $rawDt) === 'none') {
+                    $canonical['discount_type'] = null;
+                    $canonical['discount_value'] = '0.000000';
+                } else {
+                    $dt = trim((string) $rawDt);
+                    if (! in_array($dt, ['fixed', 'percent'], true)) {
+                        throw new InvalidArgumentException("Field [discount_type] must be 'none', 'fixed', 'percent', or null.");
+                    }
+                    $canonical['discount_type'] = $dt;
+                }
             }
-            $discountValue = $discVal;
-        }
-        $canonical['discount_value'] = $discountValue;
 
-        $discountScope = 'line';
-        if (array_key_exists('discount_scope', $payload) && $payload['discount_scope'] !== null) {
-            $ds = trim((string) $payload['discount_scope']);
-            if (! in_array($ds, ['document', 'line'], true)) {
-                throw new InvalidArgumentException("Field [discount_scope] must be 'document' or 'line'.");
+            if (array_key_exists('discount_value', $payload)) {
+                $discVal = $this->validateMoneyString($payload['discount_value'], 'discount_value', allowZero: true);
+                if (($canonical['discount_type'] ?? null) === 'percent' && BigDecimal::of($discVal)->isGreaterThan(100)) {
+                    throw new InvalidArgumentException('Discount percent cannot exceed 100%.');
+                }
+                $canonical['discount_value'] = $discVal;
             }
-            $discountScope = $ds;
-        } elseif ($discountType !== null || ! BigDecimal::of($discountValue)->isZero()) {
-            $discountScope = 'document';
-        }
-        $canonical['discount_scope'] = $discountScope;
 
-        $canonical['discount_basis'] = 'subtotal';
-        $canonical['discount_calculation_version'] = $discountScope === 'document' ? 2 : 1;
+            if (array_key_exists('discount_scope', $payload)) {
+                $ds = trim((string) $payload['discount_scope']);
+                if (! in_array($ds, ['document', 'line'], true)) {
+                    throw new InvalidArgumentException("Field [discount_scope] must be 'document' or 'line'.");
+                }
+                $canonical['discount_scope'] = $ds;
+            }
+
+            // Reject positive header discount with line scope
+            $effScope = $canonical['discount_scope'] ?? null;
+            $effType = $canonical['discount_type'] ?? null;
+            $effVal = $canonical['discount_value'] ?? '0.000000';
+            if ($effScope === 'line' && $effType !== null && ! BigDecimal::of($effVal)->isZero()) {
+                throw new InvalidArgumentException("Header discount cannot have 'line' discount scope.");
+            }
+
+            if (array_key_exists('discount_basis', $payload)) {
+                $canonical['discount_basis'] = 'subtotal';
+            }
+
+            if (array_key_exists('discount_calculation_version', $payload)) {
+                $canonical['discount_calculation_version'] = (int) $payload['discount_calculation_version'];
+            }
+        } elseif ($hasHeaderDiscountFields) {
+            $discountType = null;
+            if (array_key_exists('discount_type', $payload) && $payload['discount_type'] !== null) {
+                $dt = trim((string) $payload['discount_type']);
+                if (! in_array($dt, ['none', 'fixed', 'percent'], true)) {
+                    throw new InvalidArgumentException("Field [discount_type] must be 'none', 'fixed', 'percent', or null.");
+                }
+                $discountType = $dt !== 'none' ? $dt : null;
+            }
+            $canonical['discount_type'] = $discountType;
+
+            $discountValue = '0.000000';
+            if (array_key_exists('discount_value', $payload) && $payload['discount_value'] !== null) {
+                $discVal = $this->validateMoneyString($payload['discount_value'], 'discount_value', allowZero: true);
+                if ($discountType === 'percent' && BigDecimal::of($discVal)->isGreaterThan(100)) {
+                    throw new InvalidArgumentException('Discount percent cannot exceed 100%.');
+                }
+                $discountValue = $discVal;
+            }
+            $canonical['discount_value'] = $discountValue;
+
+            $discountScope = 'line';
+            if (array_key_exists('discount_scope', $payload) && $payload['discount_scope'] !== null) {
+                $ds = trim((string) $payload['discount_scope']);
+                if (! in_array($ds, ['document', 'line'], true)) {
+                    throw new InvalidArgumentException("Field [discount_scope] must be 'document' or 'line'.");
+                }
+                $discountScope = $ds;
+            } elseif ($discountType !== null || ! BigDecimal::of($discountValue)->isZero()) {
+                $discountScope = 'document';
+            }
+
+            if ($discountScope === 'line' && $discountType !== null && ! BigDecimal::of($discountValue)->isZero()) {
+                throw new InvalidArgumentException("Header discount cannot have 'line' discount scope.");
+            }
+
+            $canonical['discount_scope'] = $discountScope;
+            $canonical['discount_basis'] = 'subtotal';
+            $canonical['discount_calculation_version'] = array_key_exists('discount_calculation_version', $payload)
+                ? (int) $payload['discount_calculation_version']
+                : ($discountScope === 'document' ? 2 : 1);
+        }
 
         // 10. Validate lines
         if (array_key_exists('lines', $payload)) {
@@ -249,7 +310,7 @@ final class SalesDraftIntent
                 if (! is_array($line)) {
                     throw new InvalidArgumentException("Line item must be an object/array at index [{$index}].");
                 }
-                $canonicalLines[] = $this->canonicalizeLine($line, $index);
+                $canonicalLines[] = $this->canonicalizeLine($line, $index, $hasHeaderDiscountFields);
             }
             $canonical['lines'] = $canonicalLines;
         } elseif (! $isUpdate) {
@@ -285,7 +346,7 @@ final class SalesDraftIntent
      * @param  array<string, mixed>  $line
      * @return array<string, mixed>
      */
-    private function canonicalizeLine(array $line, int $index): array
+    private function canonicalizeLine(array $line, int $index, bool $hasHeaderDiscountFields = false): array
     {
         foreach (array_keys($line) as $key) {
             if (! in_array($key, self::ALLOWED_LINE_KEYS, true)) {
@@ -375,13 +436,17 @@ final class SalesDraftIntent
             $canonicalLine['tax_rate_id'] = null;
         }
 
-        $canonicalLine['manual_discount_amount'] = array_key_exists('manual_discount_amount', $line) && $line['manual_discount_amount'] !== null
-            ? $this->validateMoneyString($line['manual_discount_amount'], "lines.{$index}.manual_discount_amount", allowZero: true)
-            : '0.000000';
+        if (array_key_exists('manual_discount_amount', $line) && $line['manual_discount_amount'] !== null) {
+            $canonicalLine['manual_discount_amount'] = $this->validateMoneyString($line['manual_discount_amount'], "lines.{$index}.manual_discount_amount", allowZero: true);
+        } elseif ($hasHeaderDiscountFields) {
+            $canonicalLine['manual_discount_amount'] = '0.000000';
+        }
 
-        $canonicalLine['allocated_document_discount'] = array_key_exists('allocated_document_discount', $line) && $line['allocated_document_discount'] !== null
-            ? $this->validateMoneyString($line['allocated_document_discount'], "lines.{$index}.allocated_document_discount", allowZero: true)
-            : '0.000000';
+        if (array_key_exists('allocated_document_discount', $line) && $line['allocated_document_discount'] !== null) {
+            $canonicalLine['allocated_document_discount'] = $this->validateMoneyString($line['allocated_document_discount'], "lines.{$index}.allocated_document_discount", allowZero: true);
+        } elseif ($hasHeaderDiscountFields) {
+            $canonicalLine['allocated_document_discount'] = '0.000000';
+        }
 
         return $canonicalLine;
     }
