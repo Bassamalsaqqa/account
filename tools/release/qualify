@@ -6,6 +6,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/AccountQualificationRunner.php';
 
 use Tools\Release\AccountQualificationRunner;
+use Tools\Release\QualificationRefusalException;
 
 $runner = new AccountQualificationRunner(dirname(__DIR__, 2));
 
@@ -13,6 +14,10 @@ try {
     $options = $runner->parseArguments($argv);
     $exitCode = $runner->run($options);
     exit($exitCode);
+} catch (QualificationRefusalException $e) {
+    fwrite(STDERR, '[REFUSAL] ' . $e->getMessage() . PHP_EOL);
+    $code = $e->getCode();
+    exit($code > 0 ? $code : AccountQualificationRunner::EXIT_TEST_FAILURE);
 } catch (Throwable $e) {
     fwrite(STDERR, '[ERROR] ' . $e->getMessage() . PHP_EOL);
     exit(AccountQualificationRunner::EXIT_TEST_FAILURE);
