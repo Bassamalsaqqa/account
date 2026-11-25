@@ -1,4 +1,5 @@
 @props([
+    'currencyScale' => 2,
     'cards' => null,
     'total' => null,
     'paid' => '0.00',

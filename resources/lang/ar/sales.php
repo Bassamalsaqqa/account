@@ -319,4 +319,8 @@ return [
     'return_total_unrepresentable' => 'لا يمكن تمثيل إجمالي مردود المبيعات بسعر الصرف الحالي.',
     'return_tax_unrepresentable' => 'لا يمكن تمثيل بند الضريبة لمردود المبيعات بسعر الصرف الحالي.',
     'return_revenue_unrepresentable' => 'لا يمكن تمثيل بند الإيراد لمردود المبيعات بسعر الصرف الحالي.',
+    'return_summary' => 'ملخص المردود',
+    'pre_return_total' => 'إجمالي الفاتورة قبل الإرجاع',
+    'current_return_total' => 'إجمالي المردود',
+    'post_return_remaining' => 'رصيد الفاتورة بعد الإرجاع',
 ];

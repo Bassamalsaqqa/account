@@ -319,4 +319,8 @@ return [
     'return_total_unrepresentable' => 'Sales return total component cannot be represented at the current exchange rate.',
     'return_tax_unrepresentable' => 'Sales return tax component cannot be represented at the current exchange rate.',
     'return_revenue_unrepresentable' => 'Sales return revenue component cannot be represented at the current exchange rate.',
+    'return_summary' => 'Return Summary',
+    'pre_return_total' => 'Invoice Total Before Return',
+    'current_return_total' => 'Return Total',
+    'post_return_remaining' => 'Invoice Balance After Return',
 ];

@@ -1,4 +1,4 @@
-@props(['total', 'currency', 'valid' => true, 'canConfirm' => false, 'confirmLabel' => null])
+@props(['total', 'currency', 'currencyScale' => 2, 'valid' => true, 'canConfirm' => false, 'confirmLabel' => null])
 <div class="mobile-document-actions md:hidden fixed inset-x-0 z-30 border-t border-border bg-surface px-3 py-2 shadow-lg" style="bottom: var(--mobile-nav-height, calc(4.5rem + env(safe-area-inset-bottom)));">
     <div class="mx-auto max-w-lg space-y-2">
         <div class="flex items-center justify-between gap-3">

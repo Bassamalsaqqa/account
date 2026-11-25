@@ -10,7 +10,9 @@ use App\Models\Company;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
+use App\Models\SalesReturnLine;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesReturnAmounts;
 use App\Support\DocumentIdentity;
 use App\Support\QuantityStep;
 use App\Support\Tenancy\CompanyContext;
@@ -55,6 +57,22 @@ class ReturnForm extends Component
      */
     public array $lines = [];
 
+    public string $currencyCode = '';
+
+    public ?string $preReturnTotal = null;
+
+    public ?string $returnSubtotal = null;
+
+    public ?string $returnDiscount = null;
+
+    public ?string $returnTax = null;
+
+    public ?string $returnTotal = null;
+
+    public ?string $postReturnTotal = null;
+
+    public bool $hasReturnQuantities = false;
+
     public function boot(CompanyContext $context): void
     {
         if (isset($this->pageCompanyId)) {
@@ -96,6 +114,7 @@ class ReturnForm extends Component
                 $line['return_quantity'] = (string) ($quantities[$line['sales_invoice_line_id']] ?? '0');
             }
             unset($line);
+            $this->recalculateTotals();
 
             return;
         }
@@ -115,6 +134,7 @@ class ReturnForm extends Component
     {
         if ($this->sales_invoice_id === null) {
             $this->lines = [];
+            $this->resetTotals();
 
             return;
         }
@@ -127,6 +147,7 @@ class ReturnForm extends Component
 
         if ($invoice === null || ! $invoice->isPosted()) {
             $this->lines = [];
+            $this->resetTotals();
 
             return;
         }
@@ -158,6 +179,8 @@ class ReturnForm extends Component
                 ];
             }
         }
+
+        $this->recalculateTotals();
     }
 
     /**
@@ -337,6 +360,7 @@ class ReturnForm extends Component
         $formatted = $maxDecimals > 0 ? (string) $currentBd : (string) $currentBd->toBigInteger();
         $this->lines[$index]['return_quantity'] = $formatted;
         $this->resetErrorBag("lines.{$index}.return_quantity");
+        $this->recalculateTotals();
 
         return ['ok' => true, 'quantity' => $formatted, 'minimumReached' => $currentBd->isZero()];
     }
@@ -418,6 +442,132 @@ class ReturnForm extends Component
         $formatted = $maxDecimals > 0 ? (string) $freshMaxReturnable : (string) $freshMaxReturnable->toBigInteger();
         $this->lines[$index]['return_quantity'] = $formatted;
         $this->resetErrorBag("lines.{$index}.return_quantity");
+        $this->recalculateTotals();
+    }
+
+    public function recalculate(): void
+    {
+        $this->recalculateTotals();
+    }
+
+    public function recalculateTotals(): void
+    {
+        if ($this->sales_invoice_id === null) {
+            $this->resetTotals();
+
+            return;
+        }
+
+        $company = app(CompanyContext::class)->company();
+        /** @var SalesInvoice|null $invoice */
+        $invoice = SalesInvoice::where('company_id', $company->id)
+            ->where('id', $this->sales_invoice_id)
+            ->where('status', SalesInvoice::STATUS_POSTED)
+            ->first();
+
+        if ($invoice === null) {
+            $this->resetTotals();
+
+            return;
+        }
+
+        $this->currencyCode = (string) $invoice->currency_code;
+
+        $priorReturnsQuery = DB::table('sales_returns')
+            ->where('company_id', $company->id)
+            ->where('sales_invoice_id', $this->sales_invoice_id)
+            ->where('status', SalesReturn::STATUS_POSTED);
+
+        if ($this->draftPublicId !== null) {
+            $priorReturnsQuery->where('public_id', '!=', $this->draftPublicId);
+        }
+
+        $priorReturnsTotal = (string) $priorReturnsQuery->sum('grand_total_currency');
+
+        $origInvoiceTotal = BigDecimal::of((string) ($invoice->grand_total_currency ?? $invoice->grand_total));
+        $preReturn = $origInvoiceTotal->minus(BigDecimal::of($priorReturnsTotal ?: '0'));
+        $this->preReturnTotal = (string) $preReturn->toScale(6);
+
+        $returnSubtotal = BigDecimal::zero();
+        $returnDiscount = BigDecimal::zero();
+        $returnTax = BigDecimal::zero();
+        $returnTotal = BigDecimal::zero();
+        $hasPositiveReturn = false;
+
+        $salesReturnAmounts = app(SalesReturnAmounts::class);
+        $sourceLines = SalesInvoiceLine::where('company_id', $company->id)
+            ->where('sales_invoice_id', $this->sales_invoice_id)
+            ->whereIn('id', array_column($this->lines, 'sales_invoice_line_id'))
+            ->get()
+            ->keyBy('id');
+
+        foreach ($this->lines as $line) {
+            $qtyStr = trim((string) $line['return_quantity']);
+            if ($qtyStr === '' || preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $qtyStr) !== 1) {
+                continue;
+            }
+
+            try {
+                $qty = BigDecimal::of($qtyStr);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if (! $qty->isPositive()) {
+                continue;
+            }
+
+            $sourceLine = $sourceLines->get((int) $line['sales_invoice_line_id']);
+            if ($sourceLine === null) {
+                continue;
+            }
+
+            $maxReturnable = BigDecimal::of((string) $line['max_returnable']);
+            if ($qty->isGreaterThan($maxReturnable)) {
+                continue;
+            }
+
+            $priorReturnLines = SalesReturnLine::where('company_id', $company->id)
+                ->where('sales_invoice_line_id', $sourceLine->id)
+                ->when($this->draftPublicId !== null, fn ($q) => $q->whereHas('salesReturn', fn ($r) => $r->where('public_id', '!=', $this->draftPublicId)))
+                ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
+                ->get();
+
+            try {
+                $lineAmounts = $salesReturnAmounts->calculateLine(
+                    $sourceLine,
+                    $qty,
+                    $priorReturnLines,
+                    $invoice->currency_code
+                );
+                $returnSubtotal = $returnSubtotal->plus($lineAmounts['subtotal']);
+                $returnDiscount = $returnDiscount->plus($lineAmounts['discount']);
+                $returnTax = $returnTax->plus($lineAmounts['tax']);
+                $returnTotal = $returnTotal->plus($lineAmounts['total']);
+                $hasPositiveReturn = true;
+            } catch (\Throwable) {
+                // Ignore transient calculation errors while typing
+            }
+        }
+
+        $this->hasReturnQuantities = $hasPositiveReturn;
+        $this->returnSubtotal = (string) $returnSubtotal->toScale(6);
+        $this->returnDiscount = (string) $returnDiscount->toScale(6);
+        $this->returnTax = (string) $returnTax->toScale(6);
+        $this->returnTotal = (string) $returnTotal->toScale(6);
+        $this->postReturnTotal = (string) $preReturn->minus($returnTotal)->toScale(6);
+    }
+
+    private function resetTotals(): void
+    {
+        $this->currencyCode = '';
+        $this->preReturnTotal = null;
+        $this->returnSubtotal = null;
+        $this->returnDiscount = null;
+        $this->returnTax = null;
+        $this->returnTotal = null;
+        $this->postReturnTotal = null;
+        $this->hasReturnQuantities = false;
     }
 
     public function save(

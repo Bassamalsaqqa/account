@@ -11,7 +11,7 @@ use Brick\Math\RoundingMode;
 final class SalesMoneyFormatter
 {
     /** Human-facing amounts only. Stored values, calculations and exports retain their precision. */
-    public static function displayMoney(string|int|BigDecimal|null $amount, ?string $currencyCode = null): string
+    public static function displayMoney(string|int|BigDecimal|null $amount, ?string $currencyCode = null, int $scale = 2): string
     {
         if ($amount === null || $amount === '') {
             return '—';
@@ -20,6 +20,7 @@ final class SalesMoneyFormatter
             return (string) $amount;
         }
 
+        // Shared money display policy: TWO decimals across UI entry and display
         return self::format($amount, scale: 2);
     }
 
@@ -36,10 +37,10 @@ final class SalesMoneyFormatter
     }
 
     /**
-     * Format money for input fields: 2 decimal places contract for integer/1dp inputs,
+     * Format money for input fields: a minimum of two decimal places by default,
      * while preserving genuine existing fractional precision intact without silent rounding.
      */
-    public static function formatMoneyInput(string|int|BigDecimal|null $amount): string
+    public static function formatMoneyInput(string|int|BigDecimal|null $amount, int $minimumScale = 2): string
     {
         if ($amount === null || trim((string) $amount) === '') {
             return '';
@@ -114,11 +115,11 @@ final class SalesMoneyFormatter
     }
 
     /**
-     * Format a monetary amount with currency.
+     * Format a monetary amount with currency using the shared two-decimal display policy.
      */
     public static function formatCurrency(string|int|BigDecimal|null $amount, ?string $currencyCode = null): string
     {
-        return self::format($amount, $currencyCode);
+        return self::format($amount, $currencyCode, scale: 2);
     }
 
     /**
