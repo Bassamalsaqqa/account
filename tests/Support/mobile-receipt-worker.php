@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\User;
+use App\Support\Mobile\Offline\OfflineSaleConflict;
+use App\Support\Mobile\Offline\OfflineSaleEvent;
 use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
@@ -144,6 +146,7 @@ if ($executorMode === 'production_cash') {
         'mobile.merchant_api_enabled' => true,
         'mobile.v2_enabled' => true,
         'mobile.v2_cash_slice_enabled' => true,
+        'mobile.v2_offline_sales_enabled' => $representation === OfflineSaleEvent::REPRESENTATION,
     ]);
     $executor = app(NativeOnlineCashFinancialExecutionAdapter::class);
     $app->instance(FinancialExecutionAdapterInterface::class, $executor);
@@ -209,6 +212,12 @@ try {
         'customer_payment_id' => $result['customer_payment_id'],
         'customer_payment_public_id' => $result['customer_payment_public_id'],
         'terminal_canonical_result' => $result['terminal_canonical_result'],
+    ], JSON_THROW_ON_ERROR);
+} catch (OfflineSaleConflict $e) {
+    echo json_encode([
+        'outcome' => 'conflict',
+        'status' => 409,
+        'reason' => $e->reason,
     ], JSON_THROW_ON_ERROR);
 } catch (MobileEventDuplicatePayloadException $e) {
     echo json_encode([

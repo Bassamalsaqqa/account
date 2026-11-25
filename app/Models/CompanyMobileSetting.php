@@ -15,10 +15,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $default_tax_rate_id
  * @property bool $offline_policy_enabled
  * @property bool $offline_cash_only
- * @property int $max_offline_hours
- * @property int $max_offline_sales_count
- * @property string $max_offline_total_amount
- * @property string $catalog_snapshot_version
+ * @property int|null $max_offline_hours
+ * @property int|null $max_offline_sales_count
+ * @property string|null $max_offline_total_amount
+ * @property string|null $catalog_snapshot_version
  */
 class CompanyMobileSetting extends Model
 {

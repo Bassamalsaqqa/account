@@ -40,7 +40,8 @@ final class NativeFinancialExecutionCapability
         public readonly string $settlementMode = 'full',
         /** @var list<string> */
         public readonly array $expectedLegs = ['invoice', 'payment'],
-        public readonly ?string $admittedPaymentAmount = null
+        public readonly ?string $admittedPaymentAmount = null,
+        public readonly bool $offlineSale = false,
     ) {}
 
     /**

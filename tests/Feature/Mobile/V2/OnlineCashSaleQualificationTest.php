@@ -14,6 +14,7 @@ use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Http\Middleware\MobileV2ApiBoundary;
 use App\Models\Company;
+use App\Models\CompanyMobileSetting;
 use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
@@ -36,7 +37,10 @@ use App\Services\Money\MoneyReconciliationService;
 use App\Services\Purchasing\PayablesReconciliationService;
 use App\Services\Sales\SalesReconciliationService;
 use App\Services\Tenancy\CompanyRoleService;
+use App\Support\Mobile\CatalogSnapshot;
+use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
+use App\Support\Mobile\Offline\OfflineSaleEvent;
 use App\Support\Mobile\Receipt\DenyFinancialExecutionAdapter;
 use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
@@ -55,6 +59,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\TestWith;
 use ReflectionClass;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
@@ -134,6 +139,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 if (isset($this->company)) {
                     $companyId = $this->company->id;
                     DB::table('mobile_event_receipts')->where('company_id', $companyId)->delete();
+                    DB::table('mobile_offline_sale_leases')->where('company_id', $companyId)->delete();
                     DB::table('customer_payment_allocations')->where('company_id', $companyId)->delete();
                     DB::table('customer_payments')->where('company_id', $companyId)->delete();
                     DB::table('sales_invoice_lot_allocations')->where('company_id', $companyId)->delete();
@@ -828,12 +834,202 @@ final class OnlineCashSaleQualificationTest extends TestCase
         }
     }
 
+    public function test_offline_sale_replay_and_status_are_bound_to_original_event_even_after_lease_expiry(): void
+    {
+        $lease = $this->issueOfflineLease();
+        $wire = $this->offlineSaleWire($lease);
+        $eventId = $wire['client_event_id'];
+        $root = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+
+        $first = $this->postJson($root, $wire)->assertOk()
+            ->assertJsonPath('status', 'posted')
+            ->assertJsonPath('payload_digest', $wire['payload_digest'])
+            ->assertJsonPath('outcome.grand_total', '58.000000');
+        $officialInvoice = $first->json('outcome.invoice_id');
+
+        DB::table('mobile_offline_sale_leases')->where('id', $lease['lease_id'])->update(['expires_at' => now('UTC')->subSecond()->toDateTimeString()]);
+        $this->postJson($root, $wire)->assertOk()->assertExactJson($first->json());
+        $this->getJson($root.'/'.$eventId.'/status')->assertOk()
+            ->assertJsonPath('official_invoice.invoice_id', $officialInvoice)
+            ->assertJsonPath('payload_digest', $wire['payload_digest']);
+
+        $this->assertDatabaseHas('mobile_event_receipts', [
+            'company_id' => $this->company->id,
+            'client_event_id' => $eventId,
+            'original_canonical_bytes' => CanonicalJsonSerializer::serialize($wire['event']),
+        ]);
+        $this->assertDatabaseHas('mobile_offline_sale_leases', [
+            'id' => $lease['lease_id'],
+            'posted_sales_count' => 1,
+            'posted_total_amount' => '58.000000',
+        ]);
+
+        $wire['event']['local_receipt_number'] = 'changed';
+        $wire['payload_digest'] = CanonicalJsonSerializer::computeDigest($wire['event']);
+        $this->postJson($root, $wire)->assertStatus(409)
+            ->assertJsonPath('error.conflict_evidence.reason', 'EVENT_PAYLOAD_CHANGED');
+        $this->postJson($root, $this->offlineSaleWire($lease))->assertStatus(409)
+            ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_WINDOW_MISMATCH');
+    }
+
+    public function test_offline_charge_rolls_back_with_payment_and_can_be_retried(): void
+    {
+        $lease = $this->issueOfflineLease(maxCount: 1, maxAmount: '58.000000');
+        $wire = $this->offlineSaleWire($lease);
+        $root = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+        ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = 'after_payment';
+
+        try {
+            $this->postJson($root, $wire)->assertInternalServerError();
+        } finally {
+            ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
+        }
+        $this->assertDatabaseHas('mobile_offline_sale_leases', [
+            'id' => $lease['lease_id'],
+            'posted_sales_count' => 0,
+            'posted_total_amount' => '0.000000',
+        ]);
+        $this->assertDatabaseMissing('sales_invoices', ['company_id' => $this->company->id]);
+        $this->assertDatabaseMissing('customer_payments', ['company_id' => $this->company->id]);
+        $this->assertDatabaseMissing('mobile_event_receipts', ['client_event_id' => $wire['client_event_id']]);
+        $this->assertDatabaseHas('inventory_balances', [
+            'company_id' => $this->company->id,
+            'product_id' => $this->product->id,
+            'quantity_base' => '100.000000',
+        ]);
+
+        $this->postJson($root, $wire)->assertOk();
+        $this->postJson($root, $this->offlineSaleWire($lease))->assertStatus(409)
+            ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_LIMIT_REACHED');
+    }
+
+    public function test_offline_cash_requires_exact_captured_tax_and_a_current_authority_policy(): void
+    {
+        $lease = $this->issueOfflineLease();
+        $wire = $this->offlineSaleWire($lease);
+        $root = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+
+        $wire['event']['lines'][0]['tax_amount'] = '7.990000';
+        $wire['payload_digest'] = CanonicalJsonSerializer::computeDigest($wire['event']);
+        $this->postJson($root, $wire)->assertStatus(409)
+            ->assertJsonPath('error.conflict_evidence.reason', 'CAPTURED_TOTAL_MISMATCH');
+        $this->assertDatabaseMissing('sales_invoices', ['company_id' => $this->company->id]);
+
+        CompanyMobileSetting::whereKey($this->company->id)->update(['offline_policy_enabled' => false]);
+        $this->postJson($root, $this->offlineSaleWire($lease))->assertForbidden();
+        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'posted_sales_count' => 0]);
+    }
+
+    public function test_offline_second_sale_uses_same_lease_but_cannot_exceed_remaining_value(): void
+    {
+        $lease = $this->issueOfflineLease(maxCount: 3, maxAmount: '116.000000');
+        $root = "/api/mobile/v2/companies/{$this->company->public_id}/offline-events";
+
+        $first = $this->postJson($root, $this->offlineSaleWire($lease))->assertOk();
+        $second = $this->postJson($root, $this->offlineSaleWire($lease))->assertOk();
+        $this->assertNotSame($first->json('outcome.invoice_id'), $second->json('outcome.invoice_id'));
+        $this->postJson($root, $this->offlineSaleWire($lease))->assertStatus(409)
+            ->assertJsonPath('error.conflict_evidence.reason', 'LEASE_LIMIT_REACHED');
+        $this->assertDatabaseHas('mobile_offline_sale_leases', [
+            'id' => $lease['lease_id'],
+            'posted_sales_count' => 2,
+            'posted_total_amount' => '116.000000',
+        ]);
+    }
+
+    public function test_offline_lease_is_unavailable_by_default_and_rejects_revoked_bearer(): void
+    {
+        config(['mobile.v2_offline_sales_enabled' => false]);
+        $root = "/api/mobile/v2/companies/{$this->company->public_id}";
+        $snapshot = CatalogSnapshot::version($this->company);
+        $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson($root.'/offline-sale-lease', ['catalog_snapshot_version' => $snapshot])
+            ->assertNotFound();
+
+        $lease = $this->issueOfflineLease();
+        $this->token->revoke();
+        $this->postJson($root.'/offline-events', $this->offlineSaleWire($lease))->assertUnauthorized();
+        $this->assertDatabaseHas('mobile_offline_sale_leases', ['id' => $lease['lease_id'], 'posted_sales_count' => 0]);
+        $this->assertDatabaseMissing('sales_invoices', ['company_id' => $this->company->id]);
+    }
+
+    /** @return array<string, mixed> */
+    private function issueOfflineLease(int $maxCount = 2, string $maxAmount = '116.000000'): array
+    {
+        config(['mobile.v2_offline_sales_enabled' => true]);
+        if (! Route::has('mobile.v2.offline-sale-lease')) {
+            Route::prefix('api/mobile/v2')
+                ->middleware(MobileV2ApiBoundary::class)
+                ->group(base_path('routes/mobile-v2.php'));
+        }
+
+        CompanyMobileSetting::updateOrCreate(['company_id' => $this->company->id], [
+            'walk_in_customer_id' => $this->customer->id,
+            'default_warehouse_id' => $this->warehouse->id,
+            'approved_cash_account_id' => $this->cashAccount->id,
+            'default_tax_rate_id' => $this->taxRate->id,
+            'offline_policy_enabled' => true,
+            'offline_cash_only' => true,
+            'max_offline_hours' => 1,
+            'max_offline_sales_count' => $maxCount,
+            'max_offline_total_amount' => $maxAmount,
+        ]);
+
+        return $this->withHeader('Authorization', 'Bearer '.$this->rawToken)
+            ->postJson("/api/mobile/v2/companies/{$this->company->public_id}/offline-sale-lease", [
+                'catalog_snapshot_version' => CatalogSnapshot::version($this->company),
+            ])->assertOk()->json();
+    }
+
     /**
-     * T-12: Real two-process MariaDB contention test qualifying that concurrent workers with identical
-     * (company_id, client_event_id) race under row lock: winner gets created (201), contender gets replayed (200),
-     * proven via StrictBarrier + exact CID processlist pending query holder release ACK with all 6 reconciliations.
+     * @param  array<string, mixed>  $lease
+     * @return array<string, mixed>
      */
-    public function test_two_process_concurrent_online_cash_sale_converges_to_single_sale(): void
+    private function offlineSaleWire(array $lease, ?string $eventId = null): array
+    {
+        $eventId ??= (string) Str::uuid();
+        $cash = $this->validSalePayload($eventId);
+        $line = $cash['lines'][0];
+        $line['unit_id'] = $line['product_unit_id'];
+        $line['tax_amount'] = '8.000000';
+        $line['line_total'] = '58.000000';
+        $event = array_replace($cash, [
+            'event_version' => 2,
+            'company_id' => $this->company->public_id,
+            'actor_id' => $this->staff->public_id,
+            'device_lease_id' => $lease['lease_id'],
+            'captured_at' => $lease['issued_at'],
+            'cash_account_id' => $this->cashAccount->public_id,
+            'catalog_snapshot_version' => $lease['catalog_snapshot_version'],
+            'local_receipt_number' => 'LOCAL-1',
+            'lines' => [$line],
+            'payment' => [
+                'mode' => 'full',
+                'payment_method' => 'cash',
+                'cash_account_id' => $this->cashAccount->public_id,
+                'amount_tendered' => '60.000000',
+                'amount_settled' => '58.000000',
+                'change_returned' => '2.000000',
+            ],
+        ]);
+
+        return [
+            'client_event_id' => $eventId,
+            'device_id' => $this->device->device_id,
+            'captured_at' => $event['captured_at'],
+            'event' => $event,
+            'payload_digest' => CanonicalJsonSerializer::computeDigest($event),
+        ];
+    }
+
+    /**
+     * Hold one canonical admission until MariaDB confirms the second worker is waiting.
+     * Identical events replay and a distinct contender for the last lease slot is refused.
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    #[TestWith([true, true])]
+    public function test_two_process_concurrent_cash_sale_converges_to_single_sale(bool $offline, bool $lastLeaseSlot = false): void
     {
         $schema = DisposableMariaDbSchema::create();
         try {
@@ -854,12 +1050,20 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $profile = OnlineSaleIntentProfile::construct($serverContext, $payload);
             $canonicalBytes = OnlineSaleIntentProfile::serialize($profile);
 
+            $representation = 'v2_online_sale_intent';
+            if ($offline) {
+                $lease = $this->issueOfflineLease(maxCount: 1);
+                $wire = $this->offlineSaleWire($lease, $eventId);
+                $canonicalBytes = CanonicalJsonSerializer::serialize($wire['event']);
+                $representation = OfflineSaleEvent::REPRESENTATION;
+            }
+
             $inputHolder = [
                 'company_id' => $this->company->id,
                 'client_event_id' => $eventId,
                 'token_hash' => $this->token->token_hash,
                 'event_version' => 2,
-                'representation' => 'v2_online_sale_intent',
+                'representation' => $representation,
                 'canonical_bytes' => $canonicalBytes,
                 'executor_mode' => 'production_cash',
                 'hold_lock_table' => 'companies',
@@ -871,10 +1075,16 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 'client_event_id' => $eventId,
                 'token_hash' => $this->token->token_hash,
                 'event_version' => 2,
-                'representation' => 'v2_online_sale_intent',
+                'representation' => $representation,
                 'canonical_bytes' => $canonicalBytes,
                 'executor_mode' => 'production_cash',
             ];
+
+            if ($lastLeaseSlot) {
+                $other = $this->offlineSaleWire($lease);
+                $inputContender['client_event_id'] = $other['client_event_id'];
+                $inputContender['canonical_bytes'] = CanonicalJsonSerializer::serialize($other['event']);
+            }
 
             $workerA = $this->startWorkerProcess($schema, $directory, 'worker-a', $inputHolder);
             touch($directory.'/go-worker-a');
@@ -921,18 +1131,29 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $this->assertIsArray($outA, 'Worker A output must be valid JSON: '.$workerA->getOutput().' err: '.$workerA->getErrorOutput());
             $this->assertIsArray($outB, 'Worker B output must be valid JSON: '.$workerB->getOutput().' err: '.$workerB->getErrorOutput());
 
-            $outcomes = [$outA['outcome'], $outB['outcome']];
-            sort($outcomes);
-            $this->assertSame(['created', 'replay'], $outcomes, 'Concurrent workers must converge to one created and one replay. OutA: '.json_encode($outA).' OutB: '.json_encode($outB));
-
-            // Both workers returned identical invoice and payment identifiers
-            $this->assertSame($outA['sales_invoice_id'], $outB['sales_invoice_id']);
-            $this->assertSame($outA['customer_payment_id'], $outB['customer_payment_id']);
+            $this->assertSame('created', $outA['outcome']);
+            if ($lastLeaseSlot) {
+                $this->assertSame('conflict', $outB['outcome']);
+                $this->assertSame('LEASE_LIMIT_REACHED', $outB['reason']);
+                $this->assertDatabaseMissing('mobile_event_receipts', ['client_event_id' => $other['client_event_id']]);
+            } else {
+                $this->assertSame('replay', $outB['outcome']);
+                $this->assertSame($outA['sales_invoice_id'], $outB['sales_invoice_id']);
+                $this->assertSame($outA['customer_payment_id'], $outB['customer_payment_id']);
+            }
 
             // Database has exactly 1 invoice, 1 payment, 1 receipt
             $this->assertSame(1, SalesInvoice::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertSame(1, CustomerPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertSame(1, MobileEventReceipt::withoutGlobalScopes()->where('company_id', $this->company->id)->where('client_event_id', $eventId)->count());
+
+            if ($offline) {
+                $this->assertDatabaseHas('mobile_offline_sale_leases', [
+                    'id' => $wire['event']['device_lease_id'],
+                    'posted_sales_count' => 1,
+                    'posted_total_amount' => '58.000000',
+                ]);
+            }
 
             // All 6 reconciliations pass cleanly
             app(CompanyContext::class)->setCompany($this->company, $this->owner);
@@ -943,6 +1164,11 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
             $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
         } finally {
+            foreach ([$workerA ?? null, $workerB ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
             if (isset($directory) && is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);

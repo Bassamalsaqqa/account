@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\Mobile\V2\OfflineSaleController;
 use App\Http\Controllers\Api\Mobile\V2\OnlineCashSaleController;
 use App\Http\Middleware\MobileV2ApiBoundary;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +27,15 @@ if ((bool) config('mobile.v2_cash_slice_enabled', false)) {
                 ->middleware('mobile.v2.auth')
                 ->name('mobile.v2.offline-events.status');
         });
+}
+
+if ((bool) config('mobile.v2_offline_sales_enabled', false)) {
+    Route::prefix('companies/{companyId}')->middleware('mobile.v2.auth')->group(function (): void {
+        Route::post('/offline-sale-lease', [OfflineSaleController::class, 'authorizeLease'])
+            ->name('mobile.v2.offline-sale-lease');
+        Route::post('/offline-events', [OfflineSaleController::class, 'store'])
+            ->name('mobile.v2.offline-events.store');
+    });
 }
 
 Route::match(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'], '{fallbackPlaceholder?}', function () {

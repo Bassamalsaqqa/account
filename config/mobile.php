@@ -38,6 +38,8 @@ return [
     */
     'v2_cash_slice_enabled' => (bool) env('MOBILE_V2_CASH_SLICE_ENABLED', false),
 
+    'v2_offline_sales_enabled' => (bool) env('MOBILE_V2_OFFLINE_SALES_ENABLED', false),
+
     /*
     |--------------------------------------------------------------------------
     | Challenge and Token Lifetimes
