@@ -166,6 +166,7 @@ class PostSalesInvoiceAction implements StockEventOwner
             if ($hasStockLines) {
                 $stockLineCommands = [];
                 $allocationsPlan = [];
+                $reservedByLot = [];
 
                 foreach ($lines as $line) {
                     if ($line->product_id === null) {
@@ -183,17 +184,25 @@ class PostSalesInvoiceAction implements StockEventOwner
                         $warehouse,
                         $qtyNeeded,
                         true,
-                        $issueDate
+                        $issueDate,
+                        $reservedByLot
                     );
 
                     foreach ($fefoAllocs as $alloc) {
+                        $lotId = $alloc['lot_id'];
+                        if ($lotId !== null) {
+                            $reservedByLot[$lotId] = isset($reservedByLot[$lotId])
+                                ? $reservedByLot[$lotId]->add($alloc['quantity'])
+                                : $alloc['quantity'];
+                        }
+
                         $cmd = new StockMovementLineCommand(
                             productId: $product->id,
                             warehouseId: $warehouse->id,
                             quantity: $alloc['quantity'],
                             unitId: $product->base_unit_id,
                             unitCostBase: null, // Outbound movement cost derived from inventory engine
-                            lotId: $alloc['lot_id'],
+                            lotId: $lotId,
                         );
                         $cmdIndex = count($stockLineCommands);
                         $stockLineCommands[] = $cmd;

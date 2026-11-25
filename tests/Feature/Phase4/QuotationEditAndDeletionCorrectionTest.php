@@ -7,10 +7,12 @@ namespace Tests\Feature\Phase4;
 use App\Actions\Sales\ConvertQuotationToInvoiceAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
+use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\QuotationDetail;
 use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\AuditEvent;
 use App\Models\Quotation;
+use App\Models\TaxRate;
 use App\Services\Sales\SalesReconciliationService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -71,6 +73,84 @@ class QuotationEditAndDeletionCorrectionTest extends TestCase
             ->assertViewHas('canEdit', false)->assertViewHas('canReturnToDraft', true);
         $this->assertSame(Quotation::STATUS_SENT, $quote->fresh()->status);
         $this->assertSame($sentAt, $quote->fresh()->sent_at->toDateTimeString());
+    }
+
+    public function test_percentage_discount_matches_preview_and_saved_quotation(): void
+    {
+        $quote = $this->quote();
+
+        Livewire::test(QuotationForm::class, ['publicId' => $quote->public_id])
+            ->assertSeeHtml('value="percent"')
+            ->set('lines.0.discount_type', 'percent')
+            ->set('lines.0.discount_value', '10')
+            ->call('recalculate')
+            ->assertSet('previewGrandTotal', '90.00')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $quote->refresh();
+        $this->assertSame('90.000000', $quote->grand_total_currency);
+        $this->assertSame('10.000000', $quote->discount_total_currency);
+        $this->assertSame('percent', $quote->lines()->sole()->discount_type);
+    }
+
+    public function test_old_percentage_discount_is_corrected_when_the_draft_is_saved_again(): void
+    {
+        $quote = $this->quote();
+        DB::table('quotation_lines')->where('quotation_id', $quote->id)->update([
+            'discount_type' => 'percentage',
+            'discount_value' => '10',
+        ]);
+        $this->assertSame('100.000000', $quote->grand_total_currency);
+
+        $form = Livewire::test(QuotationForm::class, ['publicId' => $quote->public_id])
+            ->assertSet('lines.0.discount_type', 'percent')
+            ->assertSet('previewGrandTotal', '90.00');
+        $this->assertSame('100.000000', $quote->fresh()->grand_total_currency);
+
+        $form->call('save')->assertHasNoErrors();
+        $this->assertSame('90.000000', $quote->fresh()->grand_total_currency);
+        $this->assertSame('percent', $quote->lines()->sole()->discount_type);
+    }
+
+    public static function salesPreviewForms(): array
+    {
+        return [[InvoiceForm::class], [QuotationForm::class]];
+    }
+
+    #[DataProvider('salesPreviewForms')]
+    public function test_live_preview_batches_tax_rates_for_twenty_lines(string $component): void
+    {
+        $taxRates = [];
+        foreach (['16', '5'] as $percentage) {
+            $taxRates[] = TaxRate::create([
+                'company_id' => $this->company->id,
+                'code' => 'VAT'.$percentage,
+                'name_ar' => 'ضريبة',
+                'rate' => $percentage,
+                'calculation' => TaxRate::CALC_EXCLUSIVE,
+                'active' => true,
+            ])->id;
+        }
+
+        $form = Livewire::test($component);
+        $line = [...$form->get('lines')[0], 'quantity' => '2', 'unit_price' => '25'];
+        $lines = [];
+        for ($index = 0; $index < 20; $index++) {
+            $lines[] = [...$line, 'tax_rate_id' => $taxRates[$index % 2]];
+        }
+
+        $form->set('lines', $lines);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $form->call('recalculate')->assertSet('previewGrandTotal', '1105.00');
+            $taxQueries = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from `tax_rates`'));
+            $this->assertLessThanOrEqual(2, count($taxQueries));
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
     }
 
     public static function closedStates(): array

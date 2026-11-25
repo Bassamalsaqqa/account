@@ -1,11 +1,11 @@
-@props(['total', 'currency', 'valid' => true, 'canConfirm' => false, 'confirmLabel' => null])
+@props(['total', 'currency', 'currencyScale' => 2, 'valid' => true, 'canConfirm' => false, 'confirmLabel' => null])
 <div class="mobile-document-actions md:hidden fixed inset-x-0 z-30 border-t border-border bg-surface px-3 py-2 shadow-lg" style="bottom: var(--mobile-nav-height, calc(4.5rem + env(safe-area-inset-bottom)));">
     <div class="mx-auto max-w-lg space-y-2">
         <div class="flex items-center justify-between gap-3">
             <div class="min-w-0">
                 <span class="block text-xs text-text-secondary">{{ __('mobile.grand_total') }}</span>
                 @if ($valid)
-                    <bdi data-document-total class="block truncate font-mono text-sm font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total, $currency) }} {{ $currency }}</bdi>
+                    <bdi data-document-total class="block truncate font-mono text-sm font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($total, $currency, $currencyScale) }} {{ $currency }}</bdi>
                 @else
                     <span role="status" class="text-xs text-text-secondary">{{ __('camera.totals_unavailable') }}</span>
                 @endif

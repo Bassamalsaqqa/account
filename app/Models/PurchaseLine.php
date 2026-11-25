@@ -30,7 +30,10 @@ use Illuminate\Support\Str;
  * @property string $quantity
  * @property string $quantity_base
  * @property string $unit_cost
+ * @property string|null $discount_type
  * @property string $discount_value
+ * @property string $manual_discount_amount
+ * @property string $allocated_document_discount
  * @property string $line_subtotal
  * @property string $line_discount
  * @property string $line_tax
@@ -52,6 +55,7 @@ class PurchaseLine extends Model
     protected $fillable = [
         'public_id', 'company_id', 'purchase_id', 'line_number', 'product_id', 'product_unit_id',
         'item_description', 'quantity', 'quantity_base', 'unit_cost', 'discount_type', 'discount_value',
+        'manual_discount_amount', 'allocated_document_discount',
         'line_discount', 'tax_rate_id', 'tax_rate_snapshot', 'tax_inclusive', 'line_subtotal', 'line_tax',
         'line_total', 'line_subtotal_base', 'line_discount_base', 'line_tax_base', 'line_total_base',
         'unit_conversion_ratio', 'unit_name_ar', 'unit_name_en', 'product_sku', 'product_name_ar',
@@ -60,7 +64,13 @@ class PurchaseLine extends Model
 
     protected function casts(): array
     {
-        return ['tax_inclusive' => 'boolean', 'inventory_unit_cost_base' => 'string', 'landed_cost_allocated_base' => 'string'];
+        return [
+            'tax_inclusive' => 'boolean',
+            'inventory_unit_cost_base' => 'string',
+            'landed_cost_allocated_base' => 'string',
+            'manual_discount_amount' => 'string',
+            'allocated_document_discount' => 'string',
+        ];
     }
 
     private bool $completingReceipt = false;

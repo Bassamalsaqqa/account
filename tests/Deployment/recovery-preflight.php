@@ -85,6 +85,19 @@ final class RecoveryPreflightTestRunner
             $this->testPlatformPermissionsReported();
             $this->testValidCurrentModeReturnsExit2();
             $this->testValidHistoricalModeReturnsExit2();
+            $this->testValidCurrentReleaseCandidateWithExplicitSchemaCountsReturnsExit2();
+            $this->testValidDeployedReleaseWithExplicitSchemaCountsReturnsExit2();
+            $this->testValidHistoricalModeWithMatchingExplicitSchemaCountsReturnsExit2();
+            $this->testSchemaTablesMismatchRejected();
+            $this->testSchemaMigrationsMismatchRejected();
+            $this->testCurrentModeWithoutExpectedCountsRejectsModernSchema();
+            $this->testHistoricalModeRejectsModernSchemaCounts();
+            $this->testCurrentCodeShaUntrustedRejected();
+            $this->testMalformedSchemaTablesNonNumericRejected();
+            $this->testMalformedSchemaMigrationsZeroRejected();
+            $this->testIncompleteSchemaSpecificationRejected();
+            $this->testMalformedCodeShaRejected();
+            $this->testMalformedManifestSchemaObjectRejected();
         } finally {
             $this->secureCleanup();
             umask($this->originalUmask);
@@ -442,7 +455,220 @@ final class RecoveryPreflightTestRunner
         $this->assert(($data['provisional_24h_age'] ?? '') === 'NOT_APPLICABLE_TO_CURRENT_RPO', 'Historical age must be NOT_APPLICABLE_TO_CURRENT_RPO');
     }
 
-    private function createFixture(string $mode, array $timestampOverrides = []): array
+    private function testValidCurrentReleaseCandidateWithExplicitSchemaCountsReturnsExit2(): void
+    {
+        $this->startTest('testValidCurrentReleaseCandidateWithExplicitSchemaCountsReturnsExit2');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            'efa257fae488d7ea546b6050bf7e08b47f7f4980',
+            ['tables' => 104, 'migrations' => 79]
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '104',
+            'expected-migrations' => '79',
+        ]));
+        $this->assert($res['exitCode'] === 2, 'Expected exit code 2 for verified current release candidate');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['status'] ?? '') === 'INSPECTION_ONLY_BOOTSTRAP_BLOCKED', 'Status must be INSPECTION_ONLY_BOOTSTRAP_BLOCKED');
+        $this->assert($data['bootstrap_authorized'] === false, 'bootstrap_authorized must strictly be false');
+        $this->assert(($data['schema_verified']['tables'] ?? 0) === 104, 'Tables count must be 104');
+        $this->assert(($data['schema_verified']['migrations'] ?? 0) === 79, 'Migrations count must be 79');
+    }
+
+    private function testValidDeployedReleaseWithExplicitSchemaCountsReturnsExit2(): void
+    {
+        $this->startTest('testValidDeployedReleaseWithExplicitSchemaCountsReturnsExit2');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            'd6e70547a1f5e022cecc18029e5d7a5bba52bd13',
+            ['tables' => 113, 'migrations' => 86]
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '113',
+            'expected-migrations' => '86',
+        ]));
+        $this->assert($res['exitCode'] === 2, 'Expected exit code 2 for recorded deployed release d6e7054');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['status'] ?? '') === 'INSPECTION_ONLY_BOOTSTRAP_BLOCKED', 'Status must be INSPECTION_ONLY_BOOTSTRAP_BLOCKED');
+        $this->assert($data['bootstrap_authorized'] === false, 'bootstrap_authorized must strictly be false');
+    }
+
+    private function testValidHistoricalModeWithMatchingExplicitSchemaCountsReturnsExit2(): void
+    {
+        $this->startTest('testValidHistoricalModeWithMatchingExplicitSchemaCountsReturnsExit2');
+        $fixture = $this->createFixture('historical');
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '80',
+            'expected-migrations' => '61',
+        ]));
+        $this->assert($res['exitCode'] === 2, 'Expected exit code 2 for historical mode with matching explicit schema counts');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['mode'] ?? '') === 'historical', 'Mode must be historical');
+    }
+
+    private function testSchemaTablesMismatchRejected(): void
+    {
+        $this->startTest('testSchemaTablesMismatchRejected');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            '8c1fea407a9c288e5d2fbc495dada1a548386941',
+            ['tables' => 104, 'migrations' => 79]
+        );
+
+        // Operator expects 99 tables, manifest has 104
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '99',
+            'expected-migrations' => '79',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for schema tables mismatch');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_IDENTITY', 'Reason must be SCHEMA_IDENTITY');
+    }
+
+    private function testSchemaMigrationsMismatchRejected(): void
+    {
+        $this->startTest('testSchemaMigrationsMismatchRejected');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            '8c1fea407a9c288e5d2fbc495dada1a548386941',
+            ['tables' => 104, 'migrations' => 79]
+        );
+
+        // Operator expects 74 migrations, manifest has 79
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '104',
+            'expected-migrations' => '74',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for schema migrations mismatch');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_IDENTITY', 'Reason must be SCHEMA_IDENTITY');
+    }
+
+    private function testCurrentModeWithoutExpectedCountsRejectsModernSchema(): void
+    {
+        $this->startTest('testCurrentModeWithoutExpectedCountsRejectsModernSchema');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            '8c1fea407a9c288e5d2fbc495dada1a548386941',
+            ['tables' => 104, 'migrations' => 79]
+        );
+
+        // Manifest has modern 104/79, but operator did not provide expected counts (defaults to 83/63)
+        $res = $this->execPreflight($this->buildArgs($fixture));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 when modern schema is not supplied by operator');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_IDENTITY', 'Reason must be SCHEMA_IDENTITY');
+    }
+
+    private function testHistoricalModeRejectsModernSchemaCounts(): void
+    {
+        $this->startTest('testHistoricalModeRejectsModernSchemaCounts');
+        $fixture = $this->createFixture('historical');
+
+        // Operator attempts to override historical immutable expectations with modern counts
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '104',
+            'expected-migrations' => '79',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for overriding immutable historical schema');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'HISTORICAL_SCHEMA', 'Reason must be HISTORICAL_SCHEMA');
+    }
+
+    private function testCurrentCodeShaUntrustedRejected(): void
+    {
+        $this->startTest('testCurrentCodeShaUntrustedRejected');
+        $untrustedSha = str_repeat('e', 40);
+        $fixture = $this->createFixture('current', [], $untrustedSha);
+
+        // Operator passes matching expected-code, but SHA is not in pinned CURRENT_CODE_SHA_OPTIONS
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-code' => $untrustedSha,
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for unpinned current code SHA');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'CURRENT_CODE_SHA', 'Reason must be CURRENT_CODE_SHA');
+    }
+
+    private function testMalformedSchemaTablesNonNumericRejected(): void
+    {
+        $this->startTest('testMalformedSchemaTablesNonNumericRejected');
+        $fixture = $this->createFixture('current');
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => 'notanumber',
+            'expected-migrations' => '63',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for non-numeric expected-tables');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_SPECIFICATION', 'Reason must be SCHEMA_SPECIFICATION');
+    }
+
+    private function testMalformedSchemaMigrationsZeroRejected(): void
+    {
+        $this->startTest('testMalformedSchemaMigrationsZeroRejected');
+        $fixture = $this->createFixture('current');
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '83',
+            'expected-migrations' => '0',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for zero expected-migrations');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_SPECIFICATION', 'Reason must be SCHEMA_SPECIFICATION');
+    }
+
+    private function testIncompleteSchemaSpecificationRejected(): void
+    {
+        $this->startTest('testIncompleteSchemaSpecificationRejected');
+        $fixture = $this->createFixture('current');
+
+        // Supplies expected-tables without expected-migrations
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-tables' => '83',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for incomplete schema specification');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'INVOCATION', 'Reason must be INVOCATION');
+    }
+
+    private function testMalformedCodeShaRejected(): void
+    {
+        $this->startTest('testMalformedCodeShaRejected');
+        $fixture = $this->createFixture('current');
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-code' => 'not-a-40-char-hex',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for malformed expected-code format');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'CODE_IDENTITY', 'Reason must be CODE_IDENTITY');
+    }
+
+    private function testMalformedManifestSchemaObjectRejected(): void
+    {
+        $this->startTest('testMalformedManifestSchemaObjectRejected');
+        $fixture = $this->createFixture('current');
+        $manifestData = json_decode((string) file_get_contents($fixture['manifestPath']), true);
+        $manifestData['schema'] = 'invalid_schema_type';
+        file_put_contents($fixture['manifestPath'], json_encode($manifestData));
+        $newHash = hash_file('sha256', $fixture['manifestPath']);
+
+        $res = $this->execPreflight($this->buildArgs($fixture, ['manifest-sha256' => $newHash]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for non-array schema object in manifest');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_IDENTITY', 'Reason must be SCHEMA_IDENTITY');
+    }
+
+    private function createFixture(string $mode, array $timestampOverrides = [], ?string $codeShaOverride = null, ?array $schemaOverride = null): array
     {
         $fixDir = $this->tempDir.DIRECTORY_SEPARATOR.'fix_'.$mode.'_'.bin2hex(random_bytes(4));
         mkdir($fixDir, 0700, true);
@@ -451,7 +677,7 @@ final class RecoveryPreflightTestRunner
 
         $pointId = 'p10-point-'.bin2hex(random_bytes(6));
         $isHist = $mode === 'historical';
-        $codeSha = $isHist ? '96c310f30a07e97ab8e04d5afbf0b2bb805f4317' : '8d8428261cd2a10690ab77a5c7271e46b5ff5217';
+        $codeSha = $codeShaOverride ?? ($isHist ? '96c310f30a07e97ab8e04d5afbf0b2bb805f4317' : '8d8428261cd2a10690ab77a5c7271e46b5ff5217');
 
         $nowIso = gmdate('Y-m-d\TH:i:s\Z', time() - 300);
         $capturedAt = $timestampOverrides['captured_at'] ?? $nowIso;
@@ -478,6 +704,9 @@ final class RecoveryPreflightTestRunner
             ];
         }
 
+        $defaultSchema = $isHist ? ['tables' => 80, 'migrations' => 61] : ['tables' => 83, 'migrations' => 63];
+        $schema = $schemaOverride ?? $defaultSchema;
+
         $manifest = [
             'version' => 1,
             'mode' => $mode,
@@ -487,7 +716,7 @@ final class RecoveryPreflightTestRunner
             'off_host_verified_at' => $offHostAt,
             'code_sha' => $codeSha,
             'build_sha256' => hash('sha256', 'synthetic_build_assets'),
-            'schema' => $isHist ? ['tables' => 80, 'migrations' => 61] : ['tables' => 83, 'migrations' => 63],
+            'schema' => $schema,
             'key_history_refs' => [
                 ['id' => 'key-primary-2026', 'cipher' => 'AES-256-CBC'],
             ],

@@ -67,7 +67,7 @@ class PurchaseReturnIndex extends Component
 
         $fields = [
             'id', 'public_id', 'company_id', 'purchase_id', 'vendor_id',
-            'return_date', 'return_number', 'status', 'currency_code', 'created_at',
+            'return_date', 'return_number', 'status', 'currency_code', 'currency_minor_units', 'created_at',
         ];
 
         if ($withCost) {
@@ -79,7 +79,7 @@ class PurchaseReturnIndex extends Component
             ->select($fields)
             ->with([
                 'vendor' => fn ($q) => $q->withTrashed()->where('company_id', $company->id)->select(['id', 'name_ar', 'name_en', 'code']),
-                'purchase' => fn ($q) => $q->where('company_id', $company->id)->select(['id', 'public_id', 'purchase_number']),
+                'purchase' => fn ($q) => $q->where('company_id', $company->id)->select(['id', 'public_id', 'purchase_number', 'currency_minor_units']),
             ]);
 
         if ($term !== '') {

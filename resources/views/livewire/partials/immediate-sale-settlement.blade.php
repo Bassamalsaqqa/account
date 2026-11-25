@@ -66,7 +66,7 @@
                         {{ __('fin1.amount') }} ({{ $paymentCurrency }}) <span class="text-danger">*</span>
                     </label>
                     <input id="settlement-amount" type="text" inputmode="decimal" dir="ltr"
-                           wire:model="settlement.amount"
+                           wire:model.live.debounce.300ms="settlement.amount"
                            @error('settlement.amount') aria-invalid="true" aria-describedby="settlement-amount-error" @enderror
                            class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
                     @error('settlement.amount') <p id="settlement-amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
@@ -78,7 +78,7 @@
                             {{ __('fin1.invoice_amount') }} ({{ $currency_code }}) <span class="text-danger">*</span>
                         </label>
                         <input id="settlement-invoice_amount" type="text" inputmode="decimal" dir="ltr"
-                               wire:model="settlement.invoice_amount"
+                               wire:model.live.debounce.300ms="settlement.invoice_amount"
                                @error('settlement.invoice_amount') aria-invalid="true" aria-describedby="settlement-invoice_amount-error" @enderror
                                class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
                         @error('settlement.invoice_amount') <p id="settlement-invoice_amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
@@ -91,7 +91,7 @@
                             {{ __('fin1.exchange_rate') }} <span class="text-danger">*</span>
                         </label>
                         <input id="settlement-exchange_rate" type="text" inputmode="decimal" dir="ltr"
-                               wire:model="settlement.exchange_rate"
+                               wire:model.live.debounce.300ms="settlement.exchange_rate"
                                @error('settlement.exchange_rate') aria-invalid="true" aria-describedby="settlement-exchange_rate-error" @enderror
                                class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
                         @error('settlement.exchange_rate') <p id="settlement-exchange_rate-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
@@ -104,7 +104,7 @@
                             {{ __('fin1.payment_currency_amount') }} ({{ $paymentCurrency }}) <span class="text-danger">*</span>
                         </label>
                         <input id="settlement-payment_currency_amount" type="text" inputmode="decimal" dir="ltr"
-                               wire:model="settlement.payment_currency_amount"
+                               wire:model.live.debounce.300ms="settlement.payment_currency_amount"
                                @error('settlement.payment_currency_amount') aria-invalid="true" aria-describedby="settlement-payment_currency_amount-error" @enderror
                                class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
                         @error('settlement.payment_currency_amount') <p id="settlement-payment_currency_amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
@@ -146,6 +146,31 @@
                     </div>
                 @endif
             </div>
+
+            @if (($settlement['mode'] ?? null) === 'partial')
+                <div id="settlement-prospective-summary"
+                     role="status"
+                     aria-live="polite"
+                     class="rounded-control border border-border bg-surface-soft p-3 text-sm">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-medium text-text-secondary">
+                            {{ __('fin1.outstanding_invoice_amount') }}
+                        </span>
+                        <span class="font-mono text-base font-bold tabular-nums text-text-primary" dir="ltr">
+                            @if ($prospectiveRemainingBalance !== null)
+                                {{ $prospectiveRemainingBalance }} {{ $currency_code }}
+                            @else
+                                —
+                            @endif
+                        </span>
+                    </div>
+                    @if ($prospectiveBalanceError)
+                        <p id="settlement-prospective-error" role="alert" class="mt-1 text-sm font-semibold text-danger">
+                            {{ $prospectiveBalanceError }}
+                        </p>
+                    @endif
+                </div>
+            @endif
             @foreach (['payment_method', 'money_account_id', 'currency_code'] as $field)
                 @error('settlement.'.$field) <p id="settlement-{{ $field }}-error" role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
             @endforeach

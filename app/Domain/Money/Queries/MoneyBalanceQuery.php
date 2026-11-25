@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Domain\Money\Queries;
 
 use App\Models\Company;
+use App\Models\CompanyUser;
 use App\Models\MoneyAccount;
+use App\Models\User;
 use App\Services\Money\MoneyActorGuard;
 use App\Services\Money\MoneyLedgerMetadata;
 use App\Services\Sales\SalesDocumentRules;
+use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -22,6 +26,38 @@ final class MoneyBalanceQuery
             'cash' => 'money.cash.view', 'bank' => 'money.bank.view',
             default => throw new InvalidArgumentException('Unsupported money account type.'),
         });
+
+        return $this->executeBalanceQuery($company, $type, $asOf);
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function forReport(Company $company, string $type, ?string $asOf = null): array
+    {
+        if (! in_array($type, ['cash', 'bank'], true)) {
+            throw new InvalidArgumentException('Unsupported money account type.');
+        }
+
+        $context = app(CompanyContext::class);
+        $actor = auth()->user();
+        if (! $actor instanceof User || ! $context->hasCompany()
+            || (int) $context->companyId() !== (int) $company->id
+            || (int) $context->user()?->id !== (int) $actor->id
+            || ! Company::whereKey($company->id)->where('status', 'active')->exists()
+            || ! CompanyUser::where('company_id', $company->id)->where('user_id', $actor->id)->where('status', 'active')->exists()) {
+            throw new AuthorizationException('Active matching company membership is required.');
+        }
+        setPermissionsTeamId((int) $company->id);
+        $actor->unsetRelation('roles')->unsetRelation('permissions');
+        if (! $actor->hasPermissionTo('reports.financial.view')) {
+            throw new AuthorizationException('Reports financial permission is required.');
+        }
+
+        return $this->executeBalanceQuery($company, $type, $asOf);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function executeBalanceQuery(Company $company, string $type, ?string $asOf = null): array
+    {
         if ($asOf !== null) {
             app(SalesDocumentRules::class)->date($asOf);
         }

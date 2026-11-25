@@ -435,7 +435,7 @@ trait AiUnsavedForm
     protected function aiHeaderFields(): array
     {
         return property_exists($this, 'purchase_date')
-            ? ['vendor_id', 'warehouse_id', 'vendor_invoice_number', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes']
+            ? ['vendor_id', 'warehouse_id', 'vendor_invoice_number', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes', 'discount_type', 'discount_value']
             : ['customer_id', 'warehouse_id', 'issue_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes', 'terms'];
     }
 

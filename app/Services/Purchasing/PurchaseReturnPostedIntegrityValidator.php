@@ -89,7 +89,7 @@ final class PurchaseReturnPostedIntegrityValidator
             'tax' => BigDecimal::zero(),
             'total' => BigDecimal::zero(),
         ];
-        $currencyScale = $return->currency_code === 'JOD' ? 3 : 2;
+        $currencyScale = $return->currency_minor_units ?? $purchase->resolvedCurrencyMinorUnits();
         $totalReturnMovementsCount = 0;
 
         foreach ($lines as $line) {

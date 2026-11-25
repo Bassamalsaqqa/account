@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\Corrections;
 
-use App\Actions\Purchasing\CreatePurchaseDraftAction;
 use App\Actions\Purchasing\VoidPurchaseAction;
 use App\Actions\Purchasing\VoidPurchaseReturnAction;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
+use App\Domain\Purchasing\PreparedPurchaseDraft;
 use App\Models\Company;
 use App\Models\Purchase;
 use App\Models\PurchaseReturn;
 use App\Models\User;
 use App\Models\VendorPayment;
 use App\Models\VendorPaymentAllocation;
+use App\Services\Audit\AuditService;
 use App\Services\Purchasing\PurchaseDraftBuilder;
+use App\Services\Purchasing\PurchaseDraftWriter;
 use App\Services\Purchasing\VendorFinancialRead;
 use App\Services\Sales\SalesActorGuard;
 use Brick\Math\BigDecimal;
@@ -96,8 +98,10 @@ final class PurchaseCorrection
             $replacement = null;
             // The clone is prepared and written inside the same outer transaction as every inverse.
             if ($p['mode'] === 'edit') {
-                $this->validateReplacement($purchase);
-                $replacement = app(CreatePurchaseDraftAction::class)->execute(Company::findOrFail($purchase->company_id), $actor, $this->replacementData($purchase));
+                $draft = $this->validateReplacement($purchase);
+                $replacement = Purchase::create($draft->header + ['company_id' => $purchase->company_id, 'created_by' => $actor->id]);
+                app(PurchaseDraftWriter::class)->replaceLines($replacement, $draft);
+                app(AuditService::class)->log($purchase->company_id, 'purchase.draft.created', 'Purchase draft created', $actor->id, $replacement, null, $replacement->only(['vendor_id', 'warehouse_id', 'currency_code']));
             }
             $plan = app(DedicatedPaymentPlan::class)->inspect((int) $purchase->company_id, (int) $purchase->id, true, $actor, true);
             if ($plan['blockers'] !== []) {
@@ -181,10 +185,10 @@ final class PurchaseCorrection
         return __($blocker['translation_key'], $params);
     }
 
-    private function validateReplacement(Purchase $purchase): void
+    private function validateReplacement(Purchase $purchase): PreparedPurchaseDraft
     {
         try {
-            $prepared = app(PurchaseDraftBuilder::class)->prepare(Company::findOrFail($purchase->company_id), $this->replacementData($purchase));
+            $prepared = app(PurchaseDraftBuilder::class)->prepare(Company::findOrFail($purchase->company_id), $this->replacementData($purchase), $purchase);
         } catch (InvalidUnitConversionException|InvalidQuantityException|\InvalidArgumentException $exception) {
             throw ValidationException::withMessages(['correction' => __('corrections.config_changed')]);
         }
@@ -201,20 +205,23 @@ final class PurchaseCorrection
                 }
             }
         }
+
+        return $prepared;
     }
 
     /**
-     * Explicit editable intent: no identifiers, movement references or posted economic snapshots.
+     * Editable intent with source line identities for server-side discount lookup.
      *
      * @return array<string, mixed>
      */
     private function replacementData(Purchase $purchase): array
     {
-        $data = $purchase->only(['vendor_id', 'warehouse_id', 'vendor_invoice_number', 'currency_code', 'exchange_rate', 'document_locale', 'notes']);
+        $data = $purchase->only(['vendor_id', 'warehouse_id', 'vendor_invoice_number', 'currency_code', 'exchange_rate', 'document_locale', 'notes',
+            'discount_type', 'discount_value']);
         $data['purchase_date'] = $purchase->purchase_date->format('Y-m-d');
         $data['due_date'] = $purchase->due_date?->format('Y-m-d');
         $data['lines'] = $purchase->lines()->where('company_id', $purchase->company_id)->with('lots')->orderBy('line_number')->get()->map(function ($line): array {
-            $data = $line->only(['product_id', 'product_unit_id', 'item_description', 'quantity', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id']);
+            $data = $line->only(['public_id', 'product_id', 'product_unit_id', 'item_description', 'quantity', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id']);
             $data['lots'] = $line->lots->map(fn ($lot): array => [
                 'product_unit_id' => $line->product_unit_id, 'lot_number' => $lot->lot_number,
                 'expiry_date' => $lot->expiry_date?->format('Y-m-d'), 'quantity' => (string) $lot->quantity,

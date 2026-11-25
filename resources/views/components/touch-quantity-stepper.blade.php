@@ -8,6 +8,7 @@
     'ariaLabel' => null,
     'disabled' => false,
     'field' => 'quantity',
+    'previewInput' => false,
 ])
 
 @php
@@ -106,8 +107,13 @@
                @error('lines.'.$index.'.'.$field) aria-invalid="true" aria-describedby="{{ $inputId }}-error" @enderror
                type="text"
                inputmode="{{ $allowsFraction ? 'decimal' : 'numeric' }}"
-               wire:model.blur="lines.{{ $index }}.{{ $field }}"
-               wire:change="recalculate"
+               @if ($previewInput)
+                   wire:model="lines.{{ $index }}.{{ $field }}"
+                   data-purchase-preview-input
+               @else
+                   wire:model.blur="lines.{{ $index }}.{{ $field }}"
+                   wire:change="recalculate"
+               @endif
                dir="ltr"
                required
                :readonly="pending > 0"

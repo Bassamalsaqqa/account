@@ -224,9 +224,14 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse ($payment->allocations as $alloc)
+                        @php
+                            $allocationCurrency = $alloc->openingTradeItem?->currency_code ?? $alloc->purchase?->currency_code ?? $payment->currency_code;
+                        @endphp
                         <tr>
                             <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                @if ($alloc->purchase && auth()->user()?->hasPermissionTo('purchasing.purchase.view'))
+                                @if ($alloc->openingTradeItem)
+                                    <span>{{ __('accounting.opening_balance') }} — {{ $alloc->openingTradeItem->public_id }}</span>
+                                @elseif ($alloc->purchase && auth()->user()?->hasPermissionTo('purchasing.purchase.view'))
                                     <a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" class="touch-action text-primary hover:underline">
                                         {{ $alloc->purchase->purchase_number }}
                                     </a>
@@ -238,7 +243,7 @@
                                 {{ $alloc->purchase?->purchase_date ? $alloc->purchase->purchase_date->toDateString() : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $alloc->purchase->currency_code) }} {{ $alloc->purchase->currency_code }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php

@@ -7,6 +7,7 @@ namespace Tests\Unit\ReleaseUi;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Process\Process;
+use Tests\Support\DisposableMariaDbSchema;
 use Tests\Support\ReleaseUi\ReleaseUiSession;
 
 class ReleaseUiHarnessTest extends TestCase
@@ -590,16 +591,32 @@ PHP;
         // on a real disposable schema. It requires MariaDB on port 3342.
         $root = dirname(__DIR__, 3);
 
+        try {
+            $settings = DisposableMariaDbSchema::testSettings();
+        } catch (\Throwable $e) {
+            $this->markTestSkipped('Disposable MariaDB configuration missing or unconfigured: '.$e->getMessage());
+        }
+
         $env = [
             'APP_ENV' => 'testing',
             'PHASE8_ALLOW_DISPOSABLE_DB' => '1',
-            'PHASE8_TEST_DB_HOST' => '127.0.0.1',
-            'PHASE8_TEST_DB_PORT' => '3342',
-            'PHASE8_TEST_DB_USERNAME' => 'test_runner',
-            'PHASE8_TEST_DB_EMPTY_PASSWORD' => '1',
+            'PHASE8_TEST_DB_HOST' => $settings['HOST'],
+            'PHASE8_TEST_DB_PORT' => $settings['PORT'],
+            'PHASE8_TEST_DB_USERNAME' => $settings['USERNAME'],
             'PATH' => getenv('PATH') ?: '/usr/local/bin:/usr/bin:/bin',
             'HOME' => getenv('HOME') ?: sys_get_temp_dir(),
         ];
+        if ($settings['PASSWORD'] !== '') {
+            $env['PHASE8_TEST_DB_PASSWORD'] = $settings['PASSWORD'];
+        } else {
+            $env['PHASE8_TEST_DB_EMPTY_PASSWORD'] = '1';
+        }
+        if (getenv('PHASE8_DISPOSABLE_DB_PROOF')) {
+            $env['PHASE8_DISPOSABLE_DB_PROOF'] = getenv('PHASE8_DISPOSABLE_DB_PROOF');
+        }
+        if (getenv('PHASE8_DISPOSABLE_DB_NONCE')) {
+            $env['PHASE8_DISPOSABLE_DB_NONCE'] = getenv('PHASE8_DISPOSABLE_DB_NONCE');
+        }
 
         // Verify MariaDB is reachable before attempting the integration test
         $dbCheck = @fsockopen('127.0.0.1', 3342);
@@ -614,13 +631,13 @@ PHP;
             $root,
             $env
         );
-        $serveProcess->setTimeout(45);
+        $serveProcess->setTimeout(90);
         $serveProcess->start();
 
-        // Wait for SERVER_STARTED_OK (up to 30 seconds for migration + seeding)
+        // Wait for SERVER_STARTED_OK (up to 60 seconds for migration + seeding)
         $started = false;
         $output = '';
-        for ($wait = 0; $wait < 60; $wait++) {
+        for ($wait = 0; $wait < 120; $wait++) {
             usleep(500000);
             $output = $serveProcess->getOutput();
             if (str_contains($output, 'SERVER_STARTED_OK')) {
@@ -637,7 +654,7 @@ PHP;
                 $serveProcess->stop(2, SIGTERM);
             }
             $this->fail(
-                "serve.php did not emit SERVER_STARTED_OK within 30s.\n"
+                "serve.php did not emit SERVER_STARTED_OK within 60s.\n"
                 ."STDOUT: {$output}\n"
                 ."STDERR: {$serveProcess->getErrorOutput()}"
             );

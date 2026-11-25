@@ -4,21 +4,19 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\Mobile\V1;
 
+use App\Actions\Mobile\RevokeMobileDeviceAction;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\MobileApiBoundary;
 use App\Models\MobileAccessToken;
-use App\Models\MobileDevice;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 final class DeviceController extends Controller
 {
     /**
      * POST /api/mobile/v1/devices/{deviceId}/revoke
      */
-    public function revoke(Request $request, string $deviceId): JsonResponse
+    public function revoke(Request $request, string $deviceId, RevokeMobileDeviceAction $action): JsonResponse
     {
         // 1. Validate deviceId route parameter
         if (preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $deviceId) !== 1) {
@@ -60,22 +58,9 @@ final class DeviceController extends Controller
 
         /** @var MobileAccessToken $token */
         $token = $request->attributes->get('mobile_token');
-        /** @var User $user */
-        $user = $request->attributes->get('mobile_user');
-
         // Only the durable owner may revoke a registered device. Unknown/foreign UUIDs
         // are indistinguishable; no company-free administrative revocation capability.
-        $device = DB::transaction(function () use ($deviceId, $user, $reason) {
-            // Revocation updates a User FK on Device: take that principal first.
-            User::whereKey($user->id)->lockForUpdate()->firstOrFail();
-            $device = MobileDevice::where('device_id', strtolower($deviceId))
-                ->where('user_id', $user->id)->lockForUpdate()->first();
-            if ($device !== null) {
-                $device->revoke($reason, $user);
-            }
-
-            return $device;
-        });
+        $device = $action->execute($token, strtolower($deviceId), $reason);
         if ($device === null) {
             return MobileApiBoundary::buildErrorResponse(code: 'FORBIDDEN', message: 'Unauthorized to revoke device.', status: 403);
         }

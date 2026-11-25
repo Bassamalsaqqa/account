@@ -43,6 +43,7 @@ class FefoAllocationService
      * MUST be called inside an active DB::transaction().
      * Enforces global lock order (Company -> Product -> Warehouse -> Lots).
      *
+     * @param  array<int, Quantity>  $reservedByLot  Quantities planned by earlier lines of this stock command.
      * @return list<array{lot: ?InventoryLot, lot_id: ?int, quantity: Quantity}>
      */
     public function allocateWithLock(
@@ -51,6 +52,7 @@ class FefoAllocationService
         Quantity|string $requestedQuantity,
         bool $excludeExpired = true,
         ?string $asOfDate = null,
+        array $reservedByLot = [],
     ): array {
         if (DB::transactionLevel() <= 0) {
             throw new RuntimeException('allocateWithLock requires an active database transaction.');
@@ -70,10 +72,11 @@ class FefoAllocationService
         Product::where('id', $product->id)->lockForUpdate()->firstOrFail();
         Warehouse::where('id', $warehouse->id)->lockForUpdate()->firstOrFail();
 
-        return $this->doAllocate($product, $warehouse, $requestedQuantity, $excludeExpired, true, $asOfDate);
+        return $this->doAllocate($product, $warehouse, $requestedQuantity, $excludeExpired, true, $asOfDate, $reservedByLot);
     }
 
     /**
+     * @param  array<int, Quantity>  $reservedByLot
      * @return list<array{lot: ?InventoryLot, lot_id: ?int, quantity: Quantity}>
      */
     private function doAllocate(
@@ -83,6 +86,7 @@ class FefoAllocationService
         bool $excludeExpired,
         bool $lockForUpdate,
         ?string $asOfDate,
+        array $reservedByLot = [],
     ): array {
         $needed = $requestedQuantity instanceof Quantity ? $requestedQuantity : Quantity::of($requestedQuantity);
 
@@ -142,6 +146,9 @@ class FefoAllocationService
             }
 
             $avail = Quantity::of((string) $balance->quantity_base);
+            if (isset($reservedByLot[$balance->lot_id])) {
+                $avail = $avail->subtract($reservedByLot[$balance->lot_id]);
+            }
             if ($avail->isLessThanOrEqualTo(0)) {
                 continue;
             }

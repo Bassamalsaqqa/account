@@ -12,6 +12,7 @@ use App\Models\Company;
 use App\Models\CustomerPayment;
 use App\Models\CustomerPaymentApplicationEvent;
 use App\Models\LedgerAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\SalesInvoice;
 use App\Models\User;
@@ -53,29 +54,41 @@ final class CustomerApplicationHistory
         $lines = [];
         $intent = [];
         foreach ($rows as $row) {
-            $invoice = SalesInvoice::where('company_id', $event->company_id)->findOrFail($row->sales_invoice_id);
-            if ($row->company_id !== $event->company_id || $row->customer_payment_id !== $payment->id || $invoice->customer_id !== $payment->customer_id
-                || $row->prior_posting_batch_id !== $first->prior_posting_batch_id
-                || $date < Carbon::parse($invoice->issue_date)->toDateString() || $row->prior_posting_batch_id < $invoice->posting_batch_id
-                || ! PostingBatch::where('company_id', $event->company_id)->whereKey($row->prior_posting_batch_id)->exists()) {
+            $isOpening = $row->opening_trade_item_id !== null;
+            $invoice = $isOpening
+                ? OpeningTradeItem::where('company_id', $event->company_id)->findOrFail($row->opening_trade_item_id)
+                : SalesInvoice::where('company_id', $event->company_id)->findOrFail($row->sales_invoice_id);
+            $documentDate = $isOpening ? $invoice->opening_date : $invoice->issue_date;
+            $documentTotal = $isOpening ? $invoice->amount_currency : $invoice->grand_total_currency;
+            $documentBase = $isOpening ? $invoice->carrying_value_base : $invoice->grand_total_base;
+            if (($isOpening && (
+                $invoice->side !== OpeningTradeItem::SIDE_CUSTOMER
+                || $invoice->posting_batch_id === null
+                || (! in_array($invoice->status, [OpeningTradeItem::STATUS_POSTED, OpeningTradeItem::STATUS_REVERSED], true))
+                || ($invoice->isReversed() && ! $payment->is_reversed)
+            ))
+            || $row->company_id !== $event->company_id || $row->customer_payment_id !== $payment->id || $invoice->customer_id !== $payment->customer_id
+            || $row->prior_posting_batch_id !== $first->prior_posting_batch_id
+            || $date < Carbon::parse($documentDate)->toDateString() || $row->prior_posting_batch_id < $invoice->posting_batch_id
+            || ! PostingBatch::where('company_id', $event->company_id)->whereKey($row->prior_posting_batch_id)->exists()) {
                 throw new InvalidArgumentException('Credit allocation historical provenance mismatch.');
             }
             $values = PaymentAllocationIntent::amounts(['allocated_amount' => $row->allocated_amount, 'payment_currency_amount' => $row->payment_currency_amount], $invoice->currency_code, $payment->currency_code);
-            $prior = app(ReceivableReliefHistory::class)->before((int) $event->company_id, (int) $invoice->id, (int) $row->prior_posting_batch_id, (int) $row->id);
+            $prior = app(ReceivableReliefHistory::class)->{($isOpening ? 'beforeOpeningItem' : 'before')}((int) $event->company_id, (int) $invoice->id, (int) $row->prior_posting_batch_id, (int) $row->id);
             $cumulative = $prior['amount']->plus($values['document']);
-            $book = ($cumulative->isEqualTo($invoice->grand_total_currency) ? BigDecimal::of($invoice->grand_total_base) : $cumulative->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP))->minus($prior['base']);
+            $book = ($cumulative->isEqualTo($documentTotal) ? BigDecimal::of($documentBase) : $cumulative->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP))->minus($prior['base']);
             $used = $used->plus($values['payment']);
             $target = $used->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base) : $used->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
             $settlement = $target->minus($usedBase);
             $usedBase = $target;
             $delta = $settlement->minus($book);
-            if ($used->isGreaterThan($payment->amount) || $cumulative->isGreaterThan($invoice->grand_total_currency) || ! $book->isPositive() || ! $settlement->isPositive()
+            if ($used->isGreaterThan($payment->amount) || $cumulative->isGreaterThan($documentTotal) || ! $book->isPositive() || ! $settlement->isPositive()
                 || ! $book->isEqualTo($row->base_amount_applied_to_receivable) || ! $settlement->isEqualTo($row->settlement_base_value)
                 || ! $delta->isEqualTo($row->realized_fx_gain_loss_base) || ! BigDecimal::of($row->invoice_exchange_rate)->isEqualTo($invoice->exchange_rate)
                 || ! BigDecimal::of($row->payment_exchange_rate)->isEqualTo($payment->exchange_rate)) {
                 throw new InvalidArgumentException('Credit allocation exact values mismatch.');
             }
-            $intent[] = PaymentAllocationIntent::historicalRow('sales_invoice_id', (int) $invoice->id, $row->allocated_amount, $row->payment_currency_amount, (int) $event->allocation_version);
+            $intent[] = PaymentAllocationIntent::historicalRow($isOpening ? 'opening_trade_item_id' : 'sales_invoice_id', (int) $invoice->id, $row->allocated_amount, $row->payment_currency_amount, (int) $event->allocation_version);
             if (! $delta->isZero()) {
                 $amount = MoneyAmount::from($delta->abs());
                 $zero = MoneyAmount::zero();
@@ -83,7 +96,11 @@ final class CustomerApplicationHistory
                 app(SalesPostingLines::class)->append($lines, count($lines) + 1, (int) $accounts[$delta->isPositive() ? 'fx_gain' : 'fx_loss'], $delta->isNegative() ? $amount : $zero, $delta->isPositive() ? $amount : $zero, description: 'Customer Credit application realized FX');
             }
         }
-        usort($intent, fn ($a, $b) => $a['sales_invoice_id'] <=> $b['sales_invoice_id']);
+        if ((int) $event->allocation_version === 3) {
+            $intent = PaymentAllocationIntent::normalize($intent, 'sales_invoice_id');
+        } else {
+            usort($intent, fn ($a, $b) => $a['sales_invoice_id'] <=> $b['sales_invoice_id']);
+        }
         if ($event->request_hash !== ApplyCustomerPaymentCreditAction::requestHash((int) $event->company_id, (int) $payment->id, (int) $event->applied_by, $date, $intent)) {
             throw new InvalidArgumentException('Credit application request identity mismatch.');
         }

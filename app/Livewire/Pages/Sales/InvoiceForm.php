@@ -33,6 +33,7 @@ use App\Models\SalesInvoice;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
 use App\Services\Money\EligibleMoneyAccounts;
+use App\Services\Sales\ImmediateSettlementPreview;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
 use App\Support\InvoiceConfirmation;
@@ -193,6 +194,15 @@ class InvoiceForm extends Component
     #[Locked]
     public bool $settlementPreview = false;
 
+    #[Locked]
+    public ?string $prospectiveRemainingBalance = null;
+
+    #[Locked]
+    public ?string $prospectiveRemainingExact = null;
+
+    #[Locked]
+    public ?string $prospectiveBalanceError = null;
+
     public function mount(CompanyContext $context, ?string $publicId = null, ?int $customer_id = null): void
     {
         $customer_id ??= request()->integer('customer_id') ?: null;
@@ -301,6 +311,7 @@ class InvoiceForm extends Component
 
         if ($property !== null && str_starts_with($property, 'settlement.')) {
             $this->syncSettlementDefaults($property);
+            $this->recalculateSettlementPreview();
         }
     }
 
@@ -627,6 +638,7 @@ class InvoiceForm extends Component
     public function recalculate(): void
     {
         $this->documentTotalsValid = false;
+        $this->recalculateSettlementPreview();
         if ($this->showPreview) {
             $this->cancelPreview();
         }
@@ -648,18 +660,20 @@ class InvoiceForm extends Component
         $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
         $fx = BigDecimal::of($this->exchange_rate ?: '1.0');
 
+        $lineTaxIds = array_map(static fn (array $line): int|false => filter_var($line['tax_rate_id'] ?? null, FILTER_VALIDATE_INT), $this->lines);
+        $taxIds = array_values(array_unique(array_filter($lineTaxIds)));
+        $taxes = $taxIds === [] ? collect() : TaxRate::query()
+            ->where('company_id', $company->id)
+            ->whereKey($taxIds)
+            ->get()
+            ->keyBy('id');
+
         $calcResults = [];
 
         foreach ($this->lines as $idx => $line) {
-            $taxRate = null;
-            $taxInclusive = false;
-            if (! empty($line['tax_rate_id'])) {
-                $tr = TaxRate::find($line['tax_rate_id']);
-                if ($tr !== null) {
-                    $taxRate = BigDecimal::of((string) $tr->rate);
-                    $taxInclusive = $tr->calculation === TaxRate::CALC_INCLUSIVE;
-                }
-            }
+            $tax = $taxes->get($lineTaxIds[$idx] ?: 0);
+            $taxRate = $tax === null ? null : BigDecimal::of((string) $tax->rate);
+            $taxInclusive = $tax?->calculation === TaxRate::CALC_INCLUSIVE;
 
             $discountType = $line['discount_type'];
             if ($discountType === 'percentage') {
@@ -701,6 +715,8 @@ class InvoiceForm extends Component
                 $this->settlement['amount'] = $this->previewGrandTotal;
             }
         }
+
+        $this->recalculateSettlementPreview();
     }
 
     public function saveAndConfirm(SalesInvoiceCommands $commands): mixed
@@ -982,6 +998,37 @@ class InvoiceForm extends Component
         $this->executeKey = null;
         $this->previewDigest = null;
         $this->settlementPreview = false;
+    }
+
+    private function recalculateSettlementPreview(): void
+    {
+        if (! $this->documentTotalsValid || ($this->settlement['mode'] ?? 'unpaid') !== 'partial') {
+            $this->prospectiveRemainingBalance = null;
+            $this->prospectiveRemainingExact = null;
+            $this->prospectiveBalanceError = null;
+
+            return;
+        }
+
+        $company = app(CompanyContext::class)->company();
+        $paymentCurrency = $this->settlementPaymentCurrency();
+        $preview = app(ImmediateSettlementPreview::class)->calculate(
+            grandTotal: $this->previewGrandTotal,
+            documentCurrency: $this->currency_code ?: $company->base_currency_code,
+            settlement: $this->settlement,
+            paymentCurrency: $paymentCurrency,
+            baseCurrency: $company->base_currency_code,
+        );
+
+        $this->prospectiveRemainingBalance = $preview['remaining_balance'];
+        $this->prospectiveRemainingExact = $preview['remaining_exact'];
+        $this->prospectiveBalanceError = $preview['error'];
+
+        if ($preview['error'] !== null && $preview['error_field'] !== null) {
+            $this->addError('settlement.'.$preview['error_field'], $preview['error']);
+        } else {
+            $this->resetErrorBag(['settlement.amount', 'settlement.invoice_amount', 'settlement.payment_currency_amount', 'settlement.exchange_rate']);
+        }
     }
 
     #[Locked]

@@ -8,6 +8,7 @@ use App\Domain\Money\Queries\CrossCurrencySettlementQuery;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Customer;
 use App\Models\CustomerPayment;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
@@ -97,11 +98,58 @@ class CustomerStatementQuery
             ->where('customer_id', $customer->id)
             ->get();
 
+        $openingItems = OpeningTradeItem::query()
+            ->where('company_id', $companyId)
+            ->where('customer_id', $customer->id)
+            ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
+            ->whereNotNull('posting_batch_id')
+            ->with(['postingBatch', 'reversalPostingBatch'])
+            ->when($toDate !== null, fn ($q) => $q->where('opening_date', '<=', $toDate))
+            ->get();
+
         // Group by currency
         $currencies = [];
 
         // Build raw ledger rows
         $rawRows = [];
+
+        foreach ($openingItems as $item) {
+            $curr = $item->currency_code;
+            $currencies[$curr] = true;
+            $rawRows[] = [
+                'date' => (string) Carbon::parse($item->opening_date)->toDateString(),
+                'due_date' => $item->due_date ? (string) Carbon::parse($item->due_date)->toDateString() : null,
+                'type' => 'opening_balance',
+                'number' => $item->original_reference ?: ('OPEN-'.$item->public_id),
+                'reference' => $item->original_reference,
+                'description' => __('accounting.opening_balance', [], $customer->preferred_locale ?: 'ar').($item->original_reference ? ' #'.$item->original_reference : ''),
+                'currency' => $curr,
+                'debit' => BigDecimal::of((string) $item->amount_currency),
+                'credit' => BigDecimal::zero(),
+                'created_at' => $item->created_at,
+                'invoice' => null,
+            ];
+
+            if ($item->hasCanonicalReversal()) {
+                $revDate = $item->reversalPostingBatch?->posting_date?->toDateString()
+                    ?? ($item->reversed_at ? Carbon::parse($item->reversed_at)->toDateString() : Carbon::parse($item->opening_date)->toDateString());
+                if ($toDate === null || $revDate <= $toDate) {
+                    $rawRows[] = [
+                        'date' => $revDate,
+                        'due_date' => null,
+                        'type' => 'reversal',
+                        'number' => 'REV-'.($item->original_reference ?: $item->public_id),
+                        'reference' => $item->original_reference,
+                        'description' => __('accounting.reversal', [], $customer->preferred_locale ?: 'ar').' #'.($item->original_reference ?: $item->public_id),
+                        'currency' => $curr,
+                        'debit' => BigDecimal::zero(),
+                        'credit' => BigDecimal::of((string) $item->amount_currency),
+                        'created_at' => $item->reversed_at,
+                        'invoice' => null,
+                    ];
+                }
+            }
+        }
 
         foreach ($invoices as $inv) {
             $curr = $inv->currency_code;
@@ -312,6 +360,43 @@ class CustomerStatementQuery
 
             if ($diffDays <= 0) {
                 // Not yet due
+                $current = $current->plus($outstanding);
+            } elseif ($diffDays <= 30) {
+                $days1_30 = $days1_30->plus($outstanding);
+            } elseif ($diffDays <= 60) {
+                $days31_60 = $days31_60->plus($outstanding);
+            } elseif ($diffDays <= 90) {
+                $days61_90 = $days61_90->plus($outstanding);
+            } else {
+                $days90Plus = $days90Plus->plus($outstanding);
+            }
+        }
+
+        $openingItems = OpeningTradeItem::query()
+            ->where('company_id', $customer->company_id)
+            ->where('customer_id', $customer->id)
+            ->where('side', OpeningTradeItem::SIDE_CUSTOMER)
+            ->whereNotNull('posting_batch_id')
+            ->with('reversalPostingBatch')
+            ->where('currency_code', $currency)
+            ->where('opening_date', '<=', $today->toDateString())
+            ->get();
+
+        foreach ($openingItems as $item) {
+            $outstanding = $item->calculateOutstanding($today->toDateString());
+            if ($outstanding->isLessThanOrEqualTo(0)) {
+                continue;
+            }
+
+            if ($item->due_date === null) {
+                $unspecified = $unspecified->plus($outstanding);
+
+                continue;
+            }
+            $dueDate = Carbon::parse($item->due_date, $companyTz)->startOfDay();
+            $diffDays = $dueDate->diffInDays($today, false); // positive if overdue
+
+            if ($diffDays <= 0) {
                 $current = $current->plus($outstanding);
             } elseif ($diffDays <= 30) {
                 $days1_30 = $days1_30->plus($outstanding);

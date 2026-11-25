@@ -29,6 +29,7 @@ return [
     'correct_fields' => 'راجع حقول الدفع أدناه. يبقى أمر الشراء المحفوظ مسودة.',
     'review' => 'مراجعة دفع أمر الشراء',
     'paid_amount' => 'إجمالي المدفوع',
+    'balance_inputs_required' => 'اختر حساب دفع صالحاً وأدخل المبالغ وسعر الصرف المطلوب لعرض الرصيد.',
     'outstanding_purchase_amount' => 'متبقي الفاتورة بعد الترحيل',
     'unallocated_payment_amount' => 'رصيد دفعة غير مخصص للمورد',
     'check_control' => 'شيكات صادرة',

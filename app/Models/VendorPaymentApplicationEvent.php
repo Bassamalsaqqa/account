@@ -68,7 +68,7 @@ class VendorPaymentApplicationEvent extends Model
     private bool $completing = false;
 
     /**
-     * @var array<int, array<string, mixed>>
+     * @var array<string, array<string, mixed>>
      */
     private array $pendingAllocations = [];
 
@@ -107,8 +107,8 @@ class VendorPaymentApplicationEvent extends Model
         }
 
         $version = (int) ($attributes['allocation_version'] ?? 1);
-        $intent = array_map(fn (array $row): array => PaymentAllocationIntent::historicalRow('purchase_id', (int) $row['purchase_id'], (string) $row['allocated_amount'], (string) $row['payment_currency_amount'], $version), $allocations);
-        if (count(array_unique(array_column($intent, 'purchase_id'))) !== count($intent)) {
+        $intent = array_map(fn (array $row): array => PaymentAllocationIntent::historicalRow($row['opening_trade_item_id'] !== null ? 'opening_trade_item_id' : 'purchase_id', (int) ($row['opening_trade_item_id'] ?? $row['purchase_id']), (string) $row['allocated_amount'], (string) $row['payment_currency_amount'], $version), $allocations);
+        if (count(array_unique(array_map(fn (array $row): string => ($row['kind'] ?? 'purchase_id').':'.($row['id'] ?? $row['purchase_id']), $intent))) !== count($intent)) {
             throw new ImmutableRecordException('Canonical application allocations must be aggregated once per purchase.');
         }
 
@@ -138,7 +138,7 @@ class VendorPaymentApplicationEvent extends Model
         try {
             $event->save();
             foreach ($allocations as $values) {
-                $event->pendingAllocations[(int) $values['purchase_id']] = $values;
+                $event->pendingAllocations[self::allocationKey($values)] = $values;
                 VendorPaymentAllocation::appendCanonicalApplication($capability, $event, $values, $actor);
             }
         } finally {
@@ -154,9 +154,17 @@ class VendorPaymentApplicationEvent extends Model
      *
      * @param  array<string, mixed>  $values
      */
+    private static function allocationKey(array $values): string
+    {
+        return $values['opening_trade_item_id'] !== null
+            ? 'opening_trade_item:'.$values['opening_trade_item_id']
+            : 'purchase_id:'.$values['purchase_id'];
+    }
+
+    /** @param array<string, mixed> $values */
     public function consumePreparedAllocation(array $values): bool
     {
-        $id = (int) ($values['purchase_id'] ?? 0);
+        $id = self::allocationKey($values);
         if (! $this->recordingApplication || ($this->pendingAllocations[$id] ?? null) !== $values) {
             return false;
         }

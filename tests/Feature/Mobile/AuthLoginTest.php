@@ -359,6 +359,7 @@ final class AuthLoginTest extends TestCase
     public function test_recovery_consumption_rolls_back_if_token_creation_fails(): void
     {
         $this->user->forceFill(['two_factor_secret' => encrypt('JBSWY3DPEHPK3PXP'), 'two_factor_confirmed_at' => now(), 'two_factor_recovery_codes' => encrypt(json_encode(['ABCDEFGH-12345678']))])->save();
+        $beforeEpoch = $this->user->fresh()->mobilePasswordEpoch();
         $device = (string) Str::uuid();
         $challenge = $this->createChallenge($device);
         MobileAccessToken::creating(function (): void {
@@ -371,6 +372,7 @@ final class AuthLoginTest extends TestCase
                 'password' => $this->password, 'recovery_code' => 'ABCDEFGH-12345678',
             ])->assertStatus(500);
             $this->assertContains('ABCDEFGH-12345678', $this->user->fresh()->recoveryCodes());
+            $this->assertSame($beforeEpoch, $this->user->fresh()->mobilePasswordEpoch());
             $this->assertSame(0, MobileAccessToken::count());
             $this->assertFalse(MobileDevice::where('device_id', $device)->exists());
         } finally {

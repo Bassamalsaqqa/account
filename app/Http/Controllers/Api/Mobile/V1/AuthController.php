@@ -282,6 +282,7 @@ final class AuthController extends Controller
 
                         // Atomically replace the used single-use recovery code
                         $user->replaceRecoveryCode($matched);
+                        $user->refresh(); // The database advances the mobile revision with the write.
                     }
                 }
 
@@ -305,7 +306,7 @@ final class AuthController extends Controller
                 $tokenHash = hash('sha256', $rawToken);
                 $ttl = (int) config('mobile.token_ttl_seconds', 604800);
                 $expiresAt = now()->addSeconds($ttl);
-                $passwordEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
+                $passwordEpoch = $user->mobilePasswordEpoch();
 
                 /** @var Company|null $defaultCompany */
                 $defaultCompany = $user->lastActiveCompany;

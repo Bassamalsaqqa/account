@@ -114,7 +114,7 @@ class PaymentDetail extends Component
             abort(403, 'Unauthorized.');
         }
 
-        $this->payment = CustomerPayment::with(['customer', 'moneyAccount', 'allocations.salesInvoice'])
+        $this->payment = CustomerPayment::with(['customer', 'moneyAccount', 'allocations.salesInvoice', 'allocations.openingTradeItem'])
             ->where('company_id', $company->id)
             ->where('public_id', $publicId)
             ->firstOrFail();

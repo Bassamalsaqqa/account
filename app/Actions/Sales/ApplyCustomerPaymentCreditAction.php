@@ -13,6 +13,7 @@ use App\Models\CompanyCurrency;
 use App\Models\CustomerPayment;
 use App\Models\CustomerPaymentApplicationEvent;
 use App\Models\LedgerAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\Audit\AuditService;
@@ -31,13 +32,13 @@ use InvalidArgumentException;
 
 final class ApplyCustomerPaymentCreditAction
 {
-    /** @param array{application_date: string, idempotency_key: string, allocations: list<array{sales_invoice_id: int, allocated_amount: string}>} $data */
+    /** @param array{application_date: string, idempotency_key: string, allocations: list<array{sales_invoice_id?: int, opening_trade_item_id?: int, kind?: string, id?: int, allocated_amount: string, payment_currency_amount?: string}>} $data */
     public function execute(CustomerPayment $payment, User $actor, array $data): CustomerPaymentApplicationEvent
     {
         $key = ReceiptRequestValues::key($data['idempotency_key']);
         app(SalesDocumentRules::class)->date($data['application_date']);
         $version = PaymentAllocationIntent::version($data['allocations']);
-        $intent = PaymentAllocationIntent::normalize($data['allocations'], 'sales_invoice_id');
+        $intent = PaymentAllocationIntent::forPayment($data['allocations'], 'sales_invoice_id', (int) $payment->company_id, $payment->currency_code);
         if ($intent === []) {
             throw new InvalidArgumentException('Application requires a positive allocation.');
         }
@@ -93,7 +94,7 @@ final class ApplyCustomerPaymentCreditAction
         });
     }
 
-    /** @param list<array{sales_invoice_id: int, allocated_amount: string}> $intent
+    /** @param list<array{sales_invoice_id?: int, opening_trade_item_id?: int, kind?: string, id?: int, allocated_amount: string, payment_currency_amount?: string}> $intent
      * @return list<array<string, mixed>>
      */
     public function prepare(CustomerPayment $payment, array $intent, ?string $applicationDate = null): array
@@ -104,42 +105,94 @@ final class ApplyCustomerPaymentCreditAction
         $minor = $payment->currency_code === 'JOD' ? 3 : 2;
         $prepared = [];
         foreach ($intent as $input) {
-            $invoice = SalesInvoice::where('company_id', $payment->company_id)->lockForUpdate()->find($input['sales_invoice_id']);
-            if ($invoice === null || ! $invoice->isPosted() || (int) $invoice->customer_id !== (int) $payment->customer_id) {
-                throw new InvalidArgumentException(__('sales.credit_invoice_mismatch'));
+            $isOpening = (isset($input['opening_trade_item_id']))
+                || (($input['kind'] ?? null) === 'opening_trade_item');
+
+            if ($isOpening) {
+                $itemId = (int) ($input['opening_trade_item_id'] ?? $input['id']);
+                /** @var OpeningTradeItem|null $openingItem */
+                $openingItem = OpeningTradeItem::where('company_id', $payment->company_id)->lockForUpdate()->find($itemId);
+                if ($openingItem === null || ! $openingItem->isPosted() || $openingItem->isReversed() || (int) $openingItem->customer_id !== (int) $payment->customer_id || $openingItem->side !== OpeningTradeItem::SIDE_CUSTOMER) {
+                    throw new InvalidArgumentException(__('sales.credit_invoice_mismatch'));
+                }
+                if (CompanyCurrency::where('company_id', $payment->company_id)->whereIn('currency_code', array_unique([$payment->currency_code, $openingItem->currency_code]))->where('enabled', true)->count() !== count(array_unique([$payment->currency_code, $openingItem->currency_code]))) {
+                    throw new InvalidArgumentException('Payment and document currencies must be enabled.');
+                }
+                $amounts = PaymentAllocationIntent::amounts($input, $openingItem->currency_code, $payment->currency_code);
+                $amount = $amounts['document'];
+                $consumed = $amounts['payment'];
+                if ($consumed->isGreaterThan($remaining) || $amount->isGreaterThan($openingItem->calculateOutstanding())) {
+                    throw new InvalidArgumentException('Application exceeds payment credit or document outstanding.');
+                }
+                if ($applicationDate !== null && ($applicationDate < Carbon::parse($payment->payment_date)->toDateString() || $applicationDate < Carbon::parse($openingItem->opening_date)->toDateString())) {
+                    throw new InvalidArgumentException('Application date cannot precede payment or opening item.');
+                }
+                $book = app(ReceivableBookValue::class)->reliefOpeningItem($openingItem, $amount);
+                $usedAmount = $usedAmount->plus($consumed);
+                $targetBase = $usedAmount->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
+                    : $usedAmount->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                $settlement = $targetBase->minus($usedBase);
+                if (! $book->isPositive() || ! $settlement->isPositive()) {
+                    throw new InvalidArgumentException('Positive allocation must have representable positive base values.');
+                }
+                $prepared[] = [
+                    'sales_invoice_id' => null,
+                    'opening_trade_item_id' => $openingItem->id,
+                    'allocated_amount' => (string) $amount->toScale(6),
+                    'payment_currency_amount' => (string) $consumed->toScale(6),
+                    'invoice_exchange_rate' => $openingItem->exchange_rate,
+                    'payment_exchange_rate' => $payment->exchange_rate,
+                    'base_amount_applied_to_receivable' => (string) $book->toScale(6),
+                    'settlement_base_value' => (string) $settlement->toScale(6),
+                    'realized_fx_gain_loss_base' => (string) $settlement->minus($book)->toScale(6),
+                ];
+                $usedBase = $targetBase;
+                $remaining = $remaining->minus($consumed);
+            } else {
+                $invoice = SalesInvoice::where('company_id', $payment->company_id)->lockForUpdate()->find($input['sales_invoice_id'] ?? $input['id']);
+                if ($invoice === null || ! $invoice->isPosted() || (int) $invoice->customer_id !== (int) $payment->customer_id) {
+                    throw new InvalidArgumentException(__('sales.credit_invoice_mismatch'));
+                }
+                if (CompanyCurrency::where('company_id', $payment->company_id)->whereIn('currency_code', array_unique([$payment->currency_code, $invoice->currency_code]))->where('enabled', true)->count() !== count(array_unique([$payment->currency_code, $invoice->currency_code]))) {
+                    throw new InvalidArgumentException('Payment and document currencies must be enabled.');
+                }
+                $amounts = PaymentAllocationIntent::amounts($input, $invoice->currency_code, $payment->currency_code);
+                $amount = $amounts['document'];
+                $consumed = $amounts['payment'];
+                if ($consumed->isGreaterThan($remaining) || $amount->isGreaterThan($invoice->calculateOutstanding())) {
+                    throw new InvalidArgumentException('Application exceeds payment credit or document outstanding.');
+                }
+                if ($applicationDate !== null && ($applicationDate < Carbon::parse($payment->payment_date)->toDateString() || $applicationDate < Carbon::parse($invoice->issue_date)->toDateString())) {
+                    throw new InvalidArgumentException('Application date cannot precede payment or invoice.');
+                }
+                $book = app(ReceivableBookValue::class)->relief($invoice, $amount);
+                $usedAmount = $usedAmount->plus($consumed);
+                $targetBase = $usedAmount->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
+                    : $usedAmount->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+                $settlement = $targetBase->minus($usedBase);
+                if (! $book->isPositive() || ! $settlement->isPositive()) {
+                    throw new InvalidArgumentException('Positive allocation must have representable positive base values.');
+                }
+                $prepared[] = [
+                    'sales_invoice_id' => $invoice->id,
+                    'opening_trade_item_id' => null,
+                    'allocated_amount' => (string) $amount->toScale(6),
+                    'payment_currency_amount' => (string) $consumed->toScale(6),
+                    'invoice_exchange_rate' => $invoice->exchange_rate,
+                    'payment_exchange_rate' => $payment->exchange_rate,
+                    'base_amount_applied_to_receivable' => (string) $book->toScale(6),
+                    'settlement_base_value' => (string) $settlement->toScale(6),
+                    'realized_fx_gain_loss_base' => (string) $settlement->minus($book)->toScale(6),
+                ];
+                $usedBase = $targetBase;
+                $remaining = $remaining->minus($consumed);
             }
-            if (CompanyCurrency::where('company_id', $payment->company_id)->whereIn('currency_code', array_unique([$payment->currency_code, $invoice->currency_code]))->where('enabled', true)->count() !== count(array_unique([$payment->currency_code, $invoice->currency_code]))) {
-                throw new InvalidArgumentException('Payment and document currencies must be enabled.');
-            }
-            $amounts = PaymentAllocationIntent::amounts($input, $invoice->currency_code, $payment->currency_code);
-            $amount = $amounts['document'];
-            $consumed = $amounts['payment'];
-            if ($consumed->isGreaterThan($remaining) || $amount->isGreaterThan($invoice->calculateOutstanding())) {
-                throw new InvalidArgumentException('Application exceeds payment credit or document outstanding.');
-            }
-            if ($applicationDate !== null && ($applicationDate < Carbon::parse($payment->payment_date)->toDateString() || $applicationDate < Carbon::parse($invoice->issue_date)->toDateString())) {
-                throw new InvalidArgumentException('Application date cannot precede payment or invoice.');
-            }
-            $book = app(ReceivableBookValue::class)->relief($invoice, $amount);
-            $usedAmount = $usedAmount->plus($consumed);
-            $targetBase = $usedAmount->isEqualTo($payment->amount) ? BigDecimal::of($payment->amount_base)
-                : $usedAmount->multipliedBy($payment->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
-            $settlement = $targetBase->minus($usedBase);
-            if (! $book->isPositive() || ! $settlement->isPositive()) {
-                throw new InvalidArgumentException('Positive allocation must have representable positive base values.');
-            }
-            $prepared[] = ['sales_invoice_id' => $invoice->id, 'allocated_amount' => (string) $amount->toScale(6), 'payment_currency_amount' => (string) $consumed->toScale(6),
-                'invoice_exchange_rate' => $invoice->exchange_rate, 'payment_exchange_rate' => $payment->exchange_rate,
-                'base_amount_applied_to_receivable' => (string) $book->toScale(6), 'settlement_base_value' => (string) $settlement->toScale(6),
-                'realized_fx_gain_loss_base' => (string) $settlement->minus($book)->toScale(6)];
-            $usedBase = $targetBase;
-            $remaining = $remaining->minus($consumed);
         }
 
         return $prepared;
     }
 
-    /** @param list<array{sales_invoice_id: int, allocated_amount: string}> $intent */
+    /** @param list<array{sales_invoice_id?: int, opening_trade_item_id?: int, kind?: string, id?: int, allocated_amount: string, payment_currency_amount?: string}> $intent */
     public static function requestHash(int $companyId, int $paymentId, int $actorId, string $date, array $intent): string
     {
         return hash('sha256', json_encode(['company_id' => $companyId, 'payment_id' => $paymentId, 'actor_id' => $actorId,

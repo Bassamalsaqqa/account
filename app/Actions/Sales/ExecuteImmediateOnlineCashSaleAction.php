@@ -18,6 +18,8 @@ use App\Models\Warehouse;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Support\Mobile\Contract\Revision3\OnlineSaleIntentProfile;
 use App\Support\Mobile\Contract\Revision3\PaymentSettlementValidator;
+use App\Support\Mobile\Offline\OfflineSaleConflict;
+use App\Support\Mobile\Offline\OfflineSaleEvent;
 use App\Support\Mobile\Receipt\CompositeFinancialExecutionScope;
 use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
 use App\Support\Mobile\Receipt\Exceptions\SecurityException;
@@ -152,6 +154,8 @@ final class ExecuteImmediateOnlineCashSaleAction
         array $payload,
         string $idempotencySuffix
     ): array {
+        $offlineSale = $capability->offlineSale ? OfflineSaleEvent::fromEvent($payload) : null;
+
         // 1. Resolve minor units and normative canonical profile from executed payload
         $minorUnits = isset($payload['currency_minor_units']) && is_int($payload['currency_minor_units'])
             ? $payload['currency_minor_units']
@@ -164,9 +168,9 @@ final class ExecuteImmediateOnlineCashSaleAction
         ];
 
         /** @var array<string, mixed> $canonicalProfile */
-        $canonicalProfile = isset($payload['actor_id'])
-            ? $payload
-            : OnlineSaleIntentProfile::construct($serverContext, $payload);
+        $canonicalProfile = $offlineSale !== null
+            ? $offlineSale->cashProfile($capability->currencyMinorUnits)
+            : (isset($payload['actor_id']) ? $payload : OnlineSaleIntentProfile::construct($serverContext, $payload));
 
         OnlineSaleIntentProfile::validateNormativeProfile($canonicalProfile);
 
@@ -182,7 +186,9 @@ final class ExecuteImmediateOnlineCashSaleAction
         }
 
         // Compute actual canonical profile bytes & SHA-256 event hash from executed payload
-        $canonicalBytes = OnlineSaleIntentProfile::serialize($canonicalProfile);
+        $canonicalBytes = $offlineSale !== null
+            ? $offlineSale->canonicalBytes()
+            : OnlineSaleIntentProfile::serialize($canonicalProfile);
         $computedEventHash = hash('sha256', $canonicalBytes);
 
         // 2. Inseparable capability consumption: validates opaque identity against private scoped registry
@@ -296,6 +302,7 @@ final class ExecuteImmediateOnlineCashSaleAction
 
         // 6. Strict stock check and draft lines preparation
         $draftLines = [];
+        $requiredBaseByProduct = [];
         foreach ($lines as $lineIndex => $line) {
             $prodLookup = (string) ($line['product_id'] ?? '');
             /** @var Product|null $product */
@@ -313,6 +320,7 @@ final class ExecuteImmediateOnlineCashSaleAction
                     ->where('units.company_id', $company->id)
                     ->where('product_units.product_id', $product->id)
                     ->where('units.public_id', (string) $unitLookup)
+                    ->when($offlineSale !== null, fn ($query) => $query->where('units.active', true))
                     ->select('product_units.*')
                     ->lockForUpdate()
                     ->firstOrFail();
@@ -333,9 +341,27 @@ final class ExecuteImmediateOnlineCashSaleAction
                 throw new InvalidArgumentException("Line quantity must be positive at index {$lineIndex}.");
             }
 
+            if ($offlineSale !== null) {
+                if ($qty->multipliedBy($unit->conversion_to_base)->strippedOfTrailingZeros()->getScale() > 6) {
+                    throw new OfflineSaleConflict('UNREPRESENTABLE_QUANTITY', 'The saved quantity cannot be represented in the stock unit.');
+                }
+                $price = $unit->default_sale_price_base !== null
+                    ? BigDecimal::of((string) $unit->default_sale_price_base)
+                    : ($product->default_sale_price_base !== null
+                        ? BigDecimal::of((string) $product->default_sale_price_base)->multipliedBy($unit->conversion_to_base)
+                        : null);
+                if ($price === null || ! $price->isEqualTo($line['unit_price'])) {
+                    throw new OfflineSaleConflict('STALE_PRICE', 'A saved unit price no longer matches the approved catalog.');
+                }
+            }
+
             // Strict stock enforcement: no negative stock
             if ($product->track_stock) {
                 $baseQty = $qty->multipliedBy($unit->conversion_to_base);
+                if ($offlineSale !== null) {
+                    $baseQty = ($requiredBaseByProduct[$product->id] ?? BigDecimal::zero())->plus($baseQty);
+                    $requiredBaseByProduct[$product->id] = $baseQty;
+                }
                 $availableBase = BigDecimal::of((string) InventoryBalance::where('company_id', $company->id)
                     ->where('warehouse_id', $warehouse->id)
                     ->where('product_id', $product->id)
@@ -432,6 +458,20 @@ final class ExecuteImmediateOnlineCashSaleAction
             $postedInvoice = $this->postInvoiceAction->execute($draft, $actor);
             $this->triggerStageFault('after_posting');
 
+            if ($offlineSale !== null) {
+                $capturedLines = $offlineSale->event['lines'];
+                if (count($postedInvoice->lines) !== count($capturedLines)) {
+                    throw new OfflineSaleConflict('CAPTURED_TOTAL_MISMATCH', 'The saved sale lines differ from canonical posting.');
+                }
+                foreach ($postedInvoice->lines as $postedLine) {
+                    $capturedLine = $capturedLines[$postedLine->line_number - 1];
+                    if (! BigDecimal::of($postedLine->line_tax)->isEqualTo($capturedLine['tax_amount'])
+                        || ! BigDecimal::of($postedLine->line_total)->isEqualTo($capturedLine['line_total'])) {
+                        throw new OfflineSaleConflict('CAPTURED_TOTAL_MISMATCH', 'A saved line total or tax amount differs from canonical posting.');
+                    }
+                }
+            }
+
             // Verify payment amount matches posted grand total according to settlement mode
             $expectedGrandTotal = (string) $postedInvoice->grand_total_currency;
             $paymentAmountStr = (string) ($paymentIntent['amount'] ?? '0');
@@ -468,7 +508,7 @@ final class ExecuteImmediateOnlineCashSaleAction
                     'amount' => $effectivePaymentAmount,
                     'exchange_rate' => '1.0000000000',
                     'reference_number' => null,
-                    'notes' => 'Mobile online cash sale settlement',
+                    'notes' => $offlineSale !== null ? 'Mobile offline cash sale settlement' : 'Mobile online cash sale settlement',
                     'idempotency_key' => 'fin1-payment:'.$idempotencySuffix,
                     'allocations' => [
                         [
@@ -526,7 +566,7 @@ final class ExecuteImmediateOnlineCashSaleAction
                 'paid_amount' => $amountPaidStr,
                 'amount' => $amountPaidStr,
                 'amount_paid' => $amountPaidStr,
-                'change_returned' => '0.000000',
+                'change_returned' => $offlineSale !== null ? $offlineSale->event['payment']['change_returned'] : '0.000000',
                 'posted_at' => $postedAt,
                 'lines_count' => count($postedInvoice->lines),
             ];

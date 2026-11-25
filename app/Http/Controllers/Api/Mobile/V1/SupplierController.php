@@ -13,6 +13,7 @@ use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
 use App\Models\NativeCommandReceipt;
+use App\Models\OpeningTradeItem;
 use App\Models\Purchase;
 use App\Models\User;
 use App\Models\Vendor;
@@ -21,6 +22,7 @@ use App\Services\Purchasing\VendorCatalogService;
 use App\Services\Purchasing\VendorFinancialRead;
 use App\Support\Mobile\Receipt\NativeCommandReceiptManager;
 use App\Support\Mobile\Receipt\NativeWriteContextResolver;
+use App\Support\Mobile\SettlementTargetsReader;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
@@ -759,9 +761,69 @@ final class SupplierController extends Controller
     }
 
     /**
-     * POST /api/mobile/v1/companies/{companyId}/suppliers/{supplierId}/payments
-     * Supplier cash disbursement voucher
+     * GET /api/mobile/v1/companies/{companyId}/suppliers/{supplierId}/settlement-targets
+     * Authoritative outstanding settlement target reads (purchase bills and opening trade items)
      */
+    public function settlementTargets(
+        Request $request,
+        string $companyId,
+        string $supplierId,
+        CurrencyMinorUnitsResolver $minorUnitsResolver
+    ): JsonResponse {
+        if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $supplierId) !== 1) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested supplier was not found.',
+                status: 404
+            );
+        }
+
+        /** @var Company|null $company */
+        $company = $request->attributes->get('mobile_company');
+        /** @var User|null $user */
+        $user = $request->attributes->get('mobile_user');
+
+        if ($company === null || $user === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'UNAUTHENTICATED',
+                message: 'Authentication required or token expired.',
+                status: 401
+            );
+        }
+
+        setPermissionsTeamId($company->id);
+        if (! $user->hasPermissionTo('vendors.view')) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Action is unauthorized. Missing required vendors.view permission.',
+                status: 403
+            );
+        }
+
+        // Cost redaction: financial read requires purchasing cost permission
+        if (! app(VendorFinancialRead::class)->allows((int) $company->id)) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'FORBIDDEN',
+                message: 'Viewing supplier financial settlement targets requires purchasing cost permission.',
+                status: 403
+            );
+        }
+
+        $vendor = Vendor::where('company_id', $company->id)
+            ->where('public_id', $supplierId)
+            ->first();
+
+        if ($vendor === null) {
+            return MobileApiBoundary::buildErrorResponse(
+                code: 'NOT_FOUND',
+                message: 'The requested supplier was not found.',
+                status: 404
+            );
+        }
+
+        return app(SettlementTargetsReader::class)->readSupplierTargets($request, $company, $vendor, $minorUnitsResolver);
+    }
+
     /**
      * POST /api/mobile/v1/companies/{companyId}/suppliers/{supplierId}/payments
      * Supplier cash disbursement voucher
@@ -845,13 +907,31 @@ final class SupplierController extends Controller
             );
         }
 
-        $paymentCurrency = $request->input('currency', (string) $company->base_currency_code);
-        if (! is_string($paymentCurrency) || preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
+        $paymentCurrency = $request->has('currency') && is_string($request->input('currency')) && trim($request->input('currency')) !== ''
+            ? strtoupper(trim($request->input('currency')))
+            : (string) $company->base_currency_code;
+        if (preg_match('/\A[A-Z]{3}\z/', $paymentCurrency) !== 1) {
             return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: 'Invalid payment currency.', status: 422);
         }
 
         $rawRate = $request->input('exchange_rate');
-        if ($paymentCurrency !== (string) $company->base_currency_code) {
+        if ($paymentCurrency === (string) $company->base_currency_code) {
+            $paymentRate = '1.0000000000';
+            if ($rawRate !== null && trim((string) $rawRate) !== '') {
+                try {
+                    $parsedRate = NativeWriteContextResolver::validateDecimalString($rawRate, 'exchange_rate', 10, true);
+                    if (BigDecimal::of($parsedRate)->compareTo(1) !== 0) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: 'Base currency exchange rate must equal exactly 1.0000000000.',
+                            status: 422
+                        );
+                    }
+                } catch (Throwable $e) {
+                    return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+                }
+            }
+        } else {
             if (! $request->has('exchange_rate') || $rawRate === null || trim((string) $rawRate) === '') {
                 if ($existingReceipt !== null) {
                     $rawRate = isset($existingReceipt->payload['exchange_rate']) ? (string) $existingReceipt->payload['exchange_rate'] : '1.0000000000';
@@ -863,11 +943,11 @@ final class SupplierController extends Controller
                     );
                 }
             }
-        }
-        try {
-            $paymentRate = NativeWriteContextResolver::validateDecimalString($rawRate ?? '1', 'exchange_rate', 10, true);
-        } catch (Throwable $e) {
-            return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+            try {
+                $paymentRate = NativeWriteContextResolver::validateDecimalString($rawRate, 'exchange_rate', 10, true);
+            } catch (Throwable $e) {
+                return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
+            }
         }
 
         $rawAccountId = $request->input('cash_account_id', $request->input('money_account_id'));
@@ -902,23 +982,209 @@ final class SupplierController extends Controller
 
         // Canonical payload construction
         $canonicalAllocations = [];
+        $legacyAllocations = [];
+        $isPureLegacyWire = true;
         if (is_array($allocationsInput)) {
-            foreach ($allocationsInput as $item) {
+            $seenTargets = [];
+            foreach ($allocationsInput as $index => $item) {
                 if (! is_array($item)) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
-                        message: 'Each allocation item must be an object.',
+                        message: "Allocation item at index {$index} must be an object.",
                         status: 422
                     );
                 }
-                $billId = $item['bill_id'] ?? $item['purchase_id'] ?? null;
-                if (! is_string($billId) || preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $billId) !== 1) {
+
+                // Intra-alias consistency: reject conflicting aliases for the same field
+                $typeAliases = array_values(array_filter([
+                    $item['target_type'] ?? null,
+                    $item['kind'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map(fn ($v) => strtolower(trim((string) $v)), $typeAliases))) > 1) {
                     return MobileApiBoundary::buildErrorResponse(
                         code: 'VALIDATION_FAILED',
-                        message: 'Valid purchase bill public ID is required for each allocation.',
+                        message: "Allocation item at index {$index} has conflicting target_type/kind aliases.",
                         status: 422
                     );
                 }
+
+                $genericIdAliases = array_values(array_filter([
+                    $item['target_id'] ?? null,
+                    $item['id'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map('strval', $genericIdAliases))) > 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} has conflicting target_id/id aliases.",
+                        status: 422
+                    );
+                }
+
+                $billAliases = array_values(array_filter([
+                    $item['bill_id'] ?? null,
+                    $item['purchase_id'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map('strval', $billAliases))) > 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} has conflicting bill_id/purchase_id aliases.",
+                        status: 422
+                    );
+                }
+
+                $openingAliases = array_values(array_filter([
+                    $item['opening_trade_item_id'] ?? null,
+                    $item['opening_balance_id'] ?? null,
+                    $item['opening_item_id'] ?? null,
+                ], fn ($v) => $v !== null && $v !== ''));
+                if (count(array_unique(array_map('strval', $openingAliases))) > 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} has conflicting opening_trade_item_id aliases.",
+                        status: 422
+                    );
+                }
+
+                $rawTargetType = ! empty($typeAliases) ? (string) $typeAliases[0] : null;
+                $genericTargetId = ! empty($genericIdAliases) ? (string) $genericIdAliases[0] : null;
+                $billKey = ! empty($billAliases) ? (string) $billAliases[0] : null;
+                $openingKey = ! empty($openingAliases) ? (string) $openingAliases[0] : null;
+
+                // Ambiguity detection: multiple contradictory identifier keys
+                if ($billKey !== null && $openingKey !== null) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} is ambiguous: specifies both bill_id and opening_trade_item_id.",
+                        status: 422
+                    );
+                }
+
+                $targetType = null;
+                $targetId = null;
+
+                if ($rawTargetType !== null) {
+                    $normType = strtolower(trim($rawTargetType));
+                    $targetType = match ($normType) {
+                        'purchase', 'bill', 'purchase_bill' => 'purchase',
+                        'opening_trade_item', 'opening_balance', 'opening_item' => 'opening_trade_item',
+                        default => null,
+                    };
+
+                    if ($targetType === null) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has invalid target_type [{$rawTargetType}]. Must be 'purchase' or 'opening_trade_item'.",
+                            status: 422
+                        );
+                    }
+
+                    if ($targetType === 'purchase') {
+                        if ($openingKey !== null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_type 'purchase' and opening identifier.",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId !== null && $billKey !== null && $genericTargetId !== $billKey) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and bill_id [{$billKey}].",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId === null && $billKey === null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} must identify a target (target_id or bill_id).",
+                                status: 422
+                            );
+                        }
+                        $targetId = $genericTargetId ?? $billKey;
+                    } else {
+                        // $targetType === 'opening_trade_item'
+                        if ($billKey !== null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_type 'opening_trade_item' and purchase bill identifier.",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId !== null && $openingKey !== null && $genericTargetId !== $openingKey) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and opening_trade_item_id [{$openingKey}].",
+                                status: 422
+                            );
+                        }
+                        if ($genericTargetId === null && $openingKey === null) {
+                            return MobileApiBoundary::buildErrorResponse(
+                                code: 'VALIDATION_FAILED',
+                                message: "Allocation item at index {$index} must identify a target (target_id or opening_trade_item_id).",
+                                status: 422
+                            );
+                        }
+                        $targetId = $genericTargetId ?? $openingKey;
+                    }
+                    $isPureLegacyWire = false;
+                } elseif ($openingKey !== null) {
+                    $targetType = 'opening_trade_item';
+                    if ($genericTargetId !== null && $genericTargetId !== $openingKey) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and opening_trade_item_id [{$openingKey}].",
+                            status: 422
+                        );
+                    }
+                    $targetId = $openingKey;
+                    $isPureLegacyWire = false;
+                } elseif ($billKey !== null) {
+                    $targetType = 'purchase';
+                    if ($genericTargetId !== null && $genericTargetId !== $billKey) {
+                        return MobileApiBoundary::buildErrorResponse(
+                            code: 'VALIDATION_FAILED',
+                            message: "Allocation item at index {$index} has conflicting target_id [{$genericTargetId}] and bill_id [{$billKey}].",
+                            status: 422
+                        );
+                    }
+                    $targetId = $billKey;
+                    if ($genericTargetId !== null) {
+                        $isPureLegacyWire = false;
+                    }
+                } elseif ($genericTargetId !== null) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} specifies target_id without target_type.",
+                        status: 422
+                    );
+                } else {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Allocation item at index {$index} must identify a target (target_type and target_id, or bill_id, or opening_trade_item_id).",
+                        status: 422
+                    );
+                }
+
+                if (preg_match('/\A[0-7][0-9A-HJKMNP-TV-Z]{25}\z/', $targetId) !== 1) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Valid target public ID (ULID) is required for allocation item at index {$index}.",
+                        status: 422
+                    );
+                }
+
+                // Duplicate target detection
+                $compositeKey = "{$targetType}:{$targetId}";
+                if (isset($seenTargets[$compositeKey])) {
+                    return MobileApiBoundary::buildErrorResponse(
+                        code: 'VALIDATION_FAILED',
+                        message: "Duplicate allocation target [{$compositeKey}]. Each target may only be allocated once per payment.",
+                        status: 422
+                    );
+                }
+                $seenTargets[$compositeKey] = true;
+
+                // Validate allocated amount
                 try {
                     $itemAmount = NativeWriteContextResolver::validateDecimalString(
                         $item['document_currency_amount'] ?? $item['amount'] ?? $item['allocated_amount'] ?? null,
@@ -942,15 +1208,38 @@ final class SupplierController extends Controller
                         return MobileApiBoundary::buildErrorResponse(code: 'VALIDATION_FAILED', message: $e->getMessage(), status: 422);
                     }
                 }
-                $canonicalAllocations[] = [
-                    'bill_id' => $billId,
+
+                $allocRow = [
+                    'target_type' => $targetType,
+                    'target_id' => $targetId,
                     'amount' => $itemAmount,
                 ];
+                if ($targetType === 'opening_trade_item') {
+                    $allocRow['opening_trade_item_id'] = $targetId;
+                } else {
+                    $allocRow['bill_id'] = $targetId;
+                }
                 if ($paymentAmount !== null) {
-                    $canonicalAllocations[array_key_last($canonicalAllocations)]['payment_currency_amount'] = $paymentAmount;
+                    $allocRow['payment_currency_amount'] = $paymentAmount;
+                }
+                $canonicalAllocations[] = $allocRow;
+
+                if ($targetType === 'purchase') {
+                    $legacyAllocRow = [
+                        'bill_id' => $targetId,
+                        'amount' => $itemAmount,
+                    ];
+                    if ($paymentAmount !== null) {
+                        $legacyAllocRow['payment_currency_amount'] = $paymentAmount;
+                    }
+                    $legacyAllocations[] = $legacyAllocRow;
                 }
             }
-            usort($canonicalAllocations, fn ($a, $b) => strcmp($a['bill_id'], $b['bill_id']));
+
+            usort($canonicalAllocations, fn ($a, $b) => strcmp($a['target_type'].':'.$a['target_id'], $b['target_type'].':'.$b['target_id']));
+            if (! empty($legacyAllocations)) {
+                usort($legacyAllocations, fn ($a, $b) => strcmp($a['bill_id'], $b['bill_id']));
+            }
         }
 
         $canonicalPayload = [
@@ -986,6 +1275,49 @@ final class SupplierController extends Controller
         $aliasPayload['vendor_id'] = $aliasPayload['supplier_id'];
         unset($aliasPayload['supplier_id']);
         $legacyHashes[] = hash('sha256', json_encode($aliasPayload, JSON_THROW_ON_ERROR));
+
+        if ($paymentCurrency === (string) $company->base_currency_code && BigDecimal::of($paymentRate)->compareTo(1) === 0) {
+            if (isset($aliasPayload['exchange_rate'])) {
+                $aliasRatePayload = $aliasPayload;
+                unset($aliasRatePayload['exchange_rate']);
+                $legacyHashes[] = hash('sha256', json_encode($aliasRatePayload, JSON_THROW_ON_ERROR));
+            } else {
+                $aliasRatePayload = $aliasPayload;
+                $aliasRatePayload['exchange_rate'] = '1.0000000000';
+                $legacyHashes[] = hash('sha256', json_encode($aliasRatePayload, JSON_THROW_ON_ERROR));
+            }
+        }
+
+        if ($isPureLegacyWire && ! empty($legacyAllocations)) {
+            $legacyAllocPayload = $canonicalPayload;
+            $legacyAllocPayload['allocations'] = $legacyAllocations;
+            $legacyHashes[] = hash('sha256', json_encode($legacyAllocPayload, JSON_THROW_ON_ERROR));
+
+            $aliasAllocPayload = $legacyAllocPayload;
+            $aliasAllocPayload['vendor_id'] = $aliasAllocPayload['supplier_id'];
+            unset($aliasAllocPayload['supplier_id']);
+            $legacyHashes[] = hash('sha256', json_encode($aliasAllocPayload, JSON_THROW_ON_ERROR));
+
+            if ($paymentCurrency === (string) $company->base_currency_code && BigDecimal::of($paymentRate)->compareTo(1) === 0) {
+                if (isset($legacyAllocPayload['exchange_rate'])) {
+                    $comboPayload = $legacyAllocPayload;
+                    unset($comboPayload['exchange_rate']);
+                    $legacyHashes[] = hash('sha256', json_encode($comboPayload, JSON_THROW_ON_ERROR));
+
+                    $comboAliasPayload = $aliasAllocPayload;
+                    unset($comboAliasPayload['exchange_rate']);
+                    $legacyHashes[] = hash('sha256', json_encode($comboAliasPayload, JSON_THROW_ON_ERROR));
+                } else {
+                    $comboPayload = $legacyAllocPayload;
+                    $comboPayload['exchange_rate'] = '1.0000000000';
+                    $legacyHashes[] = hash('sha256', json_encode($comboPayload, JSON_THROW_ON_ERROR));
+
+                    $comboAliasPayload = $aliasAllocPayload;
+                    $comboAliasPayload['exchange_rate'] = '1.0000000000';
+                    $legacyHashes[] = hash('sha256', json_encode($comboAliasPayload, JSON_THROW_ON_ERROR));
+                }
+            }
+        }
 
         try {
             $result = $receiptManager->execute(
@@ -1037,28 +1369,76 @@ final class SupplierController extends Controller
                     );
 
                     $resolvedAllocations = [];
+                    $totalAllocatedPayment = BigDecimal::zero();
+
                     foreach ($canonicalAllocations as $alloc) {
-                        /** @var Purchase|null $purchase */
-                        $purchase = Purchase::where('company_id', $lockedCompany->id)
-                            ->where('public_id', $alloc['bill_id'])
-                            ->lockForUpdate()
-                            ->first();
+                        if ($alloc['target_type'] === 'opening_trade_item') {
+                            /** @var OpeningTradeItem|null $openingItem */
+                            $openingItem = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                                ->where('public_id', $alloc['target_id'])
+                                ->lockForUpdate()
+                                ->first();
 
-                        if ($purchase === null || (int) $purchase->vendor_id !== (int) $vendor->id) {
-                            throw new InvalidArgumentException("Purchase bill [{$alloc['bill_id']}] not found or does not belong to target supplier.");
-                        }
+                            if ($openingItem === null || (int) $openingItem->vendor_id !== (int) $vendor->id || $openingItem->side !== OpeningTradeItem::SIDE_VENDOR) {
+                                throw new InvalidArgumentException("Opening trade item [{$alloc['target_id']}] not found or does not belong to target supplier.");
+                            }
 
-                        if (! $purchase->isPosted()) {
-                            throw new InvalidArgumentException("Purchase bill [{$alloc['bill_id']}] must be in posted status.");
-                        }
+                            if (! $openingItem->isPosted() || $openingItem->isReversed()) {
+                                throw new InvalidArgumentException("Opening trade item [{$alloc['target_id']}] must be in posted status.");
+                            }
 
-                        $resolvedAllocations[] = [
-                            'purchase_id' => (int) $purchase->id,
-                            'allocated_amount' => $alloc['amount'],
-                        ];
-                        if (isset($alloc['payment_currency_amount'])) {
-                            $resolvedAllocations[array_key_last($resolvedAllocations)]['payment_currency_amount'] = $alloc['payment_currency_amount'];
+                            $remaining = $openingItem->calculateOutstanding();
+                            if (BigDecimal::of($alloc['amount'])->isGreaterThan($remaining)) {
+                                throw new InvalidArgumentException("Allocation [{$alloc['amount']}] exceeds unpaid balance [{$remaining}] for opening trade item [{$alloc['target_id']}].");
+                            }
+
+                            $resolvedRow = [
+                                'opening_trade_item_id' => (int) $openingItem->id,
+                                'allocated_amount' => $alloc['amount'],
+                            ];
+                            if (isset($alloc['payment_currency_amount'])) {
+                                $resolvedRow['payment_currency_amount'] = $alloc['payment_currency_amount'];
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['payment_currency_amount']));
+                            } else {
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['amount']));
+                            }
+                            $resolvedAllocations[] = $resolvedRow;
+                        } else {
+                            /** @var Purchase|null $purchase */
+                            $purchase = Purchase::where('company_id', $lockedCompany->id)
+                                ->where('public_id', $alloc['target_id'])
+                                ->lockForUpdate()
+                                ->first();
+
+                            if ($purchase === null || (int) $purchase->vendor_id !== (int) $vendor->id) {
+                                throw new InvalidArgumentException("Purchase bill [{$alloc['target_id']}] not found or does not belong to target supplier.");
+                            }
+
+                            if (! $purchase->isPosted()) {
+                                throw new InvalidArgumentException("Purchase bill [{$alloc['target_id']}] must be in posted status.");
+                            }
+
+                            $remaining = $purchase->calculateOutstanding();
+                            if (BigDecimal::of($alloc['amount'])->isGreaterThan($remaining)) {
+                                throw new InvalidArgumentException("Allocation [{$alloc['amount']}] exceeds unpaid balance [{$remaining}] for purchase bill [{$alloc['target_id']}].");
+                            }
+
+                            $resolvedRow = [
+                                'purchase_id' => (int) $purchase->id,
+                                'allocated_amount' => $alloc['amount'],
+                            ];
+                            if (isset($alloc['payment_currency_amount'])) {
+                                $resolvedRow['payment_currency_amount'] = $alloc['payment_currency_amount'];
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['payment_currency_amount']));
+                            } else {
+                                $totalAllocatedPayment = $totalAllocatedPayment->plus(BigDecimal::of($alloc['amount']));
+                            }
+                            $resolvedAllocations[] = $resolvedRow;
                         }
+                    }
+
+                    if ($totalAllocatedPayment->isGreaterThan(BigDecimal::of($amount))) {
+                        throw new InvalidArgumentException("Total allocated amount [{$totalAllocatedPayment}] exceeds payment amount [{$amount}].");
                     }
 
                     app(CompanyContext::class)->setCompany($lockedCompany, $lockedActor);
@@ -1084,15 +1464,38 @@ final class SupplierController extends Controller
                         (string) $payment->currency_code
                     );
 
+                    $isAdvance = empty($resolvedAllocations);
+                    $unallocated = BigDecimal::of((string) ($payment->unallocated_amount ?? $payment->amount));
+                    $allocated = BigDecimal::of((string) $payment->amount)->minus($unallocated);
+                    if ($allocated->isNegative()) {
+                        $allocated = BigDecimal::zero();
+                    }
+
                     $snapshot = [
                         'id' => (string) $payment->public_id,
                         'voucher_id' => (string) $payment->public_id,
                         'payment_number' => (string) ($payment->payment_number ?? $payment->public_id),
                         'voucher_number' => (string) ($payment->payment_number ?? $payment->public_id),
                         'amount' => (string) BigDecimal::of((string) $payment->amount)->toScale($minorUnits, RoundingMode::HALF_UP),
+                        'amount_exact' => (string) BigDecimal::of((string) $payment->amount)->toScale(6),
                         'currency' => (string) $payment->currency_code,
                         'posted_at' => $payment->payment_date ? $payment->payment_date->format('Y-m-d\TH:i:s\Z') : now()->format('Y-m-d\TH:i:s\Z'),
                         'supplier_id' => (string) $vendor->public_id,
+                        'is_advance' => $isAdvance,
+                        'unallocated_amount' => (string) $unallocated->toScale($minorUnits, RoundingMode::HALF_UP),
+                        'unallocated_amount_exact' => (string) $unallocated->toScale(6),
+                        'allocated_amount' => (string) $allocated->toScale($minorUnits, RoundingMode::HALF_UP),
+                        'allocated_amount_exact' => (string) $allocated->toScale(6),
+                        'allocations' => array_map(function (array $alloc) use ($minorUnits): array {
+                            return [
+                                'target_type' => $alloc['target_type'],
+                                'target_id' => $alloc['target_id'],
+                                'amount' => (string) BigDecimal::of($alloc['amount'])->toScale($minorUnits, RoundingMode::HALF_UP),
+                                'allocated_amount' => (string) BigDecimal::of($alloc['amount'])->toScale($minorUnits, RoundingMode::HALF_UP),
+                                'amount_exact' => (string) BigDecimal::of($alloc['amount'])->toScale(6),
+                                'allocated_amount_exact' => (string) BigDecimal::of($alloc['amount'])->toScale(6),
+                            ];
+                        }, $canonicalAllocations),
                         'success' => true,
                     ];
 

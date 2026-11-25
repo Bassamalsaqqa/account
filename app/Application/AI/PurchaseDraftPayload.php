@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Application\AI;
 
+use App\Domain\Purchasing\DocumentDiscountIntent;
 use Brick\Math\BigDecimal;
 use InvalidArgumentException;
 
@@ -15,8 +16,18 @@ final class PurchaseDraftPayload
      */
     public function canonicalize(array $payload): array
     {
+        return $this->normalize($payload, false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function normalize(array $payload, bool $legacy): array
+    {
         $headers = ['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date',
-            'currency_code', 'exchange_rate', 'document_locale', 'notes', 'lines'];
+            'currency_code', 'exchange_rate', 'document_locale', 'notes',
+            'discount_type', 'discount_value', 'discount_scope', 'lines'];
         if (array_diff(array_keys($payload), $headers) !== [] || strlen(json_encode($payload, JSON_THROW_ON_ERROR)) > 65536) {
             throw new InvalidArgumentException('Invalid purchase draft command fields.');
         }
@@ -28,6 +39,17 @@ final class PurchaseDraftPayload
         foreach (['vendor_invoice_number', 'due_date', 'notes'] as $field) {
             $payload[$field] ??= null;
         }
+        $payload['discount_type'] ??= 'none';
+        $payload['discount_scope'] ??= 'document';
+
+        if (! in_array($payload['discount_type'], ['none', 'fixed', 'percent'], true)) {
+            throw new InvalidArgumentException(__('purchasing.invalid_discount_type'));
+        }
+        if ($payload['discount_scope'] !== 'document') {
+            throw new InvalidArgumentException('Legacy line discount scope is not selectable via AI assistant.');
+        }
+        $payload['discount_value'] = (string) DocumentDiscountIntent::parseValue($payload['discount_type'], $payload['discount_value'] ?? null)->strippedOfTrailingZeros();
+
         $payload['exchange_rate'] = $this->decimal($payload['exchange_rate'], 10);
         foreach (['vendor_invoice_number', 'purchase_date', 'due_date', 'currency_code', 'document_locale', 'notes'] as $field) {
             if ($payload[$field] !== null && ! is_string($payload[$field])) {
@@ -55,8 +77,13 @@ final class PurchaseDraftPayload
             $line['tax_rate_id'] = $this->identity($line['tax_rate_id'] ?? null);
             $line['quantity'] = $this->decimal($line['quantity'] ?? null, 6);
             $line['unit_cost'] = $this->decimal($line['unit_cost'] ?? null, 6);
-            $line['discount_type'] = $line['discount_type'] ?? 'none';
-            $line['discount_value'] = $this->decimal($line['discount_value'] ?? '0', 6);
+            $discountType = $line['discount_type'] ?? 'none';
+            $discountValue = $this->decimal($line['discount_value'] ?? '0', 6);
+            if (! in_array($discountType, ['none', 'fixed', 'percent'], true) || $discountValue !== '0') {
+                throw new InvalidArgumentException('Manual line discounts are not supported via AI assistant.');
+            }
+            $line['discount_type'] = $legacy ? $discountType : 'none';
+            $line['discount_value'] = $legacy ? $discountValue : '0.000000';
             $line['lots'] ??= [];
             if (! is_array($line['lots']) || ! array_is_list($line['lots']) || count($line['lots']) > 100) {
                 throw new InvalidArgumentException('Purchase lots must be a bounded list.');
@@ -81,6 +108,23 @@ final class PurchaseDraftPayload
     public function hash(array $payload): string
     {
         return hash('sha256', json_encode($this->sort($payload), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /** @param array<string, mixed> $canonical */
+    public function isEquivalentLegacyPayload(array $canonical): bool
+    {
+        return ($canonical['discount_type'] ?? 'none') === 'none'
+            && BigDecimal::of((string) ($canonical['discount_value'] ?? '0'))->isZero()
+            && ($canonical['discount_scope'] ?? 'document') === 'document';
+    }
+
+    /** @param array<string, mixed> $payload */
+    public function legacyHash(array $payload): string
+    {
+        $legacy = $this->normalize($payload, true);
+        unset($legacy['discount_type'], $legacy['discount_value'], $legacy['discount_scope']);
+
+        return $this->hash($legacy);
     }
 
     private function identity(mixed $value): ?int

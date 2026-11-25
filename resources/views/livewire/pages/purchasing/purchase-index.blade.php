@@ -87,7 +87,7 @@
                     </td>
                     @if($withCost)
                         <td class="py-3 px-4 font-bold text-text-primary tabular-nums" dir="ltr">
-                            <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi>
+                            <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code, $purchase->resolvedCurrencyMinorUnits()) }}</bdi>
                         </td>
                     @endif
                     <td class="table-actions py-3 px-4 text-end">@include('livewire.partials.purchase-row-actions')</td>
@@ -125,7 +125,7 @@
                                 <dd><bdi>{{ $purchase->currency_code }}</bdi></dd>
                             </div>
                         @if($withCost)<div><dt class="text-text-secondary">{{ __('purchasing.total') }}</dt>
-                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }}</bdi></dd>
+                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code, $purchase->resolvedCurrencyMinorUnits()) }}</bdi></dd>
                             </div>@endif
                     </dl>
                     <div class="pt-3 border-t border-border">

@@ -29,6 +29,7 @@ final class PurchaseReturnReadModel
     private function buildDetail(PurchaseReturn $return, bool $withCost): array
     {
         $data = $return->only(['public_id', 'return_number', 'status', 'currency_code', 'document_locale', 'reason', 'notes']);
+        $data['currency_minor_units'] = $return->resolvedCurrencyMinorUnits();
         $data['posted_at'] = $return->posted_at?->format('Y-m-d H:i');
         $data['return_date'] = $return->return_date->format('Y-m-d');
         $data['vendor_name'] = $return->vendor->displayName();

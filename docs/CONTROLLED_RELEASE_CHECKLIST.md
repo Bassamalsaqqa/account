@@ -33,7 +33,7 @@ The preparation result is **maintenance held**, not production ready. On any fai
 - Through the authorized maintenance bypass, verify authenticated Arabic and English dashboard, Settings, reports, Sales/Purchase creation and shared-layout workflows. Check actual Linux Livewire aliases, fresh logs, essential API route behavior and feature flags. No financial writes or billable AI calls are needed for this release verification.
 - Verify HTTPS delivery of actual CSS/JS referenced by the Vite manifest, and `https://account.palsync.net/manifest.webmanifest` with `application/manifest+json`. The web manifest is a published static file at the public root, **not** `/build/manifest.webmanifest`. A source directive is not proof of the live response MIME.
 - Confirm the protected `.htaccess` checksum is unchanged after publishing assets, including Hostinger PHP handling and operator-specific rules. Verify intended permissions: directories 0755, files 0644, restricted backup files 0600/directories 0700; never 777.
-- Verify safe rollback to the known-good source/build with retained forward schema and business data. Do not restore an old SQL snapshot over subsequent production activity or reverse applied migrations for convenience.
+- Verify safe rollback to the known-good source/build with retained forward schema and business data. Do not restore an old SQL snapshot over subsequent production activity or reverse applied migrations for convenience. After any live writes, retain the additive purchase discount columns and their data during source and asset rollback.
 
 ## Explicit reopening gate
 

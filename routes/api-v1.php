@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\AssistantTurnController;
 use App\Http\Controllers\Api\V1\LookupController;
+use App\Http\Controllers\Api\V1\OpeningTradeItemApiController;
 use App\Http\Controllers\Api\V1\SalesInvoiceApiController;
 use App\Http\Controllers\Api\V1\SessionApiController;
 use App\Http\Middleware\Phase11ApiGuard;
@@ -45,13 +46,22 @@ Route::prefix('api/v1')
                 Route::post('/{publicId}/execute', [SalesInvoiceApiController::class, 'execute'])->name('api.v1.sales.invoices.execute');
             });
 
-            // Read-only lookups for entity resolution (customers, products, warehouses, currencies, taxes)
+            // Read-only lookups for entity resolution (customers, vendors, products, warehouses, currencies, taxes)
             Route::prefix('lookups')->group(function (): void {
                 Route::get('/customers', [LookupController::class, 'customers'])->name('api.v1.lookups.customers');
+                Route::get('/vendors', [LookupController::class, 'vendors'])->name('api.v1.lookups.vendors');
                 Route::get('/products', [LookupController::class, 'products'])->name('api.v1.lookups.products');
                 Route::get('/warehouses', [LookupController::class, 'warehouses'])->name('api.v1.lookups.warehouses');
                 Route::get('/currencies', [LookupController::class, 'currencies'])->name('api.v1.lookups.currencies');
                 Route::get('/taxes', [LookupController::class, 'taxes'])->name('api.v1.lookups.taxes');
+            });
+
+            // Opening trade items command & audit endpoints
+            Route::prefix('accounting/opening-trade-items')->group(function (): void {
+                Route::post('/preview', [OpeningTradeItemApiController::class, 'preview'])->name('api.v1.accounting.opening_trade_items.preview');
+                Route::post('/execute', [OpeningTradeItemApiController::class, 'execute'])->name('api.v1.accounting.opening_trade_items.execute');
+                Route::post('/{publicId}/reverse', [OpeningTradeItemApiController::class, 'reverse'])->name('api.v1.accounting.opening_trade_items.reverse');
+                Route::get('/cutover-audit', [OpeningTradeItemApiController::class, 'cutoverAudit'])->name('api.v1.accounting.opening_trade_items.cutover_audit');
             });
         });
     });

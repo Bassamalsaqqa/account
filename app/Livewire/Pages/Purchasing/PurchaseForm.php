@@ -11,7 +11,13 @@ use App\Application\AI\PurchaseDraftCommands;
 use App\Application\Commands\ImmediatePurchaseCommands;
 use App\Domain\Inventory\Exceptions\InvalidQuantityException;
 use App\Domain\Inventory\Exceptions\InvalidUnitConversionException;
+use App\Domain\Inventory\ValueObjects\Quantity;
 use App\Domain\Money\Exceptions\InvalidMoneyException;
+use App\Domain\Money\ValueObjects\ExchangeRate;
+use App\Domain\Money\ValueObjects\MoneyAmount;
+use App\Domain\Purchasing\DocumentDiscountAllocator;
+use App\Domain\Purchasing\DocumentDiscountIntent;
+use App\Domain\Purchasing\DocumentDiscountLineCandidate;
 use App\Domain\Purchasing\PurchaseCalculator;
 use App\Domain\Purchasing\Queries\VendorProductPriceHistoryQuery;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
@@ -32,6 +38,7 @@ use App\Models\Purchase;
 use App\Models\TaxRate;
 use App\Models\Vendor;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Purchasing\DuplicateVendorInvoice;
 use App\Services\Purchasing\PurchaseDocumentRules;
@@ -41,6 +48,7 @@ use App\Services\Purchasing\PurchaseProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
+use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -200,6 +208,35 @@ class PurchaseForm extends Component
     /** @var array<int, bool> */
     public array $expandedLotCustomization = [];
 
+    /** @var array<int, bool> */
+    public array $expandedRowOptions = [];
+
+    #[Locked]
+    public string $discount_scope = 'document';
+
+    #[Locked]
+    public int $discount_calculation_version = 1;
+
+    #[Locked]
+    public ?int $currency_minor_units = null;
+
+    /** @var array<string, array{discount_type: string, discount_value: string}> */
+    #[Locked]
+    public array $persistedLineDiscounts = [];
+
+    public string $discount_type = 'none';
+
+    public mixed $discount_value = '0';
+
+    private bool $currencyUpdatePending = false;
+
+    #[Locked]
+    public bool $focusFormErrors = false;
+
+    public bool $showDiscountControl = false;
+
+    public bool $showMoreDetails = false;
+
     public ?string $previewGrandTotal = null;
 
     protected function authorizeForm(): Company
@@ -228,10 +265,32 @@ class PurchaseForm extends Component
         abort_if($publicId === null && $receiveProduct !== null && request()->query('assistant') !== null, 422);
         if ($publicId !== null) {
             $purchase = Purchase::where('company_id', $company->id)->where('public_id', $publicId)->firstOrFail();
-            foreach (app(PurchaseDraftBuilder::class)->editableData($purchase) as $key => $value) {
+            $editableData = app(PurchaseDraftBuilder::class)->editableData($purchase);
+            foreach ($editableData as $key => $value) {
                 $this->{$key} = $value;
             }
             $this->currencyManuallySelected = true;
+            $this->discount_type = $editableData['discount_type'] ?? ($purchase->discount_type ?? 'none');
+            $this->discount_value = isset($editableData['discount_value'])
+                ? (string) $editableData['discount_value']
+                : (isset($purchase->discount_value) ? (string) $purchase->discount_value : '0');
+            $this->discount_scope = $editableData['discount_scope'] ?? ($purchase->discount_scope ?? 'document');
+            $this->discount_calculation_version = (int) ($editableData['discount_calculation_version'] ?? ($purchase->discount_calculation_version ?? 1));
+            $this->currency_minor_units = isset($editableData['currency_minor_units'])
+                ? (int) $editableData['currency_minor_units']
+                : ($purchase->currency_minor_units ?? $purchase->resolvedCurrencyMinorUnits());
+            $this->persistedLineDiscounts = [];
+            foreach ($editableData['lines'] as $l) {
+                if (! empty($l['public_id'])) {
+                    $this->persistedLineDiscounts[$l['public_id']] = [
+                        'discount_type' => $l['discount_type'] ?? 'none',
+                        'discount_value' => (string) ($l['discount_value'] ?? '0'),
+                    ];
+                }
+            }
+            if ($this->discount_type !== 'none' || ($this->discount_scope === 'document' && ! BigDecimal::of((string) ($this->discount_value ?: '0'))->isZero())) {
+                $this->showDiscountControl = true;
+            }
             foreach ($this->lines as $index => $line) {
                 $lots = $line['lots'] ?? [];
                 if (count($lots) > 1 || (! empty($lots[0]['lot_number'])) || (! empty($lots[0]['expiry_date'])) || (isset($lots[0]['quantity']) && (string) $lots[0]['quantity'] !== (string) $line['quantity'])) {
@@ -239,6 +298,12 @@ class PurchaseForm extends Component
                 }
             }
         } else {
+            $this->discount_scope = 'document';
+            $this->discount_calculation_version = 1;
+            $this->currency_minor_units = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->showDiscountControl = false;
             $this->purchase_date = now($company->timezone)->format('Y-m-d');
             $this->due_date = app(PurchaseDocumentRules::class)->defaultDueDate($company, $this->purchase_date);
             $this->currency_code = $company->base_currency_code;
@@ -257,10 +322,10 @@ class PurchaseForm extends Component
                 $this->receivingStock = true;
             }
         }
+        $this->previousCurrencyCode = $this->currency_code;
         if ($publicId === null) {
             $this->mountAiInput('purchase');
         }
-        $this->previousCurrencyCode = $this->currency_code;
         $this->settlement['payment_date'] = now($company->timezone)->format('Y-m-d');
         $this->settlement['due_date'] = now($company->timezone)->format('Y-m-d');
         $this->settlement['currency_code'] = $this->currency_code ?: $company->base_currency_code;
@@ -278,14 +343,20 @@ class PurchaseForm extends Component
         $company = $this->authorizeForm();
         if ($this->vendor_id !== null) {
             $vendor = app(PurchaseDocumentRules::class)->vendor($company, $this->vendor_id);
-            if (! $this->currencyManuallySelected) {
+            if (! $this->currencyManuallySelected && ! $this->currencyUpdatePending) {
                 $this->initializeCurrency($company, app(PurchaseDocumentRules::class)->defaultCurrency($company, $vendor));
             }
         }
     }
 
+    public function updatingCurrencyCode(): void
+    {
+        $this->currencyUpdatePending = true;
+    }
+
     public function updatedCurrencyCode(): void
     {
+        $this->currencyUpdatePending = false;
         $company = $this->authorizeForm();
         $this->currencyManuallySelected = true;
         $this->initializeCurrency($company, $this->currency_code);
@@ -294,6 +365,15 @@ class PurchaseForm extends Component
     private function initializeCurrency(Company $company, string $currency): void
     {
         $changed = $currency !== $this->previousCurrencyCode;
+        $this->resetErrorBag('currency_code');
+        if ($changed && $this->discount_scope === 'line'
+            && collect($this->persistedLineDiscounts)->contains(fn ($discount) => ! BigDecimal::of($discount['discount_value'])->isZero())) {
+            $this->currency_code = $this->previousCurrencyCode;
+            $this->recalculate();
+            $this->addError('currency_code', __('purchasing.currency_change_legacy_discount'));
+
+            return;
+        }
         $this->currency_code = $currency;
         if ($currency === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
@@ -302,6 +382,11 @@ class PurchaseForm extends Component
             $this->exchange_rate = '';
         }
         if ($changed) {
+            if ($this->discount_type === 'fixed') {
+                $this->discount_value = '';
+                $this->showDiscountControl = true;
+            }
+            $this->syncSettlementDefaults('currency_code');
             foreach ($this->lines as &$line) {
                 if (! empty($line['product_id'])) {
                     // Supplier costs and discounts cannot be reinterpreted in another currency.
@@ -312,18 +397,25 @@ class PurchaseForm extends Component
                 }
             }
         }
-        $this->previousCurrencyCode = $currency;
         $this->recalculate();
+        if ($changed && $this->discount_type === 'fixed') {
+            $this->resetErrorBag('discount_value');
+            $this->addError('discount_value', __('purchasing.currency_change_discount'));
+        }
     }
 
     public function updated(?string $property = null): void
     {
+        $this->focusFormErrors = false;
         if ($this->showPreview && ! in_array($property, ['showPreview', 'confirmationToken', 'executeKey', 'previewDigest', 'previewData', 'previewError', 'productSearch'], true)) {
             $this->cancelPreview();
         }
 
-        if ($property !== null && str_starts_with($property, 'settlement.')) {
+        if (in_array($property, ['settlement.mode', 'settlement.money_account_id', 'settlement.payment_method'], true)) {
+            $this->resetErrorBag(array_map(fn ($field) => 'settlement.'.$field, array_keys($this->settlement)));
             $this->syncSettlementDefaults($property);
+        } elseif ($property !== null && str_starts_with($property, 'settlement.')) {
+            $this->resetErrorBag($property);
         }
     }
 
@@ -332,8 +424,56 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
+    public function toggleDiscountControl(): void
+    {
+        $this->showDiscountControl = ! $this->showDiscountControl;
+        if (! $this->showDiscountControl) {
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->resetErrorBag('discount_value');
+            $this->recalculate();
+        } elseif ($this->discount_type === 'none') {
+            $this->discount_type = 'percent';
+        }
+    }
+
+    public function updatedDiscountType(): void
+    {
+        if ($this->discount_type === 'none') {
+            $this->discount_value = '0';
+        }
+        $this->recalculate();
+    }
+
+    public function updatedDiscountValue(): void
+    {
+        $this->resetErrorBag('discount_value');
+        $this->recalculate();
+    }
+
+    public function toggleMoreDetails(): void
+    {
+        $this->showMoreDetails = ! $this->showMoreDetails;
+    }
+
+    public function toggleRowOptions(int $index): void
+    {
+        $this->expandedRowOptions[$index] = ! ($this->expandedRowOptions[$index] ?? false);
+    }
+
     public function updatedLines(): void
     {
+        foreach ($this->lines as &$line) {
+            if (! empty($line['public_id']) && isset($this->persistedLineDiscounts[$line['public_id']])) {
+                $line['discount_type'] = $this->persistedLineDiscounts[$line['public_id']]['discount_type'];
+                $line['discount_value'] = $this->persistedLineDiscounts[$line['public_id']]['discount_value'];
+            } else {
+                $line['discount_type'] = 'none';
+                $line['discount_value'] = '0';
+            }
+        }
+        unset($line);
+
         foreach ($this->lines as $index => &$line) {
             if (! empty($line['product_id']) && ! ($this->expandedLotCustomization[$index] ?? false)) {
                 if (count($line['lots'] ?? []) === 1 && empty($line['lots'][0]['lot_number']) && empty($line['lots'][0]['expiry_date'])) {
@@ -347,6 +487,7 @@ class PurchaseForm extends Component
 
     public function saveAndConfirm(): mixed
     {
+        $this->focusFormErrors = true;
         $company = $this->authorizeForm();
         if ($this->showQuickVendorModal || $this->showQuickProductModal) {
             return null;
@@ -358,7 +499,8 @@ class PurchaseForm extends Component
                     $this->saveAndConfirmOnce();
 
                     return $this->completedConfirmation;
-                }
+                },
+                legacyDigest: $this->legacySettlementDigest()
             );
         } catch (HttpException $exception) {
             if ($exception->getStatusCode() !== 409) {
@@ -402,6 +544,7 @@ class PurchaseForm extends Component
 
     public function saveDraft(): mixed
     {
+        $this->focusFormErrors = true;
         if ($this->showQuickVendorModal || $this->showQuickProductModal) {
             return null;
         }
@@ -589,6 +732,7 @@ class PurchaseForm extends Component
         $this->authorizeForm();
         $this->lines[] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
             'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
+        $this->clearPurchaseTotals();
     }
 
     public function removeLine(int $index): void
@@ -601,13 +745,18 @@ class PurchaseForm extends Component
         $this->lines = array_values($this->lines);
 
         $newExpanded = [];
+        $newRowOptions = [];
         foreach ($this->lines as $newIdx => $line) {
             $oldIdx = $newIdx >= $index ? $newIdx + 1 : $newIdx;
             if (isset($this->expandedLotCustomization[$oldIdx])) {
                 $newExpanded[$newIdx] = $this->expandedLotCustomization[$oldIdx];
             }
+            if (isset($this->expandedRowOptions[$oldIdx])) {
+                $newRowOptions[$newIdx] = $this->expandedRowOptions[$oldIdx];
+            }
         }
         $this->expandedLotCustomization = $newExpanded;
+        $this->expandedRowOptions = $newRowOptions;
 
         $this->recalculate();
     }
@@ -617,17 +766,33 @@ class PurchaseForm extends Component
         if ($this->showPreview) {
             $this->cancelPreview();
         }
-        $this->authorizeForm();
+        $company = $this->authorizeForm();
         abort_unless(isset($this->lines[$index]), 422);
         unset($this->expandedLotCustomization[$index]);
+
+        $currentPublicId = $this->lines[$index]['public_id'] ?? null;
+        $persisted = $currentPublicId !== null ? ($this->persistedLineDiscounts[$currentPublicId] ?? null) : null;
+        $hasPersistedDiscount = $persisted !== null && $persisted['discount_type'] !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
+
         if ($productId === '' || $productId === null) {
+            if ($hasPersistedDiscount) {
+                $this->addError("lines.{$index}.product_id", __('purchasing.legacy_discounted_line_immutable_product'));
+
+                return false;
+            }
             $this->lines[$index] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
                 'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
             $this->recalculate();
 
             return true;
         }
+
         try {
+            if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
+                $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+
+                return false;
+            }
             $unitId = ($productUnitId !== null && $productUnitId !== '') ? (int) $productUnitId : null;
             $selected = app(PurchaseProductSelection::class)->select((int) $productId, $unitId, $this->currency_code, $this->exchange_rate);
         } catch (\InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
@@ -635,7 +800,33 @@ class PurchaseForm extends Component
 
             return false;
         }
-        unset($this->lines[$index]['public_id']);
+
+        $isSameProduct = (int) ($this->lines[$index]['product_id'] ?? 0) === (int) $productId;
+        $isSameUnit = (int) ($this->lines[$index]['product_unit_id'] ?? 0) === (int) $selected['product_unit_id'];
+
+        if ($hasPersistedDiscount) {
+            if (! $isSameProduct) {
+                $this->addError("lines.{$index}.product_id", __('purchasing.legacy_discounted_line_immutable_product'));
+
+                return false;
+            }
+            if (! $isSameUnit) {
+                $this->addError("lines.{$index}.product_unit_id", __('purchasing.legacy_discounted_line_immutable_unit'));
+
+                return false;
+            }
+        }
+
+        if ($isSameProduct && $isSameUnit && $currentPublicId !== null) {
+            $selected['public_id'] = $currentPublicId;
+            if ($hasPersistedDiscount) {
+                $selected['discount_type'] = $persisted['discount_type'];
+                $selected['discount_value'] = $persisted['discount_value'];
+            }
+        } else {
+            unset($this->lines[$index]['public_id']);
+        }
+
         $this->lines[$index] = array_replace($this->lines[$index], $selected, ['lots' => []]);
         $this->recalculate();
 
@@ -647,22 +838,57 @@ class PurchaseForm extends Component
         if ($this->showPreview) {
             $this->cancelPreview();
         }
-        $this->authorizeForm();
+        $company = $this->authorizeForm();
         abort_unless(isset($this->lines[$index]['product_id']), 422);
         unset($this->expandedLotCustomization[$index]);
+
+        $currentPublicId = $this->lines[$index]['public_id'] ?? null;
+        $persisted = $currentPublicId !== null ? ($this->persistedLineDiscounts[$currentPublicId] ?? null) : null;
+        $hasPersistedDiscount = $persisted !== null && $persisted['discount_type'] !== 'none' && ! BigDecimal::of((string) ($persisted['discount_value'] ?: '0'))->isZero();
+
         if ($unitId === '') {
+            if ($hasPersistedDiscount) {
+                $this->addError("lines.{$index}.product_unit_id", __('purchasing.legacy_discounted_line_immutable_unit'));
+
+                return;
+            }
             $this->lines[$index]['product_unit_id'] = null;
             $this->lines[$index]['lots'] = [];
+            unset($this->lines[$index]['public_id']);
 
             return;
         }
+
+        $isSameUnit = (int) ($this->lines[$index]['product_unit_id'] ?? 0) === (int) $unitId;
+        if ($hasPersistedDiscount && ! $isSameUnit) {
+            $this->addError("lines.{$index}.product_unit_id", __('purchasing.legacy_discounted_line_immutable_unit'));
+
+            return;
+        }
+
         try {
+            if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
+                $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+
+                return;
+            }
             $selected = app(PurchaseProductSelection::class)->select($this->lines[$index]['product_id'], (int) $unitId, $this->currency_code, $this->exchange_rate);
         } catch (\InvalidArgumentException|InvalidMoneyException|InvalidUnitConversionException $exception) {
             $this->addError('draft', __('purchasing.invalid_draft'));
 
             return;
         }
+
+        if ($isSameUnit && $currentPublicId !== null) {
+            $selected['public_id'] = $currentPublicId;
+            if ($hasPersistedDiscount) {
+                $selected['discount_type'] = $persisted['discount_type'];
+                $selected['discount_value'] = $persisted['discount_value'];
+            }
+        } else {
+            unset($this->lines[$index]['public_id']);
+        }
+
         $this->lines[$index] = array_replace($this->lines[$index], $selected, ['lots' => []]);
         $this->recalculate();
     }
@@ -719,41 +945,161 @@ class PurchaseForm extends Component
 
     public function recalculate(): void
     {
+        // Livewire hydrates every edit before running the updated hooks. Let the
+        // currency hook clear old-currency amounts before any preview is calculated.
+        if ($this->currencyUpdatePending) {
+            return;
+        }
+
         $this->documentTotalsValid = false;
+        $this->previewGrandTotal = '0';
         if ($this->showPreview) {
             $this->cancelPreview();
         }
-        $this->authorizeForm();
+        $company = $this->authorizeForm();
         $this->resetErrorBag('calculation');
         $this->resetErrorBag('exchange_rate');
+        $this->resetErrorBag('discount_value');
         $results = [];
         try {
+            if ($this->currency_code !== $this->previousCurrencyCode || $this->currency_minor_units === null) {
+                $draftId = $this->savedDraftPublicId ?? $this->publicId;
+                $draft = $draftId === null ? null : Purchase::where('company_id', $company->id)
+                    ->where('public_id', $draftId)->where('currency_code', $this->currency_code)->first();
+                $this->currency_minor_units = $draft?->resolvedCurrencyMinorUnits()
+                    ?? app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
+                $this->previousCurrencyCode = $this->currency_code;
+            }
+
+            $intent = $this->documentDiscountIntent();
+
+            try {
+                $rate = ExchangeRate::from($this->exchange_rate)->getValue();
+                if ($this->currency_code === $company->base_currency_code && ! $rate->isEqualTo(1)) {
+                    throw new \InvalidArgumentException;
+                }
+            } catch (InvalidMoneyException|\InvalidArgumentException) {
+                $this->clearPurchaseTotals();
+                $this->addError('exchange_rate', trim($this->exchange_rate) === ''
+                    ? __('purchasing.exchange_rate_required')
+                    : __('purchasing.invalid_exchange_rate'));
+
+                return;
+            }
+
+            foreach ($this->lines as $line) {
+                if (empty($line['product_id'])
+                    || ! isset($line['quantity']) || ! is_string($line['quantity']) || trim($line['quantity']) === ''
+                    || ! isset($line['unit_cost']) || ! is_string($line['unit_cost']) || trim($line['unit_cost']) === '') {
+                    $this->clearPurchaseTotals();
+
+                    return;
+                }
+            }
+
+            $lineTaxIds = array_map(static fn (array $line): int|false => filter_var($line['tax_rate_id'] ?? null, FILTER_VALIDATE_INT), $this->lines);
+            $taxIds = array_values(array_unique(array_filter($lineTaxIds)));
+            $taxes = $taxIds === [] ? collect() : TaxRate::query()
+                ->where('company_id', $company->id)
+                ->where('active', true)
+                ->whereKey($taxIds)
+                ->get()
+                ->keyBy('id');
+            $discountScope = $this->discount_scope;
+            $minor = $this->currency_minor_units;
+            $allocationResult = null;
+
+            if ($discountScope === 'document') {
+                $candidates = [];
+                foreach ($this->lines as $index => $line) {
+                    $qty = Quantity::of($line['quantity'])->toBigDecimal();
+                    $price = MoneyAmount::from($line['unit_cost'])->getAmount();
+                    $subtotal = $qty->multipliedBy($price)->toScale($minor, RoundingMode::HALF_UP);
+                    $tax = $taxes->get($lineTaxIds[$index] ?: 0);
+
+                    $candidates[] = new DocumentDiscountLineCandidate(
+                        lineNumber: $index + 1,
+                        unitCost: $price,
+                        quantity: $qty,
+                        subtotal: $subtotal,
+                        taxInclusive: $tax?->calculation === TaxRate::CALC_INCLUSIVE,
+                        taxRate: $tax?->rate !== null ? BigDecimal::of((string) $tax->rate) : null,
+                    );
+                }
+
+                try {
+                    $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $this->currency_code, $minor);
+                } catch (\InvalidArgumentException $e) {
+                    $this->clearPurchaseTotals();
+                    $this->addError('discount_value', $e->getMessage());
+
+                    return;
+                }
+            }
+
             foreach ($this->lines as $index => $line) {
-                $tax = ! empty($line['tax_rate_id']) ? TaxRate::where('company_id', $this->pageCompanyId)->where('active', true)->findOrFail($line['tax_rate_id']) : null;
-                $result = app(PurchaseCalculator::class)->line($line['quantity'], $line['unit_cost'], $line['discount_type'] ?? null,
-                    $line['discount_value'], $tax?->rate, $tax?->calculation === TaxRate::CALC_INCLUSIVE, $this->currency_code, $this->exchange_rate);
+                $tax = $taxes->get($lineTaxIds[$index] ?: 0);
+                $qty = $line['quantity'];
+                $cost = $line['unit_cost'];
+
+                if ($discountScope === 'document' && $allocationResult !== null) {
+                    $allocatedDiscount = $allocationResult->forLine($index + 1);
+                    $result = app(PurchaseCalculator::class)->line(
+                        $qty,
+                        $cost,
+                        'fixed',
+                        (string) $allocatedDiscount,
+                        $tax?->rate,
+                        $tax?->calculation === TaxRate::CALC_INCLUSIVE,
+                        $this->currency_code,
+                        $this->exchange_rate,
+                        $minor
+                    );
+                } else {
+                    $lineDiscountType = $line['discount_type'] ?? 'none';
+                    if ($lineDiscountType !== 'none') {
+                        if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '') {
+                            $this->clearPurchaseTotals();
+
+                            return;
+                        }
+                        try {
+                            BigDecimal::of($line['discount_value']);
+                        } catch (\Throwable) {
+                            $this->clearPurchaseTotals();
+
+                            return;
+                        }
+                    }
+
+                    $disc = isset($line['discount_value']) && is_string($line['discount_value']) && trim($line['discount_value']) !== '' ? $line['discount_value'] : '0';
+                    $result = app(PurchaseCalculator::class)->line($qty, $cost, $line['discount_type'] ?? null,
+                        $disc, $tax?->rate, $tax?->calculation === TaxRate::CALC_INCLUSIVE, $this->currency_code, $this->exchange_rate, $minor);
+                }
+
                 $this->lines[$index]['preview_total'] = (string) $result->total;
                 $results[] = $result;
             }
             $total = app(SalesDocumentTotalsCalculator::class)->calculate($results);
-            $oldGrandTotal = $this->previewGrandTotal;
             $this->totals = ['subtotal' => (string) $total->subtotalCurrency, 'discount' => (string) $total->discountTotalCurrency,
                 'tax' => (string) $total->taxTotalCurrency, 'total' => (string) $total->grandTotalCurrency];
-            $this->previewGrandTotal = SalesMoneyFormatter::formatMoneyInput($total->grandTotalCurrency);
+            $this->previewGrandTotal = (string) $total->grandTotalCurrency->toScale($minor, RoundingMode::HALF_UP);
             $this->resetErrorBag('currency');
             $this->documentTotalsValid = true;
 
             if (($this->settlement['mode'] ?? 'unpaid') === 'full') {
                 $paymentCurrency = $this->settlementPaymentCurrency();
-                if ($paymentCurrency === $this->currency_code && ($this->settlement['amount'] === '' || $this->settlement['amount'] === $oldGrandTotal)) {
+                if ($paymentCurrency === $this->currency_code) {
                     $this->settlement['amount'] = $this->previewGrandTotal;
+                } else {
+                    $this->settlement['purchase_amount'] = $this->previewGrandTotal;
                 }
             }
+        } catch (ValidationException $exception) {
+            $this->clearPurchaseTotals();
+            $this->addError('discount_value', $exception->errors()['discount_value'][0]);
         } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException $exception) {
-            $this->totals = [];
-            foreach ($this->lines as &$line) {
-                unset($line['preview_total']);
-            }
+            $this->clearPurchaseTotals();
             $this->addError('calculation', __('purchasing.invalid_line_amounts'));
             if ($this->exchange_rate === '') {
                 $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
@@ -761,31 +1107,70 @@ class PurchaseForm extends Component
         }
     }
 
+    private function clearPurchaseTotals(): void
+    {
+        $this->documentTotalsValid = false;
+        $this->previewGrandTotal = '0';
+        $this->totals = [];
+        foreach ($this->lines as &$line) {
+            unset($line['preview_total']);
+        }
+    }
+
+    private function documentDiscountIntent(): DocumentDiscountIntent
+    {
+        try {
+            return new DocumentDiscountIntent(
+                discountType: $this->discount_type === 'percentage' ? 'percent' : $this->discount_type,
+                discountValue: $this->discount_value,
+            );
+        } catch (\InvalidArgumentException $exception) {
+            throw ValidationException::withMessages(['discount_value' => $exception->getMessage()]);
+        }
+    }
+
     public function save(bool $andPost = false): mixed
     {
+        $this->focusFormErrors = true;
         $company = $this->authorizeForm();
         if ($andPost) {
             $this->authorizePurchasing('purchasing.purchase.post');
         }
 
+        $this->documentDiscountIntent();
+
         foreach ($this->lines as $idx => $line) {
-            if (! is_string($line['quantity'])) {
-                $this->addError("lines.{$idx}.quantity", __('commands.exact_string_required'));
+            $humanIndex = $idx + 1;
+            if (! isset($line['quantity']) || ! is_string($line['quantity']) || trim($line['quantity']) === '') {
+                $this->addError("lines.{$idx}.quantity", __('validation.required', ['attribute' => __('purchasing.line_attribute_quantity', ['index' => $humanIndex])]));
 
                 return null;
             }
-            if (! is_string($line['unit_cost'])) {
-                $this->addError("lines.{$idx}.unit_cost", __('commands.exact_string_required'));
+            if (! isset($line['unit_cost']) || ! is_string($line['unit_cost']) || trim($line['unit_cost']) === '') {
+                $this->addError("lines.{$idx}.unit_cost", __('validation.required', ['attribute' => __('purchasing.line_attribute_cost', ['index' => $humanIndex])]));
 
                 return null;
             }
-            if (! is_string($line['discount_value'] ?? '0')) {
-                $this->addError("lines.{$idx}.discount_value", __('commands.exact_string_required'));
+            $lineDiscountType = $line['discount_type'] ?? 'none';
+            if ($lineDiscountType !== 'none') {
+                if (! isset($line['discount_value']) || ! is_string($line['discount_value']) || trim($line['discount_value']) === '') {
+                    $this->addError("lines.{$idx}.discount_value", __('validation.required', ['attribute' => __('purchasing.line_attribute_discount', ['index' => $humanIndex])]));
 
-                return null;
+                    return null;
+                }
+                try {
+                    BigDecimal::of($line['discount_value']);
+                } catch (\Throwable) {
+                    $this->addError("lines.{$idx}.discount_value", __('validation.required', ['attribute' => __('purchasing.line_attribute_discount', ['index' => $humanIndex])]));
+
+                    return null;
+                }
+            } else {
+                $this->lines[$idx]['discount_value'] = '0';
             }
         }
 
+        $this->resetErrorBag('discount_value');
         $data = $this->draftData();
         try {
             $purchase = $this->publicId === null
@@ -814,7 +1199,24 @@ class PurchaseForm extends Component
         }
 
         $this->savedDraftPublicId = $purchase->public_id;
-        $this->savedDraftPayloadHash = hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
+        $this->currency_minor_units = $purchase->resolvedCurrencyMinorUnits();
+        $this->persistedLineDiscounts = [];
+        foreach ($purchase->lines as $persistedLine) {
+            $index = $persistedLine->line_number - 1;
+            $this->lines[$index]['public_id'] = $persistedLine->public_id;
+            foreach ($this->lines[$index]['lots'] ?? [] as $lotIndex => $lot) {
+                if (isset($lot['public_id'], $persistedLine->lots[$lotIndex])) {
+                    $this->lines[$index]['lots'][$lotIndex]['public_id'] = $persistedLine->lots[$lotIndex]->public_id;
+                }
+            }
+            if ($persistedLine->discount_type !== null) {
+                $this->persistedLineDiscounts[$persistedLine->public_id] = [
+                    'discount_type' => $persistedLine->discount_type,
+                    'discount_value' => (string) $persistedLine->discount_value,
+                ];
+            }
+        }
+        $this->savedDraftPayloadHash = hash('sha256', json_encode($this->draftData(), JSON_THROW_ON_ERROR));
 
         if (! $andPost) {
             $this->discardAiInput();
@@ -849,6 +1251,7 @@ class PurchaseForm extends Component
 
     public function confirmPost(): mixed
     {
+        $this->focusFormErrors = true;
         $company = $this->authorizeForm();
         $this->authorizePurchasing('purchasing.purchase.post');
         $user = auth()->user();
@@ -867,7 +1270,12 @@ class PurchaseForm extends Component
             return null;
         }
 
-        if ($confirmation['digest'] === null || $confirmation['digest'] !== $this->settlementDigest()) {
+        $digestMatches = $confirmation['digest'] !== null && (
+            $confirmation['digest'] === $this->settlementDigest()
+            || ($this->legacySettlementDigest() !== null && $confirmation['digest'] === $this->legacySettlementDigest())
+        );
+
+        if (! $digestMatches) {
             $this->cancelPreview();
             $this->previewError = __('commands.form_changed_repreview_required');
 
@@ -915,8 +1323,9 @@ class PurchaseForm extends Component
     {
         $company = app(CompanyContext::class)->company();
         $accountId = $this->settlement['money_account_id'] ?? null;
-        if (! empty($accountId)) {
-            $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId)->find($accountId);
+        if ((is_int($accountId) || is_string($accountId)) && ctype_digit((string) $accountId) && (int) $accountId > 0) {
+            $type = in_array($this->settlement['payment_method'] ?? null, ['bank_transfer', 'check'], true) ? 'bank' : 'cash';
+            $account = app(EligibleMoneyAccounts::class)->query($this->pageCompanyId, $type)->find($accountId);
             if ($account !== null && ! empty($account->currency_code)) {
                 return $account->currency_code;
             }
@@ -927,6 +1336,57 @@ class PurchaseForm extends Component
         }
 
         return $this->currency_code ?: $company->base_currency_code;
+    }
+
+    /** @return array{remaining: string, credit: string|null}|null */
+    private function settlementBalance(?string $paymentCurrency, string $baseCurrency): ?array
+    {
+        if (! $this->documentTotalsValid) {
+            return null;
+        }
+
+        $mode = $this->settlement['mode'] ?? 'unpaid';
+        $total = BigDecimal::of($this->previewGrandTotal);
+        if ($mode === 'unpaid') {
+            return ['remaining' => (string) $total, 'credit' => null];
+        }
+        if ($paymentCurrency === null || ! in_array($mode, ['full', 'partial'], true)) {
+            return null;
+        }
+
+        $sameCurrency = $paymentCurrency === $this->currency_code;
+        $paymentMinor = $sameCurrency ? $this->currency_minor_units : app(CurrencyMinorUnitsResolver::class)->resolve($paymentCurrency);
+        $paid = $mode === 'full' && $sameCurrency ? $total : $this->settlementPreviewAmount('amount', $paymentMinor);
+        $applied = $mode === 'full' ? $total : ($sameCurrency ? $paid : $this->settlementPreviewAmount('purchase_amount', $this->currency_minor_units));
+        $consumed = $sameCurrency ? $applied : $this->settlementPreviewAmount('payment_currency_amount', $paymentMinor);
+        if ($paid === null || $applied === null || $consumed === null || ! $applied->isPositive()
+            || $consumed->isGreaterThan($paid) || ($mode === 'partial' && ! $applied->isLessThan($total))) {
+            return null;
+        }
+
+        if ($paymentCurrency !== $baseCurrency) {
+            try {
+                ExchangeRate::from($this->settlement['exchange_rate'] ?? null);
+            } catch (InvalidMoneyException) {
+                return null;
+            }
+        }
+
+        return [
+            'remaining' => (string) $total->minus($applied),
+            'credit' => $sameCurrency ? null : (string) $paid->minus($consumed),
+        ];
+    }
+
+    private function settlementPreviewAmount(string $field, ?int $scale): ?BigDecimal
+    {
+        $raw = $this->settlement[$field] ?? null;
+        if ($scale === null || ! is_string($raw) || ! preg_match('/\A\d{1,14}(?:\.\d{1,6})?\z/', $raw)) {
+            return null;
+        }
+        $amount = BigDecimal::of($raw);
+
+        return $amount->getScale() <= $scale && $amount->isPositive() ? $amount->toScale($scale) : null;
     }
 
     private function syncSettlementDefaults(?string $changedProperty = null): void
@@ -963,8 +1423,13 @@ class PurchaseForm extends Component
             $this->settlement['purchase_amount'] = '';
             $this->settlement['payment_currency_amount'] = '';
         }
-        if ($changedProperty === 'settlement.mode' && ($this->settlement['mode'] ?? null) === 'partial' && $this->settlement['amount'] === $this->previewGrandTotal) {
-            $this->settlement['amount'] = '';
+        if ($changedProperty === 'settlement.mode' && ($this->settlement['mode'] ?? null) === 'partial') {
+            if ($currency === $this->currency_code && $this->settlement['amount'] === $this->previewGrandTotal) {
+                $this->settlement['amount'] = '';
+            }
+            if ($currency !== $this->currency_code && $this->settlement['purchase_amount'] === $this->previewGrandTotal) {
+                $this->settlement['purchase_amount'] = '';
+            }
         }
         if ($currency === $company->base_currency_code) {
             $this->settlement['exchange_rate'] = '1.0000000000';
@@ -979,9 +1444,11 @@ class PurchaseForm extends Component
         }
         if ($currency === $this->currency_code) {
             $this->settlement['payment_currency_amount'] = '';
-            if (($this->settlement['mode'] ?? 'unpaid') === 'full' && $this->settlement['amount'] === '' && ($initial || in_array($changedProperty, ['currency_code', 'settlement.mode', 'settlement.payment_method'], true) || ($changedProperty === 'settlement.money_account_id' && $this->settlement['money_account_id'] !== ''))) {
+            if (($this->settlement['mode'] ?? 'unpaid') === 'full' && $this->documentTotalsValid) {
                 $this->settlement['amount'] = $this->previewGrandTotal;
             }
+        } elseif (($this->settlement['mode'] ?? 'unpaid') === 'full' && $this->documentTotalsValid) {
+            $this->settlement['purchase_amount'] = $this->previewGrandTotal;
         }
         $this->previousSettlementCurrency = $currency;
     }
@@ -993,6 +1460,56 @@ class PurchaseForm extends Component
 
     public function computePayloadDigest(): string
     {
+        $normalizedLines = [];
+        foreach ($this->lines as $line) {
+            $discountType = $line['discount_type'] ?? 'none';
+            if ($discountType === 'percentage') {
+                $discountType = 'percent';
+            }
+            $normalizedLines[] = [
+                'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
+                'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
+                'item_description' => trim((string) ($line['item_description'] ?? '')),
+                'quantity' => trim((string) ($line['quantity'] ?? '')),
+                'unit_cost' => trim((string) ($line['unit_cost'] ?? '')),
+                'discount_type' => $discountType !== 'none' ? $discountType : null,
+                'discount_value' => trim((string) ($line['discount_value'] ?? '0')),
+                'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
+                'lots' => $line['lots'] ?? [],
+            ];
+        }
+
+        $headerDiscountType = $this->discount_type;
+        if ($headerDiscountType === 'percentage') {
+            $headerDiscountType = 'percent';
+        }
+        $hasHeaderDiscount = ! $this->documentDiscountIntent()->isNone();
+        $headerDiscountValue = $hasHeaderDiscount ? trim((string) $this->discount_value) : null;
+
+        $normalized = [
+            'vendor_id' => (int) $this->vendor_id,
+            'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
+            'vendor_invoice_number' => $this->vendor_invoice_number ? trim($this->vendor_invoice_number) : null,
+            'currency_code' => strtoupper(trim($this->currency_code)),
+            'exchange_rate' => trim($this->exchange_rate),
+            'purchase_date' => trim($this->purchase_date),
+            'due_date' => $this->due_date ? trim($this->due_date) : null,
+            'notes' => $this->notes !== null ? trim($this->notes) : null,
+            'document_locale' => $this->document_locale,
+            'discount_type' => $hasHeaderDiscount ? $headerDiscountType : null,
+            'discount_value' => $headerDiscountValue,
+            'lines' => $normalizedLines,
+        ];
+
+        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function computeLegacyPayloadDigest(): ?string
+    {
+        if (! $this->documentDiscountIntent()->isNone()) {
+            return null;
+        }
+
         $normalizedLines = [];
         foreach ($this->lines as $line) {
             $discountType = $line['discount_type'] ?? 'none';
@@ -1028,6 +1545,16 @@ class PurchaseForm extends Component
         return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
+    public function legacySettlementDigest(): ?string
+    {
+        $legacyPayload = $this->computeLegacyPayloadDigest();
+        if ($legacyPayload === null) {
+            return null;
+        }
+
+        return hash('sha256', $legacyPayload.'|'.json_encode($this->settlement, JSON_THROW_ON_ERROR));
+    }
+
     /** @return array<string, mixed> */
     private function settlementChoice(): array
     {
@@ -1051,14 +1578,20 @@ class PurchaseForm extends Component
             'settlement.exchange_rate' => ['required', 'string', 'regex:/^\d+(\.\d{1,10})?$/'],
         ];
 
-        if ($this->settlement['mode'] === 'partial' && $paymentCurrency === $this->currency_code) {
+        $isCrossCurrency = $paymentCurrency !== $this->currency_code;
+        if (! $isCrossCurrency && $this->settlement['mode'] === 'full') {
+            $this->settlement['amount'] = $this->previewGrandTotal;
+        } elseif ($isCrossCurrency && $this->settlement['mode'] === 'full') {
+            $this->settlement['purchase_amount'] = $this->previewGrandTotal;
+        }
+
+        if ($this->settlement['mode'] === 'partial' && ! $isCrossCurrency) {
             $this->settlement['purchase_amount'] = $this->settlement['amount'];
         }
         if ($this->settlement['mode'] === 'partial') {
             $rules['settlement.purchase_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
         }
 
-        $isCrossCurrency = $paymentCurrency !== $this->currency_code;
         if ($isCrossCurrency) {
             $rules['settlement.payment_currency_amount'] = ['required', 'string', 'regex:/^\d+(\.\d{1,6})?$/'];
         } else {
@@ -1076,6 +1609,51 @@ class PurchaseForm extends Component
         }
 
         $this->validate($rules, [], collect(array_keys($rules))->mapWithKeys(fn ($key) => [$key => __('purchase_settlement.'.str_replace('settlement.', '', $key))])->all());
+
+        $payMinor = app(CurrencyMinorUnitsResolver::class)->resolve($paymentCurrency);
+        $amountStr = (string) ($this->settlement['amount'] ?? '');
+        if ($amountStr !== '') {
+            $parts = explode('.', $amountStr);
+            if (isset($parts[1]) && strlen($parts[1]) > $payMinor) {
+                throw ValidationException::withMessages(['settlement.amount' => __('purchase_settlement.amount')]);
+            }
+        }
+        if ($isCrossCurrency) {
+            $purchaseMinor = app(CurrencyMinorUnitsResolver::class)->resolve($this->currency_code);
+            $purchaseAmountStr = (string) ($this->settlement['purchase_amount'] ?? '');
+            if ($purchaseAmountStr !== '') {
+                $parts = explode('.', $purchaseAmountStr);
+                if (isset($parts[1]) && strlen($parts[1]) > $purchaseMinor) {
+                    throw ValidationException::withMessages(['settlement.purchase_amount' => __('purchase_settlement.amount')]);
+                }
+            }
+            $paymentCurrencyAmountStr = (string) ($this->settlement['payment_currency_amount'] ?? '');
+            if ($paymentCurrencyAmountStr !== '') {
+                $parts = explode('.', $paymentCurrencyAmountStr);
+                if (isset($parts[1]) && strlen($parts[1]) > $payMinor) {
+                    throw ValidationException::withMessages(['settlement.payment_currency_amount' => __('purchase_settlement.amount')]);
+                }
+            }
+        }
+
+        if ($this->documentTotalsValid && $this->previewGrandTotal !== null) {
+            $grandTotal = BigDecimal::of($this->previewGrandTotal);
+            if (! $isCrossCurrency) {
+                $payAmount = BigDecimal::of($this->settlement['amount'] !== '' ? $this->settlement['amount'] : '0');
+                if ($this->settlement['mode'] === 'full' && ! $payAmount->isEqualTo($grandTotal)) {
+                    throw ValidationException::withMessages(['settlement.amount' => __('purchase_settlement.amount')]);
+                } elseif ($this->settlement['mode'] === 'partial' && ($payAmount->isZero() || $payAmount->isGreaterThanOrEqualTo($grandTotal))) {
+                    throw ValidationException::withMessages(['settlement.amount' => __('purchase_settlement.amount')]);
+                }
+            } else {
+                $purchaseAmount = BigDecimal::of(($this->settlement['purchase_amount'] ?? '') !== '' ? $this->settlement['purchase_amount'] : '0');
+                if ($this->settlement['mode'] === 'full' && ! $purchaseAmount->isEqualTo($grandTotal)) {
+                    throw ValidationException::withMessages(['settlement.purchase_amount' => __('purchase_settlement.amount')]);
+                } elseif ($this->settlement['mode'] === 'partial' && ($purchaseAmount->isZero() || $purchaseAmount->isGreaterThanOrEqualTo($grandTotal))) {
+                    throw ValidationException::withMessages(['settlement.purchase_amount' => __('purchase_settlement.amount')]);
+                }
+            }
+        }
 
         $choice = array_intersect_key($this->settlement, array_flip(['mode', 'payment_method', 'amount', 'exchange_rate']));
         $choice['money_account_id'] = (int) $this->settlement['money_account_id'];
@@ -1180,6 +1758,17 @@ class PurchaseForm extends Component
         }
 
         $lines = $this->lines;
+        foreach ($lines as &$line) {
+            unset($line['preview_total']);
+            if (! empty($line['public_id']) && isset($this->persistedLineDiscounts[$line['public_id']])) {
+                $line['discount_type'] = $this->persistedLineDiscounts[$line['public_id']]['discount_type'];
+                $line['discount_value'] = $this->persistedLineDiscounts[$line['public_id']]['discount_value'];
+            } else {
+                $line['discount_type'] = 'none';
+                $line['discount_value'] = '0';
+            }
+        }
+        unset($line);
         $selectedProductIds = collect($lines)->pluck('product_id')->filter()->unique()->values()->all();
         $selectedProducts = ! empty($selectedProductIds)
             ? Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)->get()->keyBy('id')
@@ -1191,10 +1780,10 @@ class PurchaseForm extends Component
             if ($product && $product->track_expiry) {
                 if (empty($line['lots']) && ! ($this->expandedLotCustomization[$idx] ?? false)) {
                     $line['lots'] = [[
-                        'product_unit_id' => $line['product_unit_id'],
+                        'product_unit_id' => $line['product_unit_id'] ?? null,
                         'lot_number' => null,
                         'expiry_date' => null,
-                        'quantity' => (string) $line['quantity'],
+                        'quantity' => (string) ($line['quantity'] ?? ''),
                     ]];
                 }
             } elseif ($product !== null) {
@@ -1206,6 +1795,14 @@ class PurchaseForm extends Component
         $data = [];
         foreach (['vendor_id', 'vendor_invoice_number', 'warehouse_id', 'purchase_date', 'due_date', 'currency_code', 'exchange_rate', 'document_locale', 'notes'] as $field) {
             $data[$field] = $this->{$field};
+        }
+        $data['discount_type'] = $this->discount_type;
+        $data['discount_value'] = $this->discount_value;
+        $data['discount_scope'] = $this->discount_scope;
+        $data['discount_basis'] = 'subtotal';
+        $data['discount_calculation_version'] = $this->discount_calculation_version;
+        if ($this->currency_minor_units !== null) {
+            $data['currency_minor_units'] = $this->currency_minor_units;
         }
         $data['lines'] = $lines;
 
@@ -1303,6 +1900,9 @@ class PurchaseForm extends Component
         $matchingProducts = $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']);
         $allProducts = $matchingProducts->merge($selectedProducts->values())->unique('id');
 
+        $selectedAccount = $settlementAccounts->firstWhere('id', $this->settlement['money_account_id'] ?? null);
+        $settlementBalance = $canPay ? $this->settlementBalance($selectedAccount?->currency_code, $company->base_currency_code) : null;
+
         return view('livewire.pages.purchasing.purchase-form', [
             'baseCurrencyCode' => $company->base_currency_code,
             'products' => $allProducts,
@@ -1321,6 +1921,7 @@ class PurchaseForm extends Component
             'canPay' => $canPay,
             'canPayCheck' => $canPayCheck,
             'settlementAccounts' => $settlementAccounts,
+            'settlementBalance' => $settlementBalance,
             'previewData' => $this->previewData,
             'showPreview' => $this->showPreview,
             'previewError' => $this->previewError,

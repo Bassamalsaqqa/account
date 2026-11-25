@@ -10,6 +10,7 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Posting\DTO\PostingCommand;
 use App\Exceptions\IdempotencyConflictException;
 use App\Exceptions\NoActiveCompanyException;
+use App\Models\Check;
 use App\Models\Company;
 use App\Models\CompanyCurrency;
 use App\Models\CompanyLanguage;
@@ -19,6 +20,7 @@ use App\Models\CustomerPaymentAllocation;
 use App\Models\DocumentSequence;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\Money\CheckPaymentSource;
@@ -114,7 +116,10 @@ class PostCustomerPaymentAction
         }
 
         $allocationVersion = PaymentAllocationIntent::version($data['allocations'] ?? []);
-        $allocationsForHash = PaymentAllocationIntent::normalize($data['allocations'] ?? [], 'sales_invoice_id');
+        $paymentCurrency = $method === 'check'
+            ? Check::where('company_id', $company->id)->findOrFail($data['check_id'])->currency_code
+            : MoneyAccount::withTrashed()->where('company_id', $company->id)->findOrFail($data['money_account_id'])->currency_code;
+        $allocationsForHash = PaymentAllocationIntent::forPayment($data['allocations'] ?? [], 'sales_invoice_id', (int) $company->id, $paymentCurrency);
         $data['allocations'] = $allocationsForHash;
 
         $canonicalData = [
@@ -229,71 +234,143 @@ class PostCustomerPaymentAction
             $totalRealizedFxGainBase = BigDecimal::zero();
             $totalRealizedFxLossBase = BigDecimal::zero();
 
-            // Track remaining outstanding per invoice in memory to prevent duplicate allocation overpayments
+            // Track remaining outstanding per invoice and opening item in memory to prevent duplicate allocation overpayments
             $remainingOutstandingByInvoice = [];
+            $remainingOutstandingByOpeningItem = [];
 
             foreach ($allocationsInput as $allocInput) {
-                /** @var SalesInvoice $invoice */
-                $invoice = SalesInvoice::where('company_id', $lockedCompany->id)
-                    ->where('id', $allocInput['sales_invoice_id'])
-                    ->lockForUpdate()
-                    ->firstOrFail();
+                $isOpening = (array_key_exists('opening_trade_item_id', $allocInput) && $allocInput['opening_trade_item_id'] !== null)
+                    || (($allocInput['kind'] ?? null) === 'opening_trade_item');
 
-                if (! $invoice->isPosted()) {
-                    throw new InvalidArgumentException("Cannot allocate payment to non-posted invoice [{$invoice->id}].");
+                if ($isOpening) {
+                    $itemId = (int) ($allocInput['opening_trade_item_id'] ?? $allocInput['id']);
+                    /** @var OpeningTradeItem $openingItem */
+                    $openingItem = OpeningTradeItem::where('company_id', $lockedCompany->id)
+                        ->where('id', $itemId)
+                        ->lockForUpdate()
+                        ->firstOrFail();
+
+                    if (! $openingItem->isPosted() || $openingItem->isReversed()) {
+                        throw new InvalidArgumentException("Cannot allocate payment to non-posted or reversed opening trade item [{$openingItem->public_id}].");
+                    }
+
+                    if ((int) $openingItem->customer_id !== (int) $customer->id || $openingItem->side !== OpeningTradeItem::SIDE_CUSTOMER) {
+                        throw new InvalidArgumentException("Cannot allocate payment to opening trade item [{$openingItem->public_id}] belonging to another customer.");
+                    }
+
+                    if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $openingItem->currency_code)->where('enabled', true)->exists()) {
+                        throw new InvalidArgumentException('Document currency is not enabled.');
+                    }
+
+                    if ($paymentDate < Carbon::parse($openingItem->opening_date)->toDateString()) {
+                        throw new InvalidArgumentException('Direct payment allocation cannot precede its document date.');
+                    }
+
+                    $amounts = PaymentAllocationIntent::amounts($allocInput, $openingItem->currency_code, $currency);
+                    $allocAmt = $amounts['document'];
+                    $paymentConsumed = $amounts['payment'];
+
+                    if (! isset($remainingOutstandingByOpeningItem[$itemId])) {
+                        $remainingOutstandingByOpeningItem[$itemId] = $openingItem->calculateOutstanding();
+                    }
+
+                    if ($allocAmt->isGreaterThan($remainingOutstandingByOpeningItem[$itemId])) {
+                        throw new InvalidArgumentException("Allocated amount [{$allocAmt}] exceeds opening item [{$openingItem->public_id}] outstanding balance [{$remainingOutstandingByOpeningItem[$itemId]}].");
+                    }
+
+                    $remainingOutstandingByOpeningItem[$itemId] = $remainingOutstandingByOpeningItem[$itemId]->minus($allocAmt);
+                    $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
+
+                    $itemFx = BigDecimal::of((string) $openingItem->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
+                    $receivableReliefBase = app(ReceivableBookValue::class)->reliefOpeningItem($openingItem, $allocAmt);
+                    $settlementBase = $allocatedTotal->multipliedBy($paymentFx)->toScale(6, RoundingMode::HALF_UP)->minus($totalAllocSettlementBase);
+                    $realizedFx = $settlementBase->minus($receivableReliefBase);
+
+                    if ($realizedFx->isPositive()) {
+                        $totalRealizedFxGainBase = $totalRealizedFxGainBase->plus($realizedFx);
+                    } elseif ($realizedFx->isNegative()) {
+                        $totalRealizedFxLossBase = $totalRealizedFxLossBase->plus($realizedFx->abs());
+                    }
+
+                    $totalReceivableReliefBase = $totalReceivableReliefBase->plus($receivableReliefBase);
+                    $totalAllocSettlementBase = $totalAllocSettlementBase->plus($settlementBase);
+
+                    $preparedAllocations[] = [
+                        'sales_invoice_id' => null,
+                        'opening_trade_item_id' => $openingItem->id,
+                        'allocated_amount' => (string) $allocAmt->toScale(6),
+                        'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
+                        'document_currency_code' => $openingItem->currency_code,
+                        'invoice_exchange_rate' => (string) $itemFx->toScale(10),
+                        'payment_exchange_rate' => (string) $paymentFx->toScale(10),
+                        'base_amount_applied_to_receivable' => (string) $receivableReliefBase->toScale(6),
+                        'settlement_base_value' => (string) $settlementBase->toScale(6),
+                        'realized_fx_gain_loss_base' => (string) $realizedFx->toScale(6),
+                    ];
+                } else {
+                    /** @var SalesInvoice $invoice */
+                    $invoice = SalesInvoice::where('company_id', $lockedCompany->id)
+                        ->where('id', $allocInput['sales_invoice_id'] ?? $allocInput['id'])
+                        ->lockForUpdate()
+                        ->firstOrFail();
+
+                    if (! $invoice->isPosted()) {
+                        throw new InvalidArgumentException("Cannot allocate payment to non-posted invoice [{$invoice->id}].");
+                    }
+
+                    if ((int) $invoice->customer_id !== (int) $customer->id) {
+                        throw new InvalidArgumentException("Cannot allocate payment to invoice [{$invoice->id}] belonging to another customer.");
+                    }
+
+                    if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $invoice->currency_code)->where('enabled', true)->exists()) {
+                        throw new InvalidArgumentException('Document currency is not enabled.');
+                    }
+                    if ($paymentDate < Carbon::parse($invoice->issue_date)->toDateString()) {
+                        throw new InvalidArgumentException('Direct payment allocation cannot precede its document date.');
+                    }
+                    $amounts = PaymentAllocationIntent::amounts($allocInput, $invoice->currency_code, $currency);
+                    $allocAmt = $amounts['document'];
+                    $paymentConsumed = $amounts['payment'];
+
+                    $invId = (int) $invoice->id;
+                    if (! isset($remainingOutstandingByInvoice[$invId])) {
+                        $remainingOutstandingByInvoice[$invId] = $invoice->calculateOutstanding();
+                    }
+
+                    if ($allocAmt->isGreaterThan($remainingOutstandingByInvoice[$invId])) {
+                        throw new InvalidArgumentException("Allocated amount [{$allocAmt}] exceeds invoice [{$invoice->id}] outstanding balance [{$remainingOutstandingByInvoice[$invId]}].");
+                    }
+
+                    $remainingOutstandingByInvoice[$invId] = $remainingOutstandingByInvoice[$invId]->minus($allocAmt);
+                    $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
+
+                    $invFx = BigDecimal::of((string) $invoice->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
+                    $receivableReliefBase = app(ReceivableBookValue::class)->relief($invoice, $allocAmt);
+                    $settlementBase = $allocatedTotal->multipliedBy($paymentFx)->toScale(6, RoundingMode::HALF_UP)->minus($totalAllocSettlementBase);
+                    $realizedFx = $settlementBase->minus($receivableReliefBase);
+
+                    if ($realizedFx->isPositive()) {
+                        $totalRealizedFxGainBase = $totalRealizedFxGainBase->plus($realizedFx);
+                    } elseif ($realizedFx->isNegative()) {
+                        $totalRealizedFxLossBase = $totalRealizedFxLossBase->plus($realizedFx->abs());
+                    }
+
+                    $totalReceivableReliefBase = $totalReceivableReliefBase->plus($receivableReliefBase);
+                    $totalAllocSettlementBase = $totalAllocSettlementBase->plus($settlementBase);
+
+                    $preparedAllocations[] = [
+                        'sales_invoice_id' => $invoice->id,
+                        'opening_trade_item_id' => null,
+                        'allocated_amount' => (string) $allocAmt->toScale(6),
+                        'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
+                        'document_currency_code' => $invoice->currency_code,
+                        'invoice_exchange_rate' => (string) $invFx->toScale(10),
+                        'payment_exchange_rate' => (string) $paymentFx->toScale(10),
+                        'base_amount_applied_to_receivable' => (string) $receivableReliefBase->toScale(6),
+                        'settlement_base_value' => (string) $settlementBase->toScale(6),
+                        'realized_fx_gain_loss_base' => (string) $realizedFx->toScale(6),
+                    ];
                 }
-
-                if ((int) $invoice->customer_id !== (int) $customer->id) {
-                    throw new InvalidArgumentException("Cannot allocate payment to invoice [{$invoice->id}] belonging to another customer.");
-                }
-
-                if (! CompanyCurrency::where('company_id', $lockedCompany->id)->where('currency_code', $invoice->currency_code)->where('enabled', true)->exists()) {
-                    throw new InvalidArgumentException('Document currency is not enabled.');
-                }
-                if ($paymentDate < Carbon::parse($invoice->issue_date)->toDateString()) {
-                    throw new InvalidArgumentException('Direct payment allocation cannot precede its document date.');
-                }
-                $amounts = PaymentAllocationIntent::amounts($allocInput, $invoice->currency_code, $currency);
-                $allocAmt = $amounts['document'];
-                $paymentConsumed = $amounts['payment'];
-
-                $invId = (int) $invoice->id;
-                if (! isset($remainingOutstandingByInvoice[$invId])) {
-                    $remainingOutstandingByInvoice[$invId] = $invoice->calculateOutstanding();
-                }
-
-                if ($allocAmt->isGreaterThan($remainingOutstandingByInvoice[$invId])) {
-                    throw new InvalidArgumentException("Allocated amount [{$allocAmt}] exceeds invoice [{$invoice->id}] outstanding balance [{$remainingOutstandingByInvoice[$invId]}].");
-                }
-
-                $remainingOutstandingByInvoice[$invId] = $remainingOutstandingByInvoice[$invId]->minus($allocAmt);
-                $allocatedTotal = $allocatedTotal->plus($paymentConsumed);
-
-                $invFx = BigDecimal::of((string) $invoice->exchange_rate)->toScale(10, RoundingMode::HALF_UP);
-                $receivableReliefBase = app(ReceivableBookValue::class)->relief($invoice, $allocAmt);
-                $settlementBase = $allocatedTotal->multipliedBy($paymentFx)->toScale(6, RoundingMode::HALF_UP)->minus($totalAllocSettlementBase);
-                $realizedFx = $settlementBase->minus($receivableReliefBase);
-
-                if ($realizedFx->isPositive()) {
-                    $totalRealizedFxGainBase = $totalRealizedFxGainBase->plus($realizedFx);
-                } elseif ($realizedFx->isNegative()) {
-                    $totalRealizedFxLossBase = $totalRealizedFxLossBase->plus($realizedFx->abs());
-                }
-
-                $totalReceivableReliefBase = $totalReceivableReliefBase->plus($receivableReliefBase);
-                $totalAllocSettlementBase = $totalAllocSettlementBase->plus($settlementBase);
-
-                $preparedAllocations[] = [
-                    'sales_invoice_id' => $invoice->id,
-                    'allocated_amount' => (string) $allocAmt->toScale(6),
-                    'payment_currency_amount' => (string) $paymentConsumed->toScale(6),
-                    'document_currency_code' => $invoice->currency_code,
-                    'invoice_exchange_rate' => (string) $invFx->toScale(10),
-                    'payment_exchange_rate' => (string) $paymentFx->toScale(10),
-                    'base_amount_applied_to_receivable' => (string) $receivableReliefBase->toScale(6),
-                    'settlement_base_value' => (string) $settlementBase->toScale(6),
-                    'realized_fx_gain_loss_base' => (string) $realizedFx->toScale(6),
-                ];
             }
 
             if ($allocatedTotal->isGreaterThan($totalAmount)) {
@@ -337,6 +414,10 @@ class PostCustomerPaymentAction
                 $allocBase = BigDecimal::of($pAlloc['base_amount_applied_to_receivable']);
                 $invFx = ExchangeRate::from($pAlloc['invoice_exchange_rate']);
 
+                $targetLabel = $pAlloc['opening_trade_item_id'] !== null
+                    ? "Opening #{$pAlloc['opening_trade_item_id']}"
+                    : "Inv #{$pAlloc['sales_invoice_id']}";
+
                 app(SalesPostingLines::class)->append($postingLines,
                     lineNumber: $lineNum++,
                     ledgerAccountId: $arAccount->id,
@@ -345,7 +426,7 @@ class PostCustomerPaymentAction
                     transactionCurrencyCode: $pAlloc['document_currency_code'],
                     transactionAmount: MoneyAmount::from((string) $allocAmt->toScale(6)),
                     exchangeRate: $invFx,
-                    description: "Customer Receipt {$paymentNumber} AR Relief Inv #{$pAlloc['sales_invoice_id']}",
+                    description: "Customer Receipt {$paymentNumber} AR Relief {$targetLabel}",
                 );
             }
 

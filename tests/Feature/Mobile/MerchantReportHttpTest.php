@@ -746,6 +746,124 @@ final class MerchantReportHttpTest extends TestCase
             ->assertStatus(403);
     }
 
+    /**
+     * @param  list<string>  $permissions
+     * @return array{headers: array<string, string>, user: User, device: MobileDevice}
+     */
+    private function createActorWithPermissions(string $name, array $permissions): array
+    {
+        $actor = User::factory()->create(['name' => $name]);
+        $this->company->users()->attach($actor->id, ['status' => 'active', 'is_owner' => false]);
+        setPermissionsTeamId($this->company->id);
+
+        $role = Role::findOrCreate('Role_'.Str::random(8), 'web');
+        $role->syncPermissions($permissions);
+        $actor->assignRole($role);
+
+        $deviceId = (string) Str::uuid();
+        $device = MobileDevice::create(['device_id' => $deviceId, 'device_name' => $name.' Device', 'user_id' => $actor->id]);
+        $rawToken = 'st_m_'.bin2hex(random_bytes(32));
+        MobileAccessToken::create([
+            'token_hash' => hash('sha256', $rawToken),
+            'device_id' => $deviceId,
+            'user_id' => $actor->id,
+            'company_id' => $this->company->id,
+            'password_epoch' => 'epoch-'.substr(hash('sha256', $actor->password), 0, 16),
+            'expires_at' => now()->addHour(),
+        ]);
+
+        return [
+            'headers' => ['Authorization' => 'Bearer '.$rawToken],
+            'user' => $actor,
+            'device' => $device,
+        ];
+    }
+
+    public function test_shift_summary_and_close_allow_reports_financial_view_only(): void
+    {
+        $actor = $this->createActorWithPermissions('مراقب مالي', ['reports.financial.view']);
+
+        // 1. Shift summary is allowed
+        $summaryResp = $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-summary");
+        $summaryResp->assertOk()
+            ->assertJsonStructure([
+                'company_id',
+                'shift_date',
+                'currency',
+                'expected_cash',
+                'sales_count',
+            ]);
+
+        // 2. Shift close is allowed and witnesses cash count observation contract
+        $idempotencyKey = 'close-reports-only-'.Str::random(10);
+        $closeResp = $this->withHeaders(array_merge($actor['headers'], [
+            'Idempotency-Key' => $idempotencyKey,
+        ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '100.00',
+            'notes' => 'عد نقدي بإذن التقارير فقط',
+        ]);
+
+        $closeResp->assertOk()
+            ->assertJsonPath('observation_recorded', true)
+            ->assertJsonPath('is_shift_closed', false)
+            ->assertJsonPath('success', true);
+
+        // 3. Treasury is allowed for reports.financial.view
+        $treasuryResp = $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/treasury");
+        $treasuryResp->assertOk()
+            ->assertJsonStructure([
+                'company_id',
+                'cash_accounts',
+                'bank_accounts',
+            ]);
+    }
+
+    public function test_shift_summary_and_close_forbid_money_cash_view_only(): void
+    {
+        $actor = $this->createActorWithPermissions('أمين صندوق بلا تقارير', ['money.cash.view']);
+
+        // 1. Shift summary is strictly forbidden (least-privilege reports.financial.view required)
+        $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-summary")
+            ->assertStatus(403);
+
+        // 2. Shift close is strictly forbidden
+        $this->withHeaders(array_merge($actor['headers'], [
+            'Idempotency-Key' => 'close-cash-only-'.Str::random(10),
+        ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '100.00',
+        ])->assertStatus(403);
+
+        // 3. Treasury is strictly forbidden
+        $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/treasury")
+            ->assertStatus(403);
+    }
+
+    public function test_shift_summary_and_close_forbid_neither_permission(): void
+    {
+        $actor = $this->createActorWithPermissions('بائع عادي', ['sales.invoice.view']);
+
+        // 1. Shift summary forbidden
+        $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-summary")
+            ->assertStatus(403);
+
+        // 2. Shift close forbidden
+        $this->withHeaders(array_merge($actor['headers'], [
+            'Idempotency-Key' => 'close-neither-'.Str::random(10),
+        ]))->postJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/shift-close", [
+            'counted_cash' => '100.00',
+        ])->assertStatus(403);
+
+        // 3. Treasury is strictly forbidden
+        $this->withHeaders($actor['headers'])
+            ->getJson("/api/mobile/v1/companies/{$this->company->public_id}/reports/treasury")
+            ->assertStatus(403);
+    }
+
     public function test_home_and_product_redact_monetary_metrics_when_unauthorized(): void
     {
         app(CompanyContext::class)->setCompany($this->company, $this->owner);

@@ -13,6 +13,7 @@ use App\Models\Customer;
 use App\Models\CustomerPayment;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\PostingBatch;
 use App\Models\SalesInvoice;
 use App\Models\User;
@@ -73,39 +74,77 @@ final class CustomerPaymentHistory
         $loss = BigDecimal::zero();
         $intent = [];
         foreach ($payment->allocations()->whereNull('application_event_id')->orderBy('id')->get() as $row) {
-            $invoice = SalesInvoice::where('company_id', $company->id)->findOrFail($row->sales_invoice_id);
-            $boundary = PostingBatch::where('company_id', $company->id)->findOrFail($row->prior_posting_batch_id);
-            $previous = PostingBatch::where('company_id', $company->id)->where('id', '<', $batch->id)->max('id');
-            if ($row->company_id !== $payment->company_id || $invoice->customer_id !== $payment->customer_id
-                || ! in_array($invoice->status, ['posted', 'void'], true) || $boundary->id < $invoice->posting_batch_id || (int) $previous !== (int) $boundary->id
-                || Carbon::parse($payment->payment_date)->toDateString() < Carbon::parse($invoice->issue_date)->toDateString()) {
-                throw new InvalidArgumentException('Receipt allocation provenance is incoherent.');
-            }
-            $values = PaymentAllocationIntent::amounts(['allocated_amount' => $row->allocated_amount, 'payment_currency_amount' => $row->payment_currency_amount], $invoice->currency_code, $payment->currency_code);
-            $prior = app(ReceivableReliefHistory::class)->before((int) $company->id, (int) $invoice->id, (int) $boundary->id, (int) $row->id);
-            $cumulative = $prior['amount']->plus($values['document']);
-            if ($cumulative->isGreaterThan($invoice->grand_total_currency)) {
-                throw new InvalidArgumentException('Historical receipt over-allocation.');
-            }
-            $book = ($cumulative->isEqualTo($invoice->grand_total_currency) ? BigDecimal::of($invoice->grand_total_base)
-                : $cumulative->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP))->minus($prior['base']);
-            $used = $used->plus($values['payment']);
-            $target = $used->isEqualTo($amount) ? $base : $used->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP);
-            $segment = $target->minus($usedBase);
-            $usedBase = $target;
-            $delta = $segment->minus($book);
-            if ($used->isGreaterThan($amount) || ! $segment->isPositive() || ! $segment->isEqualTo($row->settlement_base_value)
-                || ! $book->isEqualTo($row->base_amount_applied_to_receivable) || ! $delta->isEqualTo($row->realized_fx_gain_loss_base)
-                || ! BigDecimal::of($row->invoice_exchange_rate)->isEqualTo($invoice->exchange_rate) || ! BigDecimal::of($row->payment_exchange_rate)->isEqualTo($rate)) {
-                throw new InvalidArgumentException('Receipt allocation exact values mismatch.');
-            }
-            $append((int) $accounts['accounts_receivable'], false, $book, $invoice->currency_code, $values['document'], $invoice->exchange_rate);
-            if ($delta->isPositive()) {
-                $gain = $gain->plus($delta);
+            $isOpening = $row->opening_trade_item_id !== null;
+            if ($isOpening) {
+                /** @var OpeningTradeItem $openingItem */
+                $openingItem = OpeningTradeItem::where('company_id', $company->id)->findOrFail($row->opening_trade_item_id);
+                $boundary = PostingBatch::where('company_id', $company->id)->findOrFail($row->prior_posting_batch_id);
+                $previous = PostingBatch::where('company_id', $company->id)->where('id', '<', $batch->id)->max('id');
+                if ($row->company_id !== $payment->company_id || (int) $openingItem->customer_id !== (int) $payment->customer_id
+                    || (! $openingItem->isPosted() && ! ($openingItem->isReversed() && $payment->is_reversed)) || $boundary->id < $openingItem->posting_batch_id || (int) $previous !== (int) $boundary->id
+                    || Carbon::parse($payment->payment_date)->toDateString() < Carbon::parse($openingItem->opening_date)->toDateString()) {
+                    throw new InvalidArgumentException('Receipt allocation provenance is incoherent.');
+                }
+                $values = PaymentAllocationIntent::amounts(['allocated_amount' => $row->allocated_amount, 'payment_currency_amount' => $row->payment_currency_amount], $openingItem->currency_code, $payment->currency_code);
+                $prior = app(ReceivableReliefHistory::class)->beforeOpeningItem((int) $company->id, (int) $openingItem->id, (int) $boundary->id, (int) $row->id);
+                $cumulative = $prior['amount']->plus($values['document']);
+                if ($cumulative->isGreaterThan($openingItem->amount)) {
+                    throw new InvalidArgumentException('Historical receipt over-allocation.');
+                }
+                $book = ($cumulative->isEqualTo($openingItem->amount) ? BigDecimal::of($openingItem->carrying_value_base)
+                    : $cumulative->multipliedBy($openingItem->exchange_rate)->toScale(6, RoundingMode::HALF_UP))->minus($prior['base']);
+                $used = $used->plus($values['payment']);
+                $target = $used->isEqualTo($amount) ? $base : $used->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP);
+                $segment = $target->minus($usedBase);
+                $usedBase = $target;
+                $delta = $segment->minus($book);
+                if ($used->isGreaterThan($amount) || ! $segment->isPositive() || ! $segment->isEqualTo($row->settlement_base_value)
+                    || ! $book->isEqualTo($row->base_amount_applied_to_receivable) || ! $delta->isEqualTo($row->realized_fx_gain_loss_base)
+                    || ! BigDecimal::of($row->invoice_exchange_rate)->isEqualTo($openingItem->exchange_rate) || ! BigDecimal::of($row->payment_exchange_rate)->isEqualTo($rate)) {
+                    throw new InvalidArgumentException('Receipt allocation exact values mismatch.');
+                }
+                $append((int) $accounts['accounts_receivable'], false, $book, $openingItem->currency_code, $values['document'], $openingItem->exchange_rate);
+                if ($delta->isPositive()) {
+                    $gain = $gain->plus($delta);
+                } else {
+                    $loss = $loss->plus($delta->abs());
+                }
+                $intent[] = PaymentAllocationIntent::historicalRow('opening_trade_item_id', (int) $openingItem->id, $row->allocated_amount, $row->payment_currency_amount, $payment->allocation_version);
             } else {
-                $loss = $loss->plus($delta->abs());
+                $invoice = SalesInvoice::where('company_id', $company->id)->findOrFail($row->sales_invoice_id);
+                $boundary = PostingBatch::where('company_id', $company->id)->findOrFail($row->prior_posting_batch_id);
+                $previous = PostingBatch::where('company_id', $company->id)->where('id', '<', $batch->id)->max('id');
+                if ($row->company_id !== $payment->company_id || $invoice->customer_id !== $payment->customer_id
+                    || ! in_array($invoice->status, ['posted', 'void'], true) || $boundary->id < $invoice->posting_batch_id || (int) $previous !== (int) $boundary->id
+                    || Carbon::parse($payment->payment_date)->toDateString() < Carbon::parse($invoice->issue_date)->toDateString()) {
+                    throw new InvalidArgumentException('Receipt allocation provenance is incoherent.');
+                }
+                $values = PaymentAllocationIntent::amounts(['allocated_amount' => $row->allocated_amount, 'payment_currency_amount' => $row->payment_currency_amount], $invoice->currency_code, $payment->currency_code);
+                $prior = app(ReceivableReliefHistory::class)->before((int) $company->id, (int) $invoice->id, (int) $boundary->id, (int) $row->id);
+                $cumulative = $prior['amount']->plus($values['document']);
+                if ($cumulative->isGreaterThan($invoice->grand_total_currency)) {
+                    throw new InvalidArgumentException('Historical receipt over-allocation.');
+                }
+                $book = ($cumulative->isEqualTo($invoice->grand_total_currency) ? BigDecimal::of($invoice->grand_total_base)
+                    : $cumulative->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP))->minus($prior['base']);
+                $used = $used->plus($values['payment']);
+                $target = $used->isEqualTo($amount) ? $base : $used->multipliedBy($rate)->toScale(6, RoundingMode::HALF_UP);
+                $segment = $target->minus($usedBase);
+                $usedBase = $target;
+                $delta = $segment->minus($book);
+                if ($used->isGreaterThan($amount) || ! $segment->isPositive() || ! $segment->isEqualTo($row->settlement_base_value)
+                    || ! $book->isEqualTo($row->base_amount_applied_to_receivable) || ! $delta->isEqualTo($row->realized_fx_gain_loss_base)
+                    || ! BigDecimal::of($row->invoice_exchange_rate)->isEqualTo($invoice->exchange_rate) || ! BigDecimal::of($row->payment_exchange_rate)->isEqualTo($rate)) {
+                    throw new InvalidArgumentException('Receipt allocation exact values mismatch.');
+                }
+                $append((int) $accounts['accounts_receivable'], false, $book, $invoice->currency_code, $values['document'], $invoice->exchange_rate);
+                if ($delta->isPositive()) {
+                    $gain = $gain->plus($delta);
+                } else {
+                    $loss = $loss->plus($delta->abs());
+                }
+                $intent[] = PaymentAllocationIntent::historicalRow('sales_invoice_id', (int) $invoice->id, $row->allocated_amount, $row->payment_currency_amount, $payment->allocation_version);
             }
-            $intent[] = PaymentAllocationIntent::historicalRow('sales_invoice_id', (int) $invoice->id, $row->allocated_amount, $row->payment_currency_amount, $payment->allocation_version);
         }
         if ($used->isLessThan($amount)) {
             $append((int) $accounts['accounts_receivable'], false, $base->minus($usedBase), $payment->currency_code, $amount->minus($used), (string) $rate);
@@ -116,7 +155,11 @@ final class CustomerPaymentHistory
         if ($loss->isPositive()) {
             $append((int) $accounts['fx_loss'], true, $loss);
         }
-        usort($intent, fn ($a, $b) => $a['sales_invoice_id'] <=> $b['sales_invoice_id']);
+        if ((int) $payment->allocation_version === 3) {
+            usort($intent, fn ($a, $b) => ($a['kind'] ?? 'invoice').':'.($a['id'] ?? $a['sales_invoice_id'] ?? 0) <=> ($b['kind'] ?? 'invoice').':'.($b['id'] ?? $b['sales_invoice_id'] ?? 0));
+        } else {
+            usort($intent, fn ($a, $b) => ($a['sales_invoice_id'] ?? 0) <=> ($b['sales_invoice_id'] ?? 0));
+        }
         $request = ['company_id' => (int) $payment->company_id, 'actor_id' => (int) $payment->created_by,
             'customer_id' => (int) $payment->customer_id, 'money_account_id' => $payment->money_account_id,
             'payment_date' => Carbon::parse($payment->payment_date)->toDateString(), 'payment_method' => $payment->payment_method,

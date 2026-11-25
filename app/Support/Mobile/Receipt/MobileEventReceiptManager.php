@@ -6,6 +6,7 @@ namespace App\Support\Mobile\Receipt;
 
 use App\Actions\Sales\ExecuteImmediateOnlineCashSaleAction;
 use App\Application\Platform\SupportViewContext;
+use App\Application\Platform\TenantWriteAccess;
 use App\Models\Company;
 use App\Models\MobileAccessToken;
 use App\Models\MobileDevice;
@@ -13,8 +14,12 @@ use App\Models\MobileEventReceipt;
 use App\Models\User;
 use App\Support\Mobile\Contract\CanonicalJsonSerializer;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
+use App\Support\Mobile\Contract\Revision3\OnlineSaleWireResponseProjection;
 use App\Support\Mobile\Contract\StrictJsonObject;
 use App\Support\Mobile\Contract\StrictJsonParser;
+use App\Support\Mobile\Offline\OfflineSaleEvent;
+use App\Support\Mobile\Offline\OfflineSaleLeaseService;
+use App\Support\Mobile\Receipt\Exceptions\FinancialExecutionDeniedException;
 use App\Support\Mobile\Receipt\Exceptions\IllegalStateException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventAuthenticationException;
 use App\Support\Mobile\Receipt\Exceptions\MobileEventDuplicatePayloadException;
@@ -39,7 +44,7 @@ final class MobileEventReceiptManager
 
     private static ?string $currentInvocationScopeId = null;
 
-    private const int MAX_DEADLOCK_RETRIES = 5;
+    private const int MAX_TRANSACTION_ATTEMPTS = 5;
 
     private const int MAX_PAYLOAD_BYTES = 1048576; // 1 MiB
 
@@ -52,7 +57,7 @@ final class MobileEventReceiptManager
     private const array SUPPORTED_REPRESENTATIONS = [
         'v2_intent',
         'v2_online_sale_intent',
-        'offline_sale_intake',
+        OfflineSaleEvent::REPRESENTATION,
         'offline_sale',
     ];
 
@@ -148,6 +153,12 @@ final class MobileEventReceiptManager
             // Cheap bounded structural validation
             $decodedPayload = $this->validateInputs($clientEventId, $eventVersion, $representation, $canonicalBytes);
             $payloadDigest = hash('sha256', $canonicalBytes);
+            $offlineSale = $representation === OfflineSaleEvent::REPRESENTATION
+                ? OfflineSaleEvent::fromEvent($decodedPayload)
+                : null;
+            if ($offlineSale !== null && ! OfflineSaleLeaseService::enabled()) {
+                throw new FinancialExecutionDeniedException;
+            }
 
             // Stage 1: Initial unlocked token authentication before company existence query (zero oracle)
             $tentativeToken = MobileAccessToken::where('token_hash', $tokenHash)->first();
@@ -175,61 +186,14 @@ final class MobileEventReceiptManager
                         $canonicalBytes,
                         $payloadDigest,
                         $decodedPayload,
+                        $offlineSale,
                         $context,
                         $guard,
                         $priorHadUser,
                         $priorGuardUser,
                         $tentativeToken
                     ): array {
-                        // Tenant root then membership, principal, device and token; bounded mobile paths only.
-                        /** @var Company|null $company */
-                        $company = Company::whereKey($companyId)->lockForUpdate()->first();
-                        if ($company === null || $company->status !== 'active') {
-                            throw new MobileEventForeignScopeException('Target company not found or inactive.');
-                        }
-
-                        $membership = DB::table('company_user')
-                            ->where('company_id', $companyId)
-                            ->where('user_id', $tentativeToken->user_id)
-                            ->where('status', 'active')
-                            ->lockForUpdate()
-                            ->first();
-
-                        if ($membership === null) {
-                            throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
-                        }
-
-                        // 1. Lock & revalidate user (principal)
-                        /** @var User|null $user */
-                        $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
-                        if ($user === null) {
-                            throw new MobileEventAuthenticationException('User not found.');
-                        }
-
-                        // 2. Lock & revalidate device status and strict ownership
-                        /** @var MobileDevice|null $device */
-                        $device = MobileDevice::where('device_id', $tentativeToken->device_id)->lockForUpdate()->first();
-                        if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $tentativeToken->user_id) {
-                            throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
-                        }
-
-                        // 3. Lock & revalidate bearer token under lock
-                        /** @var MobileAccessToken|null $token */
-                        $token = MobileAccessToken::where('token_hash', $tokenHash)->lockForUpdate()->first();
-                        if ($token === null || ! $token->isValid()) {
-                            throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
-                        }
-                        if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
-                            throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
-                        }
-                        if ($token->company_id !== null && (int) $token->company_id !== $companyId) {
-                            throw new MobileEventForeignScopeException('Token is bound to a different company.');
-                        }
-
-                        $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
-                        if (! hash_equals($expectedEpoch, $token->password_epoch)) {
-                            throw new MobileEventAuthenticationException('User credentials have changed since token establishment.');
-                        }
+                        [$company, $user, $device, $token] = $this->lockIdentity($companyId, $tokenHash, $tentativeToken);
 
                         if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
                             throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
@@ -269,7 +233,8 @@ final class MobileEventReceiptManager
                             $this->getExecutor()->authorize($company, $user, $device, 'replay', $decodedPayload);
 
                             // DIGEST CHECK: Mismatched payload returns 409 Conflict
-                            if (! hash_equals($receipt->payload_digest, $payloadDigest)) {
+                            if (! hash_equals($receipt->payload_digest, $payloadDigest)
+                                || (($receipt->representation === OfflineSaleEvent::REPRESENTATION) !== ($offlineSale !== null))) {
                                 throw new MobileEventDuplicatePayloadException('Event retry payload differs from original reviewed request.');
                             }
 
@@ -293,17 +258,20 @@ final class MobileEventReceiptManager
 
                         $suffix = hash('sha256', $user->id.'|'.$device->device_id.'|'.$clientEventId);
 
-                        $invocationScopeId = bin2hex(random_bytes(16));
-                        self::$currentInvocationScopeId = $invocationScopeId;
-                        if (self::$capabilityRegistry === null) {
-                            self::$capabilityRegistry = new WeakMap;
-                        }
-
-                        $cmu = isset($decodedPayload['currency_minor_units']) && is_int($decodedPayload['currency_minor_units'])
-                            ? $decodedPayload['currency_minor_units']
-                            : 2;
-
                         $payment = is_array($decodedPayload['payment'] ?? null) ? $decodedPayload['payment'] : [];
+                        if ($offlineSale !== null) {
+                            $activeExecutor->authorize($company, $user, $device, 'lookup');
+                            $cmu = (Closure::bind(
+                                static fn (): int => app(OfflineSaleLeaseService::class)->admit($company, $user, $device, $token, $offlineSale),
+                                null,
+                                OfflineSaleLeaseService::class,
+                            ))();
+                            $payment = $offlineSale->cashProfile($cmu)['payment'];
+                        } else {
+                            $cmu = is_int($decodedPayload['currency_minor_units'] ?? null)
+                                ? $decodedPayload['currency_minor_units']
+                                : 2;
+                        }
                         $settlementMode = (string) ($payment['settlement_mode'] ?? 'full');
                         $admittedPaymentAmount = isset($payment['amount']) ? (string) $payment['amount'] : null;
 
@@ -313,6 +281,8 @@ final class MobileEventReceiptManager
                             default => throw new SecurityException("Unsupported settlement mode [{$settlementMode}]."),
                         };
 
+                        $invocationScopeId = bin2hex(random_bytes(16));
+                        self::$capabilityRegistry ??= new WeakMap;
                         $capability = (Closure::bind(
                             fn () => new NativeFinancialExecutionCapability(
                                 companyId: (int) $company->id,
@@ -329,7 +299,8 @@ final class MobileEventReceiptManager
                                 invocationScopeId: $invocationScopeId,
                                 settlementMode: $settlementMode,
                                 expectedLegs: $expectedLegs,
-                                admittedPaymentAmount: $admittedPaymentAmount
+                                admittedPaymentAmount: $admittedPaymentAmount,
+                                offlineSale: $offlineSale !== null,
                             ),
                             null,
                             NativeFinancialExecutionCapability::class
@@ -356,6 +327,7 @@ final class MobileEventReceiptManager
                             'completed_payment_id' => null,
                         ];
 
+                        self::$currentInvocationScopeId = $invocationScopeId;
                         try {
                             $financialResult = $activeExecutor->execute($company, $user, $device, $decodedPayload, $suffix, $capability);
                         } finally {
@@ -373,7 +345,7 @@ final class MobileEventReceiptManager
                         $payId = $financialResult['customer_payment_id'] ?? null;
                         $mode = $capRec['settlement_mode'] ?? 'full';
 
-                        if ($representation === 'v2_online_sale_intent') {
+                        if ($representation === 'v2_online_sale_intent' || $offlineSale !== null) {
                             if ($mode === 'unpaid') {
                                 if ($invId === null || $payId !== null) {
                                     throw new SecurityException('Unpaid sale execution requires canonical sales invoice and explicit null payment.');
@@ -481,6 +453,10 @@ final class MobileEventReceiptManager
                             $cmdId
                         );
 
+                        if ($offlineSale !== null) {
+                            OnlineSaleWireResponseProjection::projectCommitWireDto($clientEventId, $terminalResult);
+                        }
+
                         // 11. Store receipt record in the exact same atomic transaction
                         /** @var MobileEventReceipt $created */
                         $created = MobileEventReceipt::create([
@@ -515,9 +491,9 @@ final class MobileEventReceiptManager
                     });
                 } catch (QueryException|PDOException $e) {
                     $isDuplicate = self::isDuplicateConstraintError($e, 'mobile_event_receipts_company_client_event_unique');
-                    $isDeadlock = self::isDeadlockError($e);
+                    $isConcurrentChange = self::isRetryableConcurrencyError($e);
 
-                    if (($isDuplicate || $isDeadlock) && $attempts < self::MAX_DEADLOCK_RETRIES) {
+                    if (($isDuplicate || $isConcurrentChange) && $attempts < self::MAX_TRANSACTION_ATTEMPTS) {
                         usleep(random_int(10000, 30000));
 
                         continue;
@@ -537,6 +513,117 @@ final class MobileEventReceiptManager
             } elseif (method_exists($guard, 'forgetUser')) {
                 $guard->forgetUser();
             }
+        }
+    }
+
+    /**
+     * @return array{Company, User, MobileDevice, MobileAccessToken}
+     */
+    private function lockIdentity(int $companyId, string $tokenHash, MobileAccessToken $tentativeToken): array
+    {
+        // Tenant root then membership, principal, device and token; bounded mobile paths only.
+        /** @var Company|null $company */
+        $company = Company::whereKey($companyId)->lockForUpdate()->first();
+        if ($company === null || $company->status !== 'active') {
+            throw new MobileEventForeignScopeException('Target company not found or inactive.');
+        }
+
+        $membership = DB::table('company_user')
+            ->where('company_id', $companyId)
+            ->where('user_id', $tentativeToken->user_id)
+            ->where('status', 'active')
+            ->lockForUpdate()
+            ->first();
+
+        if ($membership === null) {
+            throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
+        }
+
+        // 1. Lock & revalidate user (principal)
+        /** @var User|null $user */
+        $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
+        if ($user === null) {
+            throw new MobileEventAuthenticationException('User not found.');
+        }
+
+        // 2. Lock & revalidate device status and strict ownership
+        /** @var MobileDevice|null $device */
+        $device = MobileDevice::where('device_id', $tentativeToken->device_id)->lockForUpdate()->first();
+        if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $tentativeToken->user_id) {
+            throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
+        }
+
+        // 3. Lock & revalidate bearer token under lock
+        /** @var MobileAccessToken|null $token */
+        $token = MobileAccessToken::where('token_hash', $tokenHash)->lockForUpdate()->first();
+        if ($token === null || ! $token->isValid()) {
+            throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
+        }
+        if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
+            throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
+        }
+        if ($token->company_id !== null && (int) $token->company_id !== $companyId) {
+            throw new MobileEventForeignScopeException('Token is bound to a different company.');
+        }
+
+        $expectedEpoch = $user->mobilePasswordEpoch();
+        if (! hash_equals($expectedEpoch, $token->password_epoch)) {
+            throw new MobileEventAuthenticationException('User credentials have changed since token establishment.');
+        }
+
+        return [$company, $user, $device, $token];
+    }
+
+    /** @return array<string, mixed> */
+    public function issueOfflineLease(int $companyId, string $tokenHash, string $snapshot): array
+    {
+        if (! OfflineSaleLeaseService::enabled()) {
+            throw new FinancialExecutionDeniedException;
+        }
+        if (DB::transactionLevel() !== 0) {
+            throw new RuntimeException('Mobile lease issuance requires a root transaction.');
+        }
+        if (app(SupportViewContext::class)->active()) {
+            throw new MobileEventAuthenticationException('Support impersonation is unauthorized for offline leases.');
+        }
+        if (preg_match('/\A[a-f0-9]{64}\z/', $snapshot) !== 1) {
+            throw new InvalidArgumentException('A current catalog snapshot version is required.');
+        }
+
+        $tentativeToken = MobileAccessToken::where('token_hash', $tokenHash)->first();
+        if ($tentativeToken === null || ! $tentativeToken->isValid()) {
+            throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
+        }
+
+        $context = app(CompanyContext::class);
+        $priorContext = clone $context;
+        $priorTeamId = getPermissionsTeamId();
+        $guard = auth()->guard();
+        $ambientUser = $guard->hasUser() ? $guard->user() : null;
+
+        try {
+            return DB::transaction(function () use ($companyId, $tokenHash, $tentativeToken, $snapshot, $context, $ambientUser): array {
+                [$company, $user, $device, $token] = $this->lockIdentity($companyId, $tokenHash, $tentativeToken);
+                if ($ambientUser !== null && (int) $ambientUser->getAuthIdentifier() !== (int) $user->id) {
+                    throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
+                }
+                $context->setCompany($company, $user);
+                $this->verifyAndLockFreshRolePermissions($companyId, $user);
+                $this->getExecutor()->authorize($company, $user, $device, 'execute');
+                $this->getExecutor()->authorize($company, $user, $device, 'lookup');
+                app(TenantWriteAccess::class)->assertWritable($companyId);
+
+                return (Closure::bind(
+                    static fn (): array => app(OfflineSaleLeaseService::class)->issue($company, $user, $device, $token, $snapshot),
+                    null,
+                    OfflineSaleLeaseService::class,
+                ))();
+            }, self::MAX_TRANSACTION_ATTEMPTS);
+        } finally {
+            $context->clearSessionless();
+            $context->restoreSessionless($priorContext);
+            setPermissionsTeamId($priorTeamId);
+            app(PermissionRegistrar::class)->setPermissionsTeamId($priorTeamId);
         }
     }
 
@@ -599,52 +686,7 @@ final class MobileEventReceiptManager
                 $priorGuardUser,
                 $tentativeToken
             ): ?array {
-                // Tenant root then membership, principal, device and token; bounded mobile paths only.
-                /** @var Company|null $company */
-                $company = Company::whereKey($companyId)->lockForUpdate()->first();
-                if ($company === null || $company->status !== 'active') {
-                    throw new MobileEventForeignScopeException('Target company not found or inactive.');
-                }
-
-                $membership = DB::table('company_user')
-                    ->where('company_id', $companyId)
-                    ->where('user_id', $tentativeToken->user_id)
-                    ->where('status', 'active')
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($membership === null) {
-                    throw new MobileEventForeignScopeException('User does not possess active authorized membership in the requested company.');
-                }
-
-                /** @var User|null $user */
-                $user = User::whereKey($tentativeToken->user_id)->lockForUpdate()->first();
-                if ($user === null) {
-                    throw new MobileEventAuthenticationException('User not found.');
-                }
-
-                /** @var MobileDevice|null $device */
-                $device = MobileDevice::where('device_id', $tentativeToken->device_id)->lockForUpdate()->first();
-                if ($device === null || $device->isRevoked() || (int) $device->user_id !== (int) $tentativeToken->user_id) {
-                    throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
-                }
-
-                /** @var MobileAccessToken|null $token */
-                $token = MobileAccessToken::where('token_hash', $tokenHash)->lockForUpdate()->first();
-                if ($token === null || ! $token->isValid()) {
-                    throw new MobileEventAuthenticationException('The Bearer token has been revoked or expired.');
-                }
-                if ($token->device_id !== $device->device_id || (int) $token->user_id !== (int) $user->id) {
-                    throw new MobileEventAuthenticationException('Device has been revoked or does not match token owner.');
-                }
-                if ($token->company_id !== null && (int) $token->company_id !== $companyId) {
-                    throw new MobileEventForeignScopeException('Token is bound to a different company.');
-                }
-
-                $expectedEpoch = 'epoch-'.substr(hash('sha256', (string) $user->password), 0, 16);
-                if (! hash_equals($expectedEpoch, $token->password_epoch)) {
-                    throw new MobileEventAuthenticationException('User credentials have changed since token establishment.');
-                }
+                [$company, $user, $device] = $this->lockIdentity($companyId, $tokenHash, $tentativeToken);
 
                 if ($priorHadUser && $priorGuardUser !== null && (int) $priorGuardUser->getAuthIdentifier() !== (int) $user->id) {
                     throw new MobileEventAuthenticationException('Ambient guard user conflicts with authenticated mobile token user.');
@@ -689,7 +731,7 @@ final class MobileEventReceiptManager
                     'terminal_canonical_result' => $receipt->terminal_canonical_result,
                     'receipt_id' => $receipt->id,
                 ];
-            });
+            }, self::MAX_TRANSACTION_ATTEMPTS);
         } finally {
             $context->clearSessionless();
             $context->restoreSessionless($priorContext);
@@ -765,7 +807,7 @@ final class MobileEventReceiptManager
         return false;
     }
 
-    public static function isDeadlockError(Throwable $e): bool
+    private static function isRetryableConcurrencyError(Throwable $e): bool
     {
         if ($e instanceof DeadlockException) {
             return true;
@@ -776,8 +818,8 @@ final class MobileEventReceiptManager
             ? (int) $e->errorInfo[1]
             : null;
 
-        // MariaDB / InnoDB deadlock: SQLSTATE 40001 or error code 1213
-        return $errorCode === 1213 || $sqlState === '40001';
+        // InnoDB can also report ER_CHECKREAD when a locked row changes while we wait.
+        return $errorCode === 1213 || $errorCode === 1020 || $sqlState === '40001';
     }
 
     /**

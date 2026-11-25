@@ -211,8 +211,12 @@ final class PurchasingDocumentBuilder
         if ($withCost) {
             $document += [
                 'currency_code' => (string) $purchase->currency_code,
+                'currency_minor_units' => $purchase->resolvedCurrencyMinorUnits(),
                 'base_currency_code' => (string) $purchase->base_currency_code,
                 'exchange_rate' => (string) $purchase->exchange_rate,
+                'discount_type' => $purchase->discount_type,
+                'discount_value' => (string) ($purchase->discount_value ?? '0'),
+                'discount_scope' => (string) ($purchase->discount_scope ?? 'document'),
                 'subtotal' => (string) $purchase->getAttribute('subtotal_currency'),
                 'discount_total' => (string) $purchase->getAttribute('discount_total_currency'),
                 'tax_total' => (string) $purchase->getAttribute('tax_total_currency'),
@@ -287,6 +291,7 @@ final class PurchasingDocumentBuilder
         if ($withCost) {
             $document += [
                 'currency_code' => (string) $return->currency_code,
+                'currency_minor_units' => $return->resolvedCurrencyMinorUnits(),
                 'base_currency_code' => (string) $return->base_currency_code,
                 'exchange_rate' => (string) $return->exchange_rate,
                 'subtotal' => (string) $return->subtotal_currency,
@@ -462,7 +467,8 @@ final class PurchasingDocumentBuilder
                 }
             }
             if ($withCost) {
-                foreach (['unit_cost' => 'unit_cost', 'line_discount' => 'discount', 'line_tax' => 'tax', 'line_total' => 'total',
+                foreach (['unit_cost' => 'unit_cost', 'line_discount' => 'discount', 'manual_discount_amount' => 'manual_discount_amount',
+                    'allocated_document_discount' => 'allocated_document_discount', 'line_tax' => 'tax', 'line_total' => 'total',
                     'landed_cost_allocated_base' => 'landed_cost_allocated_base', 'inventory_unit_cost_base' => 'inventory_unit_cost_base',
                     'historical_receipt_value_base' => 'historical_receipt_value_base', 'inventory_value_removed_base' => 'inventory_value_removed_base',
                     'valuation_adjustment_base' => 'valuation_adjustment_base'] as $key => $output) {

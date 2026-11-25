@@ -11,6 +11,7 @@ use App\Models\Customer;
 use App\Models\CustomerPayment;
 use App\Models\CustomerPaymentApplicationEvent;
 use App\Models\MoneyAccount;
+use App\Models\OpeningTradeItem;
 use App\Models\Quotation;
 use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
@@ -322,28 +323,55 @@ class SalesReconciliationService
                         $totalAllocated = $totalAllocated->plus($allocation->payment_currency_amount);
                     }
 
-                    $inv = SalesInvoice::find($allocation->sales_invoice_id);
-                    if ($inv === null) {
-                        $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] references non-existent invoice [{$allocation->sales_invoice_id}].";
+                    if ($allocation->opening_trade_item_id !== null) {
+                        $item = OpeningTradeItem::where('company_id', $cid)->find($allocation->opening_trade_item_id);
+                        if ($item === null) {
+                            $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] references non-existent opening trade item [{$allocation->opening_trade_item_id}].";
+                        } else {
+                            if ((int) $item->customer_id !== (int) $payment->customer_id || $item->side !== OpeningTradeItem::SIDE_CUSTOMER) {
+                                $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] customer mismatch (payment customer: {$payment->customer_id}, opening item customer: {$item->customer_id}).";
+                            }
+                            try {
+                                PaymentAllocationIntent::amounts(['allocated_amount' => $allocation->allocated_amount, 'payment_currency_amount' => $allocation->payment_currency_amount], $item->currency_code, $payment->currency_code);
+                            } catch (\Throwable $exception) {
+                                $violations[] = "Payment [ID {$payment->id}] allocation currency/precision mismatch: {$exception->getMessage()}";
+                            }
+
+                            // Realized FX check: settlement_base - base_applied
+                            $expectedFx = BigDecimal::of((string) $allocation->settlement_base_value)
+                                ->minus(BigDecimal::of((string) $allocation->base_amount_applied_to_receivable))
+                                ->toScale(6, RoundingMode::HALF_UP);
+                            $recordedFx = BigDecimal::of((string) $allocation->realized_fx_gain_loss_base)
+                                ->toScale(6, RoundingMode::HALF_UP);
+
+                            if (! $expectedFx->isEqualTo($recordedFx)) {
+                                $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] realized FX gain/loss [{$recordedFx}] does not match calculated [{$expectedFx}].";
+                            }
+                        }
                     } else {
-                        if ($inv->customer_id !== $payment->customer_id) {
-                            $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] customer mismatch (payment customer: {$payment->customer_id}, invoice customer: {$inv->customer_id}).";
-                        }
-                        try {
-                            PaymentAllocationIntent::amounts(['allocated_amount' => $allocation->allocated_amount, 'payment_currency_amount' => $allocation->payment_currency_amount], $inv->currency_code, $payment->currency_code);
-                        } catch (\Throwable $exception) {
-                            $violations[] = "Payment [ID {$payment->id}] allocation currency/precision mismatch: {$exception->getMessage()}";
-                        }
+                        $inv = SalesInvoice::find($allocation->sales_invoice_id);
+                        if ($inv === null) {
+                            $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] references non-existent invoice [{$allocation->sales_invoice_id}].";
+                        } else {
+                            if ($inv->customer_id !== $payment->customer_id) {
+                                $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] customer mismatch (payment customer: {$payment->customer_id}, invoice customer: {$inv->customer_id}).";
+                            }
+                            try {
+                                PaymentAllocationIntent::amounts(['allocated_amount' => $allocation->allocated_amount, 'payment_currency_amount' => $allocation->payment_currency_amount], $inv->currency_code, $payment->currency_code);
+                            } catch (\Throwable $exception) {
+                                $violations[] = "Payment [ID {$payment->id}] allocation currency/precision mismatch: {$exception->getMessage()}";
+                            }
 
-                        // Realized FX check: settlement_base - base_applied
-                        $expectedFx = BigDecimal::of((string) $allocation->settlement_base_value)
-                            ->minus(BigDecimal::of((string) $allocation->base_amount_applied_to_receivable))
-                            ->toScale(6, RoundingMode::HALF_UP);
-                        $recordedFx = BigDecimal::of((string) $allocation->realized_fx_gain_loss_base)
-                            ->toScale(6, RoundingMode::HALF_UP);
+                            // Realized FX check: settlement_base - base_applied
+                            $expectedFx = BigDecimal::of((string) $allocation->settlement_base_value)
+                                ->minus(BigDecimal::of((string) $allocation->base_amount_applied_to_receivable))
+                                ->toScale(6, RoundingMode::HALF_UP);
+                            $recordedFx = BigDecimal::of((string) $allocation->realized_fx_gain_loss_base)
+                                ->toScale(6, RoundingMode::HALF_UP);
 
-                        if (! $expectedFx->isEqualTo($recordedFx)) {
-                            $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] realized FX gain/loss [{$recordedFx}] does not match calculated [{$expectedFx}].";
+                            if (! $expectedFx->isEqualTo($recordedFx)) {
+                                $violations[] = "Payment [ID {$payment->id}] allocation [ID {$allocation->id}] realized FX gain/loss [{$recordedFx}] does not match calculated [{$expectedFx}].";
+                            }
                         }
                     }
                 }

@@ -88,7 +88,7 @@ final class HomeController extends Controller
 
         // 2. Cash in drawer from approved cash drawer account or base currency cash accounts (null if unauthorized or unavailable)
         $cashInDrawer = null;
-        if ($user->hasPermissionTo('money.cash.view') || $user->hasPermissionTo('reports.financial.view')) {
+        if ($user->hasPermissionTo('money.cash.view')) {
             try {
                 app(CompanyContext::class)->setCompany($company, $user);
                 $setting = CompanyMobileSetting::where('company_id', $company->id)->first();

@@ -10,15 +10,15 @@
 
         <div class="space-y-2">
             <span class="block text-xs font-bold text-text-secondary">{{ __('purchase_settlement.mode') }}</span>
-            <div class="flex flex-wrap gap-4 text-sm">
+            <div class="grid gap-2 sm:grid-cols-3">
                 @foreach (['unpaid', 'full', 'partial'] as $mode)
-                    <label for="purchase-settlement-mode-{{ $mode }}" class="inline-flex min-h-11 items-center gap-2 cursor-pointer">
+                    <label for="purchase-settlement-mode-{{ $mode }}" class="flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-border bg-surface px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-primary">
                         <input id="purchase-settlement-mode-{{ $mode }}"
                                type="radio"
                                name="purchase_settlement_mode"
                                value="{{ $mode }}"
                                wire:model.live="settlement.mode"
-                               class="text-primary focus:ring-primary"
+                               class="accent-primary"
                                :disabled="documentBusy || saving" />
                         <span>{{ __('purchase_settlement.mode_'.$mode) }}</span>
                     </label>
@@ -28,6 +28,9 @@
         </div>
 
         @if (($settlement['mode'] ?? 'unpaid') !== 'unpaid')
+            @if ($errors->has('settlement.*'))
+                <div role="alert" tabindex="-1" class="text-sm text-danger" x-data x-init="$el.focus()">{{ __('purchase_settlement.correct_fields') }}</div>
+            @endif
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                     <label for="purchase-settlement-payment_method" class="mb-1 block text-sm font-semibold">
@@ -87,7 +90,8 @@
                            type="text"
                            inputmode="decimal"
                            dir="ltr"
-                           wire:model="settlement.amount"
+                           wire:model="settlement.amount" data-purchase-preview-input
+                           @readonly($isSameCurrency && ($settlement['mode'] ?? null) === 'full')
                            @error('settlement.amount') aria-invalid="true" aria-describedby="purchase-settlement-amount-error" @enderror
                            class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
                            :disabled="documentBusy || saving" />
@@ -103,7 +107,7 @@
                                type="text"
                                inputmode="decimal"
                                dir="ltr"
-                               wire:model="settlement.purchase_amount"
+                               wire:model="settlement.purchase_amount" data-purchase-preview-input
                                @error('settlement.purchase_amount') aria-invalid="true" aria-describedby="purchase-settlement-purchase_amount-error" @enderror
                                class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
@@ -120,7 +124,7 @@
                                type="text"
                                inputmode="decimal"
                                dir="ltr"
-                               wire:model="settlement.exchange_rate"
+                               wire:model="settlement.exchange_rate" data-purchase-preview-input
                                @error('settlement.exchange_rate') aria-invalid="true" aria-describedby="purchase-settlement-exchange_rate-error" @enderror
                                class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
@@ -137,7 +141,7 @@
                                type="text"
                                inputmode="decimal"
                                dir="ltr"
-                               wire:model="settlement.payment_currency_amount"
+                               wire:model="settlement.payment_currency_amount" data-purchase-preview-input
                                @error('settlement.payment_currency_amount') aria-invalid="true" aria-describedby="purchase-settlement-payment_currency_amount-error" @enderror
                                class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
@@ -205,6 +209,22 @@
             @if (! $isBasePayment || ! $isSameCurrency)
                 <p class="text-sm text-text-secondary">{{ __('purchase_settlement.fx_help') }}</p>
             @endif
+        @endif
+        <p wire:loading.delay wire:target="settlement" role="status" class="text-xs text-text-secondary">{{ __('purchasing.updating_totals') }}</p>
+        <dl class="space-y-1 text-sm">
+            <div class="flex justify-between gap-3">
+                <dt>{{ __('purchase_settlement.outstanding_purchase_amount') }}</dt>
+                <dd class="font-mono tabular-nums"><bdi>{{ $settlementBalance['remaining'] ?? '—' }} {{ $currency_code }}</bdi></dd>
+            </div>
+            @if (isset($settlementBalance['credit']))
+                <div class="flex justify-between gap-3">
+                    <dt>{{ __('purchase_settlement.unallocated_payment_amount') }}</dt>
+                    <dd class="font-mono tabular-nums"><bdi>{{ $settlementBalance['credit'] }} {{ $paymentCurrency }}</bdi></dd>
+                </div>
+            @endif
+        </dl>
+        @if ($documentTotalsValid && ($settlement['mode'] ?? 'unpaid') !== 'unpaid' && $settlementBalance === null)
+            <p class="text-xs text-text-secondary">{{ __('purchase_settlement.balance_inputs_required') }}</p>
         @endif
     </x-inline-panel>
 @endif
