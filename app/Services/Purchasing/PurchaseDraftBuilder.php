@@ -125,6 +125,7 @@ final class PurchaseDraftBuilder
             'lines' => ['required', 'array', 'min:1', 'max:100'],
             'lines.*.public_id' => ['sometimes', 'string', 'size:26'],
             'lines.*.product_id' => ['required', 'integer'],
+            'lines.*.unit_cost' => ['required'],
             'lines.*.product_unit_id' => ['nullable', 'integer'],
             'lines.*.item_description' => ['sometimes', 'required', 'string', 'max:500'],
             'lines.*.discount_type' => ['nullable', Rule::in(['none', 'fixed', 'percent'])],
