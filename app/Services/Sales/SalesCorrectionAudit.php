@@ -63,7 +63,7 @@ final class SalesCorrectionAudit
                 }
                 $minorUnits = isset($line->currency_minor_units)
                     ? (int) $line->currency_minor_units
-                    : ($line->currency_code === 'JOD' ? 3 : 2);
+                    : SalesDocumentRules::legacyCurrencyMinorUnits($line->currency_code);
                 $result = app(SalesLineCalculator::class)->calculate(new SalesLineCalculationInput(
                     quantity: $line->quantity, unitPrice: $line->unit_price, discountType: $discountType,
                     discountValue: $discountValue, taxRate: $line->tax_rate_snapshot, taxInclusive: (bool) $line->tax_inclusive,

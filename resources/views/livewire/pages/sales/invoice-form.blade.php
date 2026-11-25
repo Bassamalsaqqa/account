@@ -519,7 +519,7 @@
                 </div>
 
                 <!-- Global Document Discount Control -->
-                @if(($discount_scope ?? 'document') === 'document')
+                @if($canChangeDiscount && $discount_scope === 'document')
                     <div class="py-2 border-b border-border/50">
                         @if (! $showDiscountControl)
                             <div class="flex items-center justify-between">

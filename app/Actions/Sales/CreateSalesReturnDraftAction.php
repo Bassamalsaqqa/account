@@ -6,9 +6,6 @@ namespace App\Actions\Sales;
 
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Inventory\ValueObjects\Quantity;
-use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
-use App\Domain\Sales\Calculators\SalesLineCalculationInput;
-use App\Domain\Sales\Calculators\SalesLineCalculator;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\SalesInvoice;
@@ -16,23 +13,16 @@ use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
 use App\Models\User;
-use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesReturnAmounts;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
-use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 class CreateSalesReturnDraftAction
 {
-    public function __construct(
-        protected SalesLineCalculator $lineCalculator,
-        protected SalesDocumentTotalsCalculator $totalsCalculator,
-    ) {}
-
     /**
      * @param  array{
      *     sales_invoice_id: int,
@@ -93,10 +83,9 @@ class CreateSalesReturnDraftAction
             $customer = $invoice->customer;
             $currency = $invoice->currency_code;
             $fx = BigDecimal::of((string) $invoice->exchange_rate);
-            $minorUnits = $invoice->currency_minor_units ?? $invoice->resolvedCurrencyMinorUnits();
-            $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
+            $amountsCalculator = app(SalesReturnAmounts::class);
 
-            $lineResults = [];
+            $calculated = [];
             $preparedLines = [];
 
             $groupedLines = [];
@@ -123,46 +112,12 @@ class CreateSalesReturnDraftAction
                     throw new InvalidArgumentException('Return line quantity must be strictly positive.');
                 }
 
-                // Check cumulative returns against original invoice line quantity
-                $alreadyReturned = BigDecimal::zero();
-                $priorReturnLines = SalesReturnLine::query()
+                $prior = SalesReturnLine::query()->where('company_id', $company->id)
                     ->where('sales_invoice_line_id', $invLine->id)
                     ->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))
                     ->get();
-
-                foreach ($priorReturnLines as $prl) {
-                    $alreadyReturned = $alreadyReturned->plus(BigDecimal::of((string) $prl->quantity));
-                }
-
-                $maxReturnable = BigDecimal::of((string) $invLine->quantity)->minus($alreadyReturned);
-                if ($returnQty->isGreaterThan($maxReturnable)) {
-                    throw new InvalidArgumentException("Requested return quantity [{$returnQty}] exceeds maximum returnable quantity [{$maxReturnable}] for line [{$invLine->id}].");
-                }
-
-                $taxRate = $invLine->tax_rate_snapshot !== null ? BigDecimal::of((string) $invLine->tax_rate_snapshot) : null;
-                $taxInclusive = (bool) $invLine->tax_inclusive;
-
-                // Price is original line unit price, with proportional discount from original invoice line
-                $invLineQty = BigDecimal::of((string) $invLine->quantity);
-                $invLineDiscount = BigDecimal::of((string) $invLine->line_discount);
-                $returnDiscount = $invLineQty->isPositive() && $invLineDiscount->isPositive()
-                    ? $invLineDiscount->multipliedBy($returnQty)->dividedBy($invLineQty, $minorUnits, RoundingMode::HALF_UP)
-                    : BigDecimal::zero();
-
-                $calcInput = new SalesLineCalculationInput(
-                    quantity: $returnQty,
-                    unitPrice: (string) $invLine->unit_price,
-                    discountType: $returnDiscount->isPositive() ? 'fixed' : null,
-                    discountValue: $returnDiscount,
-                    taxRate: $taxRate,
-                    taxInclusive: $taxInclusive,
-                    currencyMinorUnits: $minorUnits,
-                    exchangeRate: $fx,
-                    baseCurrencyMinorUnits: $baseMinorUnits,
-                );
-
-                $calcResult = $this->lineCalculator->calculate($calcInput);
-                $lineResults[] = $calcResult;
+                $amounts = $amountsCalculator->calculateLine($invLine, $returnQty, $prior, $invoice);
+                $calculated[] = $amounts;
 
                 $conversionRatio = BigDecimal::of((string) $invLine->unit_conversion_ratio);
                 $qtyBase = $returnQty->multipliedBy($conversionRatio)->toScale(6);
@@ -177,15 +132,7 @@ class CreateSalesReturnDraftAction
                     'unit_price' => (string) $invLine->unit_price,
                     'tax_rate_id' => $invLine->tax_rate_id,
                     'tax_rate_snapshot' => $invLine->tax_rate_snapshot,
-                    'tax_inclusive' => $taxInclusive,
-                    'line_subtotal' => (string) $calcResult->subtotal,
-                    'line_discount' => (string) $calcResult->discount,
-                    'line_tax' => (string) $calcResult->tax,
-                    'line_total' => (string) $calcResult->total,
-                    'line_subtotal_base' => (string) $calcResult->subtotalBase,
-                    'line_discount_base' => (string) $calcResult->discountBase,
-                    'line_tax_base' => (string) $calcResult->taxBase,
-                    'line_total_base' => (string) $calcResult->totalBase,
+                    'tax_inclusive' => (bool) $invLine->tax_inclusive,
                     'cogs_total_base' => '0.000000',
                     'cogs_unit_base' => '0.000000',
                     'unit_conversion_ratio' => (string) $conversionRatio,
@@ -196,9 +143,10 @@ class CreateSalesReturnDraftAction
                     'product_name_ar' => $invLine->product_name_ar,
                     'product_name_en' => $invLine->product_name_en,
                 ];
+                foreach ($amounts as $field => $amount) {
+                    $preparedLines[$idx]['line_'.$field] = (string) $amount;
+                }
             }
-
-            $totals = $this->totalsCalculator->calculate($lineResults);
 
             $attributes = [
                 'public_id' => (string) Str::ulid(),
@@ -208,26 +156,18 @@ class CreateSalesReturnDraftAction
                 'customer_id' => $customer->id,
                 'warehouse_id' => $invoice->warehouse_id,
                 'currency_code' => $currency,
-                'currency_minor_units' => $minorUnits,
+                'currency_minor_units' => $invoice->resolvedCurrencyMinorUnits(),
                 'exchange_rate' => (string) $fx->toScale(10),
                 'issue_date' => $data['issue_date'],
                 'status' => SalesReturn::STATUS_DRAFT,
-                'subtotal_base' => (string) $totals->subtotalBase,
-                'discount_total_base' => '0.000000',
-                'tax_total_base' => (string) $totals->taxTotalBase,
-                'grand_total_base' => (string) $totals->grandTotalBase,
                 'cogs_total_base' => '0.000000',
-                'subtotal_currency' => (string) $totals->subtotalCurrency,
-                'discount_total_currency' => '0.000000',
-                'tax_total_currency' => (string) $totals->taxTotalCurrency,
-                'grand_total_currency' => (string) $totals->grandTotalCurrency,
                 'reason' => $data['reason'] ?? null,
                 'notes' => $data['notes'] ?? null,
                 'document_locale' => $existing->document_locale ?? $invoice->document_locale,
                 'customer_snapshot' => $invoice->customer_snapshot,
                 'company_snapshot' => $invoice->company_snapshot,
                 'created_by' => $user->id,
-            ];
+            ] + $amountsCalculator->totals($invoice, $calculated);
             if ($existing === null) {
                 $salesReturn = SalesReturn::create($attributes);
             } else {
@@ -246,8 +186,6 @@ class CreateSalesReturnDraftAction
                     'sales_return_id' => $salesReturn->id,
                 ]));
             }
-
-            app(SalesReturnAmounts::class)->refresh($salesReturn);
 
             return $salesReturn->load(['lines', 'customer', 'salesInvoice']);
         });

@@ -114,7 +114,7 @@ class PostSalesInvoiceAction implements StockEventOwner
                         throw new InvalidArgumentException('Draft unit conversion changed; edit and verify the draft before posting.');
                     }
                     app(SalesDocumentRules::class)->price($product, $unit, $user,
-                        BigDecimal::of((string) $lockedInvoice->exchange_rate), $lockedInvoice->currency_code, BigDecimal::of((string) $line->unit_price));
+                        BigDecimal::of((string) $lockedInvoice->exchange_rate), BigDecimal::of((string) $line->unit_price));
                 } elseif (! $user->hasPermissionTo('sales.invoice.change_price')) {
                     throw new AuthorizationException('Manual service price requires price-change permission.');
                 }
@@ -147,6 +147,11 @@ class PostSalesInvoiceAction implements StockEventOwner
                 if (! $warehouse->active || $warehouse->is_transit) {
                     throw new InvalidArgumentException("Warehouse [{$warehouse->id}] cannot be used for sales (must be active and non-transit).");
                 }
+            }
+
+            if (! $hasStockLines && BigDecimal::of($lockedInvoice->grand_total_base)->isZero()
+                && BigDecimal::of($lockedInvoice->grand_total_currency)->isZero()) {
+                throw new InvalidArgumentException(__('sales.zero_journal_lines_cannot_post'));
             }
 
             $issueDate = (string) $lockedInvoice->issue_date->format('Y-m-d');

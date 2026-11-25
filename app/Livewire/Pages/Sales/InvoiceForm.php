@@ -35,6 +35,7 @@ use App\Models\ProductUnit;
 use App\Models\SalesInvoice;
 use App\Models\TaxRate;
 use App\Models\Warehouse;
+use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Sales\ImmediateSettlementPreview;
 use App\Services\Sales\SalesActorGuard;
@@ -194,6 +195,9 @@ class InvoiceForm extends Component
     public ?string $lastSavedPayloadDigest = null;
 
     #[Locked]
+    public bool $sentDocumentDiscount = false;
+
+    #[Locked]
     public ?string $confirmationToken = null;
 
     #[Locked]
@@ -265,10 +269,11 @@ class InvoiceForm extends Component
             $this->terms = $this->invoice->terms;
             $this->document_locale = $this->invoice->document_locale ?? 'ar';
             $this->discount_type = $this->invoice->discount_type ?? 'none';
+            $this->sentDocumentDiscount = $this->discount_type !== 'none';
             $this->discount_value = (string) ($this->invoice->discount_value ?? '0');
             $this->discount_scope = $this->invoice->discount_scope ?? 'document';
             $this->discount_calculation_version = (int) ($this->invoice->discount_calculation_version ?? 2);
-            $this->currency_minor_units = $this->invoice->currency_minor_units ?? $this->invoice->resolvedCurrencyMinorUnits();
+            $this->currency_minor_units = $this->invoice->resolvedCurrencyMinorUnits();
             $this->previousCurrencyCode = $this->currency_code;
             if ($this->discount_type !== 'none' || ($this->discount_scope === 'document' && ! BigDecimal::of((string) ($this->discount_value ?: '0'))->isZero())) {
                 $this->showDiscountControl = true;
@@ -301,6 +306,12 @@ class InvoiceForm extends Component
                     'line_total' => (string) $line->line_total,
                 ];
             }
+            if ($this->discount_scope === 'line'
+                && ! collect($this->persistedLineDiscounts)->contains(fn (array $discount): bool => in_array($discount['discount_type'], ['fixed', 'percent'], true)
+                    && BigDecimal::of($discount['discount_value'])->isPositive())) {
+                $this->discount_scope = 'document';
+                $this->discount_calculation_version = DocumentDiscountIntent::VERSION_CANONICAL;
+            }
         } else {
             if (! $user->hasPermissionTo('sales.invoice.create')) {
                 abort(403, 'Unauthorized.');
@@ -309,7 +320,7 @@ class InvoiceForm extends Component
             $this->customer_id = $customer_id;
             $this->currency_code = $company->base_currency_code;
             $this->previousCurrencyCode = $this->currency_code;
-            $this->currency_minor_units = in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $this->currency_minor_units = app(CurrencyMinorUnitsResolver::class)->resolveForCompany($company, $this->currency_code);
             $this->discount_scope = 'document';
             $this->discount_calculation_version = 2;
             $this->discount_type = 'none';
@@ -376,7 +387,7 @@ class InvoiceForm extends Component
     public function updatedCustomerId(): void
     {
         if ($this->customer_id !== null) {
-            $customer = Customer::find($this->customer_id);
+            $customer = Customer::where('company_id', app(CompanyContext::class)->companyId())->find($this->customer_id);
             if ($customer !== null) {
                 $previousCurrency = $this->currency_code;
                 $newCurrency = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
@@ -518,7 +529,6 @@ class InvoiceForm extends Component
             $selected = app(SalesProductSelection::class)->select(
                 (int) $product->id,
                 $productUnit?->id,
-                $this->currency_code,
                 $this->exchange_rate,
                 $this->warehouse_id
             );
@@ -674,7 +684,6 @@ class InvoiceForm extends Component
         $selected = app(SalesProductSelection::class)->select(
             $productId,
             $productUnitId,
-            $this->currency_code,
             $this->exchange_rate,
             $this->warehouse_id
         );
@@ -694,7 +703,7 @@ class InvoiceForm extends Component
         if ($productId === null) {
             return;
         }
-        $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->currency_code, $this->exchange_rate, $this->warehouse_id);
+        $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->exchange_rate, $this->warehouse_id);
         $this->lines[$index] = array_merge($this->lines[$index], $selected);
         $this->recalculate();
     }
@@ -708,8 +717,7 @@ class InvoiceForm extends Component
         foreach ($this->lines as $idx => $line) {
             if (! empty($line['product_id'])) {
                 $selected = app(SalesProductSelection::class)->select(
-                    (int) $line['product_id'], ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
-                    $this->currency_code, $this->exchange_rate, $this->warehouse_id);
+                    (int) $line['product_id'], ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null, $this->exchange_rate, $this->warehouse_id);
                 $this->lines[$idx]['available_quantity'] = $selected['available_quantity'];
             }
         }
@@ -744,8 +752,19 @@ class InvoiceForm extends Component
         $lineCalculator = app(SalesLineCalculator::class);
         $totalsCalculator = app(SalesDocumentTotalsCalculator::class);
 
-        $minorUnits = $this->currency_minor_units ?? (in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2);
-        $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+        try {
+            $document = $this->invoice;
+            $minorUnits = $document !== null && $document->currency_code === $this->currency_code
+                ? $document->resolvedCurrencyMinorUnits()
+                : app(CurrencyMinorUnitsResolver::class)->resolveForCompany($company, $this->currency_code);
+            $this->currency_minor_units = $minorUnits;
+        } catch (\InvalidArgumentException) {
+            $this->currency_minor_units = null;
+            $this->addError('currency_code', __('commands.code_validation_failed'));
+
+            return;
+        }
+        $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
         $fx = BigDecimal::of($this->exchange_rate ?: '1.0');
 
         $lineTaxIds = array_map(static fn (array $line): int|false => filter_var($line['tax_rate_id'] ?? null, FILTER_VALIDATE_INT), $this->lines);
@@ -1014,19 +1033,10 @@ class InvoiceForm extends Component
             ];
         }
 
-        $headerDiscountType = $this->discount_type;
-        if ($headerDiscountType === 'percentage') {
-            $headerDiscountType = 'percent';
-        }
         $payload = [
             'customer_id' => (int) $this->customer_id,
             'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
             'currency_code' => $this->currency_code,
-            'discount_type' => $headerDiscountType,
-            'discount_value' => (string) ($this->discount_value ?: '0'),
-            'discount_scope' => $this->discount_scope,
-            'discount_basis' => 'subtotal',
-            'discount_calculation_version' => $this->discount_calculation_version,
             'exchange_rate' => $this->exchange_rate,
             'issue_date' => $this->issue_date,
             'due_date' => $this->due_date ?: null,
@@ -1034,7 +1044,7 @@ class InvoiceForm extends Component
             'terms' => $this->terms,
             'document_locale' => $this->document_locale,
             'lines' => $dtoLines,
-        ];
+        ] + $this->headerDiscountInput();
 
         $currentDigest = $this->computePayloadDigest();
 
@@ -1049,6 +1059,7 @@ class InvoiceForm extends Component
                 $savedInvoice = $commands->update($this->invoice, $user, $payload, $key);
                 $this->invoice = $savedInvoice;
                 $this->lastSavedPayloadDigest = $currentDigest;
+                $this->sentDocumentDiscount = $this->sentDocumentDiscount || isset($payload['discount_type']);
             } else {
                 if ($this->lastSavedPayloadDigest !== null && $this->lastSavedPayloadDigest !== $currentDigest) {
                     $this->createRequestKey = (string) Str::uuid();
@@ -1068,6 +1079,7 @@ class InvoiceForm extends Component
                     return $created;
                 });
                 $this->lastSavedPayloadDigest = $currentDigest;
+                $this->sentDocumentDiscount = $this->sentDocumentDiscount || isset($payload['discount_type']);
                 $this->discardAiInput();
                 $this->isEditing = true;
             }
@@ -1368,75 +1380,36 @@ class InvoiceForm extends Component
         return $choice;
     }
 
+    /** @return array{discount_type?: ?string, discount_value?: string, discount_scope?: string} */
+    private function headerDiscountInput(): array
+    {
+        $type = $this->discount_type === 'percentage' ? 'percent' : $this->discount_type;
+        $value = trim((string) $this->discount_value) ?: '0';
+        if ($this->discount_scope !== 'document') {
+            return [];
+        }
+        if ($type !== 'none' && ! preg_match('/^0+(?:\.0+)?$/D', $value)) {
+            return ['discount_type' => $type, 'discount_value' => $value, 'discount_scope' => 'document'];
+        }
+
+        return $this->sentDocumentDiscount
+            ? ['discount_type' => null, 'discount_value' => '0', 'discount_scope' => 'document']
+            : [];
+    }
+
     public function computePayloadDigest(): string
     {
-        $normalizedLines = [];
-        foreach ($this->lines as $line) {
-            $discountType = (string) $line['discount_type'];
-            if ($discountType === 'percentage') {
-                $discountType = 'percent';
-            }
-            $normalizedLines[] = [
-                'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
-                'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
-                'item_description' => trim((string) $line['item_description']),
-                'quantity' => trim((string) $line['quantity']),
-                'unit_price' => trim((string) $line['unit_price']),
-                'discount_type' => $discountType !== 'none' ? $discountType : null,
-                'discount_value' => trim((string) $line['discount_value']),
-                'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
-            ];
-        }
-
-        $headerDiscountType = $this->discount_type;
-        if ($headerDiscountType === 'percentage') {
-            $headerDiscountType = 'percent';
-        }
-        $hasHeaderDiscount = $headerDiscountType !== 'none' && ! BigDecimal::of((string) ($this->discount_value ?: '0'))->isZero();
-        $headerDiscountValue = $hasHeaderDiscount ? trim((string) $this->discount_value) : null;
-
-        if ($hasHeaderDiscount) {
-            $normalized = [
-                'customer_id' => (int) $this->customer_id,
-                'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
-                'currency_code' => strtoupper(trim($this->currency_code)),
-                'exchange_rate' => trim($this->exchange_rate),
-                'issue_date' => trim($this->issue_date),
-                'due_date' => $this->due_date ? trim($this->due_date) : null,
-                'notes' => $this->notes !== null ? trim($this->notes) : null,
-                'terms' => $this->terms !== null ? trim($this->terms) : null,
-                'document_locale' => $this->document_locale,
-                'discount_type' => $headerDiscountType,
-                'discount_value' => $headerDiscountValue,
-                'discount_scope' => 'document',
-                'discount_calculation_version' => 2,
-                'lines' => $normalizedLines,
-            ];
-        } else {
-            $normalized = [
-                'customer_id' => (int) $this->customer_id,
-                'warehouse_id' => $this->warehouse_id ? (int) $this->warehouse_id : null,
-                'currency_code' => strtoupper(trim($this->currency_code)),
-                'exchange_rate' => trim($this->exchange_rate),
-                'issue_date' => trim($this->issue_date),
-                'due_date' => $this->due_date ? trim($this->due_date) : null,
-                'notes' => $this->notes !== null ? trim($this->notes) : null,
-                'terms' => $this->terms !== null ? trim($this->terms) : null,
-                'document_locale' => $this->document_locale,
-                'lines' => $normalizedLines,
-            ];
-        }
-
-        return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        return $this->payloadDigest($this->headerDiscountInput());
     }
 
     public function computeLegacyPayloadDigest(): ?string
     {
-        $hasHeaderDiscount = $this->discount_type !== 'none' && ! BigDecimal::of((string) ($this->discount_value ?: '0'))->isZero();
-        if ($hasHeaderDiscount) {
-            return null;
-        }
+        return $this->headerDiscountInput() === [] ? $this->payloadDigest([]) : null;
+    }
 
+    /** @param array<string, string|null> $discount */
+    private function payloadDigest(array $discount): string
+    {
         $normalizedLines = [];
         foreach ($this->lines as $line) {
             $discountType = (string) $line['discount_type'];
@@ -1465,8 +1438,7 @@ class InvoiceForm extends Component
             'notes' => $this->notes !== null ? trim($this->notes) : null,
             'terms' => $this->terms !== null ? trim($this->terms) : null,
             'document_locale' => $this->document_locale,
-            'lines' => $normalizedLines,
-        ];
+        ] + $discount + ['lines' => $normalizedLines];
 
         return hash('sha256', json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }

@@ -11,6 +11,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // NULL identifies the pre-feature write policy, independent of current currency metadata.
         Schema::table('sales_invoices', function (Blueprint $table): void {
             $table->unsignedTinyInteger('currency_minor_units')->nullable()->after('currency_code');
             $table->string('discount_type', 16)->nullable()->after('currency_minor_units');
@@ -46,47 +47,47 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Refuse lossy rollback before any DDL if used document discount history exists
+        // Check for populated snapshots before issuing any implicit-commit DDL.
         $hasInvoiceDiscountHistory = DB::table('sales_invoices')
             ->where(function ($q): void {
                 $q->where('discount_scope', '!=', 'line')
-                    ->orWhere(function ($sub): void {
-                        $sub->whereNotNull('discount_type')
-                            ->where('discount_type', '!=', 'none')
-                            ->where('discount_value', '>', 0);
-                    })
-                    ->orWhere('discount_calculation_version', '!=', 1);
+                    ->orWhereNotNull('discount_type')
+                    ->orWhere('discount_value', '!=', 0)
+                    ->orWhere('discount_calculation_version', '!=', 1)
+                    ->orWhere('discount_basis', '!=', 'subtotal')
+                    ->orWhereNotNull('currency_minor_units');
             })
             ->exists();
 
         $hasInvoiceLineDiscountHistory = DB::table('sales_invoice_lines')
             ->where(function ($q): void {
-                $q->where('allocated_document_discount', '>', 0)
-                    ->orWhere('manual_discount_amount', '>', 0);
+                $q->where('allocated_document_discount', '!=', 0)
+                    ->orWhere('manual_discount_amount', '!=', 0);
             })
             ->exists();
 
         $hasQuotationDiscountHistory = DB::table('quotations')
             ->where(function ($q): void {
                 $q->where('discount_scope', '!=', 'line')
-                    ->orWhere(function ($sub): void {
-                        $sub->whereNotNull('discount_type')
-                            ->where('discount_type', '!=', 'none')
-                            ->where('discount_value', '>', 0);
-                    })
-                    ->orWhere('discount_calculation_version', '!=', 1);
+                    ->orWhereNotNull('discount_type')
+                    ->orWhere('discount_value', '!=', 0)
+                    ->orWhere('discount_calculation_version', '!=', 1)
+                    ->orWhere('discount_basis', '!=', 'subtotal')
+                    ->orWhereNotNull('currency_minor_units');
             })
             ->exists();
 
         $hasQuotationLineDiscountHistory = DB::table('quotation_lines')
             ->where(function ($q): void {
-                $q->where('allocated_document_discount', '>', 0)
-                    ->orWhere('manual_discount_amount', '>', 0);
+                $q->where('allocated_document_discount', '!=', 0)
+                    ->orWhere('manual_discount_amount', '!=', 0);
             })
             ->exists();
 
-        if ($hasInvoiceDiscountHistory || $hasInvoiceLineDiscountHistory || $hasQuotationDiscountHistory || $hasQuotationLineDiscountHistory) {
-            throw new RuntimeException('Cannot rollback migration: sales or quotation document discount history exists. Retain the additive schema during source rollback.');
+        $hasReturnPrecision = DB::table('sales_returns')->whereNotNull('currency_minor_units')->exists();
+
+        if ($hasReturnPrecision || $hasInvoiceDiscountHistory || $hasInvoiceLineDiscountHistory || $hasQuotationDiscountHistory || $hasQuotationLineDiscountHistory) {
+            throw new RuntimeException('Cannot rollback migration: sales, quotation, or return discount or currency precision history exists. Retain the additive schema during source rollback.');
         }
 
         Schema::table('sales_returns', function (Blueprint $table): void {

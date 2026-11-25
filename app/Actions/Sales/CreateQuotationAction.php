@@ -134,17 +134,8 @@ class CreateQuotationAction
             $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
             $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
-            $headerDiscountType = $data['discount_type'] ?? null;
-            $intent = new DocumentDiscountIntent(
-                discountType: $headerDiscountType,
-                discountValue: $data['discount_value'] ?? '0',
-            );
-
-            $discountScope = $data['discount_scope'] ?? (! $intent->isNone() ? 'document' : 'line');
-
-            if ($discountScope === 'line' && ! $intent->isNone()) {
-                throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
-            }
+            $intent = DocumentDiscountIntent::fromDocumentInput($data);
+            $discountScope = $intent->discountScope;
 
             $hasLineDiscounts = false;
             foreach ($data['lines'] as $lineData) {
@@ -155,7 +146,7 @@ class CreateQuotationAction
                 }
             }
 
-            if (! $intent->isNone() && $hasLineDiscounts) {
+            if ($intent->isDocumentScope() && $hasLineDiscounts) {
                 throw new InvalidArgumentException(__('sales.manual_line_discount_forbidden'));
             }
 
@@ -321,8 +312,8 @@ class CreateQuotationAction
                 'discount_type' => ! $intent->isNone() ? $intent->discountType : null,
                 'discount_value' => (string) $intent->discountValue->toScale(6),
                 'discount_scope' => $discountScope,
-                'discount_basis' => 'subtotal',
-                'discount_calculation_version' => $discountScope === 'document' ? DocumentDiscountIntent::VERSION_CANONICAL : DocumentDiscountIntent::VERSION_LEGACY,
+                'discount_basis' => $intent->discountBasis,
+                'discount_calculation_version' => $intent->version,
                 'exchange_rate' => (string) $fx->toScale(10),
                 'issue_date' => $issueDate,
                 'expiry_date' => $expiryDate,

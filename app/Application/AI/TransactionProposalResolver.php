@@ -136,7 +136,7 @@ final class TransactionProposalResolver
                     if ($currency !== null && $rate !== null) {
                         $selected = $purchase
                             ? app(PurchaseProductSelection::class)->select((int) $product->id, (int) $unit->id, $currency, $rate)
-                            : app(SalesProductSelection::class)->select((int) $product->id, (int) $unit->id, $currency, $rate, $warehouse?->id);
+                            : app(SalesProductSelection::class)->select((int) $product->id, (int) $unit->id, $rate, $warehouse?->id);
                         if ($price === null) {
                             $price = $selected[$priceField];
                             $origins[$path.'.'.$priceField] = 'canonical_suggestion';
@@ -144,7 +144,7 @@ final class TransactionProposalResolver
                             $origins[$path.'.'.$priceField] = 'spoken';
                         }
                         if (! $purchase) {
-                            app(SalesDocumentRules::class)->price($product, $unit, $actor, BigDecimal::of($rate), $currency, BigDecimal::of($price));
+                            app(SalesDocumentRules::class)->price($product, $unit, $actor, BigDecimal::of($rate), BigDecimal::of($price));
                         }
                     }
                 }

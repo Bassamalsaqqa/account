@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Accounting\Exceptions\ImmutableRecordException;
-use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
+use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\BelongsToCompany;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
@@ -23,6 +23,7 @@ use Illuminate\Support\Str;
  * @property int|null $sales_invoice_id
  * @property int $customer_id
  * @property int|null $warehouse_id
+ * @property int|null $currency_minor_units
  * @property string $currency_code
  * @property string $exchange_rate
  * @property \Illuminate\Support\Carbon|Carbon|string $issue_date
@@ -135,7 +136,7 @@ class SalesReturn extends Model
 
     public function resolvedCurrencyMinorUnits(): int
     {
-        return $this->currency_minor_units ?? app(CurrencyMinorUnitsResolver::class)->resolveHistorical($this->currency_code);
+        return $this->currency_minor_units ?? SalesDocumentRules::legacyCurrencyMinorUnits($this->currency_code);
     }
 
     private bool $completingPost = false;

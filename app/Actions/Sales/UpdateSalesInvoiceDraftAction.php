@@ -134,13 +134,16 @@ class UpdateSalesInvoiceDraftAction
             if (! isset($data['lines']) && ($currency !== $lockedInvoice->currency_code || ! $fx->isEqualTo($lockedInvoice->exchange_rate))) {
                 throw new InvalidArgumentException('Currency/rate changes require the draft lines to be recalculated together.');
             }
+            if (! isset($data['lines']) && array_intersect(['discount_type', 'discount_value', 'discount_scope'], array_keys($data)) !== []) {
+                throw new InvalidArgumentException(__('sales.discount_change_requires_lines'));
+            }
             if (isset($data['lines'])) {
                 if (empty($data['lines'])) {
                     throw new InvalidArgumentException('Sales invoice must contain at least one line.');
                 }
 
                 if ($currency === $lockedInvoice->currency_code) {
-                    $minorUnits = $lockedInvoice->currency_minor_units ?? $lockedInvoice->resolvedCurrencyMinorUnits();
+                    $minorUnits = $lockedInvoice->resolvedCurrencyMinorUnits();
                 } else {
                     $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
                 }
@@ -148,22 +151,8 @@ class UpdateSalesInvoiceDraftAction
 
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
 
-                $discountTypeProvided = array_key_exists('discount_type', $data);
-                $discountValueProvided = array_key_exists('discount_value', $data);
-                $discountScopeProvided = array_key_exists('discount_scope', $data);
-
-                $headerDiscountType = $discountTypeProvided ? $data['discount_type'] : $lockedInvoice->discount_type;
-                $headerDiscountVal = $discountValueProvided ? $data['discount_value'] : $lockedInvoice->discount_value;
-                $intent = new DocumentDiscountIntent(
-                    discountType: $headerDiscountType,
-                    discountValue: $headerDiscountVal ?: '0',
-                );
-
-                $discountScope = $discountScopeProvided ? $data['discount_scope'] : ($lockedInvoice->discount_scope ?? (! $intent->isNone() ? 'document' : 'line'));
-
-                if ($discountScope === 'line' && ! $intent->isNone()) {
-                    throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
-                }
+                $intent = DocumentDiscountIntent::fromDocumentInput($data, $lockedInvoice->discount_type, $lockedInvoice->discount_value, $lockedInvoice->discount_scope);
+                $discountScope = $intent->discountScope;
 
                 $hasLineDiscounts = false;
                 foreach ($data['lines'] as $lineData) {
@@ -174,14 +163,8 @@ class UpdateSalesInvoiceDraftAction
                     }
                 }
 
-                if (! $intent->isNone() && $hasLineDiscounts) {
+                if ($intent->isDocumentScope() && $hasLineDiscounts) {
                     throw new InvalidArgumentException(__('sales.manual_line_discount_forbidden'));
-                }
-
-                if (! $intent->isNone()) {
-                    if (! $user->hasPermissionTo('sales.invoice.change_discount')) {
-                        throw new AuthorizationException('User does not have permission to apply discounts.');
-                    }
                 }
 
                 $allocationResult = null;
@@ -221,7 +204,7 @@ class UpdateSalesInvoiceDraftAction
                             ! empty($lineData['product_unit_id']) ? (int) $lineData['product_unit_id'] : null,
                             app(SalesDocumentRules::class)->quantity($lineData['quantity']));
                         $conversionRatio = BigDecimal::of((string) $productUnit->conversion_to_base);
-                        app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']));
+                        app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, BigDecimal::of($lineData['unit_price']));
                     } else {
                         app(SalesDocumentRules::class)->quantity($lineData['quantity']);
                         if (! $user->hasPermissionTo('sales.invoice.change_price')) {
@@ -259,9 +242,6 @@ class UpdateSalesInvoiceDraftAction
                         $allocatedDocDiscount = (string) $allocatedDiscount;
                     } else {
                         $discountVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
-                        if ($discountVal->isPositive() && ! $user->hasPermissionTo('sales.invoice.change_discount')) {
-                            throw new AuthorizationException('User does not have permission to apply discounts.');
-                        }
                         $calcInput = new SalesLineCalculationInput(
                             quantity: $lineData['quantity'],
                             unitPrice: $lineData['unit_price'],
@@ -318,6 +298,36 @@ class UpdateSalesInvoiceDraftAction
                     ];
                 }
 
+                if (! $user->hasPermissionTo('sales.invoice.change_discount')) {
+                    $previousIntent = DocumentDiscountIntent::fromDocumentInput(
+                        [], $lockedInvoice->discount_type, $lockedInvoice->discount_value, $lockedInvoice->discount_scope
+                    );
+                    $headerChanged = (! $intent->isNone() || ! $previousIntent->isNone())
+                        && ($intent->discountType !== $previousIntent->discountType
+                            || ! $intent->discountValue->isEqualTo($previousIntent->discountValue));
+                    $discounts = static function (iterable $lines): array {
+                        $result = [];
+                        foreach ($lines as $line) {
+                            if (BigDecimal::of($line['line_discount'])->isPositive()
+                                || ($line['discount_type'] !== null && BigDecimal::of($line['discount_value'])->isPositive())) {
+                                $result[(int) $line['line_number']] = [
+                                    $line['product_id'] === null ? null : (int) $line['product_id'],
+                                    $line['product_unit_id'] === null ? null : (int) $line['product_unit_id'],
+                                    $line['discount_type'],
+                                    (string) BigDecimal::of($line['discount_value'])->toScale(6),
+                                    (string) BigDecimal::of($line['line_discount'])->toScale(6),
+                                ];
+                            }
+                        }
+                        ksort($result);
+
+                        return $result;
+                    };
+                    if ($headerChanged || $discounts($lockedInvoice->lines()->lockForUpdate()->get()) !== $discounts($preparedLines)) {
+                        throw new AuthorizationException('User does not have permission to change discounts.');
+                    }
+                }
+
                 $totals = $this->totalsCalculator->calculate($lineResults, $fx);
 
                 SalesInvoiceLine::where('sales_invoice_id', $lockedInvoice->id)->delete();
@@ -333,8 +343,8 @@ class UpdateSalesInvoiceDraftAction
                 $lockedInvoice->discount_type = ! $intent->isNone() ? $intent->discountType : null;
                 $lockedInvoice->discount_value = (string) $intent->discountValue->toScale(6);
                 $lockedInvoice->discount_scope = $discountScope;
-                $lockedInvoice->discount_basis = 'subtotal';
-                $lockedInvoice->discount_calculation_version = $discountScope === 'document' ? DocumentDiscountIntent::VERSION_CANONICAL : DocumentDiscountIntent::VERSION_LEGACY;
+                $lockedInvoice->discount_basis = $intent->discountBasis;
+                $lockedInvoice->discount_calculation_version = $intent->version;
                 $lockedInvoice->subtotal_base = (string) $totals->subtotalBase;
                 $lockedInvoice->discount_total_base = (string) $totals->discountTotalBase;
                 $lockedInvoice->tax_total_base = (string) $totals->taxTotalBase;

@@ -7,26 +7,32 @@ namespace App\Services\Sales;
 use App\Application\Platform\TenantWriteAccess;
 use App\Domain\Money\ValueObjects\ExchangeRate;
 use App\Domain\Money\ValueObjects\MoneyAmount;
+use App\Models\SalesInvoice;
 use App\Models\SalesInvoiceLine;
 use App\Models\SalesReturn;
 use App\Models\SalesReturnLine;
-use App\Services\Money\CurrencyMinorUnitsResolver;
 use Brick\Math\BigDecimal;
 use Brick\Math\RoundingMode;
 use InvalidArgumentException;
 
 final class SalesReturnAmounts
 {
-    /** @param iterable<SalesReturnLine> $prior
+    /**
+     * @param  iterable<SalesReturnLine>  $prior
      * @return array<string, BigDecimal>
      */
-    public function calculateLine(SalesInvoiceLine $original, BigDecimal $quantity, iterable $prior, string $currency): array
+    public function calculateLine(SalesInvoiceLine $original, BigDecimal $quantity, iterable $prior, SalesInvoice $invoice): array
     {
-        $scale = app(CurrencyMinorUnitsResolver::class)->resolve($currency);
-        $amounts = [];
+        $scale = $invoice->resolvedCurrencyMinorUnits();
+        $previous = [];
         $previousQty = BigDecimal::zero();
-        foreach ($prior as $previous) {
-            $previousQty = $previousQty->plus($previous->quantity);
+        foreach ($prior as $line) {
+            $previousQty = $previousQty->plus($line->quantity);
+            foreach (['subtotal', 'discount', 'tax', 'total'] as $field) {
+                foreach ([$field, $field.'_base'] as $key) {
+                    $previous[$key] = ($previous[$key] ?? BigDecimal::zero())->plus((string) $line->getAttribute('line_'.$key));
+                }
+            }
         }
 
         $originalQty = BigDecimal::of((string) $original->quantity);
@@ -34,30 +40,64 @@ final class SalesReturnAmounts
         if (! $quantity->isPositive() || $cumulativeQty->isGreaterThan($originalQty)) {
             throw new InvalidArgumentException('Return quantity exceeds the remaining original invoice quantity.');
         }
-        foreach (['discount', 'tax', 'total'] as $field) {
-            $column = 'line_'.$field;
-            $already = BigDecimal::zero();
-            foreach ($prior as $previous) {
-                $already = $already->plus((string) $previous->getAttribute($column));
-            }
-            $originalAmount = BigDecimal::of((string) $original->getAttribute($column));
-            $entitlement = $cumulativeQty->isEqualTo($originalQty) ? $originalAmount
-                : $originalAmount->multipliedBy($cumulativeQty)->dividedBy($originalQty, $scale, RoundingMode::HALF_UP);
-            $amount = $entitlement->minus($already)->toScale(6);
-            $amounts[$field] = $amount;
-        }
 
-        // Canonical subtotal reflects gross minus tax plus discount to prevent parallel unbalancing
-        $amounts['subtotal'] = $amounts['total']->plus($amounts['discount'])->minus($amounts['tax'])->toScale(6);
+        $final = $cumulativeQty->isEqualTo($originalQty);
+        $entitlements = [];
+        foreach (['discount', 'tax', 'total'] as $field) {
+            $originalAmount = BigDecimal::of((string) $original->getAttribute('line_'.$field));
+            $entitlements[$field] = $final ? $originalAmount
+                : $originalAmount->multipliedBy($cumulativeQty)->dividedBy($originalQty, $scale, RoundingMode::HALF_UP);
+        }
+        $entitlements['subtotal'] = $entitlements['total']->plus($entitlements['discount'])->minus($entitlements['tax']);
+
+        $amounts = [];
+        foreach ($entitlements as $field => $amount) {
+            $base = $final ? BigDecimal::of((string) $original->getAttribute('line_'.$field.'_base'))
+                : $amount->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP);
+            $amounts[$field] = $amount->minus($previous[$field] ?? BigDecimal::zero())->toScale(6);
+            $amounts[$field.'_base'] = $base->minus($previous[$field.'_base'] ?? BigDecimal::zero())->toScale(6);
+        }
 
         return $amounts;
     }
 
+    /**
+     * @param  list<array<string, BigDecimal>>  $lines
+     * @return array<string, string>
+     */
+    public function totals(SalesInvoice $invoice, array $lines, ?int $excludingReturnId = null): array
+    {
+        $prior = SalesReturn::query()->where('company_id', $invoice->company_id)
+            ->where('sales_invoice_id', $invoice->id)->where('status', SalesReturn::STATUS_POSTED)
+            ->when($excludingReturnId !== null, fn ($query) => $query->whereKeyNot($excludingReturnId))
+            ->selectRaw('SUM(subtotal_currency) AS subtotal_currency, SUM(subtotal_base) AS subtotal_base,
+                SUM(discount_total_currency) AS discount_total_currency, SUM(discount_total_base) AS discount_total_base,
+                SUM(tax_total_currency) AS tax_total_currency, SUM(tax_total_base) AS tax_total_base,
+                SUM(grand_total_currency) AS grand_total_currency, SUM(grand_total_base) AS grand_total_base')
+            ->toBase()->first();
+
+        $totals = [];
+        foreach (['subtotal' => 'subtotal', 'discount' => 'discount_total', 'tax' => 'tax_total', 'total' => 'grand_total'] as $field => $header) {
+            $currencyColumn = $header.'_currency';
+            $baseColumn = $header.'_base';
+            $current = BigDecimal::zero();
+            foreach ($lines as $amounts) {
+                $current = $current->plus($amounts[$field]);
+            }
+            $cumulative = $current->plus((string) ($prior->{$currencyColumn} ?? '0'));
+            $totals[$currencyColumn] = (string) $current->toScale(6);
+            $totals[$baseColumn] = (string) $cumulative->multipliedBy($invoice->exchange_rate)->toScale(6, RoundingMode::HALF_UP)
+                ->minus((string) ($prior->{$baseColumn} ?? '0'))->toScale(6);
+        }
+
+        return $totals;
+    }
+
     /** Cumulative rounded entitlement minus actual prior credits assigns the final residual explicitly. */
-    public function refresh(SalesReturn $return): void
+    public function refresh(SalesReturn $return, SalesInvoice $invoice): void
     {
         app(TenantWriteAccess::class)->assertWritable((int) $return->company_id);
-        $totals = ['subtotal' => BigDecimal::zero(), 'discount' => BigDecimal::zero(), 'tax' => BigDecimal::zero(), 'total' => BigDecimal::zero()];
+        $calculated = [];
         $seen = [];
         foreach ($return->lines()->lockForUpdate()->get() as $line) {
             if (isset($seen[$line->sales_invoice_line_id])) {
@@ -68,19 +108,15 @@ final class SalesReturnAmounts
                 ->whereKey($line->sales_invoice_line_id)->lockForUpdate()->firstOrFail();
             $prior = SalesReturnLine::where('company_id', $return->company_id)->where('sales_invoice_line_id', $original->id)
                 ->where('sales_return_id', '!=', $return->id)->whereHas('salesReturn', fn ($q) => $q->where('status', SalesReturn::STATUS_POSTED))->get();
-            foreach ($this->calculateLine($original, BigDecimal::of((string) $line->quantity), $prior, (string) $return->currency_code) as $field => $amount) {
-                $column = 'line_'.$field;
-                $line->setAttribute($column, (string) $amount);
-                $line->setAttribute($column.'_base', (string) $amount->multipliedBy($return->exchange_rate)->toScale(6, RoundingMode::HALF_UP));
-                $totals[$field] = $totals[$field]->plus($amount);
+            $amounts = $this->calculateLine($original, BigDecimal::of($line->quantity), $prior, $invoice);
+            foreach ($amounts as $field => $amount) {
+                $line->setAttribute('line_'.$field, (string) $amount);
             }
             $line->save();
+            $calculated[] = $amounts;
         }
-        foreach (['subtotal' => 'subtotal', 'discount' => 'discount_total', 'tax' => 'tax_total', 'total' => 'grand_total'] as $field => $header) {
-            $return->setAttribute($header.'_currency', (string) $totals[$field]->toScale(6));
-            $return->setAttribute($header.'_base', (string) $totals[$field]->multipliedBy($return->exchange_rate)->toScale(6, RoundingMode::HALF_UP));
-        }
-        $return->currency_minor_units = $return->resolvedCurrencyMinorUnits();
+        $return->forceFill($this->totals($invoice, $calculated, (int) $return->id));
+        $return->currency_minor_units = $invoice->resolvedCurrencyMinorUnits();
         $return->save();
         $return->unsetRelation('lines');
     }

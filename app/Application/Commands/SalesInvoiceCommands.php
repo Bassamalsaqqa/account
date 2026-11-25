@@ -456,7 +456,6 @@ class SalesInvoiceCommands
                             $unit,
                             $actor,
                             BigDecimal::of((string) $inv->exchange_rate),
-                            $inv->currency_code,
                             BigDecimal::of((string) $line->unit_price)
                         );
                     } catch (AuthorizationException $e) {
@@ -531,7 +530,8 @@ class SalesInvoiceCommands
         // Explicit early preview guard under existing zero-value sales policy:
         // A fully discounted service invoice produces no journal lines and cannot be posted.
         $hasStockMovement = ! empty($requirements);
-        if (BigDecimal::of((string) $inv->grand_total_base)->isZero() && ! $hasStockMovement) {
+        if (! $hasStockMovement && BigDecimal::of($inv->grand_total_base)->isZero()
+            && BigDecimal::of($inv->grand_total_currency)->isZero()) {
             $blockers[] = [
                 'code' => 'zero_journal_lines_cannot_post',
                 'message' => __('sales.zero_journal_lines_cannot_post'),

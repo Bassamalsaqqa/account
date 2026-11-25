@@ -35,6 +35,9 @@ The preparation result is **maintenance held**, not production ready. On any fai
 - Confirm the protected `.htaccess` checksum is unchanged after publishing assets, including Hostinger PHP handling and operator-specific rules. Verify intended permissions: directories 0755, files 0644, restricted backup files 0600/directories 0700; never 777.
 - Verify safe rollback to the known-good source/build with retained forward schema and business data. Do not restore an old SQL snapshot over subsequent production activity or reverse applied migrations for convenience. After any live writes, retain the additive purchase discount columns and their data during source and asset rollback.
 
+- Keep the sales-discount migration additive during source rollback once any invoice, quotation, or return has a precision snapshot. Null invoice and quotation snapshots use the pre-feature sale write policy (three decimals for JOD, KWD, BHD, and OMR, two for other currencies). New returns use the original invoice policy and retain any posted return amounts already on record.
+- Upgrade directly from the pre-feature sales command contract. The unreleased sales-discount revisions `c9c1ad7` and `74cd44ed` were qualification-only. Their command receipts may exist in disposable test data. Do not promote that data or deploy either intermediate revision as an upgrade step.
+
 ## Explicit reopening gate
 
 Record sanitized checks and outstanding risks. If any critical authenticated error, unexplained preservation difference or reconciliation failure exists, keep maintenance and use the reviewed rollback plan. Do not mark unexecuted checks PASS.

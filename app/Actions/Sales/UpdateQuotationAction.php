@@ -124,6 +124,9 @@ class UpdateQuotationAction
                 || ! $fx->isEqualTo(BigDecimal::of($lockedQuote->exchange_rate)))) {
                 throw new InvalidArgumentException('Currency or rate changes require recalculating the quotation lines.');
             }
+            if (! isset($data['lines']) && array_intersect(['discount_type', 'discount_value', 'discount_scope'], array_keys($data)) !== []) {
+                throw new InvalidArgumentException(__('sales.discount_change_requires_lines'));
+            }
             if (isset($data['lines'])) {
                 if (empty($data['lines'])) {
                     throw new InvalidArgumentException('Quotation must contain at least one line.');
@@ -131,28 +134,14 @@ class UpdateQuotationAction
 
                 app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
                 if ($currency === $lockedQuote->currency_code) {
-                    $minorUnits = $lockedQuote->currency_minor_units ?? $lockedQuote->resolvedCurrencyMinorUnits();
+                    $minorUnits = $lockedQuote->resolvedCurrencyMinorUnits();
                 } else {
                     $minorUnits = app(CurrencyMinorUnitsResolver::class)->resolveFreshForCompany($company, $currency, lockForUpdate: DB::transactionLevel() > 0);
                 }
                 $baseMinorUnits = app(CurrencyMinorUnitsResolver::class)->resolve($company->base_currency_code);
 
-                $discountTypeProvided = array_key_exists('discount_type', $data);
-                $discountValueProvided = array_key_exists('discount_value', $data);
-                $discountScopeProvided = array_key_exists('discount_scope', $data);
-
-                $headerDiscountType = $discountTypeProvided ? $data['discount_type'] : $lockedQuote->discount_type;
-                $headerDiscountVal = $discountValueProvided ? $data['discount_value'] : $lockedQuote->discount_value;
-                $intent = new DocumentDiscountIntent(
-                    discountType: $headerDiscountType,
-                    discountValue: $headerDiscountVal ?: '0',
-                );
-
-                $discountScope = $discountScopeProvided ? $data['discount_scope'] : ($lockedQuote->discount_scope ?? (! $intent->isNone() ? 'document' : 'line'));
-
-                if ($discountScope === 'line' && ! $intent->isNone()) {
-                    throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
-                }
+                $intent = DocumentDiscountIntent::fromDocumentInput($data, $lockedQuote->discount_type, $lockedQuote->discount_value, $lockedQuote->discount_scope);
+                $discountScope = $intent->discountScope;
 
                 $hasLineDiscounts = false;
                 foreach ($data['lines'] as $lineData) {
@@ -163,7 +152,7 @@ class UpdateQuotationAction
                     }
                 }
 
-                if (! $intent->isNone() && $hasLineDiscounts) {
+                if ($intent->isDocumentScope() && $hasLineDiscounts) {
                     throw new InvalidArgumentException(__('sales.manual_line_discount_forbidden'));
                 }
 
@@ -306,8 +295,8 @@ class UpdateQuotationAction
                 $lockedQuote->discount_type = ! $intent->isNone() ? $intent->discountType : null;
                 $lockedQuote->discount_value = (string) $intent->discountValue->toScale(6);
                 $lockedQuote->discount_scope = $discountScope;
-                $lockedQuote->discount_basis = 'subtotal';
-                $lockedQuote->discount_calculation_version = $discountScope === 'document' ? DocumentDiscountIntent::VERSION_CANONICAL : DocumentDiscountIntent::VERSION_LEGACY;
+                $lockedQuote->discount_basis = $intent->discountBasis;
+                $lockedQuote->discount_calculation_version = $intent->version;
                 $lockedQuote->subtotal_base = (string) $totals->subtotalBase;
                 $lockedQuote->discount_total_base = (string) $totals->discountTotalBase;
                 $lockedQuote->tax_total_base = (string) $totals->taxTotalBase;

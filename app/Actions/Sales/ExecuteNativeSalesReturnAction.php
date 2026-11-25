@@ -86,7 +86,7 @@ final class ExecuteNativeSalesReturnAction
 
                 app(AuditService::class)->log((int) $company->id, 'sales_return.native_posted', 'Native sales return posted', (int) $actor->id, $posted);
 
-                $cmu = $posted->currency_minor_units ?? $posted->resolvedCurrencyMinorUnits();
+                $cmu = $posted->resolvedCurrencyMinorUnits();
 
                 return ['snapshot' => [
                     'id' => (string) $posted->public_id,

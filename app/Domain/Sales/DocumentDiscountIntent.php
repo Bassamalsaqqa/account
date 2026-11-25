@@ -39,6 +39,25 @@ final readonly class DocumentDiscountIntent
         $this->discountValue = self::parseValue($this->discountType, $discountValue);
     }
 
+    /** @param array<string, mixed> $data */
+    public static function fromDocumentInput(array $data, ?string $existingType = null, ?string $existingValue = null, string $existingScope = self::SCOPE_LINE): self
+    {
+        $type = array_key_exists('discount_type', $data) ? $data['discount_type'] : $existingType;
+        $noType = $type === null || $type === self::TYPE_NONE;
+        $explicitClear = $noType && array_key_exists('discount_type', $data);
+        $value = $explicitClear ? '0' : ($data['discount_value'] ?? ($noType ? '0' : $existingValue) ?? '0');
+        $scope = $data['discount_scope'] ?? ($type !== null && $type !== self::TYPE_NONE ? self::SCOPE_DOCUMENT : $existingScope);
+        if (! in_array($scope, [self::SCOPE_LINE, self::SCOPE_DOCUMENT], true)) {
+            throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
+        }
+        $intent = new self($type, $value, $scope, version: $scope === self::SCOPE_DOCUMENT ? self::VERSION_CANONICAL : self::VERSION_LEGACY);
+        if ($scope === self::SCOPE_LINE && ! $intent->isNone()) {
+            throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
+        }
+
+        return $intent;
+    }
+
     public static function from(
         ?string $type = self::TYPE_NONE,
         mixed $value = '0',

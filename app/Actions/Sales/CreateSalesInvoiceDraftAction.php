@@ -146,20 +146,9 @@ class CreateSalesInvoiceDraftAction
 
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
 
-            $headerDiscountType = $data['discount_type'] ?? null;
-            $intent = new DocumentDiscountIntent(
-                discountType: $headerDiscountType,
-                discountValue: $data['discount_value'] ?? '0',
-            );
+            $intent = DocumentDiscountIntent::fromDocumentInput($data);
+            $discountScope = $intent->discountScope;
 
-            // Determine discount scope: default 'document' if header discount provided, else check lines or explicit request
-            $discountScope = $data['discount_scope'] ?? (! $intent->isNone() ? 'document' : 'line');
-
-            if ($discountScope === 'line' && ! $intent->isNone()) {
-                throw new InvalidArgumentException(__('sales.invalid_discount_scope'));
-            }
-
-            // Check if any line has explicit manual discount
             $hasLineDiscounts = false;
             foreach ($data['lines'] as $lineData) {
                 $lineDiscVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
@@ -169,7 +158,7 @@ class CreateSalesInvoiceDraftAction
                 }
             }
 
-            if (! $intent->isNone() && $hasLineDiscounts) {
+            if ($intent->isDocumentScope() && $hasLineDiscounts) {
                 throw new InvalidArgumentException(__('sales.manual_line_discount_forbidden'));
             }
 
@@ -217,7 +206,7 @@ class CreateSalesInvoiceDraftAction
                         ! empty($lineData['product_unit_id']) ? (int) $lineData['product_unit_id'] : null,
                         app(SalesDocumentRules::class)->quantity($lineData['quantity']));
                     $conversionRatio = BigDecimal::of((string) $productUnit->conversion_to_base);
-                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, $currency, BigDecimal::of($lineData['unit_price']));
+                    app(SalesDocumentRules::class)->price($product, $productUnit, $user, $fx, BigDecimal::of($lineData['unit_price']));
                 } else {
                     app(SalesDocumentRules::class)->quantity($lineData['quantity']);
                     if (! $user->hasPermissionTo('sales.invoice.change_price')) {
@@ -348,8 +337,8 @@ class CreateSalesInvoiceDraftAction
                 'discount_type' => ! $intent->isNone() ? $intent->discountType : null,
                 'discount_value' => (string) $intent->discountValue->toScale(6),
                 'discount_scope' => $discountScope,
-                'discount_basis' => 'subtotal',
-                'discount_calculation_version' => $discountScope === 'document' ? DocumentDiscountIntent::VERSION_CANONICAL : DocumentDiscountIntent::VERSION_LEGACY,
+                'discount_basis' => $intent->discountBasis,
+                'discount_calculation_version' => $intent->version,
                 'exchange_rate' => (string) $fx->toScale(10),
                 'issue_date' => $issueDate,
                 'due_date' => $dueDate,

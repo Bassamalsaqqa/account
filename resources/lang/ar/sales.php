@@ -340,5 +340,6 @@ return [
     'currency_change_discount' => 'تم تفريغ الخصم الثابت بسبب تغيير عملة الفاتورة.',
     'currency_change_legacy_discount' => 'لا يمكن تغيير العملة لفاتورة تحتوي على خصومات على مستوى البنود.',
     'zero_journal_lines_cannot_post' => 'لا يمكن ترحيل فاتورة خدمات مخصومة بالكامل بدون أثر مالي أو حركة مخزنية.',
+    'discount_change_requires_lines' => 'يتطلب تغيير الخصم إرسال بنود المستند.',
     'invalid_discount_scope' => 'لا يمكن تطبيق خصم إجمالي مع نطاق خصم على مستوى البنود.',
 ];
