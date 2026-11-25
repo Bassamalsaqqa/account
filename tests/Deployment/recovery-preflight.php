@@ -98,6 +98,17 @@ final class RecoveryPreflightTestRunner
             $this->testIncompleteSchemaSpecificationRejected();
             $this->testMalformedCodeShaRejected();
             $this->testMalformedManifestSchemaObjectRejected();
+            $this->testValidNewReleaseWithExplicitOperatorPinReturnsExit2();
+            $this->testUnknownShaWithExplicitSchemaButWithoutBuildPinRejected();
+            $this->testExplicitReleasePinWithoutCurrentModeRejected();
+            $this->testExplicitReleasePinWithoutSchemaCountsRejected();
+            $this->testExplicitReleasePinMismatchedManifestDigestRejected();
+            $this->testExplicitReleasePinMismatchedCodeShaRejected();
+            $this->testExplicitReleasePinMismatchedBuildDigestRejected();
+            $this->testExplicitReleasePinMalformedBuildDigestRejected();
+            $this->testExplicitReleasePinMismatchedTablesRejected();
+            $this->testExplicitReleasePinMismatchedMigrationsRejected();
+            $this->testHistoricalLaneRefusesOperatorReleasePinOverride();
         } finally {
             $this->secureCleanup();
             umask($this->originalUmask);
@@ -668,7 +679,292 @@ final class RecoveryPreflightTestRunner
         $this->assert(($data['reason'] ?? '') === 'SCHEMA_IDENTITY', 'Reason must be SCHEMA_IDENTITY');
     }
 
-    private function createFixture(string $mode, array $timestampOverrides = [], ?string $codeShaOverride = null, ?array $schemaOverride = null): array
+    private function testValidNewReleaseWithExplicitOperatorPinReturnsExit2(): void
+    {
+        $this->startTest('testValidNewReleaseWithExplicitOperatorPinReturnsExit2');
+        $newReleaseSha = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+        $releaseBuildDigest = hash('sha256', 'release_build_115_92_'.$newReleaseSha);
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => $releaseBuildDigest,
+            'expected-tables' => '115',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 2, 'Expected exit code 2 for explicitly operator-pinned new release');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['status'] ?? '') === 'INSPECTION_ONLY_BOOTSTRAP_BLOCKED', 'Status must be INSPECTION_ONLY_BOOTSTRAP_BLOCKED');
+        $this->assert($data['bootstrap_authorized'] === false, 'bootstrap_authorized must strictly be false');
+        $this->assert(($data['mode'] ?? '') === 'current', 'Mode must be current');
+        $this->assert(($data['code_identity_trust'] ?? '') === 'EXPLICIT_OPERATOR_RELEASE_PIN', 'Trust source must record explicit operator release pin');
+        $this->assert(($data['schema_verified'] ?? null) === ['tables' => 115, 'migrations' => 92], 'Schema verified must match 115/92');
+        $this->assert(($data['actual_restore_and_key_recovery'] ?? '') === 'NOT_VERIFIED', 'Actual restore must remain NOT_VERIFIED');
+    }
+
+    private function testUnknownShaWithExplicitSchemaButWithoutBuildPinRejected(): void
+    {
+        $this->startTest('testUnknownShaWithExplicitSchemaButWithoutBuildPinRejected');
+        $newReleaseSha = 'b2c3d4e5f60718293a4b5c6d7e8f901234567890';
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92]
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-tables' => '115',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 when unknown release SHA lacks explicit build pin');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'CURRENT_CODE_SHA', 'Reason must be CURRENT_CODE_SHA');
+    }
+
+    private function testExplicitReleasePinWithoutCurrentModeRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinWithoutCurrentModeRejected');
+        $newReleaseSha = 'c3d4e5f60718293a4b5c6d7e8f90123456789012';
+        $releaseBuildDigest = hash('sha256', 'release_build_without_mode');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'expected-build-sha256' => $releaseBuildDigest,
+            'expected-tables' => '115',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 when explicit release pin omits --mode=current');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'RELEASE_PIN_MODE', 'Reason must be RELEASE_PIN_MODE');
+    }
+
+    private function testExplicitReleasePinWithoutSchemaCountsRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinWithoutSchemaCountsRejected');
+        $newReleaseSha = 'd4e5f60718293a4b5c6d7e8f9012345678901234';
+        $releaseBuildDigest = hash('sha256', 'release_build_without_schema');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 83, 'migrations' => 63],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => $releaseBuildDigest,
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 when explicit release pin omits schema counts');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'RELEASE_PIN_SCHEMA', 'Reason must be RELEASE_PIN_SCHEMA');
+    }
+
+    private function testExplicitReleasePinMismatchedManifestDigestRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinMismatchedManifestDigestRejected');
+        $newReleaseSha = 'e5f60718293a4b5c6d7e8f901234567890123456';
+        $releaseBuildDigest = hash('sha256', 'release_build_mismatched_manifest');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'manifest-sha256' => str_repeat('f', 64),
+            'mode' => 'current',
+            'expected-build-sha256' => $releaseBuildDigest,
+            'expected-tables' => '115',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for mismatched manifest digest on pinned release');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'MANIFEST_TRUST', 'Reason must be MANIFEST_TRUST');
+    }
+
+    private function testExplicitReleasePinMismatchedCodeShaRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinMismatchedCodeShaRejected');
+        $newReleaseSha = 'f60718293a4b5c6d7e8f90123456789012345678';
+        $otherSha = '1234567890abcdef1234567890abcdef12345678';
+        $releaseBuildDigest = hash('sha256', 'release_build_mismatched_code');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-code' => $otherSha,
+            'expected-build-sha256' => $releaseBuildDigest,
+            'expected-tables' => '115',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for mismatched code SHA on pinned release');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'CODE_BUILD_IDENTITY', 'Reason must be CODE_BUILD_IDENTITY');
+    }
+
+    private function testExplicitReleasePinMismatchedBuildDigestRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinMismatchedBuildDigestRejected');
+        $newReleaseSha = '0718293a4b5c6d7e8f901234567890123456789a';
+        $releaseBuildDigest = hash('sha256', 'release_build_actual');
+        $wrongBuildDigest = hash('sha256', 'release_build_wrong');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => $wrongBuildDigest,
+            'expected-tables' => '115',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for mismatched build digest on pinned release');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'CODE_BUILD_IDENTITY', 'Reason must be CODE_BUILD_IDENTITY');
+    }
+
+    private function testExplicitReleasePinMalformedBuildDigestRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinMalformedBuildDigestRejected');
+        $newReleaseSha = '18293a4b5c6d7e8f901234567890123456789ab0';
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92]
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => 'not-a-64-char-hex-digest',
+            'expected-tables' => '115',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for malformed build digest');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'TRUSTED_BUILD_DIGEST', 'Reason must be TRUSTED_BUILD_DIGEST');
+    }
+
+    private function testExplicitReleasePinMismatchedTablesRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinMismatchedTablesRejected');
+        $newReleaseSha = '293a4b5c6d7e8f901234567890123456789abc01';
+        $releaseBuildDigest = hash('sha256', 'release_build_mismatched_tables');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => $releaseBuildDigest,
+            'expected-tables' => '114',
+            'expected-migrations' => '92',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for mismatched tables count on pinned release');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_IDENTITY', 'Reason must be SCHEMA_IDENTITY');
+    }
+
+    private function testExplicitReleasePinMismatchedMigrationsRejected(): void
+    {
+        $this->startTest('testExplicitReleasePinMismatchedMigrationsRejected');
+        $newReleaseSha = '3a4b5c6d7e8f901234567890123456789abcd012';
+        $releaseBuildDigest = hash('sha256', 'release_build_mismatched_migrations');
+        $fixture = $this->createFixture(
+            'current',
+            [],
+            $newReleaseSha,
+            ['tables' => 115, 'migrations' => 92],
+            $releaseBuildDigest
+        );
+
+        $res = $this->execPreflight($this->buildArgs($fixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => $releaseBuildDigest,
+            'expected-tables' => '115',
+            'expected-migrations' => '91',
+        ]));
+        $this->assert($res['exitCode'] === 1, 'Expected exit code 1 for mismatched migrations count on pinned release');
+        $data = json_decode($res['stdout'], true);
+        $this->assert(($data['reason'] ?? '') === 'SCHEMA_IDENTITY', 'Reason must be SCHEMA_IDENTITY');
+    }
+
+    private function testHistoricalLaneRefusesOperatorReleasePinOverride(): void
+    {
+        $this->startTest('testHistoricalLaneRefusesOperatorReleasePinOverride');
+        $histBuildDigest = hash('sha256', 'historical_build_override_attempt');
+        $histFixture = $this->createFixture('historical', [], null, null, $histBuildDigest);
+
+        $resModeHist = $this->execPreflight($this->buildArgs($histFixture, [
+            'mode' => 'historical',
+            'expected-build-sha256' => $histBuildDigest,
+            'expected-tables' => '80',
+            'expected-migrations' => '61',
+        ]));
+        $this->assert($resModeHist['exitCode'] === 1, 'Historical mode must refuse operator release pin override');
+        $dataModeHist = json_decode($resModeHist['stdout'], true);
+        $this->assert(($dataModeHist['reason'] ?? '') === 'RELEASE_PIN_MODE', 'Reason must be RELEASE_PIN_MODE');
+
+        $resModeCur = $this->execPreflight($this->buildArgs($histFixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => $histBuildDigest,
+            'expected-tables' => '80',
+            'expected-migrations' => '61',
+        ]));
+        $this->assert($resModeCur['exitCode'] === 1, 'Historical manifest must fail when inspected under current mode');
+        $dataModeCur = json_decode($resModeCur['stdout'], true);
+        $this->assert(($dataModeCur['reason'] ?? '') === 'MANIFEST_MODE', 'Reason must be MANIFEST_MODE');
+
+        $histShaInCurrentFixture = $this->createFixture(
+            'current',
+            [],
+            '96c310f30a07e97ab8e04d5afbf0b2bb805f4317',
+            ['tables' => 80, 'migrations' => 61],
+            $histBuildDigest
+        );
+        $resHistShaInCurrent = $this->execPreflight($this->buildArgs($histShaInCurrentFixture, [
+            'mode' => 'current',
+            'expected-build-sha256' => $histBuildDigest,
+            'expected-tables' => '80',
+            'expected-migrations' => '61',
+        ]));
+        $this->assert($resHistShaInCurrent['exitCode'] === 1, 'Historical code SHA cannot be accepted via current release pin');
+        $dataHistShaInCurrent = json_decode($resHistShaInCurrent['stdout'], true);
+        $this->assert(($dataHistShaInCurrent['reason'] ?? '') === 'CURRENT_CODE_SHA', 'Reason must be CURRENT_CODE_SHA');
+    }
+
+    private function createFixture(string $mode, array $timestampOverrides = [], ?string $codeShaOverride = null, ?array $schemaOverride = null, ?string $buildSha256Override = null): array
     {
         $fixDir = $this->tempDir.DIRECTORY_SEPARATOR.'fix_'.$mode.'_'.bin2hex(random_bytes(4));
         mkdir($fixDir, 0700, true);
@@ -706,6 +1002,7 @@ final class RecoveryPreflightTestRunner
 
         $defaultSchema = $isHist ? ['tables' => 80, 'migrations' => 61] : ['tables' => 83, 'migrations' => 63];
         $schema = $schemaOverride ?? $defaultSchema;
+        $buildSha256 = $buildSha256Override ?? hash('sha256', 'synthetic_build_assets');
 
         $manifest = [
             'version' => 1,
@@ -715,7 +1012,7 @@ final class RecoveryPreflightTestRunner
             'completed_at' => $completedAt,
             'off_host_verified_at' => $offHostAt,
             'code_sha' => $codeSha,
-            'build_sha256' => hash('sha256', 'synthetic_build_assets'),
+            'build_sha256' => $buildSha256,
             'schema' => $schema,
             'key_history_refs' => [
                 ['id' => 'key-primary-2026', 'cipher' => 'AES-256-CBC'],
@@ -747,6 +1044,7 @@ final class RecoveryPreflightTestRunner
             'manifestPath' => $manifestPath,
             'manifestSha256' => $manifestSha256,
             'codeSha' => $codeSha,
+            'buildSha256' => $buildSha256,
             'proofPath' => $proofPath,
             'schema' => $schema,
             'user' => $user,

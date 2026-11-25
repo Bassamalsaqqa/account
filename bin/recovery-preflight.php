@@ -28,6 +28,7 @@ final class RecoveryInspection
 {
     private const HISTORICAL_CODE_SHA = '96c310f30a07e97ab8e04d5afbf0b2bb805f4317';
 
+    // Legacy recorded baseline SHAs preserved for prior baseline invocations; new releases use explicit operator pins.
     private const CURRENT_CODE_SHA_OPTIONS = [
         '8d8428261cd2a10690ab77a5c7271e46b5ff5217',
         'c74c9a4e0b4135055dbb8ed7d3e3715d2ddba24f',
@@ -57,7 +58,7 @@ final class RecoveryInspection
             'target-schema',
             'target-user',
         ];
-        $optional = ['mode', 'expected-tables', 'expected-migrations'];
+        $optional = ['mode', 'expected-tables', 'expected-migrations', 'expected-build-sha256'];
         $allowed = array_merge($required, $optional);
         $keys = array_keys($options);
         $this->require(array_diff($required, $keys) === [] && array_diff($keys, $allowed) === [], 'INVOCATION');
@@ -76,6 +77,13 @@ final class RecoveryInspection
 
         $this->require((bool) preg_match('/^[a-f0-9]{64}$/D', $options['manifest-sha256']), 'TRUSTED_DIGEST');
         $this->require((bool) preg_match('/^[a-f0-9]{40}$/D', $options['expected-code']), 'CODE_IDENTITY');
+
+        $hasExpectedBuild = array_key_exists('expected-build-sha256', $options);
+        if ($hasExpectedBuild) {
+            $this->require((bool) preg_match('/^[a-f0-9]{64}$/D', $options['expected-build-sha256']), 'TRUSTED_BUILD_DIGEST');
+            $this->require(($options['mode'] ?? null) === 'current', 'RELEASE_PIN_MODE');
+            $this->require($hasExpectedTables, 'RELEASE_PIN_SCHEMA');
+        }
 
         $manifestPath = $this->plainPath($options['manifest']);
         $this->require(is_file($manifestPath) && filesize($manifestPath) <= 65536, 'MANIFEST_SIZE');
@@ -105,12 +113,26 @@ final class RecoveryInspection
         }
 
         $this->require(is_string($manifest['point_id']) && (bool) preg_match('/^[a-zA-Z0-9_-]{1,80}$/D', $manifest['point_id']), 'POINT_IDENTITY');
-        $this->require($manifest['code_sha'] === $options['expected-code'] && is_string($manifest['build_sha256']) && (bool) preg_match('/^[a-f0-9]{64}$/D', $manifest['build_sha256']), 'CODE_BUILD_IDENTITY');
+        $this->require(
+            is_string($manifest['code_sha'])
+            && hash_equals($options['expected-code'], $manifest['code_sha'])
+            && is_string($manifest['build_sha256'])
+            && (bool) preg_match('/^[a-f0-9]{64}$/D', $manifest['build_sha256'])
+            && (! $hasExpectedBuild || hash_equals($options['expected-build-sha256'], $manifest['build_sha256'])),
+            'CODE_BUILD_IDENTITY'
+        );
 
         if ($manifest['mode'] === 'historical') {
             $this->require($manifest['code_sha'] === self::HISTORICAL_CODE_SHA, 'HISTORICAL_CODE_SHA');
+            $codeIdentityTrust = 'HISTORICAL_HARD_PIN';
         } else {
-            $this->require(in_array($manifest['code_sha'], self::CURRENT_CODE_SHA_OPTIONS, true), 'CURRENT_CODE_SHA');
+            $pinnedBaseline = in_array($manifest['code_sha'], self::CURRENT_CODE_SHA_OPTIONS, true);
+            $explicitOperatorReleasePin = $hasExpectedBuild
+                && ($options['mode'] ?? null) === 'current'
+                && $hasExpectedTables
+                && ! hash_equals(self::HISTORICAL_CODE_SHA, $manifest['code_sha']);
+            $this->require($pinnedBaseline || $explicitOperatorReleasePin, 'CURRENT_CODE_SHA');
+            $codeIdentityTrust = $explicitOperatorReleasePin ? 'EXPLICIT_OPERATOR_RELEASE_PIN' : 'BASELINE_CURRENT_ALLOWLIST';
         }
 
         $this->require(
@@ -198,6 +220,7 @@ final class RecoveryInspection
             'status' => 'INSPECTION_ONLY_BOOTSTRAP_BLOCKED',
             'bootstrap_authorized' => false,
             'mode' => $manifest['mode'],
+            'code_identity_trust' => $codeIdentityTrust,
             'ciphertext_component_checks' => 'PASS',
             'scratch_entries_inspected' => $entries,
             'ownership_metadata_binding' => 'MATCHED_NOT_SERVER_VERIFIED',
@@ -311,7 +334,7 @@ if (PHP_SAPI === 'cli' && realpath((string) ($_SERVER['SCRIPT_FILENAME'] ?? ''))
         $options = [];
         foreach (array_slice($argv, 1) as $argument) {
             if ($argument === '--help' || $argument === '-h') {
-                echo "Usage: php bin/recovery-preflight.php --manifest=<path> --manifest-sha256=<hex> --expected-code=<sha> --scratch=<path> --ownership-proof=<path> --target-host=<ip> --target-port=<port> --target-schema=<schema> --target-user=<user> [--mode=historical|current] [--expected-tables=<int> --expected-migrations=<int>]\n";
+                echo "Usage: php bin/recovery-preflight.php --manifest=<path> --manifest-sha256=<hex> --expected-code=<sha> --scratch=<path> --ownership-proof=<path> --target-host=<ip> --target-port=<port> --target-schema=<schema> --target-user=<user> [--mode=historical|current] [--expected-tables=<int> --expected-migrations=<int>] [--expected-build-sha256=<hex>]\n";
                 exit(0);
             }
             if (! preg_match('/^--([a-z0-9-]+)=(.+)$/sD', $argument, $match) || isset($options[$match[1]])) {
