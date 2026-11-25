@@ -78,6 +78,7 @@ class SalesReturn extends Model
         'customer_id',
         'warehouse_id',
         'currency_code',
+        'currency_minor_units',
         'exchange_rate',
         'issue_date',
         'status',
@@ -112,6 +113,7 @@ class SalesReturn extends Model
     protected function casts(): array
     {
         return [
+            'currency_minor_units' => 'integer',
             'issue_date' => 'date:Y-m-d',
             'exchange_rate' => 'string',
             'subtotal_base' => 'string',
@@ -128,6 +130,11 @@ class SalesReturn extends Model
             'posted_at' => 'datetime',
             'voided_at' => 'datetime',
         ];
+    }
+
+    public function resolvedCurrencyMinorUnits(): int
+    {
+        return $this->currency_minor_units ?? (in_array(strtoupper(trim($this->currency_code)), ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2);
     }
 
     private bool $completingPost = false;

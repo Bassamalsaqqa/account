@@ -80,6 +80,7 @@ final class SalesReturnAmounts
             $return->setAttribute($header.'_currency', (string) $totals[$field]->toScale(6));
             $return->setAttribute($header.'_base', (string) $totals[$field]->multipliedBy($return->exchange_rate)->toScale(6, RoundingMode::HALF_UP));
         }
+        $return->currency_minor_units = $return->resolvedCurrencyMinorUnits();
         $return->save();
         $return->unsetRelation('lines');
     }

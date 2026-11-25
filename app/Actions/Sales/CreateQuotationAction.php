@@ -10,6 +10,9 @@ use App\Domain\Money\ValueObjects\MoneyAmount;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Domain\Sales\DocumentDiscountAllocator;
+use App\Domain\Sales\DocumentDiscountIntent;
+use App\Domain\Sales\DocumentDiscountLineCandidate;
 use App\Exceptions\NoActiveCompanyException;
 use App\Models\Company;
 use App\Models\CompanyDocumentSettings;
@@ -25,6 +28,7 @@ use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesDocumentRules;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -35,6 +39,7 @@ class CreateQuotationAction
         protected DocumentSequenceService $sequenceService,
         protected SalesLineCalculator $lineCalculator,
         protected SalesDocumentTotalsCalculator $totalsCalculator,
+        protected DocumentDiscountAllocator $discountAllocator,
     ) {}
 
     /**
@@ -49,6 +54,10 @@ class CreateQuotationAction
      *     terms?: ?string,
      *     document_locale?: string,
      *     include_product_images?: mixed,
+     *     discount_type?: ?string,
+     *     discount_value?: string|BigDecimal,
+     *     discount_scope?: ?string,
+     *     discount_calculation_version?: ?int,
      *     lines: list<array{
      *         product_id?: ?int,
      *         product_unit_id?: ?int,
@@ -120,10 +129,55 @@ class CreateQuotationAction
 
             // Process line calculations
             app(SalesDocumentRules::class)->header($company, $currency, $fx, $issueDate, $data['document_locale'] ?? $customer->preferred_locale ?? $company->default_locale);
-            $lineResults = [];
-            $preparedLines = [];
             $minorUnits = in_array($currency, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
             $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+
+            $headerDiscountType = $data['discount_type'] ?? null;
+            $intent = new DocumentDiscountIntent(
+                discountType: $headerDiscountType,
+                discountValue: $data['discount_value'] ?? '0',
+            );
+
+            $discountScope = $data['discount_scope'] ?? (! $intent->isNone() ? 'document' : 'line');
+
+            $hasLineDiscounts = false;
+            foreach ($data['lines'] as $lineData) {
+                $lineDiscVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
+                if ($lineDiscVal->isPositive()) {
+                    $hasLineDiscounts = true;
+                    break;
+                }
+            }
+
+            if (! $intent->isNone() && $hasLineDiscounts) {
+                throw new InvalidArgumentException(__('sales.manual_line_discount_forbidden'));
+            }
+
+            $allocationResult = null;
+            if ($discountScope === 'document') {
+                $candidates = [];
+                foreach ($data['lines'] as $idx => $lineData) {
+                    $taxRateModel = null;
+                    if (! empty($lineData['tax_rate_id'])) {
+                        $taxRateModel = TaxRate::where('company_id', $company->id)->where('id', $lineData['tax_rate_id'])->where('active', true)->first();
+                    }
+                    $qtyDecimal = BigDecimal::of((string) $lineData['quantity']);
+                    $priceDecimal = MoneyAmount::from($lineData['unit_price'])->getAmount();
+                    $lineSubtotal = $qtyDecimal->multipliedBy($priceDecimal)->toScale($minorUnits, RoundingMode::HALF_UP);
+                    $candidates[] = new DocumentDiscountLineCandidate(
+                        lineNumber: $idx + 1,
+                        unitPrice: $priceDecimal,
+                        quantity: $qtyDecimal,
+                        subtotal: $lineSubtotal,
+                        taxInclusive: $taxRateModel ? $taxRateModel->calculation === TaxRate::CALC_INCLUSIVE : false,
+                        taxRate: $taxRateModel ? BigDecimal::of((string) $taxRateModel->rate) : null,
+                    );
+                }
+                $allocationResult = $this->discountAllocator->allocate($intent, $candidates, $currency, $minorUnits);
+            }
+
+            $lineResults = [];
+            $preparedLines = [];
 
             foreach ($data['lines'] as $idx => $lineData) {
                 $taxRate = null;
@@ -139,19 +193,43 @@ class CreateQuotationAction
 
                 $taxInclusive = $taxRateModel ? $taxRateModel->calculation === TaxRate::CALC_INCLUSIVE : false;
 
-                $calcInput = new SalesLineCalculationInput(
-                    quantity: $lineData['quantity'],
-                    unitPrice: $lineData['unit_price'],
-                    discountType: $lineData['discount_type'] ?? null,
-                    discountValue: $lineData['discount_value'] ?? 0,
-                    taxRate: $taxRate,
-                    taxInclusive: $taxInclusive,
-                    currencyMinorUnits: $minorUnits,
-                    exchangeRate: $fx,
-                    baseCurrencyMinorUnits: $baseMinorUnits,
-                );
-
-                $calcResult = $this->lineCalculator->calculate($calcInput);
+                if ($discountScope === 'document') {
+                    $allocatedDiscount = $allocationResult->forLine($idx + 1);
+                    $calcInput = new SalesLineCalculationInput(
+                        quantity: $lineData['quantity'],
+                        unitPrice: $lineData['unit_price'],
+                        discountType: 'fixed',
+                        discountValue: $allocatedDiscount,
+                        taxRate: $taxRate,
+                        taxInclusive: $taxInclusive,
+                        currencyMinorUnits: $minorUnits,
+                        exchangeRate: $fx,
+                        baseCurrencyMinorUnits: $baseMinorUnits,
+                    );
+                    $calcResult = $this->lineCalculator->calculate($calcInput);
+                    $lineDiscountType = null;
+                    $lineDiscountValue = '0.000000';
+                    $manualDiscountAmount = '0.000000';
+                    $allocatedDocDiscount = (string) $allocatedDiscount;
+                } else {
+                    $discountVal = MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount();
+                    $calcInput = new SalesLineCalculationInput(
+                        quantity: $lineData['quantity'],
+                        unitPrice: $lineData['unit_price'],
+                        discountType: $lineData['discount_type'] ?? null,
+                        discountValue: $discountVal,
+                        taxRate: $taxRate,
+                        taxInclusive: $taxInclusive,
+                        currencyMinorUnits: $minorUnits,
+                        exchangeRate: $fx,
+                        baseCurrencyMinorUnits: $baseMinorUnits,
+                    );
+                    $calcResult = $this->lineCalculator->calculate($calcInput);
+                    $lineDiscountType = $lineData['discount_type'] ?? null;
+                    $lineDiscountValue = (string) $discountVal->toScale(6);
+                    $manualDiscountAmount = (string) $calcResult->discount;
+                    $allocatedDocDiscount = '0.000000';
+                }
                 $lineResults[] = $calcResult;
 
                 // Lookup product and unit metadata if present
@@ -177,8 +255,10 @@ class CreateQuotationAction
                     'item_description' => $lineData['item_description'],
                     'quantity' => (string) $qtyDecimal->toScale(6),
                     'unit_price' => (string) MoneyAmount::from($lineData['unit_price'])->getAmount()->toScale(6),
-                    'discount_type' => $lineData['discount_type'] ?? null,
-                    'discount_value' => (string) MoneyAmount::from($lineData['discount_value'] ?? '0')->getAmount()->toScale(6),
+                    'discount_type' => $lineDiscountType,
+                    'discount_value' => $lineDiscountValue,
+                    'manual_discount_amount' => $manualDiscountAmount,
+                    'allocated_document_discount' => $allocatedDocDiscount,
                     'tax_rate_id' => $taxRateModel?->id,
                     'tax_rate_snapshot' => $taxRate ? (string) $taxRate->toScale(6) : null,
                     'tax_inclusive' => $taxInclusive,
@@ -231,6 +311,12 @@ class CreateQuotationAction
                 'quotation_number' => $quotationNumber,
                 'customer_id' => $customer->id,
                 'currency_code' => $currency,
+                'currency_minor_units' => $minorUnits,
+                'discount_type' => ! $intent->isNone() ? $intent->discountType : null,
+                'discount_value' => (string) $intent->discountValue->toScale(6),
+                'discount_scope' => $discountScope,
+                'discount_basis' => 'subtotal',
+                'discount_calculation_version' => $discountScope === 'document' ? DocumentDiscountIntent::VERSION_CANONICAL : DocumentDiscountIntent::VERSION_LEGACY,
                 'exchange_rate' => (string) $fx->toScale(10),
                 'issue_date' => $issueDate,
                 'expiry_date' => $expiryDate,

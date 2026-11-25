@@ -13,6 +13,9 @@ use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
+use App\Domain\Sales\DocumentDiscountAllocator;
+use App\Domain\Sales\DocumentDiscountIntent;
+use App\Domain\Sales\DocumentDiscountLineCandidate;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
@@ -32,6 +35,7 @@ use App\Services\Sales\SalesProductSelection;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
+use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -146,6 +150,28 @@ class QuotationForm extends Component
 
     public string $previewGrandTotal = '0.00';
 
+    #[Locked]
+    public string $discount_scope = 'document';
+
+    #[Locked]
+    public int $discount_calculation_version = 2;
+
+    #[Locked]
+    public ?int $currency_minor_units = null;
+
+    /** @var array<int|string, array{discount_type: string, discount_value: string}> */
+    #[Locked]
+    public array $persistedLineDiscounts = [];
+
+    public string $discount_type = 'none';
+
+    public mixed $discount_value = '0';
+
+    public bool $showDiscountControl = false;
+
+    #[Locked]
+    public ?string $previousCurrencyCode = null;
+
     public function mount(CompanyContext $context, ?string $publicId = null): void
     {
         $company = $context->company();
@@ -177,9 +203,24 @@ class QuotationForm extends Component
             $this->terms = $this->quotation->terms;
             $this->document_locale = $this->quotation->document_locale ?? 'ar';
             $this->include_product_images = $this->quotation->include_product_images;
+            $this->discount_type = $this->quotation->discount_type ?? 'none';
+            $this->discount_value = (string) ($this->quotation->discount_value ?? '0');
+            $this->discount_scope = $this->quotation->discount_scope ?? 'document';
+            $this->discount_calculation_version = (int) ($this->quotation->discount_calculation_version ?? 2);
+            $this->currency_minor_units = $this->quotation->currency_minor_units ?? $this->quotation->resolvedCurrencyMinorUnits();
+            $this->previousCurrencyCode = $this->currency_code;
+            if ($this->discount_type !== 'none' || ($this->discount_scope === 'document' && ! BigDecimal::of((string) ($this->discount_value ?: '0'))->isZero())) {
+                $this->showDiscountControl = true;
+            }
 
             $this->lines = [];
+            $this->persistedLineDiscounts = [];
             foreach ($this->quotation->lines as $line) {
+                $dType = $this->quotationDiscountType($line->discount_type) ?? 'none';
+                $this->persistedLineDiscounts[$line->id] = [
+                    'discount_type' => $dType,
+                    'discount_value' => (string) ($line->discount_value ?? '0'),
+                ];
                 $this->lines[] = [
                     'id' => $line->id,
                     'product_id' => $line->product_id,
@@ -187,7 +228,7 @@ class QuotationForm extends Component
                     'item_description' => $line->item_description,
                     'quantity' => (string) $line->quantity,
                     'unit_price' => (string) $line->unit_price,
-                    'discount_type' => $this->quotationDiscountType($line->discount_type) ?? 'none',
+                    'discount_type' => $dType,
                     'discount_value' => (string) ($line->discount_value ?? '0'),
                     'tax_rate_id' => $line->tax_rate_id,
                     'subtotal' => (string) $line->line_subtotal,
@@ -202,6 +243,13 @@ class QuotationForm extends Component
             }
 
             $this->currency_code = $company->base_currency_code;
+            $this->previousCurrencyCode = $this->currency_code;
+            $this->currency_minor_units = in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+            $this->discount_scope = 'document';
+            $this->discount_calculation_version = 2;
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->showDiscountControl = false;
             $this->issue_date = Carbon::now($company->timezone)->toDateString();
             $currentLocale = app()->getLocale();
             $this->document_locale = $company->isLanguageEnabled($currentLocale) ? $currentLocale : ($company->documentSettings->default_document_locale ?? $company->default_locale ?? 'ar');
@@ -227,6 +275,17 @@ class QuotationForm extends Component
         }
 
         $this->recalculate();
+    }
+
+    public function toggleDiscountControl(): void
+    {
+        $this->showDiscountControl = ! $this->showDiscountControl;
+        if (! $this->showDiscountControl) {
+            $this->discount_type = 'none';
+            $this->discount_value = '0';
+            $this->resetErrorBag('discount_value');
+            $this->recalculate();
+        }
     }
 
     public function hydrate(CompanyContext $context): void
@@ -257,14 +316,24 @@ class QuotationForm extends Component
                 ->find($this->customer_id);
             if ($customer !== null) {
                 $previousCurrency = $this->currency_code;
-                $this->currency_code = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
-                $company = app(CompanyContext::class)->company();
-                if ($this->currency_code === $company->base_currency_code) {
-                    $this->exchange_rate = '1.0000000000';
-                } elseif ($previousCurrency !== $this->currency_code) {
-                    $this->exchange_rate = '';
+                $newCurrency = $customer->default_currency_code ?? app(CompanyContext::class)->company()->base_currency_code;
+                if ($newCurrency !== $previousCurrency && $this->discount_scope === 'line'
+                    && collect($this->persistedLineDiscounts)->contains(fn ($discount) => ! BigDecimal::of((string) $discount['discount_value'])->isZero())) {
+                    $this->addError('currency_code', __('sales.currency_change_legacy_discount'));
+                } else {
+                    $this->currency_code = $newCurrency;
+                    if ($newCurrency !== $previousCurrency && $this->discount_type === 'fixed') {
+                        $this->discount_value = '0';
+                    }
+                    $this->previousCurrencyCode = $this->currency_code;
+                    $company = app(CompanyContext::class)->company();
+                    if ($this->currency_code === $company->base_currency_code) {
+                        $this->exchange_rate = '1.0000000000';
+                    } elseif ($previousCurrency !== $this->currency_code) {
+                        $this->exchange_rate = '';
+                    }
+                    $this->recalculate();
                 }
-                $this->recalculate();
             } else {
                 $this->customer_id = null;
             }
@@ -274,6 +343,21 @@ class QuotationForm extends Component
     public function updatedCurrencyCode(): void
     {
         $this->authorizeQuoteAction();
+        $changed = $this->currency_code !== $this->previousCurrencyCode;
+        if ($changed && $this->discount_scope === 'line'
+            && collect($this->persistedLineDiscounts)->contains(fn ($discount) => ! BigDecimal::of((string) $discount['discount_value'])->isZero())) {
+            $this->currency_code = $this->previousCurrencyCode;
+            $this->recalculate();
+            $this->addError('currency_code', __('sales.currency_change_legacy_discount'));
+
+            return;
+        }
+
+        if ($changed && $this->discount_type === 'fixed') {
+            $this->discount_value = '0';
+        }
+
+        $this->previousCurrencyCode = $this->currency_code;
         $company = app(CompanyContext::class)->company();
         if ($this->currency_code === $company->base_currency_code) {
             $this->exchange_rate = '1.0000000000';
@@ -528,18 +612,23 @@ class QuotationForm extends Component
         $this->documentTotalsValid = false;
         $company = app(CompanyContext::class)->company();
         foreach ($this->lines as $index => $line) {
-            foreach (['quantity', 'unit_price', 'discount_value'] as $field) {
+            foreach (['quantity', 'unit_price'] as $field) {
                 if (! is_string($line[$field]) || preg_match('/^\d{1,14}(?:\.\d{1,6})?$/D', $line[$field]) !== 1) {
                     $this->addError("lines.{$index}.{$field}", __('commands.exact_string_required'));
 
                     return;
                 }
             }
+            if (! is_string($line['discount_value']) || preg_match('/^\d{1,14}(?:\.\d{1,6})?$/D', $line['discount_value']) !== 1) {
+                $this->addError("lines.{$index}.discount_value", __('commands.exact_string_required'));
+
+                return;
+            }
         }
         $lineCalculator = app(SalesLineCalculator::class);
         $totalsCalculator = app(SalesDocumentTotalsCalculator::class);
 
-        $minorUnits = in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
+        $minorUnits = $this->currency_minor_units ?? (in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2);
         $baseMinorUnits = in_array($company->base_currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2;
         $fx = BigDecimal::of($this->exchange_rate ?: '1.0');
 
@@ -551,6 +640,57 @@ class QuotationForm extends Component
             ->get()
             ->keyBy('id');
 
+        $discountScope = $this->discount_scope;
+        $allocationResult = null;
+        $this->resetErrorBag('discount_value');
+
+        if ($discountScope === 'document' && $this->discount_type !== 'none') {
+            $rawDiscVal = trim((string) ($this->discount_value ?: '0'));
+            if ($rawDiscVal !== '' && preg_match('/^\d+(\.\d{1,6})?$/D', $rawDiscVal) !== 1) {
+                $this->addError('discount_value', __('commands.exact_string_required'));
+                $this->previewDiscountTotal = '0.00';
+                $this->documentTotalsValid = false;
+
+                return;
+            }
+            if (! BigDecimal::of($rawDiscVal ?: '0')->isZero()) {
+                $candidates = [];
+                foreach ($this->lines as $index => $line) {
+                    $qty = BigDecimal::of((string) ($line['quantity'] ?: '0'));
+                    $price = BigDecimal::of((string) ($line['unit_price'] ?: '0'));
+                    $subtotal = $qty->multipliedBy($price)->toScale($minorUnits, RoundingMode::HALF_UP);
+                    $tax = $taxes->get($lineTaxIds[$index] ?: 0);
+
+                    $candidates[] = new DocumentDiscountLineCandidate(
+                        lineNumber: $index + 1,
+                        unitPrice: $price,
+                        quantity: $qty,
+                        subtotal: $subtotal,
+                        taxInclusive: $tax?->calculation === TaxRate::CALC_INCLUSIVE,
+                        taxRate: $tax?->rate !== null ? (string) $tax->rate : null,
+                        identity: $index + 1,
+                    );
+                }
+
+                try {
+                    $intent = new DocumentDiscountIntent(
+                        discountType: $this->discount_type,
+                        discountValue: $rawDiscVal,
+                        discountScope: 'document',
+                        discountBasis: 'subtotal',
+                        version: $this->discount_calculation_version,
+                    );
+                    $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $this->currency_code, $minorUnits);
+                } catch (\InvalidArgumentException $e) {
+                    $this->addError('discount_value', $e->getMessage());
+                    $this->previewDiscountTotal = '0.00';
+                    $this->documentTotalsValid = false;
+
+                    return;
+                }
+            }
+        }
+
         $calcResults = [];
 
         foreach ($this->lines as $idx => $line) {
@@ -558,17 +698,32 @@ class QuotationForm extends Component
             $taxRate = $tax === null ? null : BigDecimal::of((string) $tax->rate);
             $taxInclusive = $tax?->calculation === TaxRate::CALC_INCLUSIVE;
 
-            $input = new SalesLineCalculationInput(
-                quantity: $line['quantity'] ?: '0',
-                unitPrice: $line['unit_price'] ?: '0',
-                discountType: $this->quotationDiscountType($line['discount_type']),
-                discountValue: $line['discount_value'] ?: '0',
-                taxRate: $taxRate,
-                taxInclusive: $taxInclusive,
-                currencyMinorUnits: $minorUnits,
-                exchangeRate: $fx,
-                baseCurrencyMinorUnits: $baseMinorUnits,
-            );
+            if ($discountScope === 'document' && $allocationResult !== null) {
+                $allocatedDiscount = $allocationResult->forLine($idx + 1);
+                $input = new SalesLineCalculationInput(
+                    quantity: $line['quantity'] ?: '0',
+                    unitPrice: $line['unit_price'] ?: '0',
+                    discountType: 'fixed',
+                    discountValue: (string) $allocatedDiscount,
+                    taxRate: $taxRate,
+                    taxInclusive: $taxInclusive,
+                    currencyMinorUnits: $minorUnits,
+                    exchangeRate: $fx,
+                    baseCurrencyMinorUnits: $baseMinorUnits,
+                );
+            } else {
+                $input = new SalesLineCalculationInput(
+                    quantity: $line['quantity'] ?: '0',
+                    unitPrice: $line['unit_price'] ?: '0',
+                    discountType: $this->quotationDiscountType((string) $line['discount_type']),
+                    discountValue: (string) $line['discount_value'],
+                    taxRate: $taxRate,
+                    taxInclusive: $taxInclusive,
+                    currencyMinorUnits: $minorUnits,
+                    exchangeRate: $fx,
+                    baseCurrencyMinorUnits: $baseMinorUnits,
+                );
+            }
 
             $res = $lineCalculator->calculate($input);
             $calcResults[] = $res;
@@ -620,21 +775,40 @@ class QuotationForm extends Component
 
         $dtoLines = [];
         foreach ($this->lines as $line) {
+            $lineId = $line['id'] ?? null;
+            if ($lineId !== null && isset($this->persistedLineDiscounts[$lineId])) {
+                $discountType = $this->quotationDiscountType($this->persistedLineDiscounts[$lineId]['discount_type']);
+                $discountVal = (string) $this->persistedLineDiscounts[$lineId]['discount_value'];
+            } else {
+                $discountType = $this->quotationDiscountType((string) $line['discount_type']);
+                $discountVal = (string) $line['discount_value'];
+            }
             $dtoLines[] = [
                 'product_id' => ! empty($line['product_id']) ? (int) $line['product_id'] : null,
                 'product_unit_id' => ! empty($line['product_unit_id']) ? (int) $line['product_unit_id'] : null,
                 'item_description' => $line['item_description'],
                 'quantity' => (string) $line['quantity'],
                 'unit_price' => (string) $line['unit_price'],
-                'discount_type' => $this->quotationDiscountType($line['discount_type']),
-                'discount_value' => (string) $line['discount_value'],
+                'discount_type' => $discountType,
+                'discount_value' => $discountVal,
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
             ];
         }
 
+        $minorUnits = $this->currency_minor_units ?? (in_array($this->currency_code, ['JOD', 'KWD', 'BHD', 'OMR'], true) ? 3 : 2);
+        $headerDiscountType = $this->discount_type;
+        if ($headerDiscountType === 'percentage') {
+            $headerDiscountType = 'percent';
+        }
         $payload = [
             'customer_id' => (int) $this->customer_id,
             'currency_code' => $this->currency_code,
+            'currency_minor_units' => $minorUnits,
+            'discount_type' => $headerDiscountType,
+            'discount_value' => (string) ($this->discount_value ?: '0'),
+            'discount_scope' => $this->discount_scope,
+            'discount_basis' => 'subtotal',
+            'discount_calculation_version' => $this->discount_calculation_version,
             'exchange_rate' => $this->exchange_rate,
             'issue_date' => $this->issue_date,
             'expiry_date' => $this->expiry_date ?: null,

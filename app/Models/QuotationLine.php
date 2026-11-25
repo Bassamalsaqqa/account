@@ -61,6 +61,8 @@ class QuotationLine extends Model
         'unit_price',
         'discount_type',
         'discount_value',
+        'manual_discount_amount',
+        'allocated_document_discount',
         'tax_rate_id',
         'tax_rate_snapshot',
         'tax_inclusive',
@@ -88,6 +90,8 @@ class QuotationLine extends Model
             'quantity' => 'string',
             'unit_price' => 'string',
             'discount_value' => 'string',
+            'manual_discount_amount' => 'string',
+            'allocated_document_discount' => 'string',
             'tax_rate_snapshot' => 'string',
             'tax_inclusive' => 'boolean',
             'line_subtotal' => 'string',
@@ -98,6 +102,11 @@ class QuotationLine extends Model
             'unit_conversion_ratio' => 'string',
             'quantity_base' => 'string',
         ];
+    }
+
+    public function getDiscountAmountAttribute(): string
+    {
+        return (string) ($this->line_discount ?? '0.000000');
     }
 
     protected static function booted(): void
