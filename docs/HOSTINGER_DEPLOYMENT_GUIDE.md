@@ -35,12 +35,12 @@ Keep the Laravel root **outside** `public_html`. `bin/deploy.sh` requires `PUBLI
    /opt/alt/php84/usr/bin/php artisan key:generate
    ```
 5. **Migrations:** Complete [mobile authority migration preflight](SETUP_AND_OPERATIONS_GUIDE.md#mobile-authority-migration-preflight) if pending, then run `/opt/alt/php84/usr/bin/php artisan migrate --force`.
-6. **Frontend Build:** Build locally (`npm run build`), verify `public/build/manifest.json` + zero `.map` files, and copy the complete directory to `accounting/public/build` (never overlay hashed chunks).
+6. **Qualified Artifacts:** On the final clean accepted revision, run `npm run build`, then `php bin/release-identity.php --write --expected-code=<accepted-full-SHA>`. Transfer its complete `public/build` and private `bootstrap/cache/release.json` together; never overlay hashed chunks. Source maps are refused before maintenance.
 7. **Bootstrap User & Deploy:**
    ```bash
    /opt/alt/php84/usr/bin/php artisan app:create-user --name="<Full Name>" --email="<email>" --locale=ar
    chmod +x bin/deploy.sh
-   PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
+   RELEASE_EXPECTED_CODE=<accepted-full-SHA> PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
    ```
    `bin/deploy.sh` leaves **maintenance mode held**. Only reopen after passing [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) and explicit Owner authorization: `/opt/alt/php84/usr/bin/php artisan up`.
 8. **Cron (`* * * * *` in hPanel):**
@@ -69,8 +69,8 @@ Defaults skip migrations and bootstraps; pass `--run-migrations`, `--run-purchas
 /opt/alt/php84/usr/bin/php artisan down --render="errors.503" --retry=60
 git checkout <known-good-commit-or-tag>
 /opt/alt/php84/usr/bin/php $(which composer) install --no-dev --prefer-dist --optimize-autoloader --no-interaction
-# Restore matching public/build for that revision, then run deploy.sh without migrations:
-PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
+# Restore that revision’s qualified build and release.json when required by its reviewed deploy procedure.
+RELEASE_EXPECTED_CODE=<known-good-full-SHA> PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 # Complete release checklist, then under Owner authorization:
 /opt/alt/php84/usr/bin/php artisan up
 ```

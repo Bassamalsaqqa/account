@@ -156,6 +156,13 @@ if [ ! -d "$APP_DIR/public/build" ] || [ ! -f "$APP_DIR/public/build/manifest.js
     exit 1
 fi
 
+# Refuse accidental source disclosure before changing maintenance or public assets.
+SOURCE_MAP_PATH=$(find "$APP_DIR/public/build" -name '*.map' -print -quit)
+if [ -n "$SOURCE_MAP_PATH" ]; then
+    echo "ERROR: Production build contains source maps; deployment refused." >&2
+    exit 1
+fi
+
 normalize_static_build_permissions "$APP_DIR/public/build"
 
 # Metadata travels with the qualified artifact; never infer a release from the newest remote HEAD.

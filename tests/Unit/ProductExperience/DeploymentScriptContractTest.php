@@ -71,6 +71,30 @@ class DeploymentScriptContractTest extends TestCase
         $this->assertStringContainsString('RUN_DOCUMENTS_BOOTSTRAP=0', $content);
     }
 
+    public function test_source_map_is_refused_before_maintenance_and_publication(): void
+    {
+        $bash = $this->resolveBashBinary();
+        if ($bash === null) {
+            $this->markTestSkipped('Bash binary is not available in this environment.');
+        }
+        $fixtureDir = $this->createSyntheticDeploymentFixture();
+        try {
+            file_put_contents($fixtureDir.'/app/public/build/accidental.js.map', '{"sourcesContent":["private-source"]}');
+            file_put_contents($fixtureDir.'/web/keep.txt', 'current-public-file');
+            $this->writeStubPhp($fixtureDir);
+            $result = $this->runDeploymentScript($bash, $fixtureDir);
+            $this->assertNotSame(0, $result['exit_code']);
+            $this->assertStringContainsString('contains source maps', $result['output']);
+            $this->assertStringNotContainsString('down --retry', $result['commands']);
+            $this->assertStringNotContainsString('composer install', $result['commands']);
+            $this->assertStringNotContainsString('migrate', $result['commands']);
+            $this->assertFileDoesNotExist($fixtureDir.'/app/storage/framework/down');
+            $this->assertSame('current-public-file', file_get_contents($fixtureDir.'/web/keep.txt'));
+        } finally {
+            $this->removeDirectory($fixtureDir);
+        }
+    }
+
     public function test_synthetic_shell_execution_fails_closed_when_down_fails(): void
     {
         $bash = $this->resolveBashBinary();

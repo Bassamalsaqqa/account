@@ -2,6 +2,8 @@
 
 Operational procedure only — **not** evidence that a release, backup, restore, or reconciliation has occurred.
 
+Run the clean-source qualification runner for the accepted commit; its PHPUnit inventory includes the offline recovery inspector harness. This is local evidence, not proof of a live restore.
+
 ## 1. Before Any Source or Asset Change
 
 1. Obtain Owner authorization and exact accepted release identity (pin deployed SHA, replacement SHA, build digest, and rollback artifact externally). Stage replacement `public/build` privately.
