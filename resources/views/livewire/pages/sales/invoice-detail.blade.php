@@ -9,45 +9,38 @@
     <!-- Header Card -->
     <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-                <div class="flex items-center gap-3">
-                    <h1 class="text-2xl font-mono font-bold tracking-tight text-text-primary" dir="ltr">
-                        {{ $invoice->invoice_number ?? __('sales.draft') }}
+            <div class="min-w-0 space-y-1.5">
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <h1 class="text-2xl font-bold tracking-tight text-text-primary tabular-nums whitespace-nowrap">
+                        @if($invoice->invoice_number)
+                            <bdi dir="ltr">{{ $invoice->invoice_number }}</bdi>
+                        @else
+                            {{ __('sales.draft') }}
+                        @endif
                     </h1>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold
-                        @if ($invoice->status === 'posted') bg-success-bg text-success
-                        @elseif ($invoice->status === 'void') bg-danger-bg text-danger
-                        @else bg-slate-100 text-slate-600 @endif">
+                    <x-badge :variant="$invoice->status === 'posted' ? 'success' : ($invoice->status === 'void' ? 'danger' : 'draft')">
                         {{ __('sales.' . $invoice->status) }}
-                    </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold
-                        @if ($paymentStatus === 'paid') bg-success-bg text-success
-                        @elseif ($paymentStatus === 'partially_paid') bg-warning-bg text-warning
-                        @elseif ($paymentStatus === 'credit') bg-primary-50 text-primary
-                        @else bg-slate-100 text-slate-600 @endif">
+                    </x-badge>
+                    <x-badge :variant="$paymentStatus === 'paid' ? 'success' : ($paymentStatus === 'partially_paid' ? 'warn' : ($paymentStatus === 'credit' ? 'info' : 'neutral'))">
                         {{ __('sales.' . $paymentStatus) }}
+                    </x-badge>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-secondary">
+                    <span class="inline-flex items-center gap-1.5">
+                        {{ __('sales.customer') }}:
+                        <a href="{{ route('customers.show', $invoice->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary border-border-control/40">
+                            {{ $invoice->customer->displayName() }}
+                        </a>
                     </span>
-                </div>
-                <div class="text-xs text-text-secondary mt-1">
-                    {{ __('sales.customer') }}:
-                    <a href="{{ route('customers.show', $invoice->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
-                        {{ $invoice->customer->displayName() }}
-                    </a>
-                </div>
-                @if (auth()->user()?->hasPermissionTo('sales.quote.view') && $invoice->quotation)
-                    <div class="text-xs text-text-secondary mt-1">
-                        {{ __('sales.quotation') }}:
-                        @if (auth()->user()?->hasPermissionTo('sales.quote.view'))
-                            <a href="{{ route('quotations.show', $invoice->quotation->public_id) }}" class="touch-action font-mono font-bold text-text-primary hover:text-primary" dir="ltr">
+                    @if (auth()->user()?->hasPermissionTo('sales.quote.view') && $invoice->quotation)
+                        <span class="inline-flex items-center gap-1.5">
+                            {{ __('sales.quotation') }}:
+                            <a href="{{ route('quotations.show', $invoice->quotation->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary tabular-nums border-border-control/40" dir="ltr">
                                 {{ $invoice->quotation->quotation_number ?? __('sales.draft') }}
                             </a>
-                        @else
-                            <span class="font-mono font-bold text-text-primary" dir="ltr">
-                                {{ $invoice->quotation->quotation_number ?? __('sales.draft') }}
-                            </span>
-                        @endif
-                    </div>
-                @endif
+                        </span>
+                    @endif
+                </div>
             </div>
 
             <!-- Action Buttons -->
@@ -58,21 +51,21 @@
                             type="button"
                             wire:click="postInvoice"
                             wire:loading.attr="disabled"
-                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+                            class="app-button min-h-11 lg:min-h-9.5 px-3.5 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                         {{ __('commands.review_post') }}
                     </button>
                 @endif
 
                 @if ($canEditDraft)
                     <a href="{{ route('invoices.edit', $invoice->public_id) }}"
-                       class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                       class="touch-action px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-bold text-text-primary hover:bg-surface-soft transition-colors">
                         {{ __('sales.edit_invoice_draft') }}
                     </a>
                 @endif
 
                 @if ($canEditDraft && auth()->user()->hasRole('Owner') && $invoice->quotation_id === null)
                     <button type="button" wire:click="deleteDraft" wire:confirm="{{ __('sales.delete_draft_confirm') }}" wire:loading.attr="disabled"
-                            class="min-h-11 px-3 py-2 rounded-control border border-border text-sm font-semibold text-danger hover:bg-danger-bg focus-visible:ring-2 focus-visible:ring-primary">
+                            class="app-button min-h-11 lg:min-h-9.5 px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-semibold text-danger hover:bg-danger-bg focus-visible:ring-2 focus-visible:ring-primary cursor-pointer">
                         {{ __('sales.delete_draft') }}
                     </button>
                 @endif
@@ -80,32 +73,30 @@
 
                 @if ($canPay && \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($outstanding))
                     <a href="{{ route('payments.create', ['customer_id' => $invoice->customer_id, 'invoice_id' => $invoice->id]) }}"
-                       class="touch-action px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-xs">
+                       class="app-button touch-action px-3.5 py-1.5 rounded-control bg-success text-white border-success text-sm font-bold hover:opacity-95 transition-opacity shadow-xs">
                         + {{ __('sales.new_payment') }}
                     </a>
                 @endif
 
                 @if ($canReturn)
                     <a href="{{ route('returns.create', ['invoice_id' => $invoice->id]) }}"
-                       class="touch-action px-3 py-1.5 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                       class="touch-action px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-bold text-text-primary hover:bg-surface-soft transition-colors">
                         ↩ {{ __('sales.new_return') }}
                     </a>
                 @endif
 
                 @if ($canCreateInvoice)
                     <a href="{{ route('invoices.create') }}"
-                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
-                        <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />
+                       class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-bold text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="plus" class="size-4 text-primary" />
                         <span>{{ __('release_b1_workflow.new_invoice') }}</span>
                     </a>
                 @endif
 
                 <x-document-actions route-name="pdf.invoice" :parameters="['publicId' => $invoice->public_id]" :permissions="['sales.document.pdf', 'sales.invoice.view']" />
 
-
-
                 <a href="{{ route('invoices.index') }}"
-                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
+                   class="touch-action px-3 py-1.5 rounded-control bg-surface-soft border border-border-control text-text-primary hover:bg-surface text-sm font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -193,20 +184,20 @@
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line->quantity) }} {{ $line->unit_name_ar ?? '' }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            <td class="py-2.5 px-4 tabular-nums" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->unit_price, $invoice->currency_code) }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono text-danger" dir="ltr">
+                            <td class="py-2.5 px-4 tabular-nums text-danger" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->discount_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->discount_amount, $invoice->currency_code) : '—' }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            <td class="py-2.5 px-4 tabular-nums" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->tax_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->tax_amount, $invoice->currency_code) : '—' }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono font-bold text-end" dir="ltr">
+                            <td class="py-2.5 px-4 tabular-nums font-bold text-end text-text-primary" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->line_total, $invoice->currency_code) }}
                             </td>
                             @if ($canViewCost)
-                                <td class="py-2.5 px-4 font-mono text-end text-text-muted" dir="ltr">
+                                <td class="py-2.5 px-4 tabular-nums text-end text-text-muted" dir="ltr">
                                     {{ $line->cogs_total_base !== null ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->cogs_total_base, $invoice->company->base_currency_code) : '—' }}
                                 </td>
                             @endif
@@ -241,25 +232,25 @@
 
             <div class="w-full md:w-64 space-y-2">
                 <div class="flex justify-between py-1 border-b border-border/50">
-                    <span class="text-text-muted">{{ __('sales.subtotal') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->subtotal, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="text-text-secondary">{{ __('sales.subtotal') }}:</span>
+                    <span class="tabular-nums font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->subtotal, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
-                    <span class="text-text-muted">{{ __('sales.discount') }}:</span>
-                    <span class="font-mono text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->discount_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="text-text-secondary">{{ __('sales.discount') }}:</span>
+                    <span class="tabular-nums text-danger font-bold" dir="ltr">-{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->discount_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-1 border-b border-border/50">
-                    <span class="text-text-muted">{{ __('sales.tax') }}:</span>
-                    <span class="font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->tax_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="text-text-secondary">{{ __('sales.tax') }}:</span>
+                    <span class="tabular-nums font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->tax_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 <div class="flex justify-between py-2 border-t border-border text-base font-extrabold text-text-primary">
                     <span>{{ __('sales.grand_total') }}:</span>
-                    <span class="font-mono text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->grand_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
+                    <span class="tabular-nums text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->grand_total, $invoice->currency_code) }} {{ $invoice->currency_code }}</span>
                 </div>
                 @if ($invoice->currency_code !== $invoice->company->base_currency_code)
                     <div class="flex justify-between text-xs text-text-muted">
                         <span>Base ({{ $invoice->company->base_currency_code }}):</span>
-                        <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->base_grand_total, $invoice->company->base_currency_code) }}</span>
+                        <span class="tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invoice->base_grand_total, $invoice->company->base_currency_code) }}</span>
                     </div>
                 @endif
             </div>
@@ -341,9 +332,9 @@
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-4">
-                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold {{ $ret->status === 'posted' ? 'bg-success-bg text-success' : 'bg-slate-100 text-slate-600' }}">
+                                    <x-badge :variant="$ret->status === 'posted' ? 'success' : ($ret->status === 'void' ? 'danger' : 'draft')">
                                         {{ __('sales.' . $ret->status) }}
-                                    </span>
+                                    </x-badge>
                                 </td>
                                 <td class="table-actions py-2.5 px-4 text-end">
                                     <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
@@ -360,28 +351,23 @@
 
     <!-- Void Modal -->
     @if ($showVoidModal)
-        <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
-                <h3 class="font-bold text-base text-danger">
-                    {{ __('sales.confirm_void_invoice') }}
-                </h3>
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.void_reason') }} <span class="text-danger">*</span></label>
-                        <textarea wire:model="voidReason" rows="3" required class="w-full p-2.5 rounded-control border border-border text-sm"></textarea>
-                        @error('voidReason') <span class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
-                    </div>
-                </div>
-                <div class="flex justify-end gap-2 pt-2 border-t border-border">
-                    <button type="button" wire:click="$set('showVoidModal', false)" class="px-3 py-1.5 rounded-control border border-border text-sm font-bold">
-                        {{ __('sales.cancel') }}
-                    </button>
-                    <button type="button" wire:click="voidInvoice" class="px-4 py-1.5 rounded-control bg-danger text-white text-sm font-bold" wire:loading.attr="disabled" wire:target="voidInvoice">
-                        {{ __('sales.void') }}
-                    </button>
+        <x-dialog-shell :title="__('sales.confirm_void_invoice')" close-action="$set('showVoidModal', false)" save-target="voidInvoice" max-width="max-w-md">
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label for="invoice-void-reason" class="block font-bold text-text-primary mb-1">{{ __('sales.void_reason') }} <span class="text-danger">*</span></label>
+                    <textarea id="invoice-void-reason" wire:model="voidReason" rows="3" required class="w-full p-2.5 rounded-control border border-border-control bg-surface text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"></textarea>
+                    @error('voidReason') <span role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                 </div>
             </div>
-        </div>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="$set('showVoidModal', false)">
+                    {{ __('sales.cancel') }}
+                </x-secondary-button>
+                <x-danger-button type="button" wire:click="voidInvoice" wire:loading.attr="disabled" wire:target="voidInvoice">
+                    {{ __('sales.void') }}
+                </x-danger-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
 
     <!-- Share Modal -->

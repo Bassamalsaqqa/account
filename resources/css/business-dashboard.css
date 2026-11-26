@@ -1,4 +1,4 @@
-/* BoardUI & shadcn inspired merchant workspace styling */
+/* Neutral financial workspace hierarchy on light canvas/surface grounds. */
 .merchant-home .home-action {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     min-height: 38px; padding: 8px 16px; border-radius: var(--radius-control);
@@ -15,102 +15,85 @@
     background: var(--color-primary-hover); border-color: var(--color-primary-hover);
 }
 .merchant-home .home-action-secondary {
-    background: var(--color-surface); color: var(--color-text-primary); border: 1px solid var(--color-border);
+    background: var(--color-surface); color: var(--color-text-primary); border: 1px solid var(--color-border-control);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .merchant-home .home-action-secondary:hover {
-    background: var(--color-surface-soft); border-color: var(--color-border-strong);
+    background: var(--color-surface-soft); border-color: var(--color-text-muted);
 }
 
-/* KPI Cards with subtle colored surfaces */
+/* KPI summary cards on clean neutral surface grounds */
 .merchant-home .home-total {
     display: flex; flex-direction: column; justify-content: space-between;
-    border-radius: 14px; padding: 14px 16px; min-height: 104px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 14px; padding: 16px; min-height: 104px;
+    box-shadow: var(--shadow-panel);
     transition: border-color 150ms ease, box-shadow 150ms ease;
-    position: relative; overflow: hidden;
+    position: relative;
 }
 .merchant-home .home-total:hover {
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
-}
-.merchant-home .home-total-sales {
-    background: var(--color-success-bg);
-    border: 1px solid color-mix(in srgb, var(--color-success) 22%, var(--color-surface));
+    border-color: var(--color-border-control);
+    box-shadow: 0 4px 12px rgba(23, 32, 51, 0.06);
 }
 .merchant-home .home-total-sales:hover {
     border-color: var(--color-success);
-}
-.merchant-home .home-total-purchases {
-    background: var(--color-info-bg);
-    border: 1px solid color-mix(in srgb, var(--color-info) 22%, var(--color-surface));
 }
 .merchant-home .home-total-purchases:hover {
     border-color: var(--color-info);
 }
 
 .merchant-home .home-total-label {
-    font-size: 14px; font-weight: 700;
+    font-size: 14px; font-weight: 600;
+    color: var(--color-text-secondary);
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
-.merchant-home .home-total-sales .home-total-label { color: var(--color-success); }
-.merchant-home .home-total-purchases .home-total-label { color: var(--color-info); }
 
 .merchant-home .home-total-value {
-    margin-block-start: 8px; font-size: clamp(20px, 1.8vw, 24px);
+    margin-block-start: 10px; font-size: clamp(20px, 1.8vw, 24px);
     font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.02em; color: var(--color-text-primary);
 }
-.merchant-home .home-total-sales .home-total-value { color: var(--color-text-primary); }
-.merchant-home .home-total-purchases .home-total-value { color: var(--color-text-primary); }
 
 .merchant-home .home-currency {
-    font-size: 14px; font-weight: 700; margin-inline-start: 4px;
-    display: inline-block;
+    font-size: 13px; font-weight: 700; margin-inline-start: 4px;
+    display: inline-block; color: var(--color-text-secondary);
 }
 .merchant-home .home-total-sales .home-currency { color: var(--color-success); }
 .merchant-home .home-total-purchases .home-currency { color: var(--color-info); }
 
-/* Treasury & Wallets */
+/* Treasury & Wallets on clean neutral surface grounds */
 .merchant-home .home-wallets {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px;
 }
 .merchant-home .home-wallet {
-    padding: 14px 16px; border-radius: 14px; min-width: 0; min-height: 104px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 16px; border-radius: 14px; min-width: 0; min-height: 104px;
+    box-shadow: var(--shadow-panel);
     transition: border-color 150ms ease, box-shadow 150ms ease;
     display: flex; flex-direction: column; justify-content: space-between;
 }
 .merchant-home .home-wallet:hover {
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
-}
-
-.merchant-home .home-wallet-cash {
-    background: var(--color-warning-bg);
-    border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-surface));
-}
-.merchant-home .home-wallet-bank {
-    background: var(--color-info-bg);
-    border: 1px solid color-mix(in srgb, var(--color-info) 22%, var(--color-surface));
-}
-.merchant-home .home-wallet-checks {
-    background: var(--color-checks-bg);
-    border: 1px solid color-mix(in srgb, var(--color-checks) 22%, var(--color-surface));
+    border-color: var(--color-border-control);
+    box-shadow: 0 4px 12px rgba(23, 32, 51, 0.06);
 }
 
 .merchant-home .home-wallet-label {
-    display: block; font-size: 14px; font-weight: 700; color: var(--color-text-primary);
+    display: block; font-size: 14px; font-weight: 600; color: var(--color-text-primary);
     overflow-wrap: anywhere;
 }
 .merchant-home .home-wallet-type {
-    display: inline-block; font-size: 12px; font-weight: 600;
-    padding: 2px 7px; border-radius: 9999px; margin-block-start: 4px;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600;
+    padding: 2px 8px; border-radius: 9999px; margin-block-start: 4px;
 }
-.merchant-home .home-wallet-cash .home-wallet-type { background: var(--color-warning-bg); color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-surface)); }
-.merchant-home .home-wallet-bank .home-wallet-type { background: var(--color-info-bg); color: var(--color-info); border: 1px solid color-mix(in srgb, var(--color-info) 22%, var(--color-surface)); }
-.merchant-home .home-wallet-checks .home-wallet-type { background: var(--color-checks-bg); color: var(--color-checks); border: 1px solid color-mix(in srgb, var(--color-checks) 22%, var(--color-surface)); }
+.merchant-home .home-wallet-cash .home-wallet-type { background: var(--color-warning-bg); color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 24%, var(--color-surface)); }
+.merchant-home .home-wallet-bank .home-wallet-type { background: var(--color-info-bg); color: var(--color-info); border: 1px solid color-mix(in srgb, var(--color-info) 24%, var(--color-surface)); }
+.merchant-home .home-wallet-checks .home-wallet-type { background: var(--color-checks-bg); color: var(--color-checks); border: 1px solid color-mix(in srgb, var(--color-checks) 24%, var(--color-surface)); }
 
 .merchant-home .home-wallet-value {
-    display: flex; flex-wrap: wrap; gap: 6px 10px; margin-block-start: 8px;
+    display: flex; flex-wrap: wrap; gap: 6px 10px; margin-block-start: 10px;
     font-size: clamp(20px, 1.8vw, 24px); font-weight: 800; font-variant-numeric: tabular-nums;
     line-height: 1.15; letter-spacing: -0.02em;
     color: var(--color-text-primary);
@@ -118,7 +101,7 @@
 
 .app-quick-add-trigger {
     display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    min-height: 36px; padding: 7px 12px; border: 1px solid var(--color-border);
+    min-height: 36px; padding: 7px 12px; border: 1px solid var(--color-border-control);
     border-radius: var(--radius-control); background: var(--color-surface);
     color: var(--color-text-primary); font-size: 14px; font-weight: 600;
     cursor: pointer; white-space: nowrap; list-style: none;
@@ -126,21 +109,31 @@
 }
 .app-quick-add-trigger::-webkit-details-marker { display: none; }
 .app-quick-add-trigger svg { width: 16px; height: 16px; flex: none; }
-.app-quick-add-trigger:hover { background: var(--color-surface-soft); border-color: var(--color-border-strong); }
+.app-quick-add-trigger:hover { background: var(--color-surface-soft); border-color: var(--color-text-muted); }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px), (pointer: coarse) {
     .merchant-home .home-action, .app-quick-add-trigger { min-height: 44px; }
-    .merchant-home .home-total { padding: 18px 20px; }
-    .merchant-home .home-wallet { padding: 14px 16px; }
+}
+@media (max-width: 767px) {
+    .merchant-home .home-total { padding: 16px 18px; }
+    .merchant-home .home-wallet { padding: 16px 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .merchant-home .home-action, .merchant-home .home-total, .merchant-home .home-wallet, .app-quick-add-trigger {
+    .merchant-home .home-action, .merchant-home .home-total, .merchant-home .home-wallet, .merchant-home .home-shortcut, .app-quick-add-trigger {
         transition: none !important;
         transform: none !important;
     }
 }
 
-.merchant-home .home-shortcut { background: var(--color-surface); border-color: var(--color-border); text-align: start; flex-direction: row; justify-content: start; min-height: 60px; }
-.merchant-home .home-shortcut:hover { background: var(--color-surface-soft); border-color: var(--color-border-strong); }
+.merchant-home .home-shortcut {
+    display: flex; align-items: center; justify-content: start; gap: 10px;
+    min-height: 52px; padding: 12px 14px;
+    background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: 12px; text-align: start;
+    box-shadow: var(--shadow-panel);
+    transition: background-color 120ms ease, border-color 120ms ease;
+}
+.merchant-home .home-shortcut:hover { background: var(--color-surface-soft); border-color: var(--color-border-control); }
+.merchant-home .home-shortcut svg { width: 18px; height: 18px; color: var(--color-text-secondary); flex: none; }
 .merchant-home .home-shortcut > span { color: var(--color-text-primary); font-size: 14px; font-weight: 600; }

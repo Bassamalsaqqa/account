@@ -2,88 +2,90 @@
     <!-- Header Card -->
     <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-4">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-                <div class="flex items-center gap-3">
-                    <h1 class="text-2xl font-mono font-bold tracking-tight text-text-primary" dir="ltr">
-                        {{ $document['purchase_number'] ?? __('purchasing.purchase_draft') }}
+            <div class="min-w-0 space-y-1.5">
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <h1 class="text-2xl font-bold tracking-tight text-text-primary tabular-nums">
+                        @if($document['purchase_number'])
+                            <bdi dir="ltr">{{ $document['purchase_number'] }}</bdi>
+                        @else
+                            {{ __('purchasing.purchase_draft') }}
+                        @endif
                     </h1>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold
-                        @if ($document['status'] === 'posted') bg-success-bg text-success
-                        @else bg-slate-100 text-slate-600 @endif">
+                    <x-badge :variant="$document['status'] === 'posted' ? 'success' : ($document['status'] === 'void' ? 'danger' : 'draft')">
                         {{ __('purchasing.'.$document['status']) }}
-                    </span>
+                    </x-badge>
                     @if($payablePosition && $withCost)
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold {{ $payablePosition->status === 'settled' ? 'bg-success-bg text-success' : ($payablePosition->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePosition->status === 'credit' ? 'bg-info-bg text-info' : 'bg-slate-100 text-slate-600')) }}">
+                        <x-badge :variant="$payablePosition->status === 'settled' ? 'success' : ($payablePosition->status === 'partially_paid' ? 'warn' : ($payablePosition->status === 'credit' ? 'info' : 'neutral'))">
                             {{ __('purchasing.'.$payablePosition->status) }}
-                        </span>
+                        </x-badge>
                     @endif
                 </div>
-                <div class="text-xs text-text-secondary mt-1">
-                    {{ __('purchasing.vendor') }}:
-                    @if($purchase->vendor)
-                        <a href="{{ route('vendors.show', $purchase->vendor->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
-                            {{ $document['vendor_name'] }}
-                        </a>
-                    @else
-                        <span class="font-bold text-text-primary">{{ $document['vendor_name'] }}</span>
-                    @endif
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-secondary">
+                    <span class="inline-flex items-center gap-1.5">
+                        {{ __('purchasing.vendor') }}:
+                        @if($purchase->vendor)
+                            <a href="{{ route('vendors.show', $purchase->vendor->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary border-border-control/40">
+                                {{ $document['vendor_name'] }}
+                            </a>
+                        @else
+                            <span class="font-bold text-text-primary">{{ $document['vendor_name'] }}</span>
+                        @endif
+                    </span>
                     @if (filled($purchase->vendor_invoice_number))
-                        <span class="ms-3 inline-flex max-w-full items-center gap-1">
+                        <span class="inline-flex max-w-full items-center gap-1.5">
                             {{ __('purchasing.vendor_invoice_number') }}:
-                            <bdi dir="ltr" class="min-w-0 max-w-64 truncate font-mono" title="{{ $purchase->vendor_invoice_number }}">{{ $purchase->vendor_invoice_number }}</bdi>
+                            <bdi dir="ltr" class="min-w-0 max-w-64 truncate font-semibold text-text-primary tabular-nums" title="{{ $purchase->vendor_invoice_number }}">{{ $purchase->vendor_invoice_number }}</bdi>
                         </span>
                     @endif
                 </div>
             </div>
 
-            @if($purchase->isPosted() && $withCost && auth()->user()->can('purchasing.purchase.void'))
-                <div class="flex gap-2">
-                    @if(auth()->user()->can('purchasing.purchase.create') && auth()->user()->can('purchasing.purchase.edit_draft'))
-                        <button type="button" wire:click="openCorrection('edit')" class="touch-action px-3 text-sm font-bold"><x-icon name="edit" class="inline h-4 w-4" /> {{ __('corrections.edit') }}</button>
-                    @endif
-                    <button type="button" wire:click="openCorrection('delete')" class="touch-action px-3 text-sm font-bold text-danger">{{ __('corrections.delete') }}</button>
-                </div>
-                @endif
-                <!-- Action Buttons -->
+            <!-- Action Buttons -->
             <div class="flex flex-wrap items-center gap-2">
+                @if($purchase->isPosted() && $withCost && auth()->user()->can('purchasing.purchase.void'))
+                    @if(auth()->user()->can('purchasing.purchase.create') && auth()->user()->can('purchasing.purchase.edit_draft'))
+                        <button type="button" wire:click="openCorrection('edit')" class="touch-action bg-surface text-text-primary hover:bg-surface-soft text-sm font-bold"><x-icon name="edit" class="inline size-4" /> {{ __('corrections.edit') }}</button>
+                    @endif
+                    <button type="button" wire:click="openCorrection('delete')" class="touch-action bg-surface text-danger hover:bg-danger-bg text-sm font-bold">{{ __('corrections.delete') }}</button>
+                @endif
                 @if($canPost)
                     <button type="button" wire:click="post" wire:loading.attr="disabled" wire:target="post"
-                            class="px-3.5 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+                            class="app-button min-h-11 lg:min-h-9.5 px-3.5 py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                         {{ __('purchasing.post_purchase') }}
                     </button>
                 @endif
                 @if($canPayVendor)
-                    <a href="{{ route('vendor-payments.create', ['purchase_id' => $purchase->id]) }}" class="touch-action px-3 py-1.5 rounded-control bg-success text-white text-xs font-bold shadow-xs hover:opacity-90">
+                    <a href="{{ route('vendor-payments.create', ['purchase_id' => $purchase->id]) }}" class="app-button touch-action px-3.5 py-1.5 rounded-control bg-success text-white border-success text-sm font-bold shadow-xs hover:opacity-95">
                         + {{ __('purchasing.pay_vendor') }}
                     </a>
                 @endif
                 @if($canCreateReturn)
-                    <a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                    <a href="{{ route('purchase-returns.create', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-bold text-text-primary hover:bg-surface-soft transition-colors">
                         ↩ {{ __('purchasing.create_purchase_return') }}
                     </a>
                 @endif
                 @if($canEdit)
-                    <a href="{{ route('purchases.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+                    <a href="{{ route('purchases.edit', $document['public_id']) }}" class="touch-action px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-bold text-text-primary hover:bg-surface-soft transition-colors">
                         {{ __('purchasing.edit_purchase') }}
                     </a>
                 @endif
                 @if($purchase->isDraft() && auth()->user()->hasRole('Owner') && auth()->user()->can('purchasing.purchase.edit_draft') && auth()->user()->can('purchasing.cost.view'))
                     <button type="button" wire:click="deleteDraft" wire:confirm="{{ __('purchase_draft_delete.confirm') }}" wire:loading.attr="disabled"
-                            class="min-h-11 px-3 py-1.5 rounded-control border border-border text-sm font-semibold text-danger hover:bg-danger-bg focus-visible:ring-2 focus-visible:ring-primary">
+                            class="app-button min-h-11 lg:min-h-9.5 px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-semibold text-danger hover:bg-danger-bg focus-visible:ring-2 focus-visible:ring-primary cursor-pointer">
                         {{ __('purchase_draft_delete.delete') }}
                     </button>
                 @endif
                 @error('deleteDraft') <p role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
                 @if($canCreatePurchase)
-                    <a href="{{ route('purchases.create') }}" class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
-                        <x-icon name="plus" class="w-3.5 h-3.5 text-primary" />
+                    <a href="{{ route('purchases.create') }}" class="touch-action inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-surface border border-border-control text-sm font-bold text-text-primary hover:bg-surface-soft transition-colors focus-visible:ring-2 focus-visible:ring-primary">
+                        <x-icon name="plus" class="size-4 text-primary" />
                         <span>{{ __('release_b1_workflow.new_purchase') }}</span>
                     </a>
                 @endif
                 @if(auth()->user()?->can('purchasing.purchase.view'))
                     <x-document-actions route-name="pdf.purchase" :parameters="['publicId' => $document['public_id']]" :permissions="['purchasing.document.pdf']" />
                 @endif
-                <a href="{{ route('purchases.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
+                <a href="{{ route('purchases.index') }}" class="touch-action px-3 py-1.5 rounded-control bg-surface-soft border border-border-control text-text-primary hover:bg-surface text-sm font-bold transition-colors">
                     {{ __('sales.back') }}
                 </a>
             </div>
@@ -163,12 +165,21 @@
         @endforeach
     </section>
     @if($withCost)
-        <section class="bg-surface border border-border rounded-card p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-            @foreach(['subtotal_currency' => 'subtotal', 'discount_total_currency' => 'discount', 'tax_total_currency' => 'tax', 'grand_total_currency' => 'total'] as $field => $label)<div><span class="text-xs text-text-secondary">{{ __('purchasing.'.$label) }}</span><p class="font-bold mt-1"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document[$field], $document['currency_code'], $document['currency_minor_units']) }} {{ $document['currency_code'] }}</bdi></p></div>@endforeach
+        <section class="bg-surface border border-border rounded-card overflow-hidden">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-px bg-border">
+                @foreach(['subtotal_currency' => 'subtotal', 'discount_total_currency' => 'discount', 'tax_total_currency' => 'tax', 'grand_total_currency' => 'total'] as $field => $label)
+                    <div class="bg-surface p-3.5 sm:p-4">
+                        <span class="text-xs font-medium text-text-secondary block">{{ __('purchasing.'.$label) }}</span>
+                        <p class="font-bold mt-1 text-text-primary tabular-nums {{ $field === 'grand_total_currency' ? 'text-primary' : '' }}">
+                            <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document[$field], $document['currency_code'], $document['currency_minor_units']) }} {{ $document['currency_code'] }}</bdi>
+                        </p>
+                    </div>
+                @endforeach
+            </div>
             @if(!empty($document['total_landed_cost_base']) && \Brick\Math\BigDecimal::of($document['total_landed_cost_base'])->isPositive())
-                <div class="col-span-full border-t border-border pt-3 flex justify-between items-center text-sm">
-                    <span class="font-bold text-text-secondary">{{ __('purchasing.total_landed_cost') }}</span>
-                    <p class="font-bold font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['total_landed_cost_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</p>
+                <div class="border-t border-border px-4 py-3 bg-surface-soft flex flex-wrap justify-between items-center gap-2 text-sm">
+                    <span class="font-semibold text-text-secondary">{{ __('purchasing.total_landed_cost') }}</span>
+                    <p class="font-bold text-text-primary tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['total_landed_cost_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</p>
                 </div>
             @endif
         </section>
@@ -179,7 +190,7 @@
                 <h2 class="font-bold text-sm text-text-primary">{{ __('purchasing.landed_costs') }}</h2>
                 @if(!empty($document['total_landed_cost_base']) && \Brick\Math\BigDecimal::of($document['total_landed_cost_base'])->isPositive())
                     <span class="text-xs font-semibold text-text-secondary">
-                        {{ __('purchasing.total_landed_cost') }}: <bdi class="font-mono text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['total_landed_cost_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</bdi>
+                        {{ __('purchasing.total_landed_cost') }}: <bdi dir="ltr" class="tabular-nums font-bold text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($document['total_landed_cost_base'], $document['base_currency_code']) }} {{ $document['base_currency_code'] }}</bdi>
                     </span>
                 @endif
             </div>
@@ -192,23 +203,23 @@
                 <div class="space-y-3">
                     @foreach($landedAllocations as $expenseId => $allocations)
                         @php $expense = $allocations->first()->expense; @endphp
-                        <div class="border border-border/80 rounded-control p-3 bg-surface-soft flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <div class="border border-border rounded-control p-3 bg-surface-soft flex flex-wrap items-center justify-between gap-3 text-xs">
                             <div>
                                 <span class="font-bold text-primary">{{ $expense->expense_number }}</span>
                                 <span class="text-text-secondary mx-1">·</span>
                                 <span class="text-text-secondary">{{ $expense->description }}</span>
                                 <span class="text-text-secondary mx-1">·</span>
-                                <span class="text-text-muted">{{ $expense->expense_date->toDateString() }}</span>
+                                <span class="text-text-muted tabular-nums">{{ $expense->expense_date->toDateString() }}</span>
                                 <div class="mt-1 text-text-secondary">
                                     {{ __('purchasing.allocation_method') }}: <span class="font-semibold">{{ __('purchasing.method_'.$allocations->first()->allocation_method) }}</span>
                                 </div>
                             </div>
                             <div class="flex items-center gap-3">
-                                <span class="font-bold font-mono text-sm" dir="ltr">
+                                <span class="font-bold text-sm text-text-primary tabular-nums" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($allocations->sum('allocated_base'), $document['base_currency_code']) }} {{ $document['base_currency_code'] }}
                                 </span>
                                 @if($canManageLanded)
-                                    <button type="button" wire:click="removeLandedCost({{ $expenseId }})" wire:confirm="{{ __('purchasing.remove_landed_cost') }}?" class="px-2.5 py-1 rounded bg-danger/10 text-danger hover:bg-danger/20 font-semibold transition-colors" wire:loading.attr="disabled" wire:target="removeLandedCost">
+                                    <button type="button" wire:click="removeLandedCost({{ $expenseId }})" wire:confirm="{{ __('purchasing.remove_landed_cost') }}?" class="app-button min-h-11 lg:min-h-8.5 px-2.5 py-1 rounded-control border border-border-control bg-surface text-danger hover:bg-danger-bg font-semibold transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="removeLandedCost">
                                         {{ __('purchasing.remove_landed_cost') }}
                                     </button>
                                 @endif
@@ -225,7 +236,7 @@
                         <div class="grid sm:grid-cols-3 gap-3">
                             <div>
                                 <label class="block text-sm font-medium text-text-secondary mb-1">{{ __('purchasing.select_expense') }}</label>
-                                <select wire:model.live="selectedExpenseId" class="w-full text-sm rounded-control border border-border bg-surface px-2.5 py-2">
+                                <select wire:model.live="selectedExpenseId" class="w-full min-h-11 lg:min-h-9.5 text-sm rounded-control border border-border-control bg-surface px-2.5 py-2 text-text-primary">
                                     <option value="">-- {{ __('purchasing.select_expense') }} --</option>
                                     @foreach($availableExpenses as $availExp)
                                         <option value="{{ $availExp->id }}">
@@ -236,14 +247,14 @@
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-text-secondary mb-1">{{ __('purchasing.allocation_method') }}</label>
-                                <select wire:model.live="allocationMethod" class="w-full text-sm rounded-control border border-border bg-surface px-2.5 py-2">
+                                <select wire:model.live="allocationMethod" class="w-full min-h-11 lg:min-h-9.5 text-sm rounded-control border border-border-control bg-surface px-2.5 py-2 text-text-primary">
                                     <option value="value">{{ __('purchasing.method_value') }}</option>
                                     <option value="quantity">{{ __('purchasing.method_quantity') }}</option>
                                     <option value="manual">{{ __('purchasing.method_manual') }}</option>
                                 </select>
                             </div>
                             <div class="flex items-end">
-                                <button type="button" wire:click="attachLandedCost" wire:loading.attr="disabled" class="h-9 px-4 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50">
+                                <button type="button" wire:click="attachLandedCost" wire:loading.attr="disabled" class="app-button min-h-11 lg:min-h-9.5 px-4 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50 cursor-pointer">
                                     {{ __('purchasing.attach_landed_cost') }}
                                 </button>
                             </div>
@@ -254,40 +265,18 @@
                                 <h4 class="text-xs font-bold text-text-secondary">{{ __('purchasing.method_manual') }}</h4>
                                 @foreach($document['lines'] as $line)
                                     <div class="flex items-center justify-between gap-3 text-xs">
-                                        <span>{{ $line['item_description'] }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['quantity']) }} {{ $line['unit_name'] }})</span>
-                                        <input type="text" inputmode="decimal" dir="ltr" wire:model="manualAllocations.{{ $line['id'] }}" placeholder="0.00" class="w-32 rounded border border-border bg-surface px-2 py-1 text-sm text-end font-mono">
+                                        <span>{{ $line['item_description'] }} (<bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['quantity']) }}</bdi> {{ $line['unit_name'] }})</span>
+                                        <input type="text" inputmode="decimal" dir="ltr" wire:model="manualAllocations.{{ $line['id'] }}" placeholder="0.00" class="w-32 min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-surface px-2.5 py-1 text-sm text-end tabular-nums text-text-primary">
                                     </div>
                                 @endforeach
                             </div>
                         @endif
                     @else
-                        <p class="text-xs text-text-muted italic">{{ __('purchasing.no_available_expenses') }}</p>
+                        <p class="text-xs text-text-muted">{{ __('purchasing.no_available_expenses') }}</p>
                     @endif
                 </div>
             @endif
         </section>
-        @if($payablePosition !== null)
-            <section class="bg-surface border border-border rounded-card p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                <div>
-                    <span class="text-text-secondary block text-xs">{{ __('purchasing.all_statuses') }}</span>
-                    <span class="inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-bold {{ $payablePosition->status === 'settled' ? 'bg-success-bg text-success' : ($payablePosition->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePosition->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
-                        {{ __('purchasing.'.$payablePosition->status) }}
-                    </span>
-                </div>
-                <div>
-                    <span class="text-text-secondary block text-xs">{{ __('purchasing.allocated') }}</span>
-                    <p class="font-mono font-bold mt-1 text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payablePosition->activeAllocatedAmount, $document['currency_code'], $document['currency_minor_units']) }} {{ $document['currency_code'] }}</p>
-                </div>
-                <div>
-                    <span class="text-text-secondary block text-xs">{{ __('purchasing.purchase_returns') }}</span>
-                    <p class="font-mono font-bold mt-1 text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payablePosition->postedReturnedAmount, $document['currency_code'], $document['currency_minor_units']) }} {{ $document['currency_code'] }}</p>
-                </div>
-                <div>
-                    <span class="text-text-secondary block text-xs">{{ __('purchasing.outstanding_balance') }}</span>
-                    <p class="font-mono font-bold mt-1 {{ $payablePosition->hasOutstanding() ? 'text-danger' : 'text-text-primary' }}" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payablePosition->outstanding, $document['currency_code'], $document['currency_minor_units']) }} {{ $document['currency_code'] }}</p>
-                </div>
-            </section>
-        @endif
     @else<p class="text-sm text-text-secondary">{{ __('purchasing.cost_restricted') }}</p>@endif
     @if($document['notes'])<section class="bg-surface border border-border rounded-card p-4"><h2 class="font-bold text-sm">{{ __('purchasing.notes') }}</h2><p class="text-sm mt-2 whitespace-pre-wrap">{{ $document['notes'] }}</p></section>@endif
     @if($correctionOpen)

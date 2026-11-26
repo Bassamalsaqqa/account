@@ -8,7 +8,10 @@
 
 @php
     $id = $titleId ?? 'dialog-title-' . substr(md5($title . ($closeAction ?? '')), 0, 8);
-    $wireClose = $closeAction ? "\$wire.{$closeAction}()" : "\$dispatch('close')";
+    $wireClose = $closeAction
+        ? (str_contains($closeAction, '(') ? "\$wire.{$closeAction}" : "\$wire.{$closeAction}()")
+        : "\$dispatch('close')";
+    $wireCloseTarget = ($closeAction && ! str_contains($closeAction, '(')) ? $closeAction : null;
 @endphp
 
 <div x-data="{
@@ -43,7 +46,7 @@
             @if($saveTarget)
                 if (window.isDocumentBusy && window.isDocumentBusy($wire)) return;
             @endif
-            {{ $wireClose }};
+            {!! str_replace('"', '&quot;', $wireClose) !!};
         },
         destroy() {
             if (this._cleanupCommit) this._cleanupCommit();
@@ -69,7 +72,7 @@
                     aria-label="{{ __('workflow.close') }}"
                     class="min-h-11 min-w-11 rounded-control text-text-muted hover:text-text-primary hover:bg-surface-soft flex items-center justify-center text-sm font-bold cursor-pointer transition-colors"
                     wire:loading.attr="disabled"
-                    @if($closeAction) wire:target="{{ $closeAction }}" @endif>
+                    @if($wireCloseTarget) wire:target="{{ $wireCloseTarget }}" @endif>
                 <x-icon name="close" class="h-4 w-4" />
             </button>
         </div>

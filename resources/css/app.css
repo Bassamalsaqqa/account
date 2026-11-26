@@ -30,6 +30,7 @@
     --color-surface-blue: #eef4ff;
     --color-border: #e4e9f1;
     --color-border-strong: #d6deea;
+    --color-border-control: #78869a;
     --color-text-primary: #172033;
     --color-text-secondary: #475467;
     --color-text-muted: #526174;
@@ -37,7 +38,7 @@
     --color-primary-hover: #1f52bd;
     --color-primary-50: #eef4ff;
     --color-primary-100: #dce8ff;
-    --color-success: #14804a;
+    --color-success: #127442;
     --color-success-bg: #eaf8f0;
     --color-warning: #a15c00;
     --color-warning-bg: #fff5df;
@@ -87,10 +88,12 @@ body {
 input:focus,
 select:focus,
 textarea:focus,
-button:focus-visible {
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
-    border-color: #aac3fa;
+    border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(37, 95, 214, .12);
 }
 
@@ -141,13 +144,6 @@ summary:focus-visible {
 :is(.business-app #app-main, .platform-admin #platform-main) .overflow-x-auto { overscroll-behavior-x: contain; }
 :is(.business-app #app-main, .platform-admin #platform-main) :is(.text-xs, .text-\[11px\]) { font-size: 13px; }
 :is(.business-app #app-main, .platform-admin #platform-main) button:not(.assistant-icon-button) { min-height: 38px; }
-@media (max-width: 767px) {
-    :is(.business-app #app-main, .platform-admin #platform-main) :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), select, textarea) {
-        min-height: 44px;
-        font-size: 16px;
-    }
-    :is(.business-app #app-main, .platform-admin #platform-main) button:not(.assistant-icon-button) { min-height: 44px; }
-}
 
 /* Explicit action surfaces across detail, form and settings screens. */
 :is(.business-app #app-main, .platform-admin #platform-main) .touch-action {
@@ -158,7 +154,7 @@ summary:focus-visible {
     min-height: 40px;
     min-width: 40px;
     padding: .5rem .75rem;
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--color-border-control);
     border-radius: var(--radius-control);
     font-weight: 600;
     line-height: 1.4;
@@ -254,18 +250,18 @@ summary:focus-visible {
 .app-topbar { background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
 .app-button { white-space: nowrap; touch-action: manipulation; }
 .app-button > svg { width: 1.125rem; height: 1.125rem; flex-shrink: 0; }
-.document-summary-card { min-width: 0; border-block-start: 3px solid var(--color-border-strong); }
-.document-summary-card:has(.text-success) { border-block-start-color: var(--color-success); }
-.document-summary-card:has(.text-danger) { border-block-start-color: var(--color-danger); }
-.document-summary-card .num { max-width: 100%; overflow-wrap: anywhere; }
+.document-summary-card { min-width: 0; }
+.document-summary-card .num { max-width: 100%; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .app-inline-panel { box-shadow: var(--shadow-panel); }
 :is(.business-app, .platform-admin) :is(input, select, textarea)[aria-invalid='true'] {
     border-color: var(--color-danger);
 }
 :is(.business-app, .platform-admin) :is(button, a, summary, label):is(.text-xs) { font-size: .875rem; }
 :is(.business-app, .platform-admin) input[type='checkbox'] { accent-color: var(--color-primary); }
-@media (max-width: 767px) {
+@media (max-width: 1023px), (pointer: coarse) {
     .app-button, .app-sidebar-shell nav a { min-height: 44px; }
+}
+@media (max-width: 767px) {
     .app-button { font-size: .875rem; }
 }
 
@@ -273,7 +269,7 @@ summary:focus-visible {
 .guest-app :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), select) { min-height: 38px; }
 @media (max-width: 1023px), (pointer: coarse) {
     :is(.business-app #app-main, .platform-admin #platform-main, .guest-app) :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), select, textarea) { min-height: 44px; font-size: 16px; }
-    :is(.business-app #app-main, .platform-admin #platform-main, .guest-app) :is(button, .touch-action, .app-button) { min-height: 44px; }
+    :is(.business-app #app-main, .platform-admin #platform-main, .guest-app) :is(button:not(.assistant-icon-button), .touch-action, .app-button, .home-action) { min-height: 44px; }
     .guest-app :is(a, label:has(input[type='checkbox'])) { display: inline-flex; align-items: center; min-height: 44px; }
     .app-quick-add-trigger { min-height: 44px; }
 }

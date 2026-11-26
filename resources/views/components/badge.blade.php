@@ -4,11 +4,11 @@
 
 @php
 $classes = match($variant) {
-    'alert', 'danger', 'void' => 'bg-danger-bg text-danger border-danger/20',
-    'warn', 'warning', 'pending' => 'bg-warning-bg text-warning border-warning/20',
-    'success', 'posted', 'paid' => 'bg-success-bg text-success border-success/20',
-    'info', 'primary', 'partial' => 'bg-primary-50 text-primary border-primary/20',
-    'draft' => 'bg-surface-soft text-text-muted border-border',
+    'alert', 'danger', 'void' => 'bg-danger-bg text-danger border-danger/25',
+    'warn', 'warning', 'pending' => 'bg-warning-bg text-warning border-warning/25',
+    'success', 'posted', 'paid' => 'bg-success-bg text-success border-success/25',
+    'info', 'primary', 'partial', 'partially_paid', 'credit' => 'bg-primary-50 text-primary border-primary/25',
+    'draft', 'muted', 'neutral' => 'bg-surface-soft text-text-secondary border-border',
     default => 'bg-surface-soft text-text-secondary border-border',
 };
 @endphp
