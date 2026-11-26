@@ -15,11 +15,11 @@
 @endphp
 
 <div x-data="{
-        triggerEl: null,
+        returnTarget: null,
         isSaving: false,
         saveTarget: '{{ $saveTarget }}',
         init() {
-            this.triggerEl = document.activeElement;
+            this.returnTarget = window.captureDialogReturnTarget?.(this.$el);
             this.$nextTick(() => {
                 const target = this.$refs.firstInput || this.$el.querySelector('input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [autofocus]');
                 target?.focus();
@@ -50,9 +50,7 @@
         },
         destroy() {
             if (this._cleanupCommit) this._cleanupCommit();
-            if (this.triggerEl && typeof this.triggerEl.focus === 'function') {
-                this.triggerEl.focus();
-            }
+            window.restoreDialogReturnTarget?.(this.returnTarget);
         }
      }"
      x-trap.inert.noscroll="true"

@@ -11,6 +11,7 @@ import './mobile-shell';
 import './document-operations';
 import './document-row-mutations';
 import './document-row-focus';
+import './dialog-focus';
 import './numeric-select-on-focus';
 import './camera-scanner';
 import './global-search';

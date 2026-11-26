@@ -99,7 +99,7 @@
 
                     <button
                         type="button"
-                        wire:click="previewPublication"
+                        id="catalog-preview-trigger" wire:click="previewPublication"
                         wire:loading.attr="disabled"
                         @disabled(! $canPublish || $catalogId === null || empty($items))
                         class="min-h-11 lg:min-h-9.5 px-4 py-2 bg-surface border border-primary/40 rounded-control text-sm font-bold text-primary hover:bg-primary-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
@@ -156,7 +156,7 @@
                     @if($catalogId !== null && $publishedRevision > 0 && in_array($status, ['active', 'revoked'], true))
                         <button
                             type="button"
-                            wire:click="openNewLink"
+                            id="catalog-new-link-trigger-0" wire:click="openNewLink"
                             @disabled(! $canShare || ! $canPublish)
                             wire:loading.attr="disabled" wire:target="openNewLink"
                             class="min-h-11 lg:min-h-9.5 px-4 py-2 bg-surface border border-border-control hover:bg-surface-soft text-text-primary rounded-control text-sm font-bold shadow-xs transition-colors disabled:opacity-50 cursor-pointer">
@@ -167,7 +167,7 @@
                     @if($catalogId !== null && $status === 'active')
                         <button
                             type="button"
-                            wire:click="createOrRecoverLink"
+                            id="catalog-share-trigger" wire:click="createOrRecoverLink"
                             @disabled(! $canShare)
                             wire:loading.attr="disabled" wire:target="createOrRecoverLink"
                             class="min-h-11 lg:min-h-9.5 px-4 py-2 bg-primary-50 border border-primary/30 text-primary rounded-control text-sm font-bold hover:bg-primary-100/60 disabled:opacity-50 transition-colors cursor-pointer">
@@ -763,7 +763,7 @@
 
                         <button
                             type="button"
-                            wire:click="showQr"
+                            id="catalog-qr-trigger" wire:click="showQr"
                             wire:loading.attr="disabled" wire:target="showQr"
                             class="min-h-11 lg:min-h-9.5 px-3 py-2 bg-surface border border-border-control hover:bg-surface-soft text-text-primary rounded-control text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer">
                             {{ __('catalogs.show_qr') }}
@@ -807,7 +807,7 @@
 
                         <button
                             type="button"
-                            wire:click="openNewLink"
+                            id="catalog-new-link-trigger-1" wire:click="openNewLink"
                             wire:loading.attr="disabled" wire:target="openNewLink"
                             class="w-full min-h-11 lg:min-h-9.5 px-3 py-2 bg-danger-bg hover:bg-danger-bg/80 text-danger border border-danger/25 rounded-control text-sm font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer">
                             {{ __('catalogs.issue_new_link') }}
@@ -834,7 +834,7 @@
 
                     <button
                         type="button"
-                        wire:click="openNewLink"
+                        id="catalog-new-link-trigger-2" wire:click="openNewLink"
                         wire:loading.attr="disabled" wire:target="openNewLink"
                         class="w-full min-h-11 lg:min-h-9.5 bg-surface hover:bg-surface-soft text-text-primary border border-border-control font-bold text-sm rounded-control flex items-center justify-center transition-colors cursor-pointer">
                         {{ __('catalogs.issue_new_link') }}
@@ -880,7 +880,7 @@
 
                     <button
                         type="button"
-                        wire:click="createOrRecoverLink"
+                        id="catalog-share-trigger" wire:click="createOrRecoverLink"
                         wire:loading.attr="disabled" wire:target="createOrRecoverLink"
                         class="w-full min-h-11 lg:min-h-9.5 bg-primary text-white font-bold text-sm rounded-control hover:bg-primary-hover cursor-pointer">
                         {{ __('catalogs.create_link') }}
