@@ -10,7 +10,7 @@ Scope: **Phase A doc-only audit** (zero edits to runtime PHP, Blade, CSS, JS, DB
 | Surface / Tool | Status at Phase A | Concrete Verification / Constraint |
 |---|---|---|
 | Separate UI profile / playbook | **Absent** | No `.impeccable.md`, `components.json`, or standalone playbook file exists; [`../DESIGN.md`](../DESIGN.md), [`UI_WORKFLOW_RULES.md`](UI_WORKFLOW_RULES.md), [`../PRODUCT.md`](../PRODUCT.md), [`../AGENTS.md`](../AGENTS.md), and [`../references/ui/`](../references/ui/) are the repo authorities. |
-| Stitch MCP (`stitch`) | **Live** | Read-only checked (`list_projects`, `list_screens`); existing private refs include `projects/4180170178157455428`, `projects/12832415106059223165`, `projects/9095473207828271118`. Zero app data/secrets uploaded. |
+| Stitch MCP (`stitch`) | **Available** | Existing projects/screens inspected read-only; no app data or secrets uploaded. Availability is environment-specific. |
 | BoardUI MCP (`boardui`) | **Live (reference only)** | React + Tailwind v4 token/component/RTL guidance reviewed; zero React packages installed in Laravel runtime. |
 | shadcn MCP (`shadcn`) | **Live (no registry file)** | No `components.json`; accessibility/dialog/combobox interaction patterns adapted to Alpine + Blade. |
 | Mobbin | **Unavailable** | No MCP, CLI, skill, or local reference assets installed. |

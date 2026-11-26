@@ -24,7 +24,7 @@ Built for high-frequency bilingual trade, treasury, and inventory workflows. **C
    - No pale pastel full-card backgrounds (`#f0fdf4`, `#eff6ff`, `#fffbeb`, `#f0f9ff`, `#faf5ff`) on KPI, wallet, or shortcut tiles.
    - No rainbow metric stacks, arbitrary background gradients, or colored top/side border stripes repeated across every metric card (`.document-summary-card` stripe rules).
    - No ornamental icon circles/squares beside page titles (`page-heading.blade.php`), KPI headlines, or shortcut cards; keep icons strictly functional (actions, field triggers, status disambiguation).
-   - No raw Tailwind palette utilities (`bg-blue-*`, `bg-indigo-*`, `bg-slate-*`, `bg-amber-*`, `bg-emerald-*`, `bg-rose-*`, `border-gray-*`) or inline custom hex stylesheets (`errors/layout`, `503`, `catalogs/public`); all views consume semantic tokens.
+   - Prefer shared semantic tokens over page-specific palettes. Retain purposeful standalone print/error styling when needed; do not churn working controls merely to satisfy a grep rule.
    - No disabled `"Coming soon"` placeholder links (`layouts/platform.blade.php`) or synthetic demo telemetry.
 4. **Status, Category & Direction Rules**:
    - **Never rely on color alone**: pair saturated indicators (compact badge, crisp status dot, directional glyph, or emphasized numeric band) with a clear localized text label.
@@ -48,7 +48,7 @@ Built for high-frequency bilingual trade, treasury, and inventory workflows. **C
   - Money amounts, quantities, barcodes, SKUs, document numbers, dates, and URLs render with `dir="ltr"`, `unicode-bidi: isolate` (`<bdi>`), `tabular-nums`, 2-decimal display precision for currency, and trailing-zero trimming without silent truncation of fractional inventory/conversion quantities (`BigDecimal` authority on server).
 - **Density, Rhythm & Controls**:
   - 8px base spacing rhythm with 4px fine increments; align desktop grids (`max-w-[1440px]`, clean gutters) without unnecessary card nesting.
-  - **Desktop**: compact `36–38px` (`min-h-9` / `h-9.5`) controls and tight single-line rows (retire ad-hoc `h-8` controls).
+  - **Desktop**: compact `36–40px` controls and aligned rows; inspect cramped controls in context rather than banning a height utility.
   - **Mobile (`< 768px`)**: minimum `44×44px` touch targets (`.touch-action`, `min-h-[44px]`), responsive stacked/grid card layouts that **reuse** a single interactive component DOM tree rather than duplicating desktop+mobile Livewire/combobox subtrees.
   - **Native Controls First**: Use native `<select>`, `<input type="checkbox">`, `<input type="radio">`, and accessible switch primitives styled consistently with tokens; reserve custom searchable combobox (`x-searchable-combobox`) for high-cardinality datasets (products, customers, vendors, warehouses).
 
