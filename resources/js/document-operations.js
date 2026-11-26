@@ -217,6 +217,102 @@ export async function resyncDocumentQueue(wire, refreshOnly = false) {
     queues.delete(keyFor(wire));
     announce(state);
 }
+export function touchQuantityStepper(wire, config = {}) {
+    const index = Number.isInteger(config.index) ? config.index : Number(config.index ?? 0);
+    const quantum = config.quantum ?? '1';
+    const min = config.min ?? '0';
+    const max = config.max ?? null;
+    const field = config.field || 'quantity';
+    const stepOptions = { field };
+    if (config.debounceMs !== undefined) stepOptions.debounceMs = config.debounceMs;
+    if (config.timeoutMs !== undefined) stepOptions.timeoutMs = config.timeoutMs;
+
+    return {
+        pending: 0,
+        failed: false,
+        recovering: false,
+        optimisticQty: null,
+        confirmedQty: null,
+        batchEpoch: 0,
+        tap(direction) {
+            const input = this.$refs?.qtyInput;
+            this.batchEpoch = (this.batchEpoch || 0) + 1;
+            const currentEpoch = this.batchEpoch;
+            if (!this.optimisticQty) {
+                const currentValue = input ? input.value : '';
+                this.optimisticQty = currentValue;
+                this.confirmedQty = currentValue;
+            }
+            this.optimisticQty = stepExactString(
+                this.optimisticQty,
+                direction,
+                quantum,
+                min,
+                max
+            );
+            if (input) {
+                input.value = this.optimisticQty;
+            }
+            this.pending++;
+            return enqueueQuantityStep(wire, index, direction, stepOptions)
+                .then(result => {
+                    if (this.batchEpoch !== currentEpoch) return;
+                    if (result && typeof result.quantity === 'string') {
+                        this.confirmedQty = result.quantity;
+                    }
+                })
+                .catch(() => {
+                    if (this.batchEpoch !== currentEpoch) return;
+                    this.failed = true;
+                    if (this.confirmedQty !== null && input) {
+                        input.value = this.confirmedQty;
+                    }
+                })
+                .finally(() => {
+                    this.pending--;
+                    if (this.pending === 0 && this.batchEpoch === currentEpoch) {
+                        if (!this.failed && this.confirmedQty !== null && input) {
+                            input.value = this.confirmedQty;
+                        }
+                        this.optimisticQty = null;
+                    }
+                });
+        },
+        onInputFocus() {
+            if (this.pending > 0) {
+                flushQuantityBatch(wire);
+            }
+        },
+        onInputTyped() {
+            this.batchEpoch = (this.batchEpoch || 0) + 1;
+            this.optimisticQty = null;
+            this.confirmedQty = null;
+        },
+        onOperationState(detail) {
+            if (!detail || detail.id == null || detail.id !== wire?.$id) return;
+            if (detail.blocked) this.failed = true;
+            else if (!detail.busy) this.failed = false;
+        },
+        async resync() {
+            this.recovering = true;
+            try {
+                await resyncDocumentQueue(wire);
+                this.failed = false;
+            } catch {
+                this.failed = true;
+            } finally {
+                this.recovering = false;
+            }
+        },
+    };
+}
 if (typeof window !== 'undefined') {
-    Object.assign(window, {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue, flushQuantityBatch, stepExactString});
+    Object.assign(window, {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue, flushQuantityBatch, stepExactString, touchQuantityStepper});
+    const register = () => {
+        if (window.Alpine && typeof window.Alpine.data === 'function') {
+            window.Alpine.data('touchQuantityStepper', touchQuantityStepper);
+        }
+    };
+    if (window.Alpine && typeof window.Alpine.data === 'function') register();
+    else if (typeof document !== 'undefined') document.addEventListener('alpine:init', register, { once: true });
 }

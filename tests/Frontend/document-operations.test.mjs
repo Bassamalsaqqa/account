@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue, stepExactString} from '../../resources/js/document-operations.js';
+import {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue, stepExactString, touchQuantityStepper} from '../../resources/js/document-operations.js';
 import {barcodeEntry} from '../../resources/js/barcode-entry.js';
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -233,4 +233,232 @@ test('actual mobile Confirm handler flushes pending quantity edits and suppresse
     assert.deepEqual(calls.map(call => call.method), ['quantity', 'confirm']);
     assert.equal(calls[1].quantity, '2');
     assert.equal(state.saving, false);
+});
+
+function createStepperController(wire, config = {}, initialValue = '1') {
+    const qtyInput = { value: initialValue };
+    const controller = touchQuantityStepper(wire, config);
+    controller.$refs = { qtyInput };
+    return { controller, qtyInput };
+}
+
+test('touchQuantityStepper pending, optimistic clamp, coalesced commit, and custom field lifecycle', async () => {
+    const calls = [];
+    const wire = {
+        $id: 'stepper-lifecycle',
+        lines: [{ return_quantity: '1.00', product_id: 10 }],
+        async batchStepQuantity(index, expected, identity, directions, field) {
+            calls.push({ index, expected, directions: [...directions], field });
+            await wait(15);
+            let current = expected;
+            for (const dir of directions) {
+                current = stepExactString(current, dir, '0.01', '0', '1.02');
+            }
+            wire.lines[index][field] = current;
+            return { ok: true, quantity: current };
+        },
+    };
+    const { controller, qtyInput } = createStepperController(wire, {
+        index: 0,
+        quantum: '0.01',
+        min: '0',
+        max: '1.02',
+        field: 'return_quantity',
+        debounceMs: 10,
+    }, '1.00');
+
+    const p1 = controller.tap('up');
+    const p2 = controller.tap('up');
+    const p3 = controller.tap('up');
+    assert.equal(controller.pending, 3);
+    assert.equal(controller.failed, false);
+    assert.equal(qtyInput.value, '1.02');
+    assert.equal(controller.optimisticQty, '1.02');
+
+    await Promise.all([p1, p2, p3]);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].field, 'return_quantity');
+    assert.deepEqual(calls[0].directions, ['up', 'up', 'up']);
+    assert.equal(controller.pending, 0);
+    assert.equal(controller.confirmedQty, '1.02');
+    assert.equal(controller.optimisticQty, null);
+    assert.equal(qtyInput.value, '1.02');
+});
+
+test('touchQuantityStepper ignores stale epoch responses after manual typing on both resolve and reject', async () => {
+    let finishFirst;
+    const wireResolve = {
+        $id: 'stepper-epoch-resolve',
+        lines: [{ quantity: '1', product_id: 10 }],
+        batchStepQuantity() {
+            return new Promise(resolve => { finishFirst = () => resolve({ ok: true, quantity: '2' }); });
+        },
+    };
+    const { controller: c1, qtyInput: input1 } = createStepperController(wireResolve, { index: 0, debounceMs: 0 }, '1');
+    const staleSuccess = c1.tap('up');
+    await wait(5);
+    assert.equal(c1.pending, 1);
+    assert.equal(input1.value, '2');
+
+    // User manually types before in-flight batch settles
+    input1.value = '7';
+    c1.onInputTyped();
+    assert.equal(c1.optimisticQty, null);
+    assert.equal(c1.confirmedQty, null);
+
+    finishFirst();
+    await staleSuccess;
+    assert.equal(c1.pending, 0);
+    assert.equal(c1.failed, false);
+    assert.equal(c1.confirmedQty, null);
+    assert.equal(input1.value, '7');
+
+    // Stale rejection must also not clobber typed value or flag failure
+    let failFirst;
+    const wireReject = {
+        $id: 'stepper-epoch-reject',
+        lines: [{ quantity: '1', product_id: 10 }],
+        batchStepQuantity() {
+            return new Promise((_, reject) => { failFirst = () => reject(new Error('network error')); });
+        },
+    };
+    const { controller: c2, qtyInput: input2 } = createStepperController(wireReject, { index: 0, debounceMs: 0 }, '1');
+    const staleFailure = c2.tap('up');
+    await wait(5);
+    input2.value = '9';
+    c2.onInputTyped();
+
+    failFirst();
+    await staleFailure;
+    assert.equal(c2.pending, 0);
+    assert.equal(c2.failed, false);
+    assert.equal(input2.value, '9');
+});
+
+test('touchQuantityStepper newer tap supersedes earlier in-flight tap epoch until latest settles', async () => {
+    let resolveFirst;
+    let resolveSecond;
+    let callNum = 0;
+    const wire = {
+        $id: 'stepper-overlapping-batches',
+        lines: [{ quantity: '1', product_id: 10 }],
+        batchStepQuantity(index, expected, identity, directions) {
+            callNum++;
+            if (callNum === 1) {
+                return new Promise(resolve => { resolveFirst = () => { wire.lines[0].quantity = '2'; resolve({ ok: true, quantity: '2' }); }; });
+            }
+            return new Promise(resolve => { resolveSecond = () => { wire.lines[0].quantity = '3'; resolve({ ok: true, quantity: '3' }); }; });
+        },
+    };
+    const { controller, qtyInput } = createStepperController(wire, { index: 0, debounceMs: 0 }, '1');
+    const first = controller.tap('up');
+    await wait(5);
+    const second = controller.tap('up');
+    assert.equal(controller.pending, 2);
+    assert.equal(qtyInput.value, '3');
+
+    resolveFirst();
+    await first;
+    assert.equal(controller.pending, 1);
+    assert.equal(qtyInput.value, '3');
+    assert.equal(controller.optimisticQty, '3');
+
+    await wait(5);
+    resolveSecond();
+    await second;
+    assert.equal(controller.pending, 0);
+    assert.equal(controller.confirmedQty, '3');
+    assert.equal(controller.optimisticQty, null);
+    assert.equal(qtyInput.value, '3');
+});
+
+test('touchQuantityStepper focus flushes pending batch, failure rolls back display, and resync recovers', async () => {
+    let shouldFail = true;
+    let calls = 0;
+    const wire = {
+        $id: 'stepper-resync',
+        lines: [{ quantity: '4', product_id: 10 }],
+        async batchStepQuantity() {
+            calls++;
+            throw new Error('Disconnected');
+        },
+        async recalculate() {
+            if (shouldFail) throw new Error('Still offline');
+            wire.lines[0].quantity = '4';
+        },
+    };
+    const { controller, qtyInput } = createStepperController(wire, { index: 0, debounceMs: 120 }, '4');
+    const pendingTap = controller.tap('up');
+    assert.equal(controller.pending, 1);
+    assert.equal(qtyInput.value, '5');
+
+    // Focus flushes immediately instead of waiting 120ms debounce
+    controller.onInputFocus();
+    await pendingTap;
+    assert.equal(calls, 1);
+    assert.equal(controller.pending, 0);
+    assert.equal(controller.failed, true);
+    assert.equal(qtyInput.value, '4');
+
+    // Foreign document-operation-state event is ignored; matching event updates failed flag
+    controller.onOperationState({ id: 'other-doc', blocked: false, busy: false });
+    assert.equal(controller.failed, true);
+    controller.onOperationState({ id: wire.$id, blocked: false, busy: false });
+    assert.equal(controller.failed, false);
+    controller.onOperationState({ id: wire.$id, blocked: true, busy: false });
+    assert.equal(controller.failed, true);
+
+    // Failed resync preserves failed=true and clears recovering
+    await controller.resync();
+    assert.equal(controller.recovering, false);
+    assert.equal(controller.failed, true);
+
+    // Successful resync clears failed and unblocks queue
+    shouldFail = false;
+    await controller.resync();
+    assert.equal(controller.recovering, false);
+    assert.equal(controller.failed, false);
+    assert.equal(isDocumentBlocked(wire), false);
+});
+
+test('touchQuantityStepper registers on window and Alpine.data safely before or at alpine:init', async () => {
+    const { readFileSync } = await import('node:fs');
+    const sourceUrl = new URL('../../resources/js/document-operations.js', import.meta.url).href;
+    const prevWindow = globalThis.window;
+    const prevDocument = globalThis.document;
+    try {
+        // Case A: window.Alpine already present before module import
+        const registeredA = new Map();
+        globalThis.window = {
+            Alpine: { data(name, fn) { registeredA.set(name, fn); } },
+            dispatchEvent() {},
+        };
+        globalThis.document = { addEventListener() {} };
+        await import(`${sourceUrl}?case=pre-alpine`);
+        assert.equal(typeof globalThis.window.touchQuantityStepper, 'function');
+        assert.equal(registeredA.get('touchQuantityStepper'), globalThis.window.touchQuantityStepper);
+
+        // Case B: window.Alpine arrives on alpine:init after module import
+        const registeredB = new Map();
+        const listeners = new Map();
+        globalThis.window = { dispatchEvent() {} };
+        globalThis.document = {
+            addEventListener(type, fn) { listeners.set(type, fn); },
+        };
+        await import(`${sourceUrl}?case=deferred-alpine`);
+        assert.equal(typeof globalThis.window.touchQuantityStepper, 'function');
+        assert.equal(typeof listeners.get('alpine:init'), 'function');
+        globalThis.window.Alpine = { data(name, fn) { registeredB.set(name, fn); } };
+        listeners.get('alpine:init')();
+        assert.equal(registeredB.get('touchQuantityStepper'), globalThis.window.touchQuantityStepper);
+    } finally {
+        if (prevWindow === undefined) delete globalThis.window;
+        else globalThis.window = prevWindow;
+        if (prevDocument === undefined) delete globalThis.document;
+        else globalThis.document = prevDocument;
+    }
+
+    const template = readFileSync(new URL('../../resources/views/components/touch-quantity-stepper.blade.php', import.meta.url), 'utf8');
+    assert.match(template, /x-data="touchQuantityStepper\(\$wire,/);
+    assert.doesNotMatch(template, /optimisticQty|confirmedQty|batchEpoch/);
 });

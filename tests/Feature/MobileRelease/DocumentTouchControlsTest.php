@@ -94,6 +94,29 @@ class DocumentTouchControlsTest extends Phase5ETestCase
         $this->assertSame($before, $this->economicCounts());
     }
 
+    public function test_touch_quantity_stepper_uses_shared_controller_with_safe_js_config_and_accessibility_attrs(): void
+    {
+        $html = (string) $this->withViewErrors(['lines.0.return_quantity' => 'Quantity invalid'])
+            ->blade(
+                '<x-touch-quantity-stepper :index="0" field="return_quantity" :allows-fraction="true" step="0.01" min="0" :max="$adversarialMax" id="custom-qty-0" aria-label="Return Qty 1" />',
+                ['adversarialMax' => "10'\"<script>"]
+            );
+
+        $this->assertStringContainsString('x-data="touchQuantityStepper($wire,', $html);
+        $this->assertStringContainsString('@document-operation-state.window="onOperationState($event.detail)"', $html);
+        $this->assertStringContainsString('id="custom-qty-0"', $html);
+        $this->assertStringContainsString('aria-label="Return Qty 1"', $html);
+        $this->assertStringContainsString('aria-invalid="true"', $html);
+        $this->assertStringContainsString('aria-describedby="custom-qty-0-error"', $html);
+        $this->assertStringContainsString('inputmode="decimal"', $html);
+        $this->assertStringContainsString(':readonly="pending > 0"', $html);
+        $this->assertStringContainsString('min-h-[44px] min-w-[44px]', $html);
+        // Safe JS encoding via @js / Js::from escapes quotes and angle brackets; no raw inline controller
+        $this->assertStringNotContainsString('optimisticQty', $html);
+        $this->assertStringNotContainsString('<script>', $html);
+        $this->assertStringContainsString('\\u0027\\u0022\\u003Cscript\\u003E', $html);
+    }
+
     /** @return array<string,int> */
     private function economicCounts(): array
     {
