@@ -34,7 +34,7 @@ final class SafeErrorLogger
     public static function report(Throwable $exception, ?Request $request = null, ?int $statusOverride = null): void
     {
         $frames = self::boundedFrames($exception);
-        $exceptionClass = get_class($exception);
+        $exceptionClass = self::exceptionClass($exception);
         $fingerprint = hash('sha256', $exceptionClass.'|'.implode('|', $frames));
 
         $route = $request?->route();
@@ -74,11 +74,12 @@ final class SafeErrorLogger
     public static function reportBoundaryException(string $label, Throwable $exception, array $extra = []): void
     {
         $frames = self::boundedFrames($exception);
+        $exceptionClass = self::exceptionClass($exception);
         $allowedExtra = array_intersect_key($extra, array_flip(['trace_id', 'request_id']));
 
         $context = array_filter(array_merge($allowedExtra, [
-            'exception_class' => get_class($exception),
-            'fingerprint' => hash('sha256', get_class($exception).'|'.implode('|', $frames)),
+            'exception_class' => $exceptionClass,
+            'fingerprint' => hash('sha256', $exceptionClass.'|'.implode('|', $frames)),
             'frames' => $frames,
             'release_version' => self::releaseVersion(),
             'release_source_sha' => self::releaseHex('release.source_sha', 40),
@@ -179,6 +180,19 @@ final class SafeErrorLogger
         }
 
         return array_slice($frames, 0, 8);
+    }
+
+    private static function exceptionClass(Throwable $exception): string
+    {
+        $class = get_class($exception);
+        // PHP embeds an absolute source path in anonymous class names.
+        if (str_contains($class, '@anonymous')) {
+            $class = get_parent_class($exception) ?: Throwable::class;
+        }
+
+        return strlen($class) <= 200 && preg_match('/^[A-Za-z_][A-Za-z0-9_\\\\]*$/D', $class) === 1
+            ? $class
+            : Throwable::class;
     }
 
     private static function resolveStatus(Throwable $exception): int
