@@ -269,7 +269,7 @@
 
                 <div>
                     <label for="expiry-disposal-reason" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_reason') }} *</label>
-                    <textarea aria-invalid="{{ $errors->has('disposalReason') ? 'true' : 'false' }}" @if ($errors->has('disposalReason')) aria-describedby="expiry-disposal-reason-error" @endif id="expiry-disposal-reason" wire:model="disposalReason" rows="2" dir="rtl" class="w-full p-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('disposalReason') border-danger @enderror"></textarea>
+                    <textarea aria-invalid="{{ $errors->has('disposalReason') ? 'true' : 'false' }}" @if ($errors->has('disposalReason')) aria-describedby="expiry-disposal-reason-error" @endif id="expiry-disposal-reason" wire:model="disposalReason" rows="2" class="w-full p-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('disposalReason') border-danger @enderror"></textarea>
                     @error('disposalReason') <span role="alert" id="expiry-disposal-reason-error" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
             </div>

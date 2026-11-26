@@ -19,7 +19,7 @@
                 type="button"
                 role="tab"
                 id="tab-opening-customer"
-                aria-controls="panel-opening-customer"
+                aria-controls="panel-opening"
                 aria-selected="{{ $side === 'customer' ? 'true' : 'false' }}"
                 tabindex="{{ $side === 'customer' ? '0' : '-1' }}"
                 wire:click="$set('side', 'customer')"
@@ -31,7 +31,7 @@
                 type="button"
                 role="tab"
                 id="tab-opening-vendor"
-                aria-controls="panel-opening-vendor"
+                aria-controls="panel-opening"
                 aria-selected="{{ $side === 'vendor' ? 'true' : 'false' }}"
                 tabindex="{{ $side === 'vendor' ? '0' : '-1' }}"
                 wire:click="$set('side', 'vendor')"
@@ -43,7 +43,7 @@
     </div>
 
     <div role="tabpanel"
-         id="panel-opening-{{ $side }}"
+         id="panel-opening"
          aria-labelledby="tab-opening-{{ $side }}"
          tabindex="0"
          class="space-y-4">

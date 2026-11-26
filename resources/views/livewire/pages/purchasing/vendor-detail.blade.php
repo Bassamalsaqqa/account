@@ -126,7 +126,7 @@
             <button type="button"
                     role="tab"
                     id="tab-vendor-overview"
-                    aria-controls="panel-vendor-overview"
+                    aria-controls="panel-vendor"
                     aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}"
                     tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}"
                     wire:click="$set('activeTab', 'overview')"
@@ -137,7 +137,7 @@
                 <button type="button"
                         role="tab"
                         id="tab-vendor-products"
-                        aria-controls="panel-vendor-products"
+                        aria-controls="panel-vendor"
                         aria-selected="{{ $activeTab === 'products' ? 'true' : 'false' }}"
                         tabindex="{{ $activeTab === 'products' ? '0' : '-1' }}"
                         wire:click="$set('activeTab', 'products')"
@@ -149,7 +149,7 @@
                 <button type="button"
                         role="tab"
                         id="tab-vendor-purchases"
-                        aria-controls="panel-vendor-purchases"
+                        aria-controls="panel-vendor"
                         aria-selected="{{ $activeTab === 'purchases' ? 'true' : 'false' }}"
                         tabindex="{{ $activeTab === 'purchases' ? '0' : '-1' }}"
                         wire:click="$set('activeTab', 'purchases')"
@@ -159,7 +159,7 @@
                 <button type="button"
                         role="tab"
                         id="tab-vendor-returns"
-                        aria-controls="panel-vendor-returns"
+                        aria-controls="panel-vendor"
                         aria-selected="{{ $activeTab === 'returns' ? 'true' : 'false' }}"
                         tabindex="{{ $activeTab === 'returns' ? '0' : '-1' }}"
                         wire:click="$set('activeTab', 'returns')"
@@ -169,7 +169,7 @@
                 <button type="button"
                         role="tab"
                         id="tab-vendor-payments"
-                        aria-controls="panel-vendor-payments"
+                        aria-controls="panel-vendor"
                         aria-selected="{{ $activeTab === 'payments' ? 'true' : 'false' }}"
                         tabindex="{{ $activeTab === 'payments' ? '0' : '-1' }}"
                         wire:click="$set('activeTab', 'payments')"
@@ -180,7 +180,7 @@
                     <button type="button"
                             role="tab"
                             id="tab-vendor-statement"
-                            aria-controls="panel-vendor-statement"
+                            aria-controls="panel-vendor"
                             aria-selected="{{ $activeTab === 'statement' ? 'true' : 'false' }}"
                             tabindex="{{ $activeTab === 'statement' ? '0' : '-1' }}"
                             wire:click="$set('activeTab', 'statement')"
@@ -193,7 +193,7 @@
     @endif
 
     <!-- Tab Contents -->
-    <div @if ($withCost || $canViewCost) role="tabpanel" id="panel-vendor-{{ $activeTab }}" aria-labelledby="tab-vendor-{{ $activeTab }}" tabindex="0" @endif wire:key="vendor-panel-{{ $activeTab }}" wire:loading.class="opacity-70">
+    <div @if ($withCost || $canViewCost) role="tabpanel" id="panel-vendor" aria-labelledby="tab-vendor-{{ $activeTab }}" tabindex="0" @endif wire:key="vendor-panel-{{ $activeTab }}" wire:loading.class="opacity-70">
     @if ($activeTab === 'overview')
         <div class="space-y-5">
             <section class="bg-surface border border-border rounded-card p-4 sm:p-5">

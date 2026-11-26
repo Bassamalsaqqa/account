@@ -89,38 +89,38 @@
          aria-label="{{ __('inventory.product_details') }}"
          @keydown="window.handleTablistKeydown?.($event, $el)"
          class="border-b border-border flex flex-wrap items-center gap-6 text-xs font-bold select-none">
-        <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}" wire:click="setTab('overview')"
+        <button type="button" role="tab" id="tab-overview" aria-controls="panel-product" aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}" wire:click="setTab('overview')"
                 class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.overview') }}
         </button>
-        <button type="button" role="tab" id="tab-warehouses" aria-controls="panel-warehouses" aria-selected="{{ $activeTab === 'warehouses' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'warehouses' ? '0' : '-1' }}" wire:click="setTab('warehouses')"
+        <button type="button" role="tab" id="tab-warehouses" aria-controls="panel-product" aria-selected="{{ $activeTab === 'warehouses' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'warehouses' ? '0' : '-1' }}" wire:click="setTab('warehouses')"
                 class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'warehouses' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.stock_by_warehouse') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($warehouseBalances->count()) }})
         </button>
         @if ($product->track_expiry)
-            <button type="button" role="tab" id="tab-lots" aria-controls="panel-lots" aria-selected="{{ $activeTab === 'lots' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'lots' ? '0' : '-1' }}" wire:click="setTab('lots')"
+            <button type="button" role="tab" id="tab-lots" aria-controls="panel-product" aria-selected="{{ $activeTab === 'lots' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'lots' ? '0' : '-1' }}" wire:click="setTab('lots')"
                     class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'lots' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                 {{ __('inventory.lots_and_expiry') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(($lots instanceof \Illuminate\Pagination\LengthAwarePaginator ? $lots->total() : $lots->count())) }})
             </button>
         @endif
-        <button type="button" role="tab" id="tab-movements" aria-controls="panel-movements" aria-selected="{{ $activeTab === 'movements' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'movements' ? '0' : '-1' }}" wire:click="setTab('movements')"
+        <button type="button" role="tab" id="tab-movements" aria-controls="panel-product" aria-selected="{{ $activeTab === 'movements' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'movements' ? '0' : '-1' }}" wire:click="setTab('movements')"
                 class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'movements' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.stock_movements') }}
         </button>
-        <button type="button" role="tab" id="tab-units" aria-controls="panel-units" aria-selected="{{ $activeTab === 'units' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'units' ? '0' : '-1' }}" wire:click="setTab('units')"
+        <button type="button" role="tab" id="tab-units" aria-controls="panel-product" aria-selected="{{ $activeTab === 'units' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'units' ? '0' : '-1' }}" wire:click="setTab('units')"
                 class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'units' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.units') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->productUnits->count()) }})
         </button>
-        <button type="button" role="tab" id="tab-barcodes" aria-controls="panel-barcodes" aria-selected="{{ $activeTab === 'barcodes' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'barcodes' ? '0' : '-1' }}" wire:click="setTab('barcodes')"
+        <button type="button" role="tab" id="tab-barcodes" aria-controls="panel-product" aria-selected="{{ $activeTab === 'barcodes' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'barcodes' ? '0' : '-1' }}" wire:click="setTab('barcodes')"
                 class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'barcodes' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.barcodes') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->barcodes->count()) }})
         </button>
-        <button type="button" role="tab" id="tab-images" aria-controls="panel-images" aria-selected="{{ $activeTab === 'images' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'images' ? '0' : '-1' }}" wire:click="setTab('images')"
+        <button type="button" role="tab" id="tab-images" aria-controls="panel-product" aria-selected="{{ $activeTab === 'images' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'images' ? '0' : '-1' }}" wire:click="setTab('images')"
                 class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'images' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.images') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->images->count()) }})
         </button>
         @if ($canViewPurchasingCost)
-            <button type="button" role="tab" id="tab-purchase_history" aria-controls="panel-purchase_history" aria-selected="{{ $activeTab === 'purchase_history' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'purchase_history' ? '0' : '-1' }}" wire:click="setTab('purchase_history')"
+            <button type="button" role="tab" id="tab-purchase_history" aria-controls="panel-product" aria-selected="{{ $activeTab === 'purchase_history' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'purchase_history' ? '0' : '-1' }}" wire:click="setTab('purchase_history')"
                     class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'purchase_history' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                 {{ __('purchasing.purchase_price_history') }}
             </button>
@@ -129,7 +129,7 @@
 
     <!-- Tab Content -->
     @if ($activeTab === 'overview')
-        <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-overview" tabindex="0">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <!-- Details Panel -->
             <x-card padding="p-6" class="md:col-span-2 space-y-4">
@@ -196,7 +196,7 @@
         </div>
     @elseif ($activeTab === 'warehouses')
         <!-- Stock by Warehouse Table -->
-        <div role="tabpanel" id="panel-warehouses" aria-labelledby="tab-warehouses" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-warehouses" tabindex="0">
         <x-card padding="p-0">
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
@@ -239,7 +239,7 @@
         </div>
     @elseif ($activeTab === 'lots')
         <!-- Lots Table -->
-        <div role="tabpanel" id="panel-lots" aria-labelledby="tab-lots" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-lots" tabindex="0">
         <x-card padding="p-0">
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
@@ -298,7 +298,7 @@
         </div>
     @elseif ($activeTab === 'movements')
         <!-- Movements History Table -->
-        <div role="tabpanel" id="panel-movements" aria-labelledby="tab-movements" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-movements" tabindex="0">
         <x-card padding="p-0">
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
@@ -359,7 +359,7 @@
         </div>
     @elseif ($activeTab === 'units')
         <!-- Units Tab -->
-        <div role="tabpanel" id="panel-units" aria-labelledby="tab-units" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-units" tabindex="0">
         <x-card padding="p-0">
             <div class="overflow-x-auto">
                 <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
@@ -425,7 +425,7 @@
         </div>
     @elseif ($activeTab === 'barcodes')
         <!-- Barcodes Tab -->
-        <div role="tabpanel" id="panel-barcodes" aria-labelledby="tab-barcodes" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-barcodes" tabindex="0">
         <x-card padding="p-0">
             @if ($product->barcodes->isNotEmpty() && auth()->user()?->hasPermissionTo('inventory.barcode_labels.print') && auth()->user()?->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']))
                 <div class="flex items-center justify-between p-3.5 border-b border-border bg-surface-soft">
@@ -481,7 +481,7 @@
         </div>
     @elseif ($activeTab === 'images')
         <!-- Images Tab -->
-        <div role="tabpanel" id="panel-images" aria-labelledby="tab-images" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-images" tabindex="0">
         <x-card padding="p-6">
             @if ($product->images->isNotEmpty())
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -511,7 +511,7 @@
         </div>
     @elseif ($activeTab === 'purchase_history' && $canViewPurchasingCost)
         <!-- Purchase Price History Tab -->
-        <div role="tabpanel" id="panel-purchase_history" aria-labelledby="tab-purchase_history" tabindex="0">
+        <div role="tabpanel" id="panel-product" aria-labelledby="tab-purchase_history" tabindex="0">
         <div class="space-y-6">
             <!-- Commercial Comparison Metric Explanatory Banner -->
             <div class="p-3.5 bg-surface-soft border border-border rounded-card text-xs text-text-secondary flex items-start gap-2.5">

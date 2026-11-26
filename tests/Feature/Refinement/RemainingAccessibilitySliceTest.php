@@ -85,25 +85,25 @@ final class RemainingAccessibilitySliceTest extends PositionTestCase
         // 1. ProductDetail: duplicate role/aria-label removed; shared helper wired; active panel linked
         $productDetail = Livewire::test(ProductDetail::class, ['publicId' => $this->stockProduct->public_id]);
         $productHtml = $productDetail->html(false);
-        $this->assertTablistStructure($productHtml, 'tab-overview', 'panel-overview', 'inventory.product_tabs');
+        $this->assertTablistStructure($productHtml, 'tab-overview', 'panel-product', 'inventory.product_tabs');
         $this->assertStringContainsString('window.handleTablistKeydown', $productHtml);
         $this->assertSame(1, substr_count($productHtml, 'role="tablist"'));
         $productDetail->call('setTab', 'barcodes');
-        $this->assertTablistStructure($productDetail->html(false), 'tab-barcodes', 'panel-barcodes', 'inventory.product_tabs');
+        $this->assertTablistStructure($productDetail->html(false), 'tab-barcodes', 'panel-product', 'inventory.product_tabs');
 
         // 2. CustomerDetail: uses shared helper and keeps full ARIA tab/panel link
         $customerDetail = Livewire::test(CustomerDetail::class, ['publicId' => $customer->public_id]);
         $customerHtml = $customerDetail->html(false);
-        $this->assertTablistStructure($customerHtml, 'tab-customer-overview', 'panel-customer-overview');
+        $this->assertTablistStructure($customerHtml, 'tab-customer-overview', 'panel-customer');
         $this->assertStringContainsString('window.handleTablistKeydown', $customerHtml);
 
         // 3. VendorDetail: full ARIA tab/panel link + no dangling tabpanel when tabs hidden for restricted user
         $vendorDetail = Livewire::test(VendorDetail::class, ['publicId' => $this->vendor->public_id]);
         $vendorHtml = $vendorDetail->html(false);
-        $this->assertTablistStructure($vendorHtml, 'tab-vendor-overview', 'panel-vendor-overview');
+        $this->assertTablistStructure($vendorHtml, 'tab-vendor-overview', 'panel-vendor');
         $this->assertStringContainsString('window.handleTablistKeydown', $vendorHtml);
         $vendorDetail->set('activeTab', 'purchases');
-        $this->assertTablistStructure($vendorDetail->html(false), 'tab-vendor-purchases', 'panel-vendor-purchases');
+        $this->assertTablistStructure($vendorDetail->html(false), 'tab-vendor-purchases', 'panel-vendor');
 
         // Restricted user without purchasing.cost.view gets no tablist and no dangling role="tabpanel"
         $restricted = User::factory()->create(['locale' => $locale]);
@@ -128,17 +128,17 @@ final class RemainingAccessibilitySliceTest extends PositionTestCase
         // 4. EmployeeDetail: <nav> replaced by ARIA tablist + linked tabpanel + reversal modal outside tabpanel
         $employeeDetail = Livewire::test(EmployeeDetail::class, ['publicId' => $this->employee->public_id]);
         $employeeHtml = $employeeDetail->html(false);
-        $this->assertTablistStructure($employeeHtml, 'tab-employee-overview', 'panel-employee-overview');
+        $this->assertTablistStructure($employeeHtml, 'tab-employee-overview', 'panel-employee');
         $this->assertStringContainsString('window.handleTablistKeydown', $employeeHtml);
         $employeeDetail->set('tab', 'salaries');
-        $this->assertTablistStructure($employeeDetail->html(false), 'tab-employee-salaries', 'panel-employee-salaries');
+        $this->assertTablistStructure($employeeDetail->html(false), 'tab-employee-salaries', 'panel-employee');
 
         // 5. OpeningTradeBalanceEntry: pseudo-tabs upgraded with roving tabindex + panel link
         $opening = Livewire::test(OpeningTradeBalanceEntry::class);
-        $this->assertTablistStructure($opening->html(false), 'tab-opening-customer', 'panel-opening-customer');
+        $this->assertTablistStructure($opening->html(false), 'tab-opening-customer', 'panel-opening');
         $this->assertStringContainsString('window.handleTablistKeydown', $opening->html(false));
         $opening->set('side', 'vendor');
-        $this->assertTablistStructure($opening->html(false), 'tab-opening-vendor', 'panel-opening-vendor');
+        $this->assertTablistStructure($opening->html(false), 'tab-opening-vendor', 'panel-opening');
 
         // 6. ReportingHub: group filter tabs upgraded with IDs, panel link, helper, and non-sales label
         $hubHtml = Livewire::test(ReportHub::class)->html(false);
@@ -269,6 +269,9 @@ final class RemainingAccessibilitySliceTest extends PositionTestCase
         $this->assertStringContainsString('id="expiry-dispose-mobile-'.$lb->id.'"', $expiryIndexHtml);
         $expiry->call('openDisposalModal', $lb->id);
         $this->assertDialogShellModal($expiry->html(false), 'expiry-disposal-title', '$set(\'showDisposalModal\', false)');
+        $reason = $this->xpath($expiry->html(false))->query('//*[@id="expiry-disposal-reason"]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $reason);
+        $this->assertFalse($reason->hasAttribute('dir'), 'Free text follows the current workspace direction.');
         $expiry->set('disposalReason', '')->call('confirmDisposal')->assertHasErrors(['disposalReason']);
         $this->assertError($expiry->html(false), 'expiry-disposal-reason');
 
@@ -450,7 +453,9 @@ final class RemainingAccessibilitySliceTest extends PositionTestCase
             $this->assertInstanceOf(DOMElement::class, $tab);
             $tabId = $tab->getAttribute('id');
             $this->assertNotSame('', $tabId);
-            $this->assertNotSame('', $tab->getAttribute('aria-controls'));
+            $this->assertSame($activePanelId, $tab->getAttribute('aria-controls'));
+            $this->assertSame(1, $xpath->query('//*[@id="'.$tab->getAttribute('aria-controls').'" and @role="tabpanel"]')->length,
+                'Every visible tab must control exactly one existing panel, including inactive tabs.');
             $isActive = $tabId === $activeTabId;
             $this->assertSame($isActive ? 'true' : 'false', $tab->getAttribute('aria-selected'));
             $this->assertSame($isActive ? '0' : '-1', $tab->getAttribute('tabindex'));
