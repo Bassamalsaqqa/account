@@ -34,4 +34,4 @@ php artisan reconciliation:run <companyPublicId> --force
 
 ## 4. Verification State
 
-Isolated unit/process tests and multi-company disposable MariaDB six-domain reconciliations pass across Phase 10, opening-trade, and paired 12-vector suites. Production cron/alerts remain **OFF** (`RECONCILIATION_SCHEDULE_ENABLED=false`) until deployment.
+Isolated unit/process tests and multi-company disposable MariaDB six-domain reconciliations pass across Phase 10, opening-trade, and paired 12-vector suites. Production six-domain checks passed for both companies. Scheduled checks and alerts remain **OFF** (`RECONCILIATION_SCHEDULE_ENABLED=false`) until separately enabled by the Owner.

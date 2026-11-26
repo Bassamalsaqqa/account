@@ -92,7 +92,7 @@ SHOW GLOBAL VARIABLES LIKE 'explicit_defaults_for_timestamp';
 
 - **Six-Domain Reconciliations:** Run `php artisan reconciliation:run --force` or individual domain CLIs (`accounting:reconcile`, `inventory:reconcile --all`, `sales:reconcile`, `payables:reconcile` [alias `purchasing:reconcile`], `money:reconcile`, `phase7:reconcile` [alias `accounting:reconcile-phase7`]). See [Reconciliation Operations Guide](RECONCILIATION_OPERATIONAL_GUIDE.md).
 - **Backup & recovery:** A current production snapshot restored and migrated successfully in isolation on 2026-11-25; six reconciliations passed for both companies. Historical compatibility and independent key-loss recovery remain unverified. See [Backup & Restore Runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md).
-- **Production Deployment:** No deployment has occurred. Follow [Hostinger Deployment Guide](HOSTINGER_DEPLOYMENT_GUIDE.md) and [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) (`bin/deploy.sh` keeps maintenance held; permissions `0755`/`0644`, never `777`; no source maps; private data/keys never stored in Git).
+- **Production deployment:** The web release is live from `main`; retain exact operator release pins. Follow [Hostinger Deployment Guide](HOSTINGER_DEPLOYMENT_GUIDE.md) and [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) (`bin/deploy.sh` keeps maintenance held; permissions `0755`/`0644`, never `777`; no source maps; private data/keys never stored in Git).
 
 | Private Out-of-Band Artifact | Destination / Purpose |
 |---|---|
