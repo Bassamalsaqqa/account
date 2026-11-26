@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Application\Platform\SupportViewContext;
 use App\Models\User;
+use App\Support\Diagnostics\RequestId;
 use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Http\Request;
@@ -36,6 +37,15 @@ class SetCompanyContext
             } else {
                 $this->context->clear();
             }
+
+            RequestId::captureActorSnapshot(
+                $request,
+                (int) $user->id,
+                (int) $user->id,
+                $company ? (int) $company->id : null,
+                false,
+                null,
+            );
         } else {
             $this->context->clear();
         }

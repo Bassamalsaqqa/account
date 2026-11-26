@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Support\Diagnostics\SafeErrorLogger;
 use App\Support\Mobile\WireResponse;
 use App\Support\Tenancy\CompanyContext;
 use Closure;
@@ -13,7 +14,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Response;
@@ -291,7 +291,7 @@ final class MobileApiBoundary
             );
         }
 
-        Log::error('MobileApiInternalError: '.get_class($e));
+        SafeErrorLogger::reportBoundaryException('MobileApiInternalError: '.get_class($e), $e);
 
         return self::buildErrorResponse(
             code: 'INTERNAL_SERVER_ERROR',

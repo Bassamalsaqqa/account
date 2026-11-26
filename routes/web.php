@@ -2,8 +2,10 @@
 
 use App\Http\Controllers\AssistantMemoryController;
 use App\Http\Controllers\CompanyDataExportController;
+use App\Http\Controllers\Diagnostics\BugReportController;
 use App\Http\Controllers\ExpenseAttachmentController;
 use App\Http\Controllers\PdfDocumentController;
+use App\Http\Controllers\PlatformBugReportController;
 use App\Http\Controllers\PlatformController;
 use App\Http\Controllers\PlatformSubscriptionController;
 use App\Http\Controllers\PlatformSupportController;
@@ -105,6 +107,10 @@ Route::prefix('platform')->name('platform.')->middleware(['auth', 'throttle:plat
     Route::post('/companies/{publicId}/support', [PlatformSupportController::class, 'start'])->middleware('platform:company.impersonate')->name('support.start');
     Route::post('/support/end', [PlatformSupportController::class, 'end'])->name('support.end');
     Route::post('/support/locale', [PlatformSupportController::class, 'locale'])->name('support.locale');
+    Route::get('/bug-reports', [PlatformBugReportController::class, 'index'])->middleware('platform:support.bug_reports.view')->name('bug-reports.index');
+    Route::get('/bug-reports/{publicRef}', [PlatformBugReportController::class, 'show'])->middleware('platform:support.bug_reports.view')->name('bug-reports.show');
+    Route::get('/bug-reports/{publicRef}/brief', [PlatformBugReportController::class, 'brief'])->middleware('platform:support.bug_reports.view')->name('bug-reports.brief');
+    Route::post('/bug-reports/{publicRef}/triage', [PlatformBugReportController::class, 'triage'])->middleware('platform:support.bug_reports.manage')->name('bug-reports.triage');
 });
 
 Route::post('locale', function (Request $request, CompanyContext $context) {
@@ -133,6 +139,8 @@ Route::post('locale', function (Request $request, CompanyContext $context) {
 })->name('locale.switch');
 
 Route::middleware(['auth'])->group(function () {
+    Route::post('diagnostics/bug-reports', [BugReportController::class, 'store'])
+        ->name('diagnostics.bug-reports.store');
     Route::post('assistant/memory/discard', AssistantMemoryController::class)
         ->middleware('throttle:30,1')->name('assistant.memory.discard');
     // Tenancy setup and selection routes (accessible without company context)

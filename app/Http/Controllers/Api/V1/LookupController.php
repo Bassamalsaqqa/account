@@ -13,13 +13,13 @@ use App\Models\Vendor;
 use App\Models\Warehouse;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Security\CommandSessionGuard;
+use App\Support\Diagnostics\SafeErrorLogger;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final class LookupController extends ApiController
@@ -77,7 +77,7 @@ final class LookupController extends ApiController
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
         } catch (Throwable $e) {
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during customer lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -138,7 +138,7 @@ final class LookupController extends ApiController
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
         } catch (Throwable $e) {
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during vendor lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -211,7 +211,7 @@ final class LookupController extends ApiController
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
         } catch (Throwable $e) {
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during product lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -268,7 +268,7 @@ final class LookupController extends ApiController
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
         } catch (Throwable $e) {
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during warehouse lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -313,7 +313,7 @@ final class LookupController extends ApiController
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
         } catch (Throwable $e) {
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during currency lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -372,7 +372,7 @@ final class LookupController extends ApiController
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
         } catch (Throwable $e) {
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred during tax rate lookup.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }

@@ -6,6 +6,7 @@ namespace App\Http\Middleware;
 
 use App\Application\Platform\SupportViewContext;
 use App\Application\Platform\SupportViewSession;
+use App\Support\Diagnostics\RequestId;
 use App\Support\Tenancy\CompanyContext;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -46,6 +47,14 @@ final class ApplySupportView
             Auth::setUser($resolved['target']);
             $context->setCompany($resolved['company'], $resolved['target']);
             $support->activate($resolved['details']);
+            RequestId::captureActorSnapshot(
+                $request,
+                (int) $resolved['details']['operator_id'],
+                (int) $resolved['target']->id,
+                (int) $resolved['company']->id,
+                true,
+                is_string($resolved['details']['correlation_id'] ?? null) ? $resolved['details']['correlation_id'] : null,
+            );
 
             return $next($request)->header('Cache-Control', 'no-store, private')->header('Referrer-Policy', 'same-origin');
         } catch (AuthorizationException) {

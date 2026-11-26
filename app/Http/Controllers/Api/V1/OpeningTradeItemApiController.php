@@ -16,6 +16,7 @@ use App\Services\Accounting\OpeningTradeCutoverAuditService;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Money\MoneyValues;
 use App\Services\Security\CommandSessionGuard;
+use App\Support\Diagnostics\SafeErrorLogger;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
@@ -26,7 +27,6 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Throwable;
 
@@ -233,7 +233,7 @@ final class OpeningTradeItemApiController extends ApiController
         } catch (InvalidArgumentException|MathException $e) {
             return $this->problem('Unprocessable Content', 422, $e->getMessage(), $traceId);
         } catch (Throwable $e) {
-            Log::error(get_class($e).': '.$e->getMessage(), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected server error occurred.', $traceId);
         }
@@ -285,7 +285,7 @@ final class OpeningTradeItemApiController extends ApiController
         } catch (InvalidArgumentException|MathException $e) {
             return $this->problem('Unprocessable Content', 422, $e->getMessage(), $traceId);
         } catch (Throwable $e) {
-            Log::error(get_class($e).': '.$e->getMessage(), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected server error occurred.', $traceId);
         }
@@ -319,7 +319,7 @@ final class OpeningTradeItemApiController extends ApiController
         } catch (AuthorizationException $e) {
             return $this->problem('Forbidden', 403, $e->getMessage(), $traceId);
         } catch (Throwable $e) {
-            Log::error(get_class($e).': '.$e->getMessage(), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected server error occurred.', $traceId);
         }

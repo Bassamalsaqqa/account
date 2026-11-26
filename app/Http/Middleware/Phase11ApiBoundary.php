@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Support\Diagnostics\SafeErrorLogger;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -11,7 +12,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Session\TokenMismatchException;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -349,9 +349,9 @@ final class Phase11ApiBoundary
             $extraHeaders['Allow'] = (string) $response->headers->get('Allow');
         }
 
-        // On unexpected 500, log ONLY class + trace ID; NEVER message or response content
+        // On unexpected 500, log ONLY class + sanitized trace/frames; NEVER message or response content
         if ($status >= 500) {
-            Log::error('Phase11DownstreamErrorResponse', ['trace_id' => $traceId]);
+            SafeErrorLogger::safeError('Phase11DownstreamErrorResponse', ['trace_id' => $traceId]);
         }
 
         return self::buildProblem(
@@ -479,7 +479,7 @@ final class Phase11ApiBoundary
         }
 
         // Unexpected 500: Log ONLY exception class + trace ID; NEVER message or payload
-        Log::error(get_class($e), ['trace_id' => $traceId]);
+        SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
         return self::buildProblem(
             title: 'Internal Server Error',

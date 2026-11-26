@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="app-request-id" content="{{ \App\Support\Diagnostics\RequestId::forRequest(request()) }}">
+    <meta name="app-route-name" content="{{ \Illuminate\Support\Facades\Route::currentRouteName() ?? '' }}">
 
     <title>{{ __('platform.title') }} — {{ __('platform.scope') }}</title>
 
@@ -71,15 +73,25 @@
             </div>
 
             <!-- Governance Group -->
-            @if(in_array('audit.read', $platformPermissions, true))
+            @if(in_array('audit.read', $platformPermissions, true) || in_array('support.bug_reports.view', $platformPermissions, true))
                 <div class="space-y-1">
                     <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_governance') }}</span>
-                    <a href="{{ route('platform.audit') }}"
-                       @if(request()->routeIs('platform.audit')) aria-current="page" @endif
-                       class="flex items-center gap-2.5 min-h-11 px-3 py-2 rounded-control text-sm font-semibold transition-colors {{ request()->routeIs('platform.audit') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
-                        <x-icon name="history" class="w-4 h-4 shrink-0" />
-                        <span>{{ __('platform.audit') }}</span>
-                    </a>
+                    @if(in_array('audit.read', $platformPermissions, true))
+                        <a href="{{ route('platform.audit') }}"
+                           @if(request()->routeIs('platform.audit')) aria-current="page" @endif
+                           class="flex items-center gap-2.5 min-h-11 px-3 py-2 rounded-control text-sm font-semibold transition-colors {{ request()->routeIs('platform.audit') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
+                            <x-icon name="history" class="w-4 h-4 shrink-0" />
+                            <span>{{ __('platform.audit') }}</span>
+                        </a>
+                    @endif
+                    @if(in_array('support.bug_reports.view', $platformPermissions, true))
+                        <a href="{{ route('platform.bug-reports.index') }}"
+                           @if(request()->routeIs('platform.bug-reports.*')) aria-current="page" @endif
+                           class="flex items-center gap-2.5 min-h-11 px-3 py-2 rounded-control text-sm font-semibold transition-colors {{ request()->routeIs('platform.bug-reports.*') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
+                            <x-icon name="help" class="w-4 h-4 shrink-0" />
+                            <span>{{ __('platform.bug_reports') }}</span>
+                        </a>
+                    @endif
                 </div>
             @endif
 
@@ -113,6 +125,10 @@
                 <x-icon name="settings" class="w-4 h-4 shrink-0 text-text-muted" />
                 <span>{{ __('platform.profile') }}</span>
             </a>
+            <button type="button" data-report-problem-trigger class="w-full flex items-center gap-2.5 min-h-11 px-2.5 py-2 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors cursor-pointer text-start">
+                <x-icon name="help" class="w-4 h-4 shrink-0 text-text-muted" />
+                <span>{{ __('diagnostics.report_problem') }}</span>
+            </button>
             @if(auth()->check())
                 <div class="pt-2 mt-2 border-t border-border/70 flex items-center gap-2.5 px-2 py-1">
                     <div class="w-7 h-7 rounded-full bg-surface-soft text-text-secondary font-bold text-xs grid place-items-center shrink-0 border border-border">
@@ -169,15 +185,25 @@
                     @endif
                 </div>
 
-                @if(in_array('audit.read', $platformPermissions, true))
+                @if(in_array('audit.read', $platformPermissions, true) || in_array('support.bug_reports.view', $platformPermissions, true))
                     <div class="space-y-1">
                         <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_governance') }}</span>
-                        <a href="{{ route('platform.audit') }}"
-                           @if(request()->routeIs('platform.audit')) aria-current="page" @endif
-                           class="flex min-h-11 items-center gap-3 px-3 rounded-control text-sm font-medium transition-colors {{ request()->routeIs('platform.audit') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
-                            <x-icon name="history" class="w-5 h-5 shrink-0" />
-                            <span>{{ __('platform.audit') }}</span>
-                        </a>
+                        @if(in_array('audit.read', $platformPermissions, true))
+                            <a href="{{ route('platform.audit') }}"
+                               @if(request()->routeIs('platform.audit')) aria-current="page" @endif
+                               class="flex min-h-11 items-center gap-3 px-3 rounded-control text-sm font-medium transition-colors {{ request()->routeIs('platform.audit') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
+                                <x-icon name="history" class="w-5 h-5 shrink-0" />
+                                <span>{{ __('platform.audit') }}</span>
+                            </a>
+                        @endif
+                        @if(in_array('support.bug_reports.view', $platformPermissions, true))
+                            <a href="{{ route('platform.bug-reports.index') }}"
+                               @if(request()->routeIs('platform.bug-reports.*')) aria-current="page" @endif
+                               class="flex min-h-11 items-center gap-3 px-3 rounded-control text-sm font-medium transition-colors {{ request()->routeIs('platform.bug-reports.*') ? 'bg-primary-50 text-primary font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : 'text-text-secondary hover:bg-surface-soft hover:text-text-primary' }}">
+                                <x-icon name="help" class="w-5 h-5 shrink-0" />
+                                <span>{{ __('platform.bug_reports') }}</span>
+                            </a>
+                        @endif
                     </div>
                 @endif
 
@@ -210,6 +236,10 @@
                     <x-icon name="settings" class="w-5 h-5 shrink-0 text-text-muted" />
                     <span>{{ __('platform.profile') }}</span>
                 </a>
+                <button type="button" data-report-problem-trigger onclick="document.getElementById('platform-drawer-close')?.click()" class="w-full flex min-h-11 items-center gap-3 px-3 rounded-control text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors cursor-pointer text-start">
+                    <x-icon name="help" class="w-5 h-5 shrink-0 text-text-muted" />
+                    <span>{{ __('diagnostics.report_problem') }}</span>
+                </button>
                 @if(auth()->check())
                     <div class="pt-2 border-t border-border/70 flex items-center gap-3 px-3 py-1">
                         <div class="w-8 h-8 rounded-full bg-surface-soft text-text-secondary font-bold text-xs grid place-items-center shrink-0 border border-border">
@@ -344,6 +374,8 @@
             });
         });
     </script>
+
+    <x-problem-reporter />
 
     @livewireScripts
 </body>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Support\Diagnostics\SafeErrorLogger;
 use App\Support\Mobile\Contract\ContractConstants;
 use App\Support\Mobile\Contract\Exceptions\CanonicalSerializationException;
 use App\Support\Mobile\Contract\StrictJsonParser;
@@ -15,7 +16,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\PermissionRegistrar;
@@ -485,7 +485,7 @@ final class MobileV2ApiBoundary
             );
         }
 
-        Log::error('MobileApiV2InternalError: '.get_class($e));
+        SafeErrorLogger::reportBoundaryException('MobileApiV2InternalError: '.get_class($e), $e);
 
         return self::buildErrorResponse(
             code: 'INTERNAL_SERVER_ERROR',

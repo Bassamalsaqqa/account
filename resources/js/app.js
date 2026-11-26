@@ -22,13 +22,42 @@ import './company-data-download';
 import './money-display';
 import './table-navigation';
 import { isUpgradeResponse } from './maintenance-status';
+import { launchProblemReporter } from './problem-reporter-launcher';
 
-// Graceful 503 Maintenance Handling for Livewire
+// Graceful 503 Maintenance & Diagnostic Request-ID Correlation for Livewire
 if (typeof window !== 'undefined') {
+    const REQ_ID_RE = /^req_[0-9a-f]{32}$/;
+    const clearLastFailure = () => { window.__appLastFailedRequest = null; };
+    document.addEventListener('livewire:navigating', clearLastFailure);
+    window.addEventListener('pagehide', clearLastFailure);
+
+    document.addEventListener('click', (event) => {
+        const trigger = event.target?.closest?.('[data-report-problem-trigger]');
+        if (!trigger) return;
+        event.preventDefault();
+        launchProblemReporter(trigger);
+    });
+
     document.addEventListener('livewire:init', () => {
         if (window.Livewire && window.Livewire.hook) {
-            window.Livewire.hook('request', ({ fail }) => {
+            window.Livewire.hook('request', ({ respond, fail }) => {
+                let responseRequestId = null;
+                respond?.(({ status, response }) => {
+                    if (status >= 400) {
+                        const headerId = response?.headers?.get?.('X-Request-Id');
+                        responseRequestId = typeof headerId === 'string' && REQ_ID_RE.test(headerId) ? headerId : null;
+                        window.__appLastFailedRequest = { requestId: responseRequestId, status };
+                    } else {
+                        clearLastFailure();
+                    }
+                });
                 fail(({ status, content, preventDefault }) => {
+                    if (!responseRequestId) {
+                        window.__appLastFailedRequest = {
+                            requestId: null,
+                            status: Number.isInteger(status) ? status : null,
+                        };
+                    }
                     if (isUpgradeResponse(status, content)) {
                         preventDefault();
                         let banner = document.getElementById('maintenance-upgrade-banner');

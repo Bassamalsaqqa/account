@@ -12,7 +12,17 @@ use Illuminate\Support\Facades\DB;
 
 final class PlatformAccess
 {
-    public const array PERMISSIONS = ['company.read', 'company.provision', 'audit.read', 'subscription.manage', 'company.support', 'company.impersonate'];
+    /** @var list<string> */
+    public const array CORE_PERMISSIONS = ['company.read', 'company.provision', 'audit.read', 'subscription.manage', 'company.support', 'company.impersonate'];
+
+    /** @var list<string> */
+    public const array DIAGNOSTIC_PERMISSIONS = ['support.bug_reports.view', 'support.bug_reports.manage'];
+
+    /** @var list<string> */
+    public const array PERMISSIONS = [...self::CORE_PERMISSIONS, ...self::DIAGNOSTIC_PERMISSIONS];
+
+    /** @var list<string> */
+    public const array READ_PERMISSIONS = ['company.read', 'audit.read', 'company.provision', 'subscription.manage', 'support.bug_reports.view'];
 
     /** Re-read grant and identity on every action; callers lock grants inside write transactions. */
     public function authorize(string $permission, bool $lock = false): PlatformOperatorGrant
@@ -29,7 +39,7 @@ final class PlatformAccess
     /** Browsing requires the active operator grant, without repeating sign-in. */
     public function authorizeRead(string $permission): PlatformOperatorGrant
     {
-        if (! in_array($permission, ['company.read', 'audit.read', 'company.provision', 'subscription.manage'], true)) {
+        if (! in_array($permission, self::READ_PERMISSIONS, true)) {
             throw new AuthorizationException;
         }
         $request = request();

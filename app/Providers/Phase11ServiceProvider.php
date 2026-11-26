@@ -7,12 +7,12 @@ namespace App\Providers;
 use App\Http\Middleware\Phase11ApiBoundary;
 use App\Http\Middleware\Phase11ApiGuard;
 use App\Services\Security\CommandSessionGuard;
+use App\Support\Diagnostics\SafeErrorLogger;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
@@ -64,7 +64,11 @@ final class Phase11ServiceProvider extends ServiceProvider
         $handler->reportable(function (Throwable $exception) {
             $request = request();
             if ($request->is('api/v1') || $request->is('api/v1/*')) {
-                Log::error(get_class($exception), ['trace_id' => Phase11ApiBoundary::resolveTraceId($request)]);
+                SafeErrorLogger::reportBoundaryException(
+                    get_class($exception),
+                    $exception,
+                    ['trace_id' => Phase11ApiBoundary::resolveTraceId($request)],
+                );
 
                 return false;
             }

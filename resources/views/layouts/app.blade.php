@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="app-request-id" content="{{ \App\Support\Diagnostics\RequestId::forRequest(request()) }}">
+    <meta name="app-route-name" content="{{ \Illuminate\Support\Facades\Route::currentRouteName() ?? '' }}">
     <script>
         try {
             document.documentElement.dataset.sidebarCollapsed = localStorage.getItem('accounting.sidebar.collapsed') === 'true' ? 'true' : 'false';
@@ -461,8 +463,17 @@
             </div>
         </div>
 
-        <div class="p-3 px-4 border-t border-border text-xs text-text-muted bg-surface-soft/40 flex items-center justify-between">
-            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.workspace') }}</span>
+        <div class="p-3 px-4 border-t border-border text-xs text-text-muted bg-surface-soft/40 flex items-center justify-between gap-2">
+            <button type="button"
+                    data-report-problem-trigger
+                    @click="if (mobileMenuOpen) { mobileMenuOpen = false; }"
+                    :class="sidebarCollapsed ? 'lg:justify-center lg:px-0 lg:w-9' : ''"
+                    title="{{ __('diagnostics.report_problem') }}"
+                    aria-label="{{ __('diagnostics.report_problem') }}"
+                    class="inline-flex min-h-11 items-center gap-2 rounded-control px-2 text-xs font-semibold text-text-secondary hover:bg-surface hover:text-text-primary transition-colors cursor-pointer min-w-0">
+                <x-icon name="help" class="w-4 h-4 shrink-0" />
+                <span class="truncate" :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('diagnostics.report_problem') }}</span>
+            </button>
             <button @click="toggleSidebarCollapse"
                     type="button"
                     class="hidden lg:flex items-center justify-center w-7 h-7 rounded hover:bg-surface text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
@@ -593,6 +604,11 @@
                     <a href="{{ route('profile') }}" class="block px-4 py-2 hover:bg-surface-soft text-text-secondary hover:text-text-primary">
                         {{ __('app.profile') }}
                     </a>
+                    <button type="button"
+                            data-report-problem-trigger
+                            class="w-full text-start px-4 py-2 hover:bg-surface-soft text-text-secondary hover:text-text-primary cursor-pointer">
+                        {{ __('diagnostics.report_problem') }}
+                    </button>
                     <div class="border-t border-border my-1"></div>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
@@ -622,6 +638,8 @@
     </div>
 
     @include('layouts.mobile-navigation')
+
+    <x-problem-reporter />
 
     @livewireScripts
 </body>

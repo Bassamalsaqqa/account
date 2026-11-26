@@ -1,5 +1,6 @@
 @php
     $errorLocale = in_array($errorLocale ?? null, ['ar', 'en'], true) ? $errorLocale : 'ar';
+    $errorRequestId = \App\Support\Diagnostics\RequestId::current();
 @endphp
 <!DOCTYPE html>
 <html lang="{{ $errorLocale }}" dir="{{ $errorLocale === 'ar' ? 'rtl' : 'ltr' }}">
@@ -32,6 +33,23 @@
         h1 { margin: 0 0 .75rem; color: #172b4d; font-size: 1.75rem; line-height: 1.4; }
         p { margin: 0 0 1.5rem; }
         .status { margin-bottom: .5rem; color: #526174; font-weight: 600; text-align: start; }
+        .ref-box {
+            margin: 0 0 1.5rem;
+            padding: .75rem 1rem;
+            border: 1px solid #d6deea;
+            border-radius: .5rem;
+            background: #f5f7fb;
+            font-size: .875rem;
+        }
+        .ref-box code {
+            display: inline-block;
+            margin-top: .25rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-weight: 700;
+            color: #172033;
+            user-select: all;
+            word-break: break-all;
+        }
         a {
             display: inline-block;
             padding: .65rem 1rem;
@@ -50,6 +68,12 @@
 <body>
     <main aria-labelledby="error-title">
         @yield('content')
+        @if(!empty($errorRequestId))
+            <div class="ref-box">
+                <div>{{ __('errors.reference_label', [], $errorLocale) }}</div>
+                <code dir="ltr">{{ $errorRequestId }}</code>
+            </div>
+        @endif
         <a href="/">{{ __('errors.home', [], $errorLocale) }}</a>
     </main>
 </body>

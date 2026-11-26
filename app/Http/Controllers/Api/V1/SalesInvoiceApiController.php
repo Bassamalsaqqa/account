@@ -12,6 +12,7 @@ use App\Models\SalesInvoice;
 use App\Models\User;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Security\CommandSessionGuard;
+use App\Support\Diagnostics\SafeErrorLogger;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -19,7 +20,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
@@ -87,7 +87,7 @@ final class SalesInvoiceApiController extends ApiController
                 return $this->problem('Conflict', 409, 'The requested operation conflicts with the current resource state.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.5.8');
             }
 
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected server error occurred.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -152,7 +152,7 @@ final class SalesInvoiceApiController extends ApiController
                 return $this->problem('Conflict', 409, 'The requested operation conflicts with the current resource state.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.5.8');
             }
 
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected server error occurred.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -193,7 +193,7 @@ final class SalesInvoiceApiController extends ApiController
         } catch (AuthenticationException) {
             return $this->problem('Unauthorized', 401, 'Session authentication verification failed.', $traceId, 'https://tools.ietf.org/html/rfc7235#section-3.1');
         } catch (Throwable $e) {
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected error occurred while retrieving sales invoice.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -255,7 +255,7 @@ final class SalesInvoiceApiController extends ApiController
                 return $this->problem('Conflict', 409, 'Unable to compute invoice preview due to resource state conflict.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.5.8');
             }
 
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected server error occurred during preview.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }
@@ -353,7 +353,7 @@ final class SalesInvoiceApiController extends ApiController
                 return $this->problem('Conflict', 409, 'Invoice posting failed due to state conflict.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.5.8');
             }
 
-            Log::error(get_class($e), ['trace_id' => $traceId]);
+            SafeErrorLogger::reportBoundaryException(get_class($e), $e, ['trace_id' => $traceId]);
 
             return $this->problem('Internal Server Error', 500, 'An unexpected server error occurred during invoice execution.', $traceId, 'https://tools.ietf.org/html/rfc7231#section-6.6.1');
         }

@@ -67,6 +67,12 @@
             <h2 id="upgrade-title-en">We're updating the app. Back shortly.</h2>
             <p>System upgrades are in progress. Please wait a moment and refresh.</p>
         </div>
+        @php($errorRequestId = \App\Support\Diagnostics\RequestId::current())
+        @if(!empty($errorRequestId))
+            <p style="margin-top:1rem;font-size:0.8rem;color:#526174;">
+                <span dir="ltr" style="font-family:ui-monospace,monospace;font-weight:700;user-select:all;">{{ $errorRequestId }}</span>
+            </p>
+        @endif
     </main>
 </body>
 </html>
