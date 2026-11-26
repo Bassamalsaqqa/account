@@ -59,3 +59,25 @@ test('Save and Confirm queue reject before dispatch during a structural change, 
     await enqueueDocumentOperation(wire, 'saveDraft');
     assert.equal(calls, 1);
 });
+
+
+test('an initially empty document registers structural protection before its first row is added', async () => {
+    const priorDocument = globalThis.document;
+    const priorWindow = globalThis.window;
+    let init;
+    let registered = false;
+    const status = {};
+    const component = {el: {querySelector: selector => selector === '[data-row-mutation-status]' ? status : null, addEventListener() {}, removeEventListener() {}}, $wire: {$interceptMessage() {registered = true; return () => {};}}};
+    const cleanups = [];
+    try {
+        globalThis.document = {addEventListener: (name, callback) => {init = callback;}};
+        globalThis.window = {Livewire: {hook: (name, callback) => callback({component, cleanup: callback => cleanups.push(callback)})}};
+        await import('../../resources/js/document-row-mutations.js?empty-document');
+        init();
+        assert.equal(registered, true);
+        for (const cleanup of cleanups) cleanup();
+    } finally {
+        if (priorDocument === undefined) delete globalThis.document; else globalThis.document = priorDocument;
+        if (priorWindow === undefined) delete globalThis.window; else globalThis.window = priorWindow;
+    }
+});

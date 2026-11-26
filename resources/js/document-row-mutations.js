@@ -37,7 +37,8 @@ export function lockRowEditors(root) {
 }
 if (typeof document !== 'undefined') document.addEventListener('livewire:init', () => {
     window.Livewire.hook('component.init', ({component, cleanup}) => {
-        if (!component.el.querySelector('[data-document-row]')) return;
+        // Empty saved drafts can acquire rows later without component reinitialization.
+        if (!component.el.querySelector('[data-row-mutation-status]')) return;
         const releases = new Set();
         const showRetry = () => {
             const status = component.el.querySelector('[data-row-mutation-status]');
