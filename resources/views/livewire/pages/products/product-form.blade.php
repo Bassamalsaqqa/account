@@ -244,7 +244,7 @@
                 </div>
             @endif
         </div>
-        <details class="entry-options mt-4" @if($errors->hasAny(['category_id','brand_id']) || $category_id || $brand_id) open @endif>
+        <details class="entry-options mt-4" @if($errors->hasAny(['category_id','brand_id']) || $category_id || $brand_id || $showBrandModal || $moreOptionsOpen) open @endif>
             <summary>{{ __('workflow.more_options') }}</summary>
             <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3">            <!-- Category -->
             <div class="space-y-1">

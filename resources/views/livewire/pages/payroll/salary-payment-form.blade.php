@@ -182,8 +182,8 @@
             <p class="text-xs text-text-muted">{{ __('payroll.payment_allocation_hint') }}</p>
 
             @if(count($unpaidEntries) > 0)
-                <div class="rounded-control border border-border overflow-hidden">
-                    <div class="overflow-x-auto">
+                <div class="relative rounded-control border border-border overflow-hidden">
+                    <div class="relative overflow-x-auto">
                         <table class="data-table w-full text-sm text-start">
                             <thead class="bg-surface-soft border-b border-border text-xs text-text-muted">
                                 <tr>

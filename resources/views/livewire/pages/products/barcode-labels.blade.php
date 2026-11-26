@@ -6,20 +6,20 @@
                 <h1 class="text-2xl font-bold text-text-primary tracking-tight">@lang('labels.title')</h1>
                 <p class="mt-1 text-sm text-text-secondary">@lang('labels.subtitle')</p>
             </div>
-            <div class="flex flex-wrap items-center gap-4">
+            <div class="flex flex-wrap items-center gap-4 min-w-0">
                 <!-- Preset Selection -->
-                <div class="flex flex-col">
+                <div class="flex flex-col min-w-0 w-full sm:w-auto">
                     <label for="preset-select" class="text-xs font-semibold text-text-secondary mb-1">@lang('labels.sheet_preset')</label>
-                    <select id="preset-select" wire:model.live="preset" class="h-11 min-h-[44px] rounded-control border border-border shadow-xs text-sm focus:border-primary focus:ring-primary bg-surface text-text-primary px-3 py-2">
+                    <select id="preset-select" wire:model.live="preset" class="w-full max-w-full h-11 min-h-[44px] rounded-control border border-border shadow-xs text-sm focus:border-primary focus:ring-primary bg-surface text-text-primary px-3 py-2">
                         <option value="a4-3x8">@lang('labels.preset_3x8')</option>
                         <option value="a4-2x7">@lang('labels.preset_2x7')</option>
                     </select>
                 </div>
 
                 <!-- Language Selection -->
-                <div class="flex flex-col">
+                <div class="flex flex-col min-w-0 w-full sm:w-auto">
                     <label for="locale-select" class="text-xs font-semibold text-text-secondary mb-1">@lang('labels.label_language')</label>
-                    <select id="locale-select" wire:model.live="locale" class="h-11 min-h-[44px] rounded-control border border-border shadow-xs text-sm focus:border-primary focus:ring-primary bg-surface text-text-primary px-3 py-2">
+                    <select id="locale-select" wire:model.live="locale" class="w-full max-w-full h-11 min-h-[44px] rounded-control border border-border shadow-xs text-sm focus:border-primary focus:ring-primary bg-surface text-text-primary px-3 py-2">
                         <option value="ar">@lang('labels.arabic')</option>
                         <option value="en">@lang('labels.english')</option>
                     </select>
@@ -81,7 +81,7 @@
     <!-- Main Grid: Available (Search) vs Selected (Quantities) -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <!-- Left/Start Column: Search & Available Barcodes (7 cols) -->
-        <div class="lg:col-span-7 bg-surface shadow rounded-card border border-border p-6 flex flex-col">
+        <div class="lg:col-span-7 min-w-0 bg-surface shadow rounded-card border border-border p-6 flex flex-col">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                 <h2 class="text-lg font-semibold text-text-primary">@lang('labels.available_barcodes')</h2>
                 <div class="w-full sm:w-72">
@@ -97,7 +97,8 @@
             </div>
 
             <!-- Table of Available Barcodes -->
-            <div class="overflow-x-auto flex-1">
+            <div class="relative overflow-hidden flex-1">
+            <div class="overflow-x-auto">
                 <table class="data-table min-w-full divide-y divide-border text-sm">
                     <thead>
                         <tr class="bg-surface-soft text-text-secondary text-xs uppercase font-medium">
@@ -160,6 +161,7 @@
                     </tbody>
                 </table>
             </div>
+            </div>
 
             <div class="mt-4 pt-3 border-t border-border">
                 <x-table-pagination :paginator="$availableBarcodes" />
@@ -167,10 +169,11 @@
         </div>
 
         <!-- Right/End Column: Selected Barcodes & Quantities (5 cols) -->
-        <div class="lg:col-span-5 bg-surface shadow rounded-card border border-border p-6 flex flex-col">
+        <div class="lg:col-span-5 min-w-0 bg-surface shadow rounded-card border border-border p-6 flex flex-col">
             <h2 class="text-lg font-semibold text-text-primary mb-4">@lang('labels.selected_barcodes')</h2>
 
-            <div class="overflow-y-auto max-h-[550px] flex-1">
+            <div class="relative overflow-hidden flex-1">
+            <div class="overflow-x-auto overflow-y-auto max-h-[550px]">
                 <table class="data-table min-w-full divide-y divide-border text-sm">
                     <thead>
                         <tr class="bg-surface-soft text-text-secondary text-xs uppercase font-medium">
@@ -231,6 +234,7 @@
                         @endforelse
                     </tbody>
                 </table>
+            </div>
             </div>
         </div>
     </div>

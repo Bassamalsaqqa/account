@@ -101,6 +101,8 @@ class ProductForm extends Component
 
     public bool $showBrandModal = false;
 
+    public bool $moreOptionsOpen = false;
+
     public string $new_brand_name_ar = '';
 
     public string $new_brand_name_en = '';
@@ -525,6 +527,7 @@ class ProductForm extends Component
 
         $this->reset(['new_brand_name_ar', 'new_brand_name_en']);
         $this->resetErrorBag(['new_brand_name_ar', 'new_brand_name_en']);
+        $this->moreOptionsOpen = true;
         $this->showBrandModal = true;
     }
 

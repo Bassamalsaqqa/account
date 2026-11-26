@@ -391,4 +391,18 @@ class BrandManagementTest extends Phase5ETestCase
                 return $brands->contains('id', $inactiveBrand->id);
             });
     }
+
+    public function test_product_form_keeps_more_options_open_when_inline_brand_modal_closes(): void
+    {
+        $component = Livewire::test(ProductForm::class)
+            ->assertSet('moreOptionsOpen', false)
+            ->call('openCreateBrandModal')
+            ->assertSet('showBrandModal', true)
+            ->assertSet('moreOptionsOpen', true)
+            ->call('closeCreateBrandModal')
+            ->assertSet('showBrandModal', false)
+            ->assertSet('moreOptionsOpen', true);
+
+        $this->assertMatchesRegularExpression('/<details[^>]*class="entry-options[^"]*"[^>]*\bopen\b/', $component->html(false));
+    }
 }
