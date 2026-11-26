@@ -11,11 +11,17 @@
         </div>
 
         {{-- Side Selector Pill --}}
-        <div class="inline-flex rounded-control p-1 bg-surface-soft border border-border" role="tablist" aria-label="{{ __('accounting.opening_trade_balances_title') }}">
+        <div class="inline-flex rounded-control p-1 bg-surface-soft border border-border"
+             role="tablist"
+             aria-label="{{ __('accounting.opening_trade_balances_title') }}"
+             @keydown="window.handleTablistKeydown?.($event, $el)">
             <button
                 type="button"
                 role="tab"
+                id="tab-opening-customer"
+                aria-controls="panel-opening-customer"
                 aria-selected="{{ $side === 'customer' ? 'true' : 'false' }}"
+                tabindex="{{ $side === 'customer' ? '0' : '-1' }}"
                 wire:click="$set('side', 'customer')"
                 class="min-h-11 lg:min-h-9 px-3 py-1 text-xs font-bold rounded-control transition-colors cursor-pointer {{ $side === 'customer' ? 'bg-surface text-text-primary shadow-xs' : 'text-text-muted hover:text-text-primary' }}"
             >
@@ -24,7 +30,10 @@
             <button
                 type="button"
                 role="tab"
+                id="tab-opening-vendor"
+                aria-controls="panel-opening-vendor"
                 aria-selected="{{ $side === 'vendor' ? 'true' : 'false' }}"
+                tabindex="{{ $side === 'vendor' ? '0' : '-1' }}"
                 wire:click="$set('side', 'vendor')"
                 class="min-h-11 lg:min-h-9 px-3 py-1 text-xs font-bold rounded-control transition-colors cursor-pointer {{ $side === 'vendor' ? 'bg-surface text-text-primary shadow-xs' : 'text-text-muted hover:text-text-primary' }}"
             >
@@ -33,6 +42,11 @@
         </div>
     </div>
 
+    <div role="tabpanel"
+         id="panel-opening-{{ $side }}"
+         aria-labelledby="tab-opening-{{ $side }}"
+         tabindex="0"
+         class="space-y-4">
     {{-- Overlap Rejection Alert (No explanation banner; concise localized error) --}}
     @if ($glOverlapMessage)
         <div class="p-3 bg-danger-bg/20 border border-danger/30 rounded-control text-sm text-danger flex items-start gap-2.5" role="alert">
@@ -256,4 +270,5 @@
             </x-primary-button>
         </div>
     </form>
+    </div>
 </div>

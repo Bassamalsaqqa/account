@@ -64,8 +64,16 @@
                     @error('default_currency_code')<p role="alert" class="text-xs text-danger">{{ $message }}</p>@enderror
                 </div>
             </div>
-            <label class="inline-flex items-center gap-2 text-sm mt-3 min-h-11"><input type="checkbox" wire:model="active" class="rounded-control border-border" />{{ __('purchasing.active') }}</label>
-            @error('active')<p class="text-xs text-danger">{{ $message }}</p>@enderror
+            <label for="vendor-active" class="inline-flex min-h-11 min-w-11 items-center gap-2 text-sm mt-3 cursor-pointer">
+                <input id="vendor-active"
+                       type="checkbox"
+                       wire:model="active"
+                       aria-invalid="{{ $errors->has('active') ? 'true' : 'false' }}"
+                       @if ($errors->has('active')) aria-describedby="vendor-active-error" @endif
+                       class="size-5 rounded-control border-border text-primary accent-primary focus:ring-primary" />
+                <span>{{ __('purchasing.active') }}</span>
+            </label>
+            @error('active')<p id="vendor-active-error" role="alert" class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
         </fieldset>
 
 

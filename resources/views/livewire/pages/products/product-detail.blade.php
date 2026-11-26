@@ -17,7 +17,7 @@
                 <x-badge variant="info">{{ __('inventory.type_' . $product->product_type) }}</x-badge>
             </h1>
             @if ($product->name_en || $product->sku)
-                <p class="text-xs text-text-muted font-mono dir-ltr mt-1">
+                <p class="text-xs text-text-muted font-mono mt-1" dir="ltr">
                     {{ $product->sku ? 'SKU: ' . $product->sku : '' }}
                     {{ $product->sku && $product->name_en ? ' | ' : '' }}
                     {{ $product->name_en ?? '' }}
@@ -47,8 +47,8 @@
         <!-- Stock KPI -->
         <x-card padding="p-4" class="space-y-1">
             <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.total_stock') }}</div>
-            <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($stockTotal) }}
+            <div class="text-xl font-extrabold font-mono tabular-nums text-text-primary">
+                <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($stockTotal) }}</bdi>
                 <span class="text-xs font-normal text-text-secondary font-arabic">{{ (app()->getLocale() === 'en' && $product->baseUnit?->name_en) ? $product->baseUnit->name_en : $product->baseUnit?->name_ar }}</span>
             </div>
             <x-stock-breakdown :parts="$stockBreakdown" />
@@ -57,8 +57,8 @@
         <!-- Suggested Sale Price KPI -->
         <x-card padding="p-4" class="space-y-1">
             <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.suggested_sale_price') }}</div>
-            <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
-                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->default_sale_price_base ?? '—') }}
+            <div class="text-xl font-extrabold font-mono tabular-nums text-text-primary">
+                <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->default_sale_price_base ?? '—') }}</bdi>
                 <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
             </div>
         </x-card>
@@ -67,8 +67,8 @@
             <!-- Average Cost KPI -->
             <x-card padding="p-4" class="space-y-1">
                 <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.moving_average_cost') }}</div>
-                <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-primary">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->average_cost_base ?? '0.000000') }}
+                <div class="text-xl font-extrabold font-mono tabular-nums text-primary">
+                    <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->average_cost_base ?? '0.000000') }}</bdi>
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
                 </div>
             </x-card>
@@ -76,8 +76,8 @@
             <!-- Inventory Valuation KPI -->
             <x-card padding="p-4" class="space-y-1">
                 <div class="text-xs font-bold text-text-muted uppercase tracking-wider">{{ __('inventory.inventory_value') }}</div>
-                <div class="text-xl font-extrabold font-mono tabular-nums dir-ltr text-text-primary">
-                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->inventory_value_base ?? '0.000000') }}
+                <div class="text-xl font-extrabold font-mono tabular-nums text-text-primary">
+                    <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($costState?->inventory_value_base ?? '0.000000') }}</bdi>
                     <span class="text-xs font-normal text-text-secondary font-arabic">{{ $company->base_currency_code }}</span>
                 </div>
             </x-card>
@@ -87,66 +87,41 @@
     <!-- Navigation Tabs -->
     <div role="tablist"
          aria-label="{{ __('inventory.product_details') }}"
-         x-data="{
-             navigate(e) {
-                 const tabs = Array.from($el.querySelectorAll('[role=tab]:not([disabled])'));
-                 const currentIdx = tabs.indexOf(document.activeElement);
-                 if (currentIdx === -1) return;
-                 const isRtl = document.documentElement.dir === 'rtl' || document.body.dir === 'rtl';
-                 let nextIdx = currentIdx;
-                 if (e.key === 'ArrowRight') {
-                     nextIdx = isRtl ? (currentIdx - 1 + tabs.length) % tabs.length : (currentIdx + 1) % tabs.length;
-                 } else if (e.key === 'ArrowLeft') {
-                     nextIdx = isRtl ? (currentIdx + 1) % tabs.length : (currentIdx - 1 + tabs.length) % tabs.length;
-                 } else if (e.key === 'Home') {
-                     nextIdx = 0;
-                 } else if (e.key === 'End') {
-                     nextIdx = tabs.length - 1;
-                 } else {
-                     return;
-                 }
-                 e.preventDefault();
-                 tabs[nextIdx].focus();
-                 tabs[nextIdx].click();
-             }
-         }"
-         @keydown="navigate($event)"
-         role="tablist"
-         aria-label="{{ __('inventory.product_tabs') ?? 'تبويبات الصنف' }}"
+         @keydown="window.handleTablistKeydown?.($event, $el)"
          class="border-b border-border flex flex-wrap items-center gap-6 text-xs font-bold select-none">
         <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}" wire:click="setTab('overview')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.overview') }}
         </button>
         <button type="button" role="tab" id="tab-warehouses" aria-controls="panel-warehouses" aria-selected="{{ $activeTab === 'warehouses' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'warehouses' ? '0' : '-1' }}" wire:click="setTab('warehouses')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'warehouses' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'warehouses' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.stock_by_warehouse') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($warehouseBalances->count()) }})
         </button>
         @if ($product->track_expiry)
             <button type="button" role="tab" id="tab-lots" aria-controls="panel-lots" aria-selected="{{ $activeTab === 'lots' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'lots' ? '0' : '-1' }}" wire:click="setTab('lots')"
-                    class="pb-3 border-b-2 transition-colors {{ $activeTab === 'lots' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                    class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'lots' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                 {{ __('inventory.lots_and_expiry') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(($lots instanceof \Illuminate\Pagination\LengthAwarePaginator ? $lots->total() : $lots->count())) }})
             </button>
         @endif
         <button type="button" role="tab" id="tab-movements" aria-controls="panel-movements" aria-selected="{{ $activeTab === 'movements' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'movements' ? '0' : '-1' }}" wire:click="setTab('movements')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'movements' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'movements' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.stock_movements') }}
         </button>
         <button type="button" role="tab" id="tab-units" aria-controls="panel-units" aria-selected="{{ $activeTab === 'units' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'units' ? '0' : '-1' }}" wire:click="setTab('units')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'units' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'units' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.units') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->productUnits->count()) }})
         </button>
         <button type="button" role="tab" id="tab-barcodes" aria-controls="panel-barcodes" aria-selected="{{ $activeTab === 'barcodes' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'barcodes' ? '0' : '-1' }}" wire:click="setTab('barcodes')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'barcodes' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'barcodes' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.barcodes') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->barcodes->count()) }})
         </button>
         <button type="button" role="tab" id="tab-images" aria-controls="panel-images" aria-selected="{{ $activeTab === 'images' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'images' ? '0' : '-1' }}" wire:click="setTab('images')"
-                class="pb-3 border-b-2 transition-colors {{ $activeTab === 'images' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'images' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
             {{ __('inventory.images') }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->images->count()) }})
         </button>
         @if ($canViewPurchasingCost)
             <button type="button" role="tab" id="tab-purchase_history" aria-controls="panel-purchase_history" aria-selected="{{ $activeTab === 'purchase_history' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'purchase_history' ? '0' : '-1' }}" wire:click="setTab('purchase_history')"
-                    class="pb-3 border-b-2 transition-colors {{ $activeTab === 'purchase_history' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}" wire:loading.attr="disabled" wire:target="setTab">
+                    class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'purchase_history' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                 {{ __('purchasing.purchase_price_history') }}
             </button>
         @endif
@@ -182,7 +157,7 @@
                     </div>
                     <div>
                         <dt class="text-text-muted">{{ __('inventory.minimum_stock') }}</dt>
-                        <dd class="font-bold font-mono dir-ltr mt-0.5">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->minimum_stock_base ?? '0') }}</dd>
+                        <dd class="font-bold font-mono mt-0.5" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->minimum_stock_base ?? '0') }}</dd>
                     </div>
                 </dl>
 
@@ -241,7 +216,7 @@
                                         <x-badge variant="info">{{ __('inventory.default') }}</x-badge>
                                     @endif
                                 </td>
-                                <td class="p-3.5 text-center font-mono font-bold text-sm tabular-nums dir-ltr text-text-primary">
+                                <td class="p-3.5 text-center font-mono font-bold text-sm tabular-nums text-text-primary" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($bal->quantity_base) }}
                                     <x-stock-breakdown :parts="$warehouseBreakdowns[$bal->id]" />
                                 </td>
@@ -284,13 +259,13 @@
                                 $isExpired = $lb->lot && $lb->lot->isExpired();
                             @endphp
                             <tr>
-                                <td class="p-3.5 font-mono font-bold text-text-primary dir-ltr">
+                                <td class="p-3.5 font-mono font-bold text-text-primary" dir="ltr">
                                     {{ $lb->lot?->lot_number ?? __('inventory.lot_prefix') . $lb->lot_id }}
                                 </td>
                                 <td class="p-3.5 text-text-secondary">
                                     {{ app()->getLocale() === 'en' ? ($lb->warehouse?->name_en ?: $lb->warehouse?->name_ar) : $lb->warehouse?->name_ar }}
                                 </td>
-                                <td class="p-3.5 font-mono dir-ltr text-text-secondary">
+                                <td class="p-3.5 font-mono text-text-secondary" dir="ltr">
                                     {{ $lb->lot?->expiry_date ?? '—' }}
                                 </td>
                                 <td class="p-3.5 text-center">
@@ -304,7 +279,7 @@
                                         <span class="text-text-muted">—</span>
                                     @endif
                                 </td>
-                                <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
+                                <td class="p-3.5 text-center font-mono font-bold tabular-nums text-text-primary" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}
                                 </td>
                             </tr>
@@ -343,7 +318,7 @@
                     <tbody class="divide-y divide-border">
                         @forelse ($movements as $m)
                             <tr>
-                                <td class="p-3.5 font-mono dir-ltr text-text-secondary">
+                                <td class="p-3.5 font-mono text-text-secondary" dir="ltr">
                                     {{ $m->movement_date }}
                                 </td>
                                 <td class="p-3.5">
@@ -354,14 +329,14 @@
                                 <td class="p-3.5 text-text-secondary">
                                     {{ app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar }}
                                 </td>
-                                <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr {{ $m->isInbound() ? 'text-success' : 'text-danger' }}">
+                                <td class="p-3.5 text-center font-mono font-bold tabular-nums {{ $m->isInbound() ? 'text-success' : 'text-danger' }}" dir="ltr">
                                     {{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}
                                 </td>
                                 @if ($canViewCost)
-                                    <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
+                                    <td class="p-3.5 text-center font-mono tabular-nums text-text-secondary" dir="ltr">
                                         {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->unit_cost_base) }}
                                     </td>
-                                    <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
+                                    <td class="p-3.5 text-center font-mono font-bold tabular-nums text-text-primary" dir="ltr">
                                         {{ $m->value_delta_base }}
                                     </td>
                                 @endif
@@ -404,7 +379,7 @@
                                 <td class="p-3.5 font-bold text-text-primary">
                                     {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} ({{ $pu->unit?->code }})
                                 </td>
-                                <td class="p-3.5 text-center font-mono font-bold dir-ltr">
+                                <td class="p-3.5 text-center font-mono font-bold" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($pu->conversion_to_base) }}
                                 </td>
                                 <td class="p-3.5 text-center">
@@ -475,10 +450,10 @@
                     <tbody class="divide-y divide-border">
                         @forelse ($product->barcodes as $bc)
                             <tr>
-                                <td class="p-3.5 font-mono font-bold text-text-primary dir-ltr">
+                                <td class="p-3.5 font-mono font-bold text-text-primary" dir="ltr">
                                     {{ $bc->barcode }}
                                 </td>
-                                <td class="p-3.5 font-mono text-text-secondary dir-ltr">
+                                <td class="p-3.5 font-mono text-text-secondary" dir="ltr">
                                     {{ $bc->type }}
                                 </td>
                                 <td class="p-3.5 text-text-secondary">

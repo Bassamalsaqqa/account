@@ -49,26 +49,63 @@
 
     <!-- Tabs Header -->
     <div class="border-b border-border">
-        <nav class="flex flex-wrap gap-4">
-            <button wire:click="$set('tab', 'overview')" class="pb-3 text-sm font-semibold border-b-2 {{ $tab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
+        <div role="tablist"
+             aria-label="{{ __('payroll.employee') }}"
+             @keydown="window.handleTablistKeydown?.($event, $el)"
+             class="flex flex-wrap gap-4">
+            <button type="button"
+                    role="tab"
+                    id="tab-employee-overview"
+                    aria-controls="panel-employee-overview"
+                    aria-selected="{{ $tab === 'overview' ? 'true' : 'false' }}"
+                    tabindex="{{ $tab === 'overview' ? '0' : '-1' }}"
+                    wire:click="$set('tab', 'overview')"
+                    class="pb-3 text-sm font-semibold border-b-2 cursor-pointer {{ $tab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
                 {{ __('payroll.identity') }}
             </button>
             @if($detail['has_advance_manage'] || $detail['has_salary_view'])
-                <button wire:click="$set('tab', 'advances')" class="pb-3 text-sm font-semibold border-b-2 {{ $tab === 'advances' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
+                <button type="button"
+                        role="tab"
+                        id="tab-employee-advances"
+                        aria-controls="panel-employee-advances"
+                        aria-selected="{{ $tab === 'advances' ? 'true' : 'false' }}"
+                        tabindex="{{ $tab === 'advances' ? '0' : '-1' }}"
+                        wire:click="$set('tab', 'advances')"
+                        class="pb-3 text-sm font-semibold border-b-2 cursor-pointer {{ $tab === 'advances' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
                     {{ __('payroll.advances') }} ({{ $advanceCount }})
                 </button>
             @endif
             @if($detail['has_salary_view'])
-                <button wire:click="$set('tab', 'salaries')" class="pb-3 text-sm font-semibold border-b-2 {{ $tab === 'salaries' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
+                <button type="button"
+                        role="tab"
+                        id="tab-employee-salaries"
+                        aria-controls="panel-employee-salaries"
+                        aria-selected="{{ $tab === 'salaries' ? 'true' : 'false' }}"
+                        tabindex="{{ $tab === 'salaries' ? '0' : '-1' }}"
+                        wire:click="$set('tab', 'salaries')"
+                        class="pb-3 text-sm font-semibold border-b-2 cursor-pointer {{ $tab === 'salaries' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
                     {{ __('payroll.salary_entries') }} ({{ $salaryCount }})
                 </button>
-                <button wire:click="$set('tab', 'statement')" class="pb-3 text-sm font-semibold border-b-2 {{ $tab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
+                <button type="button"
+                        role="tab"
+                        id="tab-employee-statement"
+                        aria-controls="panel-employee-statement"
+                        aria-selected="{{ $tab === 'statement' ? 'true' : 'false' }}"
+                        tabindex="{{ $tab === 'statement' ? '0' : '-1' }}"
+                        wire:click="$set('tab', 'statement')"
+                        class="pb-3 text-sm font-semibold border-b-2 cursor-pointer {{ $tab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-secondary' }}">
                     {{ __('payroll.statement') }}
                 </button>
             @endif
-        </nav>
+        </div>
     </div>
 
+    <div role="tabpanel"
+         id="panel-employee-{{ $tab }}"
+         aria-labelledby="tab-employee-{{ $tab }}"
+         tabindex="0"
+         wire:key="employee-panel-{{ $tab }}"
+         wire:loading.class="opacity-70">
     <!-- Tab 1: Overview -->
     @if($tab === 'overview')
         <div class="rounded-card border border-border bg-surface p-6 space-y-6">
@@ -359,5 +396,6 @@
             </div>
         </div>
     @endif
+    </div>
 <x-standalone-reversal-review />
 </div>

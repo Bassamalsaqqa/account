@@ -119,27 +119,72 @@
 
     @if ($withCost || $canViewCost)
         <!-- Tabs Navigation -->
-        <div class="border-b border-border flex items-center gap-4 text-xs font-bold overflow-x-auto [&>button]:shrink-0 [&>button]:whitespace-nowrap">
-            <button type="button" wire:click="$set('activeTab', 'overview')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+        <div role="tablist"
+             aria-label="{{ __('purchasing.vendor_details') }}"
+             @keydown="window.handleTablistKeydown?.($event, $el)"
+             class="border-b border-border flex items-center gap-4 text-xs font-bold overflow-x-auto [&>button]:shrink-0 [&>button]:whitespace-nowrap">
+            <button type="button"
+                    role="tab"
+                    id="tab-vendor-overview"
+                    aria-controls="panel-vendor-overview"
+                    aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}"
+                    tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}"
+                    wire:click="$set('activeTab', 'overview')"
+                    class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'overview' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                 {{ __('purchasing.vendor_details') }}
             </button>
             @if ($canViewCost)
-                <button type="button" wire:click="$set('activeTab', 'products')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'products' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                <button type="button"
+                        role="tab"
+                        id="tab-vendor-products"
+                        aria-controls="panel-vendor-products"
+                        aria-selected="{{ $activeTab === 'products' ? 'true' : 'false' }}"
+                        tabindex="{{ $activeTab === 'products' ? '0' : '-1' }}"
+                        wire:click="$set('activeTab', 'products')"
+                        class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'products' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                     {{ __('purchasing.products_and_prices') }}
                 </button>
             @endif
             @if ($withCost)
-                <button type="button" wire:click="$set('activeTab', 'purchases')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'purchases' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                <button type="button"
+                        role="tab"
+                        id="tab-vendor-purchases"
+                        aria-controls="panel-vendor-purchases"
+                        aria-selected="{{ $activeTab === 'purchases' ? 'true' : 'false' }}"
+                        tabindex="{{ $activeTab === 'purchases' ? '0' : '-1' }}"
+                        wire:click="$set('activeTab', 'purchases')"
+                        class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'purchases' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                     {{ __('purchasing.purchases') }}
                 </button>
-                <button type="button" wire:click="$set('activeTab', 'returns')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'returns' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                <button type="button"
+                        role="tab"
+                        id="tab-vendor-returns"
+                        aria-controls="panel-vendor-returns"
+                        aria-selected="{{ $activeTab === 'returns' ? 'true' : 'false' }}"
+                        tabindex="{{ $activeTab === 'returns' ? '0' : '-1' }}"
+                        wire:click="$set('activeTab', 'returns')"
+                        class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'returns' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                     {{ __('purchasing.purchase_returns') }}
                 </button>
-                <button type="button" wire:click="$set('activeTab', 'payments')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'payments' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                <button type="button"
+                        role="tab"
+                        id="tab-vendor-payments"
+                        aria-controls="panel-vendor-payments"
+                        aria-selected="{{ $activeTab === 'payments' ? 'true' : 'false' }}"
+                        tabindex="{{ $activeTab === 'payments' ? '0' : '-1' }}"
+                        wire:click="$set('activeTab', 'payments')"
+                        class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'payments' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                     {{ __('purchasing.vendor_payments') }}
                 </button>
                 @if ($canStatement)
-                    <button type="button" wire:click="$set('activeTab', 'statement')" class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
+                    <button type="button"
+                            role="tab"
+                            id="tab-vendor-statement"
+                            aria-controls="panel-vendor-statement"
+                            aria-selected="{{ $activeTab === 'statement' ? 'true' : 'false' }}"
+                            tabindex="{{ $activeTab === 'statement' ? '0' : '-1' }}"
+                            wire:click="$set('activeTab', 'statement')"
+                            class="pb-3 border-b-2 cursor-pointer transition-colors {{ $activeTab === 'statement' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary' }}">
                         {{ __('purchasing.statement') }} & {{ __('purchasing.aging') }}
                     </button>
                 @endif
@@ -148,6 +193,7 @@
     @endif
 
     <!-- Tab Contents -->
+    <div @if ($withCost || $canViewCost) role="tabpanel" id="panel-vendor-{{ $activeTab }}" aria-labelledby="tab-vendor-{{ $activeTab }}" tabindex="0" @endif wire:key="vendor-panel-{{ $activeTab }}" wire:loading.class="opacity-70">
     @if ($activeTab === 'overview')
         <div class="space-y-5">
             <section class="bg-surface border border-border rounded-card p-4 sm:p-5">
@@ -602,4 +648,5 @@
             </div>
         </div>
     @endif
+    </div>
 </div>

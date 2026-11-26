@@ -49,10 +49,16 @@
             </div>
 
             <!-- Group Filter Tabs -->
-            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar" role="tablist" aria-label="{{ __('reports.groups.sales') }}">
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar"
+                 role="tablist"
+                 aria-label="{{ __('reports.title') }}"
+                 @keydown="window.handleTablistKeydown?.($event, $el)">
                 <button type="button"
                         role="tab"
+                        id="tab-report-group-all"
+                        aria-controls="panel-report-groups"
                         :aria-selected="activeGroup === 'all' ? 'true' : 'false'"
+                        :tabindex="activeGroup === 'all' ? '0' : '-1'"
                         @click="activeGroup = 'all'"
                         :class="activeGroup === 'all' ? 'bg-primary text-white shadow-xs font-extrabold' : 'bg-surface border border-border text-text-secondary hover:bg-surface-soft hover:text-text-primary font-bold'"
                         class="h-9 min-h-[36px] max-h-[36px] px-3.5 rounded-control text-xs whitespace-nowrap transition cursor-pointer shrink-0 box-border">
@@ -63,7 +69,10 @@
                 @foreach ($groups as $group => $reports)
                     <button type="button"
                             role="tab"
+                            id="tab-report-group-{{ $group }}"
+                            aria-controls="panel-report-groups"
                             :aria-selected="activeGroup === '{{ $group }}' ? 'true' : 'false'"
+                            :tabindex="activeGroup === '{{ $group }}' ? '0' : '-1'"
                             @click="activeGroup = '{{ $group }}'"
                             :class="activeGroup === '{{ $group }}' ? 'bg-primary text-white shadow-xs font-extrabold' : 'bg-surface border border-border text-text-secondary hover:bg-surface-soft hover:text-text-primary font-bold'"
                             class="h-9 min-h-[36px] max-h-[36px] px-3.5 rounded-control text-xs whitespace-nowrap transition cursor-pointer shrink-0 box-border">
@@ -99,6 +108,11 @@
             ];
         @endphp
 
+        <div id="panel-report-groups"
+             role="tabpanel"
+             :aria-labelledby="'tab-report-group-' + activeGroup"
+             tabindex="0"
+             class="space-y-4">
         <!-- Dense Report Workspace Table -->
         <div class="bg-surface border border-border rounded-xl shadow-xs overflow-hidden">
             <!-- Desktop Table View -->
@@ -135,7 +149,7 @@
                                             {{ __('reports.groups.'.$group) }}
                                         </span>
                                     </td>
-                                    <td class="py-3 px-4 font-mono text-xs text-text-muted dir-ltr">
+                                    <td class="py-3 px-4 font-mono text-xs text-text-muted" dir="ltr">
                                         {{ $report['key'] }}
                                     </td>
                                     <td class="py-3 px-4 text-end">
@@ -173,7 +187,7 @@
                                             <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold border {{ $groupBadgeColor }}">
                                                 {{ __('reports.groups.'.$group) }}
                                             </span>
-                                            <span class="font-mono text-xs text-text-muted dir-ltr">{{ $report['key'] }}</span>
+                                            <bdi dir="ltr" class="font-mono text-xs text-text-muted">{{ $report['key'] }}</bdi>
                                         </div>
                                     </div>
                                 </div>
@@ -196,6 +210,7 @@
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-control bg-surface-soft hover:bg-surface-muted text-sm font-bold text-text-primary border border-border transition cursor-pointer">
                 <span>{{ __('reports.reset') }}</span>
             </button>
+        </div>
         </div>
     @else
         <div class="rounded-xl bg-surface border border-border p-8 text-center text-sm text-text-secondary">

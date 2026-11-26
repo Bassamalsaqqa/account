@@ -69,10 +69,16 @@
 
         <div class="border-t border-border pt-6 space-y-4">
             <div>
-                <label class="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" wire:model="active" class="rounded text-primary focus:ring-primary">
+                <label for="employee-active" class="inline-flex min-h-11 min-w-11 items-center gap-2 cursor-pointer">
+                    <input id="employee-active"
+                           type="checkbox"
+                           wire:model="active"
+                           aria-invalid="{{ $errors->has('active') ? 'true' : 'false' }}"
+                           @if ($errors->has('active')) aria-describedby="employee-active-error" @endif
+                           class="size-5 rounded text-primary accent-primary focus:ring-primary">
                     <span class="text-sm font-semibold text-text-primary">{{ __('payroll.active') }}</span>
                 </label>
+                @error('active')<p id="employee-active-error" role="alert" class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
             </div>
             <div>
                 <label for="employee-notes" class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.notes') }}</label>

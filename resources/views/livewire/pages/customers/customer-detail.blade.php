@@ -126,30 +126,7 @@
     <!-- Navigation Tabs -->
     <div role="tablist"
          aria-label="{{ __('sales.customer_tabs') ?? 'تبويبات العميل' }}"
-         x-data="{
-             navigate(e) {
-                 const tabs = Array.from($el.querySelectorAll('[role=tab]'));
-                 const idx = tabs.indexOf(document.activeElement);
-                 if (idx === -1) return;
-                 let nextIdx = idx;
-                 const isRtl = document.documentElement.dir === 'rtl';
-                 if (e.key === 'ArrowRight') {
-                     nextIdx = isRtl ? (idx - 1 + tabs.length) % tabs.length : (idx + 1) % tabs.length;
-                 } else if (e.key === 'ArrowLeft') {
-                     nextIdx = isRtl ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
-                 } else if (e.key === 'Home') {
-                     nextIdx = 0;
-                 } else if (e.key === 'End') {
-                     nextIdx = tabs.length - 1;
-                 } else {
-                     return;
-                 }
-                 e.preventDefault();
-                 tabs[nextIdx].focus();
-                 tabs[nextIdx].click();
-             }
-         }"
-         @keydown="navigate($event)"
+         @keydown="window.handleTablistKeydown?.($event, $el)"
          class="border-b border-border flex items-center gap-2 overflow-x-auto text-xs font-bold">
         <button type="button" role="tab" id="tab-customer-overview" aria-controls="panel-customer-overview"
                 aria-selected="{{ $activeTab === 'overview' ? 'true' : 'false' }}" tabindex="{{ $activeTab === 'overview' ? '0' : '-1' }}"
