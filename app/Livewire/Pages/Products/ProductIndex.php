@@ -143,6 +143,8 @@ class ProductIndex extends Component
 
         if ($canViewCost) {
             $query->with('costState');
+        } else {
+            $query->with('costState:id,product_id,quantity_base');
         }
 
         // Camera barcode filter takes precedence for exact matching; bounds strictly verified
@@ -207,7 +209,7 @@ class ProductIndex extends Component
                 });
         }
 
-        $products = $query->with(['category', 'baseUnit', 'costState', 'primaryImage'])
+        $products = $query
             ->orderByRaw('COALESCE(name_ar, name_en) ASC')
             ->orderBy('id')
             ->paginate($this->tablePageSize());

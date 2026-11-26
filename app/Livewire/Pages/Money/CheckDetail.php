@@ -104,6 +104,7 @@ class CheckDetail extends Component
 
         return view('livewire.pages.money.check-detail', ['check' => $check, 'events' => $check->events()->get(), 'payment' => $payment,
             'sourceAdapter' => $adapter,
+            'canViewFx' => $this->canMoney('reports.financial.view'),
             'banks' => $canManage ? app(EligibleMoneyAccounts::class)->query($this->pageCompanyId, 'bank')->where('currency_code', $check->currency_code)->get() : collect(), 'canManage' => $canManage, 'canUndo' => $canUndo]);
     }
 }

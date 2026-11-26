@@ -184,6 +184,7 @@ class PaymentDetail extends Component
         }
 
         return view('livewire.pages.purchasing.payment-detail', [
+            'canViewFx' => $user->hasPermissionTo('reports.financial.view'),
             'canReverse' => $canReverse,
             'canAllocate' => $canAllocate,
             'openPurchases' => $openPurchases,

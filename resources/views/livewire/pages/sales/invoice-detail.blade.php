@@ -270,7 +270,7 @@
                             <th class="py-2.5 px-4 text-start">{{ __('sales.payment_number') }}</th>
                             <th class="py-2.5 px-4 text-start">{{ __('sales.date') }}</th>
                             <th class="py-2.5 px-4 text-start">{{ __('sales.allocated') }}</th>
-                            <th class="py-2.5 px-4 text-start">{{ __('sales.realized_fx') }}</th>
+                            @if ($canViewFx)<th class="py-2.5 px-4 text-start">{{ __('sales.realized_fx') }}</th>@endif
                             <th class="py-2.5 px-4 text-end">{{ __('sales.actions') }}</th>
                         </tr>
                     </thead>
@@ -286,9 +286,11 @@
                                 <td class="py-2.5 px-4 font-bold" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $alloc->payment->currency_code) }} {{ $alloc->payment->currency_code }}
                                 </td>
+                                @if ($canViewFx)
                                 <td class="py-2.5 px-4 font-mono" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->realized_fx_gain_loss_base) }}
                                 </td>
+                                @endif
                                 <td class="table-actions py-2.5 px-4 text-end">
                                     <a href="{{ route('payments.show', $alloc->payment->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
                                          {{ __('sales.payment_details') }}

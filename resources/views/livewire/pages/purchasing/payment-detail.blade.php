@@ -233,7 +233,7 @@
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.allocated') }}</th>
-                        <th class="py-2.5 px-4 text-start">{{ __('purchasing.realized_fx') }}</th>
+                        @if ($canViewFx)<th class="py-2.5 px-4 text-start">{{ __('purchasing.realized_fx') }}</th>@endif
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.status') }}</th>
                     </tr>
                 </thead>
@@ -260,7 +260,7 @@
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            @if ($canViewFx)<td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php
                                     $fxVal = $alloc->realized_fx_gain_loss_base;
                                     $isPos = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($fxVal);
@@ -273,7 +273,7 @@
                                         —
                                     @endif
                                 </span>
-                            </td>
+                            </td>@endif
                             <td class="py-2.5 px-4 text-text-secondary">
                                 @if ($payment->is_reversed || $alloc->applicationEvent?->reversed_at !== null)
                                     <span class="px-2 py-0.5 rounded-full text-sm font-bold bg-danger-bg text-danger">
@@ -292,7 +292,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="5" class="py-6 text-center text-text-muted">
+                            <td colspan="{{ $canViewFx ? 5 : 4 }}" class="py-6 text-center text-text-muted">
                                 {{ __('purchasing.unallocated_advance') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
                             </td>
                         </tr>

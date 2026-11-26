@@ -135,6 +135,11 @@ class InventorySecurityAndCostMaskingTest extends TestCase
         // Cost values must NOT be rendered in response HTML
         $component->assertDontSee('75.50');
         $component->assertDontSee('755.00');
+        foreach ($component->viewData('products') as $product) {
+            if ($product->costState !== null) {
+                $this->assertEqualsCanonicalizing(['id', 'product_id', 'quantity_base'], array_keys($product->costState->getAttributes()));
+            }
+        }
 
         // 2. Owner with inventory.cost.view
         app(CompanyContext::class)->setCompany($this->companyA, $this->ownerUser);

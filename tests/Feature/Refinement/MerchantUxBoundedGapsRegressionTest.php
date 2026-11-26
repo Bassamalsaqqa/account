@@ -33,6 +33,7 @@ use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\Feature\Phase6\Phase6TestCase;
 
 class MerchantUxBoundedGapsRegressionTest extends Phase6TestCase
@@ -438,6 +439,11 @@ class MerchantUxBoundedGapsRegressionTest extends Phase6TestCase
             ->assertSee($invoice->invoice_number)
             ->assertSee('100.00')
             ->assertSee('USD');
+
+        $this->owner->roles()->firstOrFail()->revokePermissionTo('reports.financial.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $twoEventsComponent->call('$refresh')->assertStatus(200)->assertViewHas('canViewFx', false)
+            ->assertDontSee(__('purchasing.realized_fx'));
     }
 
     /**

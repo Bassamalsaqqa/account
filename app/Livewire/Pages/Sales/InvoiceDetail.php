@@ -295,6 +295,7 @@ class InvoiceDetail extends Component
             'canVoid' => $canVoid,
             'canShare' => $canShare,
             'canViewCost' => $canViewCost,
+            'canViewFx' => $user->hasPermissionTo('reports.financial.view'),
             'canReturn' => $canReturn,
             'canPay' => $canPay,
             'canCreateInvoice' => $user->hasPermissionTo('sales.invoice.create'),

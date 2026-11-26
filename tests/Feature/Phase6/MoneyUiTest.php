@@ -96,6 +96,29 @@ class MoneyUiTest extends Phase6TestCase
         Livewire::test(CheckDetail::class, ['publicId' => $outgoing->public_id])->assertForbidden();
     }
 
+    public function test_check_and_transfer_fx_are_hidden_when_financial_permission_is_revoked(): void
+    {
+        $check = $this->check();
+        $this->event($check, 'deposit');
+        $event = $this->event($check->fresh(), 'clear', '3.60');
+        $transfer = app(PostMoneyTransferAction::class)->execute($this->company, $this->owner, [
+            'from_money_account_id' => $this->usdCashAccount->id, 'to_money_account_id' => $this->ilsCashAccount->id,
+            'transfer_date' => '2026-10-03', 'from_amount' => '1', 'to_amount' => '3.60',
+            'from_exchange_rate' => '3.50', 'to_exchange_rate' => '1', 'idempotency_key' => 'fx-visibility-transfer',
+        ]);
+        $checkPage = Livewire::test(CheckDetail::class, ['publicId' => $check->public_id])
+            ->assertStatus(200)->assertViewHas('canViewFx', true)->assertSee(__('money.realized_fx'));
+        $transferPage = Livewire::test(TransferDetail::class, ['publicId' => $transfer->public_id])
+            ->assertStatus(200)->assertViewHas('canViewFx', true)->assertSee(__('money.realized_fx'));
+        $before = (string) $event->fx_gain_loss_base;
+        $this->owner->roles()->firstOrFail()->revokePermissionTo('reports.financial.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        foreach ([$checkPage, $transferPage] as $page) {
+            $page->call('$refresh')->assertStatus(200)->assertViewHas('canViewFx', false)->assertDontSee(__('money.realized_fx'));
+        }
+        $this->assertSame($before, (string) $event->fresh()->fx_gain_loss_base);
+    }
+
     public function test_disabled_currency_accounts_are_not_offered_in_new_money_forms(): void
     {
         CompanyCurrency::where('company_id', $this->company->id)->where('currency_code', 'USD')->update(['enabled' => false]);

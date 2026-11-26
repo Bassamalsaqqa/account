@@ -12,7 +12,7 @@
 <section class="rounded-card border border-border bg-surface p-4 sm:p-6 space-y-3">
 <h2 class="font-bold">{{ __('money.history') }}</h2>@foreach($events as $event)<article class="flex flex-wrap justify-between gap-3 border-b border-border py-2">
 <span>{{ __('money.'.$event->to_status) }}</span>
-<span>{{ $event->event_date->toDateString() }}</span>@if($event->fx_gain_loss_base !== null)<span>{{ __('money.realized_fx') }}: <bdi>{{ $event->fx_gain_loss_base }} {{ $check->base_currency_code }}</bdi>
+<span>{{ $event->event_date->toDateString() }}</span>@if($canViewFx && $event->fx_gain_loss_base !== null)<span>{{ __('money.realized_fx') }}: <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($event->fx_gain_loss_base, $check->base_currency_code) }} {{ $check->base_currency_code }}</bdi>
 </span>@endif</article>@endforeach</section>
 @if($canManage && !in_array($check->status, ['returned', 'cancelled'], true))<section class="rounded-card border border-border bg-surface p-4 sm:p-6 space-y-4">@if($errors->any())<div role="alert" class="rounded-control border border-danger/20 bg-danger-bg p-3 text-sm text-danger">@foreach($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div>@endif<label class="block min-w-0 text-sm space-y-1">
 <span>{{ __('money.date') }}</span>

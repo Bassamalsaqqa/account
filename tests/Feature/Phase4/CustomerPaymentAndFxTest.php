@@ -10,6 +10,7 @@ use App\Actions\Sales\CreateSalesInvoiceDraftAction;
 use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Actions\Sales\ReverseCustomerPaymentAction;
+use App\Livewire\Pages\Sales\InvoiceDetail;
 use App\Livewire\Pages\Sales\PaymentForm;
 use App\Models\Company;
 use App\Models\Customer;
@@ -25,6 +26,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use InvalidArgumentException;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 class CustomerPaymentAndFxTest extends TestCase
@@ -107,6 +109,26 @@ class CustomerPaymentAndFxTest extends TestCase
         ]);
 
         return $postAction->execute($invoice, $this->user);
+    }
+
+    public function test_invoice_realized_fx_is_redacted_after_financial_permission_revocation(): void
+    {
+        $invoice = $this->createAndPostInvoice('USD', '3.50', '100');
+        app(PostCustomerPaymentAction::class)->execute($this->company, $this->user, [
+            'customer_id' => $this->customer->id,
+            'money_account_id' => $this->usdCashAccount->id,
+            'payment_date' => Carbon::now()->toDateString(),
+            'payment_method' => 'cash', 'amount' => '100', 'exchange_rate' => '3.60',
+            'idempotency_key' => 'fx-visibility-receipt',
+            'allocations' => [['sales_invoice_id' => $invoice->id, 'allocated_amount' => '100']],
+        ]);
+        $page = Livewire::test(InvoiceDetail::class, ['publicId' => $invoice->public_id])
+            ->assertStatus(200)->assertViewHas('canViewFx', true)->assertSee(__('sales.realized_fx'));
+        $this->user->roles()->firstOrFail()->revokePermissionTo('reports.financial.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $page->call('$refresh')->assertStatus(200)->assertViewHas('canViewFx', false)
+            ->assertDontSee(__('sales.realized_fx'))->assertDontSee('10.00');
+        $this->assertSame('10.000000', CustomerPaymentAllocation::sole()->realized_fx_gain_loss_base);
     }
 
     public static function receiptFormLocales(): array

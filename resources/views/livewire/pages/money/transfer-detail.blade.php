@@ -13,8 +13,9 @@
 <p class="text-sm">{{ __('money.rate') }}: <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($transfer->getAttribute($side.'_exchange_rate')) }}</bdi>
 </p>
 </div>@endforeach</div>
-<p>{{ __('money.realized_fx') }}: <bdi>{{ $transfer->fx_gain_loss_base }} {{ $transfer->base_currency_code }}</bdi>
+@if($canViewFx)<p>{{ __('money.realized_fx') }}: <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($transfer->fx_gain_loss_base, $transfer->base_currency_code) }} {{ $transfer->base_currency_code }}</bdi>
 </p>
+@endif
 <p class="break-words">{{ $transfer->notes }}</p>
 </section>
 @if($canReverse && !$transfer->is_reversed)<x-secondary-button wire:click="openReversalReview">{{ __('money.reverse_transfer') }}</x-secondary-button>@endif

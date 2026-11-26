@@ -180,7 +180,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="4" class="py-6 text-center text-text-muted">
+                            <td colspan="{{ $canViewFx ? 4 : 3 }}" class="py-6 text-center text-text-muted">
                                 {{ __('sales.unallocated_amount') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}
                             </td>
                         </tr>

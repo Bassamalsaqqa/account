@@ -50,6 +50,6 @@ class TransferDetail extends Component
 
     public function render(): View
     {
-        return view('livewire.pages.money.transfer-detail', ['transfer' => $this->transfer(), 'canReverse' => $this->canMoney('money.transfer.reverse')]);
+        return view('livewire.pages.money.transfer-detail', ['transfer' => $this->transfer(), 'canReverse' => $this->canMoney('money.transfer.reverse'), 'canViewFx' => $this->canMoney('reports.financial.view')]);
     }
 }
