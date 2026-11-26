@@ -320,6 +320,16 @@ class SettingsNavigationTruthTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_export_password_confirmation_returns_owner_to_data_section(): void
+    {
+        $this->actingAs($this->owner);
+        session()->forget('auth.password_confirmed_at');
+        Livewire::withQueryParams(['section' => 'data'])->test(SettingsIndex::class)
+            ->call('prepareCompanyDataDownload')
+            ->assertRedirect(route('password.confirm'));
+        $this->assertSame(route('settings.index', ['section' => 'data']), session('url.intended'));
+    }
+
     public function test_sidebar_active_highlights_for_catalogs_labels_and_money_routes(): void
     {
         $routes = [

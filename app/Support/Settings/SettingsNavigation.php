@@ -255,6 +255,7 @@ class SettingsNavigation
     /**
      * Group permitted settings sections into non-empty ordered navigation groups.
      *
+     * @param  array<string, array{key: string, label: string, icon: string, url: string, is_livewire_section: bool, group: string}>|null  $sections
      * @return list<array{
      *     key: string,
      *     label: string,
@@ -268,9 +269,9 @@ class SettingsNavigation
      *     }>
      * }>
      */
-    public static function groupedSections(?Company $company = null, ?User $user = null): array
+    public static function groupedSections(?Company $company = null, ?User $user = null, ?array $sections = null): array
     {
-        $sections = self::sections($company, $user);
+        $sections ??= self::sections($company, $user);
         $byGroup = [];
 
         foreach ($sections as $section) {

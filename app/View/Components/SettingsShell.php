@@ -50,7 +50,7 @@ class SettingsShell extends Component
         $context = app(CompanyContext::class);
         $this->company = $company ?? ($context->hasCompany() ? $context->company() : null);
         $this->sections = SettingsNavigation::sections($this->company);
-        $this->groupedSections = SettingsNavigation::groupedSections($this->company);
+        $this->groupedSections = SettingsNavigation::groupedSections($this->company, sections: $this->sections);
     }
 
     public function currentSectionLabel(): string

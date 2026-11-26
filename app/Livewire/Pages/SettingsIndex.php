@@ -192,7 +192,7 @@ class SettingsIndex extends Component
         $company = $this->verifiedCompany($context);
         abort_unless(CompanyUser::query()->where('company_id', $company->id)
             ->where('user_id', auth()->id())->where('status', 'active')->where('is_owner', true)->exists(), 403);
-        $this->ensurePasswordIsConfirmed();
+        $this->ensurePasswordIsConfirmed('data');
     }
 
     protected function resetMessages(): void
@@ -201,13 +201,13 @@ class SettingsIndex extends Component
         $this->successMessage = null;
     }
 
-    protected function ensurePasswordIsConfirmed(): bool
+    protected function ensurePasswordIsConfirmed(?string $returnSection = null): bool
     {
         $confirmedAt = (int) session('auth.password_confirmed_at', 0);
         $timeout = (int) config('auth.password_timeout', 10800);
 
         if ($confirmedAt <= 0 || (time() - $confirmedAt) >= $timeout) {
-            session()->put('url.intended', route('settings.index'));
+            session()->put('url.intended', route('settings.index', $returnSection === 'data' ? ['section' => 'data'] : []));
             $this->errorMessage = __('settings.password_confirmation_required');
             $this->redirect(route('password.confirm'));
 

@@ -14,7 +14,9 @@ use App\Models\User;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Settings\SettingsNavigation;
 use App\Support\Tenancy\CompanyContext;
+use App\View\Components\SettingsShell;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -31,6 +33,22 @@ class SharedSettingsShellTest extends TestCase
     protected Company $companyB;
 
     protected CompanyContext $context;
+
+    public function test_shell_groups_the_existing_permitted_sections_without_repeating_owner_lookup(): void
+    {
+        $this->actingAs($this->owner);
+        $this->context->setCompany($this->companyA, $this->owner);
+        $ownerLookups = 0;
+        DB::listen(static function ($query) use (&$ownerLookups): void {
+            if (str_contains($query->sql, 'company_user') && str_contains($query->sql, 'is_owner')) {
+                $ownerLookups++;
+            }
+        });
+        $shell = new SettingsShell(company: $this->companyA);
+        $this->assertSame(1, $ownerLookups);
+        $groupedKeys = collect($shell->groupedSections)->flatMap(fn ($group) => array_column($group['items'], 'key'))->all();
+        $this->assertEqualsCanonicalizing(array_keys($shell->sections), $groupedKeys);
+    }
 
     protected function setUp(): void
     {
