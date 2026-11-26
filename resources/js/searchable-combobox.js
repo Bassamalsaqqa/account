@@ -697,6 +697,10 @@ export function searchableCombobox(config) {
         },
 
         closeOverlay({ restoreFocus = false, preserveQuery = false } = {}) {
+            ++generation;
+            if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+            this.searching = false;
+            this.loadingMore = false;
             const wasSheet = this.overlayMode === 'sheet';
             this.open = false;
             if (!preserveQuery) {
@@ -1134,8 +1138,6 @@ export function searchableCombobox(config) {
             const prevQuery = this.query;
             const prevItems = this.items;
             const prevHasMore = this.hasMore;
-            const wasSheet = this.overlayMode === 'sheet';
-
             this.selectedId = null;
             this.selectedLabel = '';
             this.query = '';
@@ -1152,11 +1154,7 @@ export function searchableCombobox(config) {
             this.$dispatch('combobox-cleared', { id: this.id });
             if (typeof this.$nextTick === 'function') {
                 this.$nextTick(() => {
-                    if (wasSheet && this.$refs?.sheetInput?.focus) {
-                        this.$refs.sheetInput.focus({ preventScroll: true });
-                    } else {
-                        this.$refs.searchInput?.focus?.({ preventScroll: true });
-                    }
+                    this.$refs.searchInput?.focus?.({ preventScroll: true });
                 });
             }
 

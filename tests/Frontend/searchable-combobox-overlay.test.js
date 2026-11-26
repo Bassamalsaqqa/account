@@ -219,3 +219,36 @@ test('syncFromServerProps updates morph attributes and row_key without clobberin
     assert.equal(comp.query, 'typed-by-user');
     comp.destroy();
 });
+
+
+test('dismissed slow browse cannot reopen or supersede the next active picker', async () => {
+    closeActiveCombobox();
+    const first = makeComponent({ id: 'slow-picker' });
+    const second = makeComponent({ id: 'next-picker' });
+    let finish;
+    first.$wire = { searchSelector: () => new Promise(resolve => { finish = resolve; }) };
+    const pending = first.performSearch();
+    second.openOverlay();
+    first.closeOverlay();
+    finish({ items: [{ id: 1, label: 'Late option' }], has_more: false });
+    await pending;
+    assert.equal(first.open, false);
+    assert.equal(second.open, true);
+    assert.equal(getActiveComboboxId(), 'next-picker');
+    first.destroy(); second.destroy();
+});
+
+test('clearing a sheet restores the visible trigger, never the hidden sheet input', async () => {
+    const comp = makeComponent({ value: 1, label: 'Selected' });
+    let triggerFocus = 0;
+    let sheetFocus = 0;
+    comp.overlayMode = 'sheet';
+    comp.$refs.searchInput.focus = () => { triggerFocus++; };
+    comp.$refs.sheetInput = { focus() { sheetFocus++; } };
+    comp.$wire = { $set: async () => {} };
+    await comp.clear();
+    assert.equal(comp.open, false);
+    assert.equal(triggerFocus, 1);
+    assert.equal(sheetFocus, 0);
+    comp.destroy();
+});
