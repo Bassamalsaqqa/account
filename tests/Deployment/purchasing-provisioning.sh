@@ -49,6 +49,7 @@ chmod 0755 "$FIXTURE/php"
 export APP_DIR="$FIXTURE/app" PUBLIC_DIR="$FIXTURE/web"
 export PHP_BIN="$FIXTURE/php" COMPOSER_BIN="$FIXTURE/app/composer.phar"
 export COMMAND_TRACE="$FIXTURE/commands"
+export RELEASE_EXPECTED_CODE=1111111111111111111111111111111111111111
 
 verify_success() {
     local mode="$1"

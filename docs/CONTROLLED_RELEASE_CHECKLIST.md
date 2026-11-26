@@ -8,7 +8,7 @@ Operational procedure only — **not** evidence that a release, backup, restore,
 2. Establish a coherent off-host recovery point (SQL + code/build + public media + private files + config + separate `APP_KEY`/`APP_PREVIOUS_KEYS` custody) with completeness manifest and ciphertext SHA-256. Local archives do not prove off-host recovery.
 3. Using the **currently deployed code**, enter maintenance (`artisan down --render="errors.503" --retry=60`) or preserve existing maintenance/bypass ownership, and verify unauthenticated 503 response. Stop on failure.
 4. Capture schema + full business-row fingerprints (not row counts alone), config, public/private file fingerprints, and `.htaccess` custody.
-5. Check out the exact accepted revision and stage its matching `public/build`. Refuse symlinked public roots.
+5. Check out the exact accepted revision and stage its matching `public/build` and generated `bootstrap/cache/release.json`. Supply `RELEASE_EXPECTED_CODE` to deployment; verify the cached version/SHA/asset digest and visible version. Refuse symlinked public roots.
 
 ## 2. Deployment Preparation (`bin/deploy.sh`)
 

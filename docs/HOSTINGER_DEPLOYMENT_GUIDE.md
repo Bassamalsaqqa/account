@@ -55,8 +55,10 @@ Follow pre-change backup, fingerprint, and maintenance rules in [Controlled Rele
 
 ```bash
 cd /home/u556956644/domains/palsync.net/accounting
-PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
+RELEASE_EXPECTED_CODE=<accepted-full-SHA> PHP_BIN=/opt/alt/php84/usr/bin/php ./bin/deploy.sh
 ```
+
+After the final clean source commit and `npm run build`, generate artifact identity with `php bin/release-identity.php --write --expected-code=<accepted-full-SHA>`. Transfer its private `bootstrap/cache/release.json` alongside the matching build. Deployment checks source/version/assets before mutation and cached identity before publication. `VERSION` advances the web release independently of Android; unstamped development builds show “Build unverified”. Never generate identity from the latest remote revision or reuse stale metadata on rollback.
 
 Defaults skip migrations and bootstraps; pass `--run-migrations`, `--run-purchasing-bootstrap`, `--run-documents-bootstrap`, or `--run-bootstrap` only for explicitly reviewed releases. `bin/deploy.sh` preserves live `.htaccess` byte-for-byte (requiring `x-httpd-alt-php84` and `application/manifest+json` for `.webmanifest`), atomically swaps `public_html/account/build`, and leaves maintenance held until `/opt/alt/php84/usr/bin/php artisan up`.
 

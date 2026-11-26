@@ -736,6 +736,7 @@ class DeploymentScriptContractTest extends TestCase
         file_put_contents($runner, implode("\n", [
             '#!/usr/bin/env bash',
             'export APP_DIR="'.$unixFixtureDir.'/app"',
+            'export RELEASE_EXPECTED_CODE=1111111111111111111111111111111111111111',
             'export PUBLIC_DIR="'.$unixFixtureDir.'/web"',
             'export PHP_BIN="'.$unixStubPhp.'"',
             'export COMPOSER_BIN="'.$unixFixtureDir.'/app/composer.phar"',

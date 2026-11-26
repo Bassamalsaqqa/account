@@ -158,6 +158,13 @@ fi
 
 normalize_static_build_permissions "$APP_DIR/public/build"
 
+# Metadata travels with the qualified artifact; never infer a release from the newest remote HEAD.
+if [ -z "${RELEASE_EXPECTED_CODE:-}" ]; then
+    echo "ERROR: RELEASE_EXPECTED_CODE must pin the qualified full source SHA." >&2
+    exit 1
+fi
+"$PHP_BIN" bin/release-identity.php --check --expected-code="$RELEASE_EXPECTED_CODE"
+
 if [ -f "$APP_DIR/storage/framework/down" ] || [ -f "$APP_DIR/storage/framework/maintenance.php" ]; then
     PREEXISTING_MAINTENANCE=1
     echo "===> Notice: Pre-existing maintenance mode detected."
@@ -344,6 +351,7 @@ fi
 
 echo "===> [5/7] Warming production caches..."
 "$PHP_BIN" artisan config:cache
+"$PHP_BIN" bin/release-identity.php --check-cache --expected-code="$RELEASE_EXPECTED_CODE"
 "$PHP_BIN" artisan route:cache
 "$PHP_BIN" artisan view:cache
 "$PHP_BIN" artisan event:cache
