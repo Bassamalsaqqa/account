@@ -9,7 +9,7 @@
             <p class="text-xs text-text-secondary mt-1">{{ __('inventory.brand_subtitle') }}</p>
         </div>
 
-        <button wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
+        <button id="brand-add-trigger" wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
                 class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
             <x-icon name="plus" class="w-4 h-4" />
             <span>{{ __('inventory.add_brand') }}</span>
@@ -62,7 +62,7 @@
                             <td class="p-3.5">
                                 <span class="font-bold text-text-primary block">{{ $brand->name_ar }}</span>
                                 @if ($brand->name_en)
-                                    <span class="text-xs text-text-muted dir-ltr block">{{ $brand->name_en }}</span>
+                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $brand->name_en }}</bdi>
                                 @endif
                             </td>
                             <td class="p-3.5 text-center font-mono font-bold text-text-primary">
@@ -86,7 +86,7 @@
                                 </button>
                             </td>
                             <td class="table-actions p-3.5 text-center">
-                                <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $brand->id }})"
+                                <button id="brand-edit-desktop-{{ $brand->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $brand->id }})"
                                         class="touch-action text-primary hover:underline font-bold text-xs">
                                     {{ __('inventory.edit') }}
                                 </button>
@@ -110,7 +110,7 @@
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.brand_name') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $brand->name_ar }}</span>
                                 @if ($brand->name_en)
-                                    <span class="text-xs text-text-muted dir-ltr block">{{ $brand->name_en }}</span>
+                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $brand->name_en }}</bdi>
                                 @endif</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
@@ -138,7 +138,7 @@
                             </div>
                             <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $brand->id }})"
+                                <dd class="break-words text-sm tabular-nums text-text-primary"><button id="brand-edit-mobile-{{ $brand->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $brand->id }})"
                                         class="touch-action text-primary hover:underline font-bold text-xs">
                                     {{ __('inventory.edit') }}
                                 </button></dd>
@@ -166,61 +166,47 @@
 
     <!-- Create/Edit Modal -->
     @if ($showModal)
-        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.closeModal()"
-             role="dialog" aria-modal="true" aria-labelledby="brand-modal-title"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 space-y-4">
-                <div class="flex items-center justify-between border-b border-border pb-3">
-                    <h3 id="brand-modal-title" class="font-extrabold text-sm text-text-primary flex items-center gap-2">
-                        <x-icon name="box" class="w-4 h-4 text-primary" />
-                        <span>{{ $editingId ? __('inventory.edit_brand') : __('inventory.add_brand') }}</span>
-                    </h3>
-                    <button wire:loading.attr="disabled" type="button" aria-label="{{ __('inventory.close') }}" wire:click="closeModal"
-                            class="touch-action text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
+        <x-dialog-shell :title="$editingId ? __('inventory.edit_brand') : __('inventory.add_brand')" title-id="brand-modal-title" close-action="closeModal" save-target="save" max-width="max-w-md">
+            <div class="space-y-3 text-sm">
+                <div>
+                    <label for="brand-name-ar" class="block font-bold text-text-secondary mb-1">
+                        {{ __('inventory.brand_name_ar') }} <span class="text-danger">*</span>
+                    </label>
+                    <input id="brand-name-ar" type="text" wire:model="name_ar" dir="rtl"
+                           aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_ar')) aria-describedby="brand-name-ar-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_ar') border-danger @enderror" />
+                    @error('name_ar')
+                        <span role="alert" id="brand-name-ar-error" class="text-danger text-xs">{{ $message }}</span>
+                    @enderror
                 </div>
-
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label for="brand-name-ar" class="block font-bold text-text-secondary mb-1">
-                            {{ __('inventory.brand_name_ar') }} <span class="text-danger">*</span>
-                        </label>
-                        <input id="brand-name-ar" type="text" wire:model="name_ar" dir="rtl"
-                               @error('name_ar') aria-invalid="true" aria-describedby="brand-name-ar-error" @enderror
-                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_ar') border-danger @enderror" />
-                        @error('name_ar')
-                            <span role="alert" id="brand-name-ar-error" class="text-danger text-xs">{{ $message }}</span>
-                        @enderror
-                    </div>
-                    <div>
-                        <label for="brand-name-en" class="block font-bold text-text-secondary mb-1">
-                            {{ __('inventory.brand_name_en') }}
-                        </label>
-                        <input id="brand-name-en" type="text" wire:model="name_en" dir="ltr"
-                               @error('name_en') aria-invalid="true" aria-describedby="brand-name-en-error" @enderror
-                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_en') border-danger @enderror" />
-                        @error('name_en')
-                            <span role="alert" id="brand-name-en-error" class="text-danger text-xs">{{ $message }}</span>
-                        @enderror
-                    </div>
-                    <div class="pt-2">
-                        <label for="brand-active" class="flex items-center gap-2 cursor-pointer select-none">
-                            <input id="brand-active" type="checkbox" wire:model="active" class="rounded border-border text-primary focus:ring-primary w-4 h-4" />
-                            <span class="font-bold text-text-primary">{{ __('inventory.active') }}</span>
-                        </label>
-                    </div>
+                <div>
+                    <label for="brand-name-en" class="block font-bold text-text-secondary mb-1">
+                        {{ __('inventory.brand_name_en') }}
+                    </label>
+                    <input id="brand-name-en" type="text" wire:model="name_en" dir="ltr"
+                           aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_en')) aria-describedby="brand-name-en-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_en') border-danger @enderror" />
+                    @error('name_en')
+                        <span role="alert" id="brand-name-en-error" class="text-danger text-xs">{{ $message }}</span>
+                    @enderror
                 </div>
-
-                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                    <button wire:loading.attr="disabled" type="button" wire:click="closeModal"
-                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-sm font-semibold">
-                        {{ __('inventory.cancel') }}
-                    </button>
-                    <button type="button" wire:click="save" wire:loading.attr="disabled"
-                            class="touch-action bg-primary text-white hover:bg-primary-hover text-sm font-bold shadow-button">
-                        {{ __('inventory.save') }}
-                    </button>
+                <div class="pt-1">
+                    <label for="brand-active" class="inline-flex min-h-11 items-center gap-2 cursor-pointer select-none">
+                        <input id="brand-active" type="checkbox" wire:model="active" class="size-5 rounded border-border text-primary accent-primary focus:ring-primary" />
+                        <span class="font-bold text-text-primary">{{ __('inventory.active') }}</span>
+                    </label>
                 </div>
             </div>
-        </div>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="closeModal" wire:loading.attr="disabled">
+                    {{ __('inventory.cancel') }}
+                </x-secondary-button>
+                <x-primary-button type="button" wire:click="save" wire:loading.attr="disabled" wire:target="save">
+                    {{ __('inventory.save') }}
+                </x-primary-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
 </div>

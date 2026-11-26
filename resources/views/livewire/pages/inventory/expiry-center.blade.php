@@ -105,16 +105,16 @@
                                     {{ $lb->product?->name() }}
                                 </a>
                                 @if ($lb->product?->sku)
-                                    <span class="block text-xs font-mono text-text-muted dir-ltr">{{ $lb->product?->sku }}</span>
+                                    <bdi dir="ltr" class="block text-xs font-mono text-text-muted">{{ $lb->product?->sku }}</bdi>
                                 @endif
                             </td>
-                            <td class="p-3.5 font-mono dir-ltr font-bold text-text-primary">
+                            <td class="p-3.5 font-mono font-bold text-text-primary" dir="ltr">
                                 {{ $lb->lot?->lot_number ?? __('inventory.lot_prefix') . $lb->lot_id }}
                             </td>
                             <td class="p-3.5 text-text-secondary">
                                 {{ app()->getLocale() === 'en' && $lb->warehouse?->name_en ? $lb->warehouse->name_en : $lb->warehouse?->name_ar }}
                             </td>
-                            <td class="p-3.5 font-mono dir-ltr text-text-secondary">
+                            <td class="p-3.5 font-mono text-text-secondary" dir="ltr">
                                 <bdi dir="ltr">{{ $lb->lot?->expiry_date?->toDateString() ?? '—' }}</bdi>
                             </td>
                             <td class="p-3.5 text-center">
@@ -128,20 +128,20 @@
                                     <span class="text-text-muted">—</span>
                                 @endif
                             </td>
-                            <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}
+                            <td class="p-3.5 text-center font-mono font-bold tabular-nums text-text-primary">
+                                <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}</bdi>
                                 <span class="text-xs text-text-muted font-arabic">{{ app()->getLocale() === 'en' && $lb->product?->baseUnit?->name_en ? $lb->product->baseUnit->name_en : $lb->product?->baseUnit?->name_ar }}</span>
                             </td>
                             @if ($canViewCost)
-                                <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
-                                    {{ $approxVal ?? '—' }}
+                                <td class="p-3.5 text-center font-mono tabular-nums text-text-secondary">
+                                    <bdi dir="ltr">{{ $approxVal ?? '—' }}</bdi>
                                     <span class="text-xs text-text-muted">{{ $company->base_currency_code }}</span>
                                 </td>
                             @endif
                             @if ($canAdjust)
                                 <td class="table-actions p-3.5 text-center">
                                     @if ($isExpired)
-                                    <button wire:loading.attr="disabled" type="button" wire:click="openDisposalModal({{ $lb->id }})"
+                                    <button id="expiry-dispose-desktop-{{ $lb->id }}" wire:loading.attr="disabled" type="button" wire:click="openDisposalModal({{ $lb->id }})"
                                             class="touch-action bg-danger-bg hover:bg-danger/20 text-danger font-bold text-xs transition-colors">
                                         {{ __('inventory.dispose_expired') }}
                                     </button>
@@ -176,7 +176,7 @@
                                     {{ $lb->product?->name() }}
                                 </a>
                                 @if ($lb->product?->sku)
-                                    <span class="block text-xs font-mono text-text-muted dir-ltr">{{ $lb->product?->sku }}</span>
+                                    <bdi dir="ltr" class="block text-xs font-mono text-text-muted">{{ $lb->product?->sku }}</bdi>
                                 @endif</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
@@ -219,7 +219,7 @@
                                 <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary">@if ($isExpired)
-                                    <button wire:loading.attr="disabled" type="button" wire:click="openDisposalModal({{ $lb->id }})"
+                                    <button id="expiry-dispose-mobile-{{ $lb->id }}" wire:loading.attr="disabled" type="button" wire:click="openDisposalModal({{ $lb->id }})"
                                             class="touch-action bg-danger-bg hover:bg-danger/20 text-danger font-bold text-xs transition-colors">
                                         {{ __('inventory.dispose_expired') }}
                                     </button>
@@ -246,54 +246,41 @@
 
     <!-- Quick Disposal Modal -->
     @if ($showDisposalModal && $disposingLotBalance)
-        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showDisposalModal', false)" role="dialog" aria-modal="true" aria-labelledby="expiry-disposal-title" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl w-full max-w-md p-6 space-y-4">
-                <div class="flex items-center justify-between border-b border-border pb-3">
-                    <h3 id="expiry-disposal-title" class="font-extrabold text-sm text-text-primary flex items-center gap-2">
-                        <x-icon name="alert" class="w-4 h-4 text-danger" />
-                        <span>{{ __('inventory.confirm_disposal') }}</span>
-                    </h3>
-                    <button wire:loading.attr="disabled" type="button" aria-label="{{ __('inventory.close') }}" wire:click="$set('showDisposalModal', false)" class="touch-action text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
+        <x-dialog-shell :title="__('inventory.confirm_disposal')" title-id="expiry-disposal-title" close-action="$set('showDisposalModal', false)" save-target="confirmDisposal" max-width="max-w-md">
+            <div class="space-y-3 text-sm">
+                <div class="p-3 rounded-control bg-surface-soft border border-border space-y-1 text-xs">
+                    <div><span class="text-text-muted">{{ __('inventory.product') }}:</span> <span class="font-bold text-text-primary">{{ $disposingLotBalance->product?->name() }}</span></div>
+                    <div><span class="text-text-muted">{{ __('inventory.warehouse') }}:</span> <span class="text-text-secondary">{{ app()->getLocale() === 'en' && $disposingLotBalance->warehouse?->name_en ? $disposingLotBalance->warehouse->name_en : $disposingLotBalance->warehouse?->name_ar }}</span></div>
+                    <div><span class="text-text-muted">{{ __('inventory.lot_number') }}:</span> <bdi dir="ltr" class="font-mono">{{ $disposingLotBalance->lot?->lot_number }}</bdi></div>
+                    <div><span class="text-text-muted">{{ __('inventory.current_stock') }}:</span> <bdi dir="ltr" class="font-mono font-bold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($disposingLotBalance->quantity_base) }}</bdi> <span class="font-bold">{{ app()->getLocale() === 'en' && $disposingLotBalance->product?->baseUnit?->name_en ? $disposingLotBalance->product->baseUnit->name_en : $disposingLotBalance->product?->baseUnit?->name_ar }}</span></div>
                 </div>
 
-                <div class="space-y-3 text-xs">
-                    <div class="p-3 rounded-control bg-surface-soft border border-border space-y-1">
-                        <div><span class="text-text-muted">{{ __('inventory.product') }}:</span> <span class="font-bold text-text-primary">{{ $disposingLotBalance->product?->name() }}</span></div>
-                        <div><span class="text-text-muted">{{ __('inventory.warehouse') }}:</span> <span class="text-text-secondary">{{ app()->getLocale() === 'en' && $disposingLotBalance->warehouse?->name_en ? $disposingLotBalance->warehouse->name_en : $disposingLotBalance->warehouse?->name_ar }}</span></div>
-                        <div><span class="text-text-muted">{{ __('inventory.lot_number') }}:</span> <span class="font-mono dir-ltr">{{ $disposingLotBalance->lot?->lot_number }}</span></div>
-                        <div><span class="text-text-muted">{{ __('inventory.current_stock') }}:</span> <span class="font-mono font-bold">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($disposingLotBalance->quantity_base) }} {{ app()->getLocale() === 'en' && $disposingLotBalance->product?->baseUnit?->name_en ? $disposingLotBalance->product->baseUnit->name_en : $disposingLotBalance->product?->baseUnit?->name_ar }}</span></div>
-                    </div>
-
-                    <div>
-                        <label for="expiry-disposal-quantity" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_quantity') }} *</label>
-                        <input aria-invalid="{{ $errors->has('disposalQuantity') ? 'true' : 'false' }}" @if ($errors->has('disposalQuantity')) aria-describedby="expiry-disposal-quantity-error" @endif id="expiry-disposal-quantity" type="text" inputmode="decimal" wire:model="disposalQuantity" dir="ltr" class="w-full h-11 px-2.5 rounded-control border border-border text-xs font-mono" />
-                        @error('disposalQuantity') <span role="alert" id="expiry-disposal-quantity-error" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div>
-                        <label for="expiry-disposal-date" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_date') }} *</label>
-                        <input aria-invalid="{{ $errors->has('disposalDate') ? 'true' : 'false' }}" @if ($errors->has('disposalDate')) aria-describedby="expiry-disposal-date-error" @endif id="expiry-disposal-date" type="date" wire:model="disposalDate" dir="ltr" class="w-full h-11 px-2.5 rounded-control border border-border text-xs font-mono" />
-                        @error('disposalDate') <span role="alert" id="expiry-disposal-date-error" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div>
-                        <label for="expiry-disposal-reason" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_reason') }} *</label>
-                        <textarea aria-invalid="{{ $errors->has('disposalReason') ? 'true' : 'false' }}" @if ($errors->has('disposalReason')) aria-describedby="expiry-disposal-reason-error" @endif id="expiry-disposal-reason" wire:model="disposalReason" rows="2" dir="rtl" class="w-full p-2.5 rounded-control border border-border text-xs focus:outline-none focus:border-primary @error('disposalReason') border-danger @enderror"></textarea>
-                        @error('disposalReason') <span role="alert" id="expiry-disposal-reason-error" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
+                <div>
+                    <label for="expiry-disposal-quantity" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_quantity') }} *</label>
+                    <input aria-invalid="{{ $errors->has('disposalQuantity') ? 'true' : 'false' }}" @if ($errors->has('disposalQuantity')) aria-describedby="expiry-disposal-quantity-error" @endif id="expiry-disposal-quantity" type="text" inputmode="decimal" wire:model="disposalQuantity" dir="ltr" class="w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
+                    @error('disposalQuantity') <span role="alert" id="expiry-disposal-quantity-error" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
 
-                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                    <button wire:loading.attr="disabled" type="button" wire:click="$set('showDisposalModal', false)"
-                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-sm font-semibold">
-                        {{ __('common.cancel') }}
-                    </button>
-                    <button wire:loading.attr="disabled" type="button" wire:click="confirmDisposal"
-                            class="touch-action bg-danger text-white hover:bg-danger/90 text-sm font-bold shadow-button">
-                        {{ __('inventory.confirm_disposal_record_loss') }}
-                    </button>
+                <div>
+                    <label for="expiry-disposal-date" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_date') }} *</label>
+                    <input aria-invalid="{{ $errors->has('disposalDate') ? 'true' : 'false' }}" @if ($errors->has('disposalDate')) aria-describedby="expiry-disposal-date-error" @endif id="expiry-disposal-date" type="date" wire:model="disposalDate" dir="ltr" class="w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
+                    @error('disposalDate') <span role="alert" id="expiry-disposal-date-error" class="text-danger text-xs">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="expiry-disposal-reason" class="block font-bold text-text-secondary mb-1">{{ __('inventory.disposal_reason') }} *</label>
+                    <textarea aria-invalid="{{ $errors->has('disposalReason') ? 'true' : 'false' }}" @if ($errors->has('disposalReason')) aria-describedby="expiry-disposal-reason-error" @endif id="expiry-disposal-reason" wire:model="disposalReason" rows="2" dir="rtl" class="w-full p-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('disposalReason') border-danger @enderror"></textarea>
+                    @error('disposalReason') <span role="alert" id="expiry-disposal-reason-error" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
             </div>
-        </div>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="$set('showDisposalModal', false)" wire:loading.attr="disabled">
+                    {{ __('common.cancel') }}
+                </x-secondary-button>
+                <x-danger-button type="button" wire:click="confirmDisposal" wire:loading.attr="disabled" wire:target="confirmDisposal">
+                    {{ __('inventory.confirm_disposal_record_loss') }}
+                </x-danger-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
 </div>

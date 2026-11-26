@@ -9,7 +9,7 @@
         </div>
 
         @if ($canManage)
-            <button wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
+            <button id="category-add-trigger" wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
                     class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
                 <x-icon name="plus" class="w-4 h-4" />
                 <span>{{ __('inventory.add_category') }}</span>
@@ -51,7 +51,7 @@
                             <td class="p-3.5">
                                 <span class="font-bold text-text-primary block">{{ $cat->name_ar }}</span>
                                 @if ($cat->name_en)
-                                    <span class="text-xs text-text-muted dir-ltr block">{{ $cat->name_en }}</span>
+                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $cat->name_en }}</bdi>
                                 @endif
                             </td>
                             <td class="p-3.5 text-text-secondary">
@@ -73,7 +73,7 @@
                             @if ($canManage)
                                 <td class="table-actions p-3.5 text-center">
                                     <div class="flex items-center justify-center gap-2">
-                                        <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $cat->id }})"
+                                        <button id="category-edit-desktop-{{ $cat->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $cat->id }})"
                                                 class="touch-action text-primary hover:underline font-bold text-xs">
                                             {{ __('inventory.edit') }}
                                         </button>
@@ -104,7 +104,7 @@
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.category_name') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $cat->name_ar }}</span>
                                 @if ($cat->name_en)
-                                    <span class="text-xs text-text-muted dir-ltr block">{{ $cat->name_en }}</span>
+                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $cat->name_en }}</bdi>
                                 @endif</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
@@ -131,7 +131,7 @@
                                 <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><div class="flex items-center justify-center gap-2">
-                                        <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $cat->id }})"
+                                        <button id="category-edit-mobile-{{ $cat->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $cat->id }})"
                                                 class="touch-action text-primary hover:underline font-bold text-xs">
                                             {{ __('inventory.edit') }}
                                         </button>
@@ -161,60 +161,73 @@
 
     <!-- Create/Edit Modal -->
     @if ($showModal)
-        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showModal', false)" role="dialog" aria-modal="true" aria-labelledby="category-modal-title" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 space-y-4">
-                <div class="flex items-center justify-between border-b border-border pb-3">
-                    <h3 id="category-modal-title" class="font-extrabold text-sm text-text-primary">
-                        {{ $editingId ? __('inventory.edit_category') : __('inventory.add_category') }}
-                    </h3>
-                    <button aria-label="{{ __('inventory.close') }}" wire:loading.attr="disabled" type="button" wire:click="$set('showModal', false)" class="touch-action text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
+        <x-dialog-shell :title="$editingId ? __('inventory.edit_category') : __('inventory.add_category')" title-id="category-modal-title" close-action="$set('showModal', false)" save-target="save" max-width="max-w-md">
+            <div class="space-y-3 text-sm">
+                <div>
+                    <label for="category-name-ar" class="block font-bold text-text-secondary mb-1">{{ __('inventory.category_name_ar') }} *</label>
+                    <input id="category-name-ar"
+                           type="text"
+                           wire:model="name_ar"
+                           dir="rtl"
+                           aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_ar')) aria-describedby="category-name-ar-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_ar') border-danger @enderror" />
+                    @error('name_ar') <span id="category-name-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
-
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.category_name_ar') }} *</label>
-                        <input type="text" wire:model="name_ar" dir="rtl" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
-                        @error('name_ar') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.category_name_en') }}</label>
-                        <input type="text" wire:model="name_en" dir="ltr" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
-                        @error('name_en') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.parent_category') }}</label>
-                        <select wire:model="parent_id" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm">
-                            <option value="">{{ __('inventory.none_root') }}</option>
-                            @foreach ($parentOptions as $c)
-                                @if ($editingId !== $c->id)
-                                    <option value="{{ $c->id }}">{{ $c->name_ar }}</option>
-                                @endif
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.sort_order') }}</label>
-                        <input inputmode="numeric" type="number" wire:model="sort_order" dir="ltr" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
-                    </div>
-                    <div class="pt-2">
-                        <label class="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox" wire:model="active" class="rounded border-border text-primary w-4 h-4" />
-                            <span class="font-bold text-text-primary">{{ __('inventory.active') }}</span>
-                        </label>
-                    </div>
+                <div>
+                    <label for="category-name-en" class="block font-bold text-text-secondary mb-1">{{ __('inventory.category_name_en') }}</label>
+                    <input id="category-name-en"
+                           type="text"
+                           wire:model="name_en"
+                           dir="ltr"
+                           aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_en')) aria-describedby="category-name-en-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_en') border-danger @enderror" />
+                    @error('name_en') <span id="category-name-en-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
-
-                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                    <button wire:loading.attr="disabled" type="button" wire:click="$set('showModal', false)"
-                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-sm font-semibold">
-                        {{ __('inventory.cancel') }}
-                    </button>
-                    <button wire:loading.attr="disabled" type="button" wire:click="save"
-                            class="touch-action bg-primary text-white hover:bg-primary-hover text-sm font-bold shadow-button">
-                        {{ __('inventory.save') }}
-                    </button>
+                <div>
+                    <label for="category-parent-id" class="block font-bold text-text-secondary mb-1">{{ __('inventory.parent_category') }}</label>
+                    <select id="category-parent-id"
+                            wire:model="parent_id"
+                            aria-invalid="{{ $errors->has('parent_id') ? 'true' : 'false' }}"
+                            @if ($errors->has('parent_id')) aria-describedby="category-parent-id-error" @endif
+                            class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm">
+                        <option value="">{{ __('inventory.none_root') }}</option>
+                        @foreach ($parentOptions as $c)
+                            @if ($editingId !== $c->id)
+                                <option value="{{ $c->id }}">{{ $c->name_ar }}</option>
+                            @endif
+                        @endforeach
+                    </select>
+                    @error('parent_id') <span id="category-parent-id-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label for="category-sort-order" class="block font-bold text-text-secondary mb-1">{{ __('inventory.sort_order') }}</label>
+                    <input id="category-sort-order"
+                           inputmode="numeric"
+                           type="number"
+                           wire:model="sort_order"
+                           dir="ltr"
+                           aria-invalid="{{ $errors->has('sort_order') ? 'true' : 'false' }}"
+                           @if ($errors->has('sort_order')) aria-describedby="category-sort-order-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
+                    @error('sort_order') <span id="category-sort-order-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
+                </div>
+                <div class="pt-1">
+                    <label for="category-active" class="inline-flex min-h-11 items-center gap-2 cursor-pointer select-none">
+                        <input id="category-active" type="checkbox" wire:model="active" class="size-5 rounded border-border text-primary accent-primary focus:ring-primary" />
+                        <span class="font-bold text-text-primary">{{ __('inventory.active') }}</span>
+                    </label>
                 </div>
             </div>
-        </div>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="$set('showModal', false)" wire:loading.attr="disabled">
+                    {{ __('inventory.cancel') }}
+                </x-secondary-button>
+                <x-primary-button type="button" wire:click="save" wire:loading.attr="disabled" wire:target="save">
+                    {{ __('inventory.save') }}
+                </x-primary-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
 </div>

@@ -11,15 +11,16 @@
                 </p>
             </div>
 
-            <button type="button"
+            <button id="tax-rate-add-trigger"
+                    type="button"
                     wire:click="newTaxRate"
-                    class="h-10 min-h-[40px] px-4 rounded-control bg-primary text-white text-sm sm:text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer inline-flex items-center justify-center" wire:loading.attr="disabled" wire:target="newTaxRate">
+                    class="min-h-11 lg:min-h-9.5 px-4 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer inline-flex items-center justify-center" wire:loading.attr="disabled" wire:target="newTaxRate">
                 {{ __('sales.add_tax_rate') }}
             </button>
         </div>
 
         @if (session()->has('success'))
-            <div class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
+            <div role="status" class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
                 {{ session('success') }}
             </div>
         @endif
@@ -68,9 +69,10 @@
                                 @endif
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <button type="button"
+                                <button id="tax-rate-edit-trigger-{{ $tax->id }}"
+                                        type="button"
                                         wire:click="editTaxRate({{ $tax->id }})"
-                                        class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" wire:target="editTaxRate">
+                                        class="touch-action px-2.5 py-1 rounded-control bg-surface-soft hover:bg-surface-muted text-text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" wire:target="editTaxRate({{ $tax->id }})">
                                     {{ __('sales.edit') }}
                                 </button>
                             </td>
@@ -90,85 +92,127 @@
 
     <!-- Modal Form -->
     @if ($showFormModal)
-        <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4 max-h-[90dvh] overflow-y-auto">
-                <h3 class="font-bold text-base text-text-primary">
-                    {{ $editingTaxId ? __('sales.edit_tax_rate') : __('sales.new_tax_rate') }}
-                </h3>
+        <x-dialog-shell :title="$editingTaxId ? __('sales.edit_tax_rate') : __('sales.new_tax_rate')" title-id="tax-rate-modal-title" close-action="$set('showFormModal', false)" save-target="save" max-width="max-w-md">
+            <form id="tax-rate-form" wire:submit="save" class="space-y-3 text-sm">
+                <div>
+                    <label for="tax-code" class="block font-bold text-text-primary mb-1">{{ __('sales.settings_code') }} <span class="text-danger">*</span></label>
+                    <input id="tax-code"
+                           type="text"
+                           wire:model="code"
+                           dir="ltr"
+                           placeholder="VAT16"
+                           required
+                           aria-invalid="{{ $errors->has('code') ? 'true' : 'false' }}"
+                           @if ($errors->has('code')) aria-describedby="tax-code-error" @endif
+                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm uppercase font-mono" />
+                    @error('code') <span id="tax-code-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
 
-                <form wire:submit="save" class="space-y-3 text-xs">
+                <div>
+                    <label for="tax-name-ar" class="block font-bold text-text-primary mb-1">{{ __('sales.name_ar') }} <span class="text-danger">*</span></label>
+                    <input id="tax-name-ar"
+                           type="text"
+                           wire:model="name_ar"
+                           dir="rtl"
+                           required
+                           aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_ar')) aria-describedby="tax-name-ar-error" @endif
+                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                    @error('name_ar') <span id="tax-name-ar-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="tax-name-en" class="block font-bold text-text-primary mb-1">{{ __('sales.name_en') }}</label>
+                    <input id="tax-name-en"
+                           type="text"
+                           wire:model="name_en"
+                           dir="ltr"
+                           aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_en')) aria-describedby="tax-name-en-error" @endif
+                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                    @error('name_en') <span id="tax-name-en-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.settings_code') }} <span class="text-danger">*</span></label>
-                        <input type="text" wire:model="code" placeholder="VAT16" required class="w-full h-8 px-2 rounded-control border border-border uppercase font-mono" />
-                        @error('code') <span class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                        <label for="tax-rate" class="block font-bold text-text-primary mb-1">{{ __('sales.rate_percent') }} <span class="text-danger">*</span></label>
+                        <input id="tax-rate"
+                               type="number"
+                               inputmode="decimal"
+                               step="0.000001"
+                               min="0"
+                               max="100"
+                               wire:model="rate"
+                               required
+                               dir="ltr"
+                               aria-invalid="{{ $errors->has('rate') ? 'true' : 'false' }}"
+                               @if ($errors->has('rate')) aria-describedby="tax-rate-error" @endif
+                               class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm font-mono" />
+                        @error('rate') <span id="tax-rate-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                     </div>
 
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.name_ar') }} <span class="text-danger">*</span></label>
-                        <input type="text" wire:model="name_ar" required class="w-full h-8 px-2 rounded-control border border-border" />
-                        @error('name_ar') <span class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.name_en') }}</label>
-                        <input type="text" wire:model="name_en" class="w-full h-8 px-2 rounded-control border border-border" />
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block font-bold text-text-primary mb-1">{{ __('sales.rate_percent') }} <span class="text-danger">*</span></label>
-                            <input type="number" inputmode="decimal" step="0.000001" min="0" max="100" wire:model="rate" required dir="ltr" class="w-full h-8 px-2 rounded-control border border-border font-mono" />
-                            @error('rate') <span class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
-                        </div>
-
-                        <div>
-                            <label class="block font-bold text-text-primary mb-1">{{ __('sales.calculation') }} <span class="text-danger">*</span></label>
-                            <select wire:model="calculation" class="w-full h-8 px-2 rounded-control border border-border">
-                                <option value="exclusive">{{ __('sales.exclusive') }}</option>
-                                <option value="inclusive">{{ __('sales.inclusive') }}</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('purchasing.sales_tax_account') }} <span class="text-danger">*</span></label>
-                        <select wire:model="sales_tax_account_id" required class="w-full h-8 px-2 rounded-control border border-border">
-                            <option value="">{{ __('sales.select_tax_account') }}</option>
-                            @foreach ($accounts as $acc)
-                                <option value="{{ $acc->id }}">{{ $acc->code }} - {{ $acc->displayName() }}</option>
-                            @endforeach
+                        <label for="tax-calculation" class="block font-bold text-text-primary mb-1">{{ __('sales.calculation') }} <span class="text-danger">*</span></label>
+                        <select id="tax-calculation"
+                                wire:model="calculation"
+                                aria-invalid="{{ $errors->has('calculation') ? 'true' : 'false' }}"
+                                @if ($errors->has('calculation')) aria-describedby="tax-calculation-error" @endif
+                                class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                            <option value="exclusive">{{ __('sales.exclusive') }}</option>
+                            <option value="inclusive">{{ __('sales.inclusive') }}</option>
                         </select>
-                        @error('sales_tax_account_id') <span class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                        @error('calculation') <span id="tax-calculation-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                     </div>
+                </div>
 
-                    <div>
-                        <label for="purchaseTaxAccount" class="block font-bold text-text-primary mb-1">{{ __('purchasing.purchase_tax_account') }}</label>
-                        <select id="purchaseTaxAccount" wire:model="purchase_tax_account_id" class="w-full h-10 px-2 rounded-control border border-border">
-                            <option value="">{{ __('purchasing.not_configured') }}</option>
-                            @foreach ($purchaseAccounts as $account)
-                                <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->displayName() }}</option>
-                            @endforeach
-                        </select>
-                        <p class="text-text-secondary text-xs mt-1">{{ __('purchasing.purchase_tax_account_hint') }}</p>
-                        @error('purchase_tax_account_id') <span class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
+                <div>
+                    <label for="tax-sales-account" class="block font-bold text-text-primary mb-1">{{ __('purchasing.sales_tax_account') }} <span class="text-danger">*</span></label>
+                    <select id="tax-sales-account"
+                            wire:model="sales_tax_account_id"
+                            required
+                            aria-invalid="{{ $errors->has('sales_tax_account_id') ? 'true' : 'false' }}"
+                            @if ($errors->has('sales_tax_account_id')) aria-describedby="tax-sales-account-error" @endif
+                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                        <option value="">{{ __('sales.select_tax_account') }}</option>
+                        @foreach ($accounts as $acc)
+                            <option value="{{ $acc->id }}">{{ $acc->code }} - {{ $acc->displayName() }}</option>
+                        @endforeach
+                    </select>
+                    @error('sales_tax_account_id') <span id="tax-sales-account-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
 
-                    <div class="flex items-center gap-2 pt-2">
-                        <input type="checkbox" wire:model="active" id="taxActive" class="rounded" />
-                        <label for="taxActive" class="font-bold text-text-primary">{{ __('sales.active') }}</label>
-                    </div>
+                <div>
+                    <label for="purchaseTaxAccount" class="block font-bold text-text-primary mb-1">{{ __('purchasing.purchase_tax_account') }}</label>
+                    <select id="purchaseTaxAccount"
+                            wire:model="purchase_tax_account_id"
+                            aria-invalid="{{ $errors->has('purchase_tax_account_id') ? 'true' : 'false' }}"
+                            @if ($errors->has('purchase_tax_account_id')) aria-describedby="tax-purchase-account-error" @endif
+                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                        <option value="">{{ __('purchasing.not_configured') }}</option>
+                        @foreach ($purchaseAccounts as $account)
+                            <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->displayName() }}</option>
+                        @endforeach
+                    </select>
+                    <p class="text-text-secondary text-xs mt-1">{{ __('purchasing.purchase_tax_account_hint') }}</p>
+                    @error('purchase_tax_account_id') <span id="tax-purchase-account-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
 
-                    <div class="flex justify-end gap-2 pt-3 border-t border-border">
-                        <button type="button" wire:click="$set('showFormModal', false)" class="px-3 py-1.5 rounded-control border border-border text-sm font-bold">
-                            {{ __('sales.cancel') }}
-                        </button>
-                        <button type="submit" class="px-4 py-1.5 rounded-control bg-primary text-white text-sm font-bold">
-                            {{ __('sales.save') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                <div class="pt-1">
+                    <label for="taxActive" class="inline-flex min-h-11 items-center gap-2 font-bold text-text-primary cursor-pointer">
+                        <input type="checkbox" wire:model="active" id="taxActive" class="size-5 rounded text-primary accent-primary focus:ring-primary" />
+                        <span>{{ __('sales.active') }}</span>
+                    </label>
+                </div>
+            </form>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="$set('showFormModal', false)" wire:loading.attr="disabled">
+                    {{ __('sales.cancel') }}
+                </x-secondary-button>
+                <x-primary-button type="submit" form="tax-rate-form" wire:loading.attr="disabled" wire:target="save">
+                    {{ __('sales.save') }}
+                </x-primary-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
     </div>
 </x-settings-shell>

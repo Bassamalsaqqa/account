@@ -11,15 +11,16 @@
                 </p>
             </div>
 
-            <button type="button"
+            <button id="money-account-add-trigger"
+                    type="button"
                     wire:click="newAccount"
-                    class="h-10 min-h-[40px] px-4 rounded-control bg-primary text-white text-sm sm:text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer inline-flex items-center justify-center" wire:loading.attr="disabled" wire:target="newAccount">
+                    class="min-h-11 lg:min-h-9.5 px-4 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-xs cursor-pointer inline-flex items-center justify-center" wire:loading.attr="disabled" wire:target="newAccount">
                 {{ __('sales.add_account') }}
             </button>
         </div>
 
     @if (session()->has('success'))
-        <div class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
+        <div role="status" class="p-3 bg-success-bg border border-success/30 rounded-control text-success text-xs font-bold">
             {{ session('success') }}
         </div>
     @endif
@@ -64,9 +65,10 @@
                                 @endif
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
-                                <button type="button"
+                                <button id="money-account-edit-trigger-{{ $acc->id }}"
+                                        type="button"
                                         wire:click="editAccount({{ $acc->id }})"
-                                        class="px-2.5 py-1 rounded-control bg-surface-soft hover:bg-slate-200 text-text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" wire:target="editAccount">
+                                        class="touch-action px-2.5 py-1 rounded-control bg-surface-soft hover:bg-surface-muted text-text-primary text-xs font-bold transition-colors" wire:loading.attr="disabled" wire:target="editAccount({{ $acc->id }})">
                                     {{ __('sales.edit') }}
                                 </button>
                             </td>
@@ -86,74 +88,115 @@
 
     <!-- Modal Form -->
     @if ($showFormModal)
-        <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
-                <h3 class="font-bold text-base text-text-primary">
-                    {{ $editingAccountId ? __('sales.edit_money_account') : __('sales.new_money_account') }}
-                </h3>
+        <x-dialog-shell :title="$editingAccountId ? __('sales.edit_money_account') : __('sales.new_money_account')" title-id="money-account-modal-title" close-action="$set('showFormModal', false)" save-target="save" max-width="max-w-md">
+            <form id="money-account-form" wire:submit="save" class="space-y-3 text-sm">
+                <div>
+                    <label for="money-account-type" class="block font-bold text-text-primary mb-1">{{ __('sales.type') }} <span class="text-danger">*</span></label>
+                    <select id="money-account-type"
+                            wire:model="account_type"
+                            @disabled($editingAccountId !== null)
+                            aria-invalid="{{ $errors->has('account_type') ? 'true' : 'false' }}"
+                            @if ($errors->has('account_type')) aria-describedby="money-account-type-error" @endif
+                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                        <option value="cash">{{ __('sales.cash') }}</option>
+                        <option value="bank">{{ __('sales.bank') }}</option>
+                    </select>
+                    @error('account_type') <span id="money-account-type-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
 
-                <form wire:submit="save" class="space-y-3 text-xs">
+                <div>
+                    <label for="money-account-name-ar" class="block font-bold text-text-primary mb-1">{{ __('sales.name_ar') }} <span class="text-danger">*</span></label>
+                    <input id="money-account-name-ar"
+                           type="text"
+                           wire:model="name_ar"
+                           dir="rtl"
+                           required
+                           aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_ar')) aria-describedby="money-account-name-ar-error" @endif
+                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                    @error('name_ar') <span id="money-account-name-ar-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="money-account-name-en" class="block font-bold text-text-primary mb-1">{{ __('sales.name_en') }}</label>
+                    <input id="money-account-name-en"
+                           type="text"
+                           wire:model="name_en"
+                           dir="ltr"
+                           aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_en')) aria-describedby="money-account-name-en-error" @endif
+                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                    @error('name_en') <span id="money-account-name-en-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="money-account-currency" class="block font-bold text-text-primary mb-1">{{ __('sales.currency') }} <span class="text-danger">*</span></label>
+                    <select id="money-account-currency"
+                            wire:model="currency_code"
+                            @disabled($editingAccountId !== null)
+                            aria-invalid="{{ $errors->has('currency_code') ? 'true' : 'false' }}"
+                            @if ($errors->has('currency_code')) aria-describedby="money-account-currency-error" @endif
+                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                        @foreach ($currencies as $curr)
+                            <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
+                        @endforeach
+                    </select>
+                    @error('currency_code') <span id="money-account-currency-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
+                </div>
+
+                @if ($account_type === 'bank')
                     <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.type') }} <span class="text-danger">*</span></label>
-                        <select wire:model="account_type" @disabled($editingAccountId !== null) class="w-full h-8 px-2 rounded-control border border-border">
-                            <option value="cash">{{ __('sales.cash') }}</option>
-                            <option value="bank">{{ __('sales.bank') }}</option>
-                        </select>
+                        <label for="money-account-bank-name" class="block font-bold text-text-primary mb-1">{{ __('sales.bank_name') }}</label>
+                        <input id="money-account-bank-name"
+                               type="text"
+                               wire:model="bank_name"
+                               aria-invalid="{{ $errors->has('bank_name') ? 'true' : 'false' }}"
+                               @if ($errors->has('bank_name')) aria-describedby="money-account-bank-name-error" @endif
+                               class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                        @error('bank_name') <span id="money-account-bank-name-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                     </div>
-
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.name_ar') }} <span class="text-danger">*</span></label>
-                        <input type="text" wire:model="name_ar" required class="w-full h-8 px-2 rounded-control border border-border" />
-                        @error('name_ar') <span class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
-                    </div>
-
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.name_en') }}</label>
-                        <input type="text" wire:model="name_en" class="w-full h-8 px-2 rounded-control border border-border" />
-                    </div>
-
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.currency') }} <span class="text-danger">*</span></label>
-                        <select wire:model="currency_code" @disabled($editingAccountId !== null) class="w-full h-8 px-2 rounded-control border border-border">
-                            @foreach ($currencies as $curr)
-                                <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    @if ($account_type === 'bank')
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                            <label class="block font-bold text-text-primary mb-1">{{ __('sales.bank_name') }}</label>
-                            <input type="text" wire:model="bank_name" class="w-full h-8 px-2 rounded-control border border-border" />
+                            <label for="money-account-number" class="block font-bold text-text-primary mb-1">{{ __('sales.account_number') }}</label>
+                            <input id="money-account-number"
+                                   type="text"
+                                   wire:model="account_number"
+                                   dir="ltr"
+                                   aria-invalid="{{ $errors->has('account_number') ? 'true' : 'false' }}"
+                                   @if ($errors->has('account_number')) aria-describedby="money-account-number-error" @endif
+                                   class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm font-mono" />
+                            @error('account_number') <span id="money-account-number-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                         </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div>
-                                <label class="block font-bold text-text-primary mb-1">{{ __('sales.account_number') }}</label>
-                                <input type="text" wire:model="account_number" dir="ltr" class="w-full h-8 px-2 rounded-control border border-border font-mono" />
-                            </div>
-                            <div>
-                                <label class="block font-bold text-text-primary mb-1">IBAN</label>
-                                <input type="text" wire:model="iban" dir="ltr" class="w-full h-8 px-2 rounded-control border border-border font-mono" />
-                            </div>
+                        <div>
+                            <label for="money-account-iban" class="block font-bold text-text-primary mb-1">IBAN</label>
+                            <input id="money-account-iban"
+                                   type="text"
+                                   wire:model="iban"
+                                   dir="ltr"
+                                   aria-invalid="{{ $errors->has('iban') ? 'true' : 'false' }}"
+                                   @if ($errors->has('iban')) aria-describedby="money-account-iban-error" @endif
+                                   class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm font-mono" />
+                            @error('iban') <span id="money-account-iban-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                         </div>
-                    @endif
-
-                    <div class="flex items-center gap-2 pt-2">
-                        <input type="checkbox" wire:model="is_active" id="accActive" class="rounded" />
-                        <label for="accActive" class="font-bold text-text-primary">{{ __('sales.active') }}</label>
                     </div>
+                @endif
 
-                    <div class="flex justify-end gap-2 pt-3 border-t border-border">
-                        <button type="button" wire:click="$set('showFormModal', false)" class="px-3 py-1.5 rounded-control border border-border text-sm font-bold">
-                            {{ __('sales.cancel') }}
-                        </button>
-                        <button type="submit" class="px-4 py-1.5 rounded-control bg-primary text-white text-sm font-bold">
-                            {{ __('sales.save') }}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                <div class="pt-1">
+                    <label for="accActive" class="inline-flex min-h-11 items-center gap-2 font-bold text-text-primary cursor-pointer">
+                        <input type="checkbox" wire:model="is_active" id="accActive" class="size-5 rounded text-primary accent-primary focus:ring-primary" />
+                        <span>{{ __('sales.active') }}</span>
+                    </label>
+                </div>
+            </form>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="$set('showFormModal', false)" wire:loading.attr="disabled">
+                    {{ __('sales.cancel') }}
+                </x-secondary-button>
+                <x-primary-button type="submit" form="money-account-form" wire:loading.attr="disabled" wire:target="save">
+                    {{ __('sales.save') }}
+                </x-primary-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
     </div>
 </x-settings-shell>

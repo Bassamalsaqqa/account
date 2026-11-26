@@ -9,7 +9,7 @@
         </div>
 
         @if ($canManage)
-            <button wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
+            <button id="warehouse-add-trigger" wire:loading.attr="disabled" type="button" wire:click="openCreateModal"
                     class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
                 <x-icon name="plus" class="w-4 h-4" />
                 <span>{{ __('inventory.add_warehouse') }}</span>
@@ -48,13 +48,13 @@
                 <tbody class="divide-y divide-border">
                     @forelse ($warehouses as $wh)
                         <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="p-3.5 font-mono dir-ltr font-bold text-text-primary">
+                            <td class="p-3.5 font-mono font-bold text-text-primary" dir="ltr">
                                 {{ $wh->code }}
                             </td>
                             <td class="p-3.5">
                                 <span class="font-bold text-text-primary block">{{ $wh->name_ar }}</span>
                                 @if ($wh->name_en)
-                                    <span class="text-xs text-text-muted dir-ltr block">{{ $wh->name_en }}</span>
+                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $wh->name_en }}</bdi>
                                 @endif
                             </td>
                             <td class="p-3.5 text-text-secondary max-w-xs truncate">
@@ -77,7 +77,7 @@
                             @if ($canManage)
                                 <td class="table-actions p-3.5 text-center">
                                     <div class="flex items-center justify-center gap-2">
-                                        <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $wh->id }})"
+                                        <button id="warehouse-edit-desktop-{{ $wh->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $wh->id }})"
                                                 class="touch-action text-primary hover:underline font-bold text-xs">
                                             {{ __('inventory.edit') }}
                                         </button>
@@ -114,7 +114,7 @@
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.warehouse') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $wh->name_ar }}</span>
                                 @if ($wh->name_en)
-                                    <span class="text-xs text-text-muted dir-ltr block">{{ $wh->name_en }}</span>
+                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $wh->name_en }}</bdi>
                                 @endif</dd>
                             </div>
                             <div class="min-w-0 space-y-1">
@@ -141,7 +141,7 @@
                                 <div class="min-w-0 space-y-1 col-span-2">
                                 <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
                                 <dd class="break-words text-sm tabular-nums text-text-primary"><div class="flex items-center justify-center gap-2">
-                                        <button wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $wh->id }})"
+                                        <button id="warehouse-edit-mobile-{{ $wh->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $wh->id }})"
                                                 class="touch-action text-primary hover:underline font-bold text-xs">
                                             {{ __('inventory.edit') }}
                                         </button>
@@ -173,61 +173,75 @@
 
     <!-- Create/Edit Modal -->
     @if ($showModal)
-        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.set('showModal', false)" role="dialog" aria-modal="true" aria-labelledby="warehouse-modal-title" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 space-y-4">
-                <div class="flex items-center justify-between border-b border-border pb-3">
-                    <h3 id="warehouse-modal-title" class="font-extrabold text-sm text-text-primary">
-                        {{ $editingId ? __('inventory.edit_warehouse') : __('inventory.add_warehouse') }}
-                    </h3>
-                    <button aria-label="{{ __('inventory.close') }}" wire:loading.attr="disabled" type="button" wire:click="$set('showModal', false)" class="touch-action text-text-muted hover:text-text-primary text-base font-bold">&times;</button>
+        <x-dialog-shell :title="$editingId ? __('inventory.edit_warehouse') : __('inventory.add_warehouse')" title-id="warehouse-modal-title" close-action="$set('showModal', false)" save-target="save" max-width="max-w-md">
+            <div class="space-y-3 text-sm">
+                <div>
+                    <label for="warehouse-code" class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse_code') }} *</label>
+                    <input id="warehouse-code"
+                           type="text"
+                           wire:model="code"
+                           dir="ltr"
+                           placeholder="{{ __('inventory.warehouse_code_placeholder') }}"
+                           aria-invalid="{{ $errors->has('code') ? 'true' : 'false' }}"
+                           @if ($errors->has('code')) aria-describedby="warehouse-code-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono @error('code') border-danger @enderror" />
+                    @error('code') <span id="warehouse-code-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
-
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse_code') }} *</label>
-                        <input type="text" wire:model="code" dir="ltr" placeholder="{{ __('inventory.warehouse_code_placeholder') }}" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
-                        @error('code') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse_name_ar') }} *</label>
-                        <input type="text" wire:model="name_ar" dir="rtl" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
-                        @error('name_ar') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse_name_en') }}</label>
-                        <input type="text" wire:model="name_en" dir="ltr" class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
-                        @error('name_en') <span role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.address') }} ({{ __('inventory.name_ar') }})</label>
-                        <textarea wire:model="address_ar" dir="rtl" rows="2" class="w-full p-2 rounded-control border border-border text-sm"></textarea>
-                    </div>
-                    <div class="p-3 rounded-control bg-surface-soft border border-border space-y-2">
-                        <label class="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox" wire:model="is_default" class="rounded border-border text-primary w-4 h-4" />
-                            <span class="font-bold text-text-primary">{{ __('inventory.is_default') }}</span>
-                        </label>
-                        <p class="text-xs text-text-muted pr-6">{{ __('inventory.default_warehouse_hint') }}</p>
-                    </div>
-                    <div class="pt-1">
-                        <label class="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox" wire:model="active" class="rounded border-border text-primary w-4 h-4" />
-                            <span class="font-bold text-text-primary">{{ __('inventory.active') }}</span>
-                        </label>
-                    </div>
+                <div>
+                    <label for="warehouse-name-ar" class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse_name_ar') }} *</label>
+                    <input id="warehouse-name-ar"
+                           type="text"
+                           wire:model="name_ar"
+                           dir="rtl"
+                           aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_ar')) aria-describedby="warehouse-name-ar-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_ar') border-danger @enderror" />
+                    @error('name_ar') <span id="warehouse-name-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
-
-                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                    <button wire:loading.attr="disabled" type="button" wire:click="$set('showModal', false)"
-                            class="touch-action border border-border text-text-secondary hover:bg-surface-soft text-sm font-semibold">
-                        {{ __('inventory.cancel') }}
-                    </button>
-                    <button wire:loading.attr="disabled" type="button" wire:click="save"
-                            class="touch-action bg-primary text-white hover:bg-primary-hover text-sm font-bold shadow-button">
-                        {{ __('inventory.save') }}
-                    </button>
+                <div>
+                    <label for="warehouse-name-en" class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse_name_en') }}</label>
+                    <input id="warehouse-name-en"
+                           type="text"
+                           wire:model="name_en"
+                           dir="ltr"
+                           aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
+                           @if ($errors->has('name_en')) aria-describedby="warehouse-name-en-error" @endif
+                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_en') border-danger @enderror" />
+                    @error('name_en') <span id="warehouse-name-en-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
+                </div>
+                <div>
+                    <label for="warehouse-address-ar" class="block font-bold text-text-secondary mb-1">{{ __('inventory.address') }} ({{ __('inventory.name_ar') }})</label>
+                    <textarea id="warehouse-address-ar"
+                              wire:model="address_ar"
+                              dir="rtl"
+                              rows="2"
+                              aria-invalid="{{ $errors->has('address_ar') ? 'true' : 'false' }}"
+                              @if ($errors->has('address_ar')) aria-describedby="warehouse-address-ar-error" @endif
+                              class="w-full p-2.5 rounded-control border border-border text-sm"></textarea>
+                    @error('address_ar') <span id="warehouse-address-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
+                </div>
+                <div class="p-3 rounded-control bg-surface-soft border border-border space-y-2">
+                    <label for="warehouse-is-default" class="inline-flex min-h-11 items-center gap-2 cursor-pointer select-none">
+                        <input id="warehouse-is-default" type="checkbox" wire:model="is_default" class="size-5 rounded border-border text-primary accent-primary focus:ring-primary" />
+                        <span class="font-bold text-text-primary">{{ __('inventory.is_default') }}</span>
+                    </label>
+                    <p class="text-xs text-text-muted ps-7">{{ __('inventory.default_warehouse_hint') }}</p>
+                </div>
+                <div class="pt-1">
+                    <label for="warehouse-active" class="inline-flex min-h-11 items-center gap-2 cursor-pointer select-none">
+                        <input id="warehouse-active" type="checkbox" wire:model="active" class="size-5 rounded border-border text-primary accent-primary focus:ring-primary" />
+                        <span class="font-bold text-text-primary">{{ __('inventory.active') }}</span>
+                    </label>
                 </div>
             </div>
-        </div>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="$set('showModal', false)" wire:loading.attr="disabled">
+                    {{ __('inventory.cancel') }}
+                </x-secondary-button>
+                <x-primary-button type="button" wire:click="save" wire:loading.attr="disabled" wire:target="save">
+                    {{ __('inventory.save') }}
+                </x-primary-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
 </div>

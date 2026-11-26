@@ -15,13 +15,13 @@
 @if($status === 'posted' && collect($permissions)->every(fn ($p) => auth()->user()->can($p)))
     @if(collect($editPermissions)->every(fn ($p) => auth()->user()->can($p)))
         @if($detail)
-            <x-row-action wire:click="openCorrection('edit')" wire:loading.attr="disabled" :label="__('corrections.edit')" icon="edit" tone="primary" />
+            <x-row-action id="correction-{{ $family }}-{{ $publicId }}-edit" wire:click="openCorrection('edit')" wire:loading.attr="disabled" :label="__('corrections.edit')" icon="edit" tone="primary" />
         @else
             <x-row-action :href="route($route, ['publicId' => $publicId, 'correction' => 'edit'])" :label="__('corrections.edit')" icon="edit" tone="primary" />
         @endif
     @endif
     @if($detail)
-        <x-row-action wire:click="openCorrection('delete')" wire:loading.attr="disabled" :label="__('corrections.delete')" icon="trash" tone="danger" />
+        <x-row-action id="correction-{{ $family }}-{{ $publicId }}-delete" wire:click="openCorrection('delete')" wire:loading.attr="disabled" :label="__('corrections.delete')" icon="trash" tone="danger" />
     @else
         <x-row-action :href="route($route, ['publicId' => $publicId, 'correction' => 'delete'])" :label="__('corrections.delete')" icon="trash" tone="danger" />
     @endif

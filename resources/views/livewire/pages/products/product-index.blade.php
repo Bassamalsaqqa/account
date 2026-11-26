@@ -138,7 +138,7 @@
                                         </a>
                                         <div class="table-cell-secondary text-xs text-text-muted">
                                             @if ($product->sku)
-                                                <span class="font-mono dir-ltr">{{ $product->sku }}</span>
+                                                <bdi dir="ltr" class="font-mono">{{ $product->sku }}</bdi>
                                             @endif
                                             @if ($product->name_ar && $product->name_en)
                                                 <span class="truncate">/ {{ app()->getLocale() === 'en' ? $product->name_ar : $product->name_en }}</span>
@@ -161,9 +161,9 @@
                             <!-- Stock -->
                             <td class="p-3.5 text-center">
                                 @if ($product->track_stock)
-                                    <span class="font-mono font-bold text-sm tabular-nums dir-ltr {{ $product->minimum_stock_base !== null && \Brick\Math\BigDecimal::of((string) $product->stock_quantity)->isLessThanOrEqualTo(\Brick\Math\BigDecimal::of((string) $product->minimum_stock_base)) ? 'text-danger' : 'text-text-primary' }}">
+                                    <bdi dir="ltr" class="font-mono font-bold text-sm tabular-nums {{ $product->minimum_stock_base !== null && \Brick\Math\BigDecimal::of((string) $product->stock_quantity)->isLessThanOrEqualTo(\Brick\Math\BigDecimal::of((string) $product->minimum_stock_base)) ? 'text-danger' : 'text-text-primary' }}">
                                         {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}
-                                    </span>
+                                    </bdi>
                                 @else
                                     <span class="text-text-muted">—</span>
                                 @endif
@@ -171,12 +171,12 @@
 
                             <!-- Cost & Valuation (Gated server-side) -->
                             @if ($canViewCost)
-                                <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}
+                                <td class="p-3.5 text-center font-mono tabular-nums text-text-secondary">
+                                    <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}</bdi>
                                     <span class="text-xs text-text-muted">{{ $company->base_currency_code }}</span>
                                 </td>
-                                <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}
+                                <td class="p-3.5 text-center font-mono font-bold tabular-nums text-text-primary">
+                                    <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}</bdi>
                                     <span class="text-xs text-text-muted">{{ $company->base_currency_code }}</span>
                                 </td>
                             @endif
@@ -264,23 +264,23 @@
                         </div>
                         <div>
                             <span class="text-text-muted">{{ __('inventory.total_stock') }}:</span>
-                            <span class="font-mono font-bold tabular-nums dir-ltr text-text-primary">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}
+                            <span class="font-mono font-bold tabular-nums text-text-primary">
+                                <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}</bdi>
                                 {{ $product->baseUnit?->name() }}
                             </span>
                         </div>
                         @if ($canViewCost)
                             <div>
                                 <span class="text-text-muted">{{ __('inventory.moving_average_cost') }}:</span>
-                                <span class="font-mono tabular-nums dir-ltr text-text-secondary">
+                                <bdi dir="ltr" class="font-mono tabular-nums text-text-secondary">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}
-                                </span>
+                                </bdi>
                             </div>
                             <div>
                                 <span class="text-text-muted">{{ __('inventory.inventory_value') }}:</span>
-                                <span class="font-mono font-bold tabular-nums dir-ltr text-text-primary">
+                                <bdi dir="ltr" class="font-mono font-bold tabular-nums text-text-primary">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}
-                                </span>
+                                </bdi>
                             </div>
                         @endif
                     </div>

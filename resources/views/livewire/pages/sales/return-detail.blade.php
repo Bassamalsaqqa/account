@@ -176,28 +176,29 @@
 
     <!-- Void Modal -->
     @if ($showVoidModal)
-        <div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl max-w-md w-full p-6 space-y-4">
-                <h3 class="font-bold text-base text-danger">
-                    {{ __('sales.confirm_void_invoice') }}
-                </h3>
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label class="block font-bold text-text-primary mb-1">{{ __('sales.void_reason') }} <span class="text-danger">*</span></label>
-                        <textarea wire:model="voidReason" rows="3" required class="w-full p-2.5 rounded-control border border-border text-sm"></textarea>
-                        @error('voidReason') <span class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
-                    </div>
-                </div>
-                <div class="flex justify-end gap-2 pt-2 border-t border-border">
-                    <button type="button" wire:click="$set('showVoidModal', false)" class="px-3 py-1.5 rounded-control border border-border text-sm font-bold">
-                        {{ __('sales.cancel') }}
-                    </button>
-                    <button type="button" wire:click="voidReturn" class="px-4 py-1.5 rounded-control bg-danger text-white text-sm font-bold" wire:loading.attr="disabled" wire:target="voidReturn">
-                        {{ __('sales.void') }}
-                    </button>
+        <x-dialog-shell :title="__('sales.confirm_void_invoice')" title-id="return-void-modal-title" close-action="$set('showVoidModal', false)" save-target="voidReturn" max-width="max-w-md">
+            <div class="space-y-3 text-sm">
+                <div>
+                    <label for="return-void-reason" class="block font-bold text-text-primary mb-1">{{ __('sales.void_reason') }} <span class="text-danger">*</span></label>
+                    <textarea id="return-void-reason"
+                              wire:model="voidReason"
+                              rows="3"
+                              required
+                              aria-invalid="{{ $errors->has('voidReason') ? 'true' : 'false' }}"
+                              @if ($errors->has('voidReason')) aria-describedby="return-void-reason-error" @endif
+                              class="w-full p-2.5 rounded-control border border-border text-sm"></textarea>
+                    @error('voidReason') <span id="return-void-reason-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                 </div>
             </div>
-        </div>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="$set('showVoidModal', false)" wire:loading.attr="disabled">
+                    {{ __('sales.cancel') }}
+                </x-secondary-button>
+                <x-danger-button type="button" wire:click="voidReturn" wire:loading.attr="disabled" wire:target="voidReturn">
+                    {{ __('sales.void') }}
+                </x-danger-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
 
     <!-- Share Modal -->

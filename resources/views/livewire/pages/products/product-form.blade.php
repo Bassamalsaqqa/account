@@ -268,8 +268,8 @@
                         {{ __('inventory.brand') }}
                     </label>
                     @if ($canManageProduct)
-                        <button type="button" wire:click="openCreateBrandModal"
-                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-sm text-primary hover:underline font-bold flex gap-1" wire:loading.attr="disabled">
+                        <button id="product-add-brand-trigger" type="button" wire:click="openCreateBrandModal"
+                                class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-sm text-primary hover:underline font-bold" wire:loading.attr="disabled">
                             <x-icon name="plus" class="w-3 h-3" />
                             <span>{{ __('inventory.add_brand') }}</span>
                         </button>
@@ -375,11 +375,11 @@
                                                 @endif
                                             </div>
                                         </td>
-                                        <td class="p-2.5 font-mono dir-ltr">
+                                        <td class="p-2.5 font-mono">
                                             @if ($pu->is_base)
-                                                1.000000 ({{ __('inventory.base_unit_badge') }})
+                                                <bdi dir="ltr">1.000000</bdi> ({{ __('inventory.base_unit_badge') }})
                                             @else
-                                                1 {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} = {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($pu->conversion_to_base) }} {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }}
+                                                <bdi dir="ltr">1 {{ app()->getLocale() === 'en' ? ($pu->unit?->name_en ?: $pu->unit?->name_ar) : $pu->unit?->name_ar }} = {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($pu->conversion_to_base) }} {{ app()->getLocale() === 'en' ? ($product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : $product->baseUnit?->name_ar }}</bdi>
                                             @endif
                                         </td>
                                         <td class="p-2.5 text-center">
@@ -474,7 +474,7 @@
                             <tbody class="divide-y divide-border">
                                 @foreach ($productBarcodes as $pb)
                                     <tr>
-                                        <td class="p-2.5 font-mono font-bold dir-ltr text-text-primary">{{ $pb->barcode }}</td>
+                                        <td class="p-2.5 font-mono font-bold text-text-primary" dir="ltr">{{ $pb->barcode }}</td>
                                         <td class="p-2.5 text-text-secondary">{{ app()->getLocale() === 'en' ? ($pb->unit?->name_en ?: $pb->unit?->name_ar ?? $product->baseUnit?->name_en ?: $product->baseUnit?->name_ar) : ($pb->unit?->name_ar ?? $product->baseUnit?->name_ar) }}</td>
                                         <td class="p-2.5 text-center">
                                             @if ($pb->is_primary)
@@ -555,56 +555,42 @@
 
     <!-- Inline Brand Modal -->
     @if ($showBrandModal)
-        <div x-data x-trap.inert.noscroll="true" @keydown.escape.window="$wire.closeCreateBrandModal()"
-             role="dialog" aria-modal="true" aria-labelledby="inline-brand-modal-title"
-             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div class="bg-surface rounded-card border border-border shadow-xl w-full max-w-md p-6 space-y-4">
-                <div class="flex items-center justify-between border-b border-border pb-3">
-                    <h3 id="inline-brand-modal-title" class="font-extrabold text-sm text-text-primary flex items-center gap-2">
-                        <x-icon name="box" class="w-4 h-4 text-primary" />
-                        <span>{{ __('inventory.add_brand') }}</span>
-                    </h3>
-                    <button type="button" aria-label="{{ __('inventory.close') }}" wire:click="closeCreateBrandModal"
-                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-text-muted hover:text-text-primary text-base font-bold" wire:loading.attr="disabled">&times;</button>
+        <x-dialog-shell :title="__('inventory.add_brand')" title-id="inline-brand-modal-title" close-action="closeCreateBrandModal" save-target="saveInlineBrand" max-width="max-w-md">
+            <div class="space-y-3 text-sm">
+                <div>
+                    <label for="inline-brand-name-ar" class="block font-bold text-text-secondary mb-1">
+                        {{ __('inventory.brand_name_ar') }} <span class="text-danger">*</span>
+                    </label>
+                    <input id="inline-brand-name-ar" type="text" wire:model="new_brand_name_ar" dir="rtl"
+                           aria-invalid="{{ $errors->has('new_brand_name_ar') ? 'true' : 'false' }}"
+                           @if ($errors->has('new_brand_name_ar')) aria-describedby="inline-brand-name-ar-error" @endif
+                           class="w-full min-h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('new_brand_name_ar') border-danger @enderror" />
+                    @error('new_brand_name_ar')
+                        <span role="alert" id="inline-brand-name-ar-error" class="text-danger text-xs">{{ $message }}</span>
+                    @enderror
                 </div>
-
-                <div class="space-y-3 text-xs">
-                    <div>
-                        <label for="inline-brand-name-ar" class="block font-bold text-text-secondary mb-1">
-                            {{ __('inventory.brand_name_ar') }} <span class="text-danger">*</span>
-                        </label>
-                        <input id="inline-brand-name-ar" type="text" wire:model="new_brand_name_ar" dir="rtl"
-                               @error('new_brand_name_ar') aria-invalid="true" aria-describedby="inline-brand-name-ar-error" @enderror
-                               class="w-full min-h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('new_brand_name_ar') border-danger @enderror" />
-                        @error('new_brand_name_ar')
-                            <span role="alert" id="inline-brand-name-ar-error" class="text-danger text-xs">{{ $message }}</span>
-                        @enderror
-                    </div>
-                    <div>
-                        <label for="inline-brand-name-en" class="block font-bold text-text-secondary mb-1">
-                            {{ __('inventory.brand_name_en') }}
-                        </label>
-                        <input id="inline-brand-name-en" type="text" wire:model="new_brand_name_en" dir="ltr"
-                               @error('new_brand_name_en') aria-invalid="true" aria-describedby="inline-brand-name-en-error" @enderror
-                               class="w-full min-h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('new_brand_name_en') border-danger @enderror" />
-                        @error('new_brand_name_en')
-                            <span role="alert" id="inline-brand-name-en-error" class="text-danger text-xs">{{ $message }}</span>
-                        @enderror
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
-                    <button type="button" wire:click="closeCreateBrandModal"
-                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-3.5 py-1.5 rounded-control border border-border text-text-secondary hover:bg-surface-soft text-sm font-semibold" wire:loading.attr="disabled">
-                        {{ __('inventory.cancel') }}
-                    </button>
-                    <button type="button" wire:click="saveInlineBrand" wire:loading.attr="disabled"
-                            class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-1.5 rounded-control bg-primary text-white hover:bg-primary-hover text-sm font-bold shadow-button">
-                        {{ __('inventory.save') }}
-                    </button>
+                <div>
+                    <label for="inline-brand-name-en" class="block font-bold text-text-secondary mb-1">
+                        {{ __('inventory.brand_name_en') }}
+                    </label>
+                    <input id="inline-brand-name-en" type="text" wire:model="new_brand_name_en" dir="ltr"
+                           aria-invalid="{{ $errors->has('new_brand_name_en') ? 'true' : 'false' }}"
+                           @if ($errors->has('new_brand_name_en')) aria-describedby="inline-brand-name-en-error" @endif
+                           class="w-full min-h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('new_brand_name_en') border-danger @enderror" />
+                    @error('new_brand_name_en')
+                        <span role="alert" id="inline-brand-name-en-error" class="text-danger text-xs">{{ $message }}</span>
+                    @enderror
                 </div>
             </div>
-        </div>
+            <x-slot:footer>
+                <x-secondary-button type="button" wire:click="closeCreateBrandModal" wire:loading.attr="disabled">
+                    {{ __('inventory.cancel') }}
+                </x-secondary-button>
+                <x-primary-button type="button" wire:click="saveInlineBrand" wire:loading.attr="disabled" wire:target="saveInlineBrand">
+                    {{ __('inventory.save') }}
+                </x-primary-button>
+            </x-slot:footer>
+        </x-dialog-shell>
     @endif
     <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-2 rounded-control border border-border bg-surface p-3 shadow-sm md:hidden">
         <span wire:loading wire:target="save" role="status" class="text-xs text-primary">{{ __('refinement.working') }}</span>

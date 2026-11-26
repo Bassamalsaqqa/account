@@ -48,8 +48,8 @@
                         <option value="{{ $type }}">{{ __('inventory.type_' . $type) }}</option>
                     @endforeach
                 </select>
-        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_from') }}<input aria-label="{{ __('inventory.date_from') }}" type="date" wire:model.live="fromDate" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface font-mono dir-ltr" /></label>
-        <label class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_to') }}<input aria-label="{{ __('inventory.date_to') }}" type="date" wire:model.live="toDate" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface font-mono dir-ltr" /></label>
+        <label for="stock-movements-from-date" class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_from') }}<input id="stock-movements-from-date" aria-label="{{ __('inventory.date_from') }}" type="date" wire:model.live="fromDate" dir="ltr" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface font-mono" /></label>
+        <label for="stock-movements-to-date" class="grid gap-1 text-sm text-text-secondary">{{ __('inventory.date_to') }}<input id="stock-movements-to-date" aria-label="{{ __('inventory.date_to') }}" type="date" wire:model.live="toDate" dir="ltr" class="min-h-11 w-full h-11 px-2 rounded-control border border-border text-sm bg-surface font-mono" /></label>
     </x-refinement-filters>
 
     <!-- Ledger Table -->
@@ -76,7 +76,7 @@
                 <tbody class="divide-y divide-border">
                     @forelse ($movements as $m)
                         <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="p-3.5 font-mono dir-ltr text-text-secondary">
+                            <td class="p-3.5 font-mono text-text-secondary" dir="ltr">
                                 {{ $m->movement_date }}
                             </td>
                             <td class="p-3.5">
@@ -96,20 +96,20 @@
                             <td class="p-3.5 text-text-secondary">
                                 {{ app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar }}
                             </td>
-                            <td class="p-3.5 text-center font-mono text-xs dir-ltr text-text-muted">
+                            <td class="p-3.5 text-center font-mono text-xs text-text-muted" dir="ltr">
                                 {{ $m->lot?->lot_number ?? ($m->lot_id ? '#' . $m->lot_id : '—') }}
                             </td>
-                            <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr {{ $m->isInbound() ? 'text-success' : 'text-danger' }}">
+                            <td class="p-3.5 text-center font-mono font-bold tabular-nums {{ $m->isInbound() ? 'text-success' : 'text-danger' }}" dir="ltr">
                                 {{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}
                             </td>
                             @if ($canViewCost)
-                                <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-secondary">
+                                <td class="p-3.5 text-center font-mono tabular-nums text-text-secondary" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->unit_cost_base) }}
                                 </td>
-                                <td class="p-3.5 text-center font-mono font-bold tabular-nums dir-ltr text-text-primary">
+                                <td class="p-3.5 text-center font-mono font-bold tabular-nums text-text-primary" dir="ltr">
                                     {{ $m->value_delta_base }}
                                 </td>
-                                <td class="p-3.5 text-center font-mono tabular-nums dir-ltr text-text-muted">
+                                <td class="p-3.5 text-center font-mono tabular-nums text-text-muted" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->average_cost_after) }}
                                 </td>
                             @endif
