@@ -457,18 +457,9 @@
         @endforeach
     </section>
 
-    <!-- 3. Bottom Grid: Settlement & Arithmetic Summary -->
+    <!-- Establish totals before choosing payment (including DOM and keyboard order). -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-        <!-- LEFT COLUMN: Payment & Settlement Method -->
-        <div class="lg:col-span-7 space-y-4">
-            @include('livewire.partials.immediate-purchase-settlement')
-
-            @if ($showPreview && ! empty($previewData['settlement']))
-                @include('livewire.partials.immediate-purchase-review', ['review' => $previewData['settlement'], 'purchaseCurrencyScale' => $currency_minor_units ?? 2])
-            @endif
-        </div>
-
-        <!-- RIGHT COLUMN: Summary Card -->
+        <!-- Totals and optional discount -->
         <div class="lg:col-span-5 space-y-4">
             <section class="bg-surface border border-border rounded-card p-4 space-y-3">
                 <div class="flex items-center justify-between pb-2 border-b border-border/60">
@@ -476,7 +467,7 @@
                     <span class="text-[11px] text-text-muted font-mono">{{ $currency_code }}</span>
                 </div>
 
-                <p wire:loading.delay wire:target="lines,exchange_rate,discount_value,discount_type,currency_code,vendor_id" role="status" class="text-xs text-text-secondary">{{ __('purchasing.updating_totals') }}</p>
+                <div class="min-h-5"><p wire:loading.delay wire:target="lines,exchange_rate,discount_value,discount_type,currency_code,vendor_id" role="status" class="text-xs text-text-secondary">{{ __('purchasing.updating_totals') }}</p></div>
                 <div class="space-y-2 text-xs divide-y divide-border/40">
                     <!-- Subtotal -->
                     <div class="flex items-center justify-between pt-1">
@@ -589,6 +580,16 @@
                 @endif
             </section>
         </div>
+
+        <!-- Payment and remaining balance -->
+        <div class="lg:col-span-7 space-y-4">
+            @include('livewire.partials.immediate-purchase-settlement')
+
+            @if ($showPreview && ! empty($previewData['settlement']))
+                @include('livewire.partials.immediate-purchase-review', ['review' => $previewData['settlement'], 'purchaseCurrencyScale' => $currency_minor_units ?? 2])
+            @endif
+        </div>
+
     </div>
 
     @if ($previewError)

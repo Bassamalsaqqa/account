@@ -1486,4 +1486,18 @@ final class PurchaseFormSimplificationCandidateTest extends TestCase
         $this->assertSame($batchesBefore, PostingBatch::count());
         $this->assertSame($movementsBefore, StockMovement::count());
     }
+
+    public function test_discount_and_final_total_precede_payment_in_both_locales(): void
+    {
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $html = Livewire::test(PurchaseForm::class)->call('toggleDiscountControl')->html();
+            $discount = strpos($html, 'id="purchase-document-discount-container"');
+            $payment = strpos($html, 'id="purchase-settlement-mode-unpaid"');
+            $this->assertNotFalse($discount);
+            $this->assertNotFalse($payment);
+            $this->assertLessThan($payment, $discount);
+            $this->assertStringContainsString('min-h-5', $html);
+        }
+    }
 }
