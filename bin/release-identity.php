@@ -10,7 +10,7 @@ use Symfony\Component\Process\Process;
 
 try {
     $options = getopt('', ['write', 'check', 'check-cache', 'expected-code:']);
-    $modes = array_intersect(['write', 'check', 'check-cache'], array_keys($options));
+    $modes = array_values(array_intersect(['write', 'check', 'check-cache'], array_keys($options)));
     $expected = $options['expected-code'] ?? null;
     if (count($modes) !== 1 || ! is_string($expected) || preg_match('/\A[0-9a-f]{40}\z/', $expected) !== 1) {
         throw new RuntimeException('Use --write, --check or --check-cache with --expected-code=<full source SHA>.');
@@ -56,7 +56,8 @@ try {
     }
     if ($modes[0] === 'check-cache') {
         $cache = $root.'/bootstrap/cache/config.php';
-        if (! is_file($cache) || is_link($cache) || (require $cache)['release'] !== $identity) {
+        $configuration = is_file($cache) && ! is_link($cache) ? require $cache : null;
+        if (! is_array($configuration) || ($configuration['release'] ?? null) !== $identity) {
             throw new RuntimeException('Cached release identity is missing or stale.');
         }
     }

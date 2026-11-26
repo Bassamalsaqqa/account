@@ -21,8 +21,9 @@ final class ReleaseIdentityTest extends TestCase
 
     protected function tearDown(): void
     {
-        foreach (glob($this->directory.'/*') ?: [] as $path) {
-            unlink($path);
+        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->directory, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) {
+            $file->isDir() && ! $file->isLink() ? rmdir($file->getPathname()) : unlink($file->getPathname());
         }
         rmdir($this->directory);
     }
@@ -67,6 +68,47 @@ final class ReleaseIdentityTest extends TestCase
             $this->assertNotSame('', $process->getErrorOutput());
             $this->assertStringNotContainsString('SQLSTATE', $process->getErrorOutput());
         }
+    }
+
+    public function test_real_cli_binds_assets_and_refuses_missing_or_stale_config_cache(): void
+    {
+        $root = dirname(__DIR__, 3);
+        mkdir($this->directory.'/bin');
+        mkdir($this->directory.'/bootstrap/cache', 0700, true);
+        mkdir($this->directory.'/public/build', 0700, true);
+        // Reuse installed test dependencies only; the fixture is an independent temporary Git repository.
+        symlink($root.'/vendor', $this->directory.'/vendor');
+        copy($root.'/bin/release-identity.php', $this->directory.'/bin/release-identity.php');
+        file_put_contents($this->directory.'/.gitignore', "/vendor\n/bootstrap/cache\n/public/build\n");
+        file_put_contents($this->directory.'/public/build/manifest.json', '{}');
+        $run = function (array $arguments): Process {
+            $process = new Process($arguments, $this->directory);
+            $process->setTimeout(15)->run();
+
+            return $process;
+        };
+        $this->assertSame(0, $run(['git', 'init', '-q'])->getExitCode());
+        $this->assertSame(0, $run(['git', 'add', '.'])->getExitCode());
+        $this->assertSame(0, $run(['git', '-c', 'user.name=Release test', '-c', 'user.email=release@example.test', 'commit', '-qm', 'Synthetic release fixture'])->getExitCode());
+        $sha = trim($run(['git', 'rev-parse', 'HEAD'])->getOutput());
+        $command = [PHP_BINARY, 'bin/release-identity.php'];
+        $write = $run([...$command, '--write', '--expected-code='.$sha]);
+        $this->assertSame(0, $write->getExitCode(), $write->getErrorOutput());
+        $identity = ReleaseIdentity::read($this->directory.'/VERSION', $this->directory.'/bootstrap/cache/release.json');
+        $this->assertSame($sha, $identity['source_sha']);
+        $this->assertSame(hash('sha256', '{}'), $identity['asset_manifest_sha256']);
+        $missing = $run([...$command, '--check-cache', '--expected-code='.$sha]);
+        $this->assertSame(1, $missing->getExitCode());
+        $this->assertStringContainsString('Cached release identity', $missing->getErrorOutput());
+        file_put_contents($this->directory.'/bootstrap/cache/config.php', '<?php return '.var_export(['release' => $identity], true).';');
+        $valid = $run([...$command, '--check-cache', '--expected-code='.$sha]);
+        $this->assertSame(0, $valid->getExitCode(), $valid->getErrorOutput());
+        file_put_contents($this->directory.'/bootstrap/cache/config.php', '<?php return ["release" => ["version" => "old"]];');
+        $this->assertSame(1, $run([...$command, '--check-cache', '--expected-code='.$sha])->getExitCode());
+        file_put_contents($this->directory.'/public/build/manifest.json', '{"changed":true}');
+        $stale = $run([...$command, '--check', '--expected-code='.$sha]);
+        $this->assertSame(1, $stale->getExitCode());
+        $this->assertStringContainsString('does not match', $stale->getErrorOutput());
     }
 
     private function read(): array
