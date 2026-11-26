@@ -45,7 +45,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontFlash(['current_password', 'provider_secret', 'password', 'password_confirmation', 'code', 'recovery_code']);
 
         $exceptions->reportable(static function (Throwable $exception): ?bool {
-            $request = app()->bound('request') && ! app()->runningInConsole() ? app('request') : null;
+            $request = app()->bound('request') ? app('request') : null;
+            if (app()->runningInConsole() && ! ($request instanceof Request && $request->attributes->has(RequestId::ATTRIBUTE))) {
+                $request = null;
+            }
             if ($request instanceof Request && ($request->is('api/v1') || $request->is('api/v1/*'))) {
                 return null;
             }

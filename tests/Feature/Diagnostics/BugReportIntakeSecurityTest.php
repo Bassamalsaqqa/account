@@ -12,6 +12,8 @@ use App\Models\PlatformOperatorGrant;
 use App\Models\User;
 use App\Support\Diagnostics\RequestId;
 use App\Support\Tenancy\CompanyContext;
+use Illuminate\Contracts\Encryption\Encrypter;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -74,6 +76,14 @@ final class BugReportIntakeSecurityTest extends TestCase
 
     public function test_csrf_is_enforced_for_authenticated_intake(): void
     {
+        $this->app->instance(PreventRequestForgery::class,
+            new class($this->app, $this->app->make(Encrypter::class)) extends PreventRequestForgery
+            {
+                protected function runningUnitTests()
+                {
+                    return false;
+                }
+            });
         $this->actingAs($this->owner);
 
         $response = $this->call(
@@ -114,6 +124,9 @@ final class BugReportIntakeSecurityTest extends TestCase
         app(CompanyContext::class)->clear();
         app(CreateCompanyAction::class)->execute($multiUser, ['name_ar' => 'شركة 2', 'base_currency_code' => 'ILS']);
         app(CompanyContext::class)->clear();
+
+        $multiUser->updateQuietly(['last_active_company_id' => null]);
+        session()->forget('active_company_id');
 
         $resMulti = $this->actingAs($multiUser)
             ->postJson(route('diagnostics.bug-reports.store'), $this->validPayload([
