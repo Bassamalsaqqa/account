@@ -714,11 +714,17 @@ export function searchableCombobox(config) {
             }
             if (restoreFocus && wasSheet && this.$refs?.searchInput?.focus) {
                 if (typeof this.$nextTick === 'function') {
-                    this.$nextTick(() => this.$refs.searchInput?.focus?.({ preventScroll: true }));
+                    this.$nextTick(() => this.focusTrigger());
                 } else {
-                    this.$refs.searchInput.focus({ preventScroll: true });
+                    this.focusTrigger();
                 }
             }
+        },
+
+        focusTrigger() {
+            this.restoringFocus = true;
+            try { this.$refs.searchInput?.focus?.({ preventScroll: true }); }
+            finally { this.restoringFocus = false; }
         },
 
         handleTriggerClick() {
@@ -756,7 +762,7 @@ export function searchableCombobox(config) {
         },
 
         handleFocus() {
-            if (this.isBlocked()) return;
+            if (this.restoringFocus || this.isBlocked()) return;
             if (!this.open) {
                 this.openOverlay();
                 const displayingSelected = this.isSelected && this.query === this.selectedLabel;
@@ -1154,7 +1160,7 @@ export function searchableCombobox(config) {
             this.$dispatch('combobox-cleared', { id: this.id });
             if (typeof this.$nextTick === 'function') {
                 this.$nextTick(() => {
-                    this.$refs.searchInput?.focus?.({ preventScroll: true });
+                    this.focusTrigger();
                 });
             }
 

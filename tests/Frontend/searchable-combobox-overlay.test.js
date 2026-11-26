@@ -243,7 +243,7 @@ test('clearing a sheet restores the visible trigger, never the hidden sheet inpu
     let triggerFocus = 0;
     let sheetFocus = 0;
     comp.overlayMode = 'sheet';
-    comp.$refs.searchInput.focus = () => { triggerFocus++; };
+    comp.$refs.searchInput.focus = () => { triggerFocus++; comp.handleFocus(); };
     comp.$refs.sheetInput = { focus() { sheetFocus++; } };
     comp.$wire = { $set: async () => {} };
     await comp.clear();
