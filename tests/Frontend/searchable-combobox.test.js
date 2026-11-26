@@ -437,7 +437,7 @@ test('after selection confirmation another choice can dispatch normally', async 
     assert.equal(comp.syncing, false);
 });
 
-test('pendingclear focus: clear followed by immediate focus/performSearch properly clears syncing and avoids watch suppression', async () => {
+test('clear focus return suppresses accidental search; intentional focus still searches without stranding syncing', async () => {
     const dServer = deferred();
     const dSearch = deferred();
 
@@ -467,6 +467,12 @@ test('pendingclear focus: clear followed by immediate focus/performSearch proper
 
     assert.equal(comp.selectedId, null);
     assert.equal(comp.syncing, true);
+    assert.equal(comp.searching, false);
+    assert.equal(searchCount, 0);
+    assert.equal(comp.open, false);
+
+    // A subsequent deliberate user focus may browse while clear is in flight.
+    comp.handleFocus();
     assert.equal(comp.searching, true);
     assert.equal(searchCount, 1);
 

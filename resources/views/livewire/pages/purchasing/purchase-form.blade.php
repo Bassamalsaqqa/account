@@ -23,7 +23,7 @@
               this.previewTimer = setTimeout(() => this.flushPendingPreview(), 350);
           },
           flushPendingPreview() {
-              if (this.previewPending && !this.saving && !this.documentBusy) {
+              if (this.previewPending && !this.saving && !this.documentBusy && $wire.$el?.dataset?.rowMutationBusy !== 'true') {
                   this.previewPending = false;
                   clearTimeout(this.previewTimer);
                   $wire.$commit();
@@ -47,6 +47,7 @@
           }
       }"
       @input="if ($event.target.hasAttribute('data-purchase-preview-input')) schedulePurchasePreview()"
+      @document-row-mutation-settled.window="if ($event.detail.id === $wire.$id) flushPendingPreview()"
       @document-operation-state.window="if ($event.detail.id === $wire.$id) { documentBusy = $event.detail.busy; flushPendingPreview(); }"
       @keydown.window.prevent.ctrl.s="handleSaveDraft()"
       @keydown.window.prevent.meta.s="handleSaveDraft()"
@@ -259,6 +260,7 @@
             </button>
         </div>
 
+        <p data-row-mutation-status data-retry-label="{{ __('workflow.retry_after_line_update') }}" data-busy-label="{{ __('workflow.updating_lines') }}" role="status" class="min-h-5 text-xs text-text-secondary"></p>
         @foreach($lines as $index => $line)
             @php
                 $lineProd = !empty($line['product_id']) ? ($selectedProducts->get($line['product_id']) ?? $products->firstWhere('id', $line['product_id'])) : null;
@@ -278,7 +280,7 @@
                 $hasRowOptionErrors = $errors->hasAny(["lines.{$index}.item_description", "lines.{$index}.tax_rate_id", "lines.{$index}.lots.*"]);
                 $isRowOptionsOpen = ($expandedRowOptions[$index] ?? false) || $hasRowOptionErrors;
             @endphp
-            <article wire:key="purchase-line-{{ $line['row_key'] }}" class="bg-surface border border-border rounded-card p-3 sm:p-4 space-y-3">
+            <article data-document-row="{{ $line['row_key'] }}" wire:key="purchase-line-{{ $line['row_key'] }}" class="bg-surface border border-border rounded-card p-3 sm:p-4 space-y-3">
                 <div class="flex justify-between items-center gap-2">
                     <div class="flex items-center gap-2">
                         <span class="text-xs font-mono text-text-muted font-bold">#<bdi>{{ $index + 1 }}</bdi></span>

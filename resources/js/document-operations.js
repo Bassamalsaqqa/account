@@ -90,6 +90,11 @@ async function drain(state) {
             result = await state.wire[job.method](...job.args);
             state.confirmed.clear();
         }
+        // Structural mutations resolve their action before Livewire's render
+        // callback. Keep FIFO sealed until the keyed rows finish moving.
+        if (state.wire.$el?.dataset?.rowMutationBusy === 'true') {
+            await new Promise(resolve => state.wire.$el.addEventListener('document-row-mutation-settled', resolve, {once: true}));
+        }
         settle(job, 'resolve', result);
     } catch (failure) {
         if (!job.timedOut) quarantine(state, job, failure);
@@ -206,6 +211,11 @@ export function enqueueQuantityStep(wire, index, direction, options = {}) {
     return promise;
 }
 export function enqueueDocumentOperation(wire, method, args = []) {
+    if (wire?.$el?.dataset?.rowMutationBusy === 'true') {
+        const status = wire.$el.querySelector('[data-row-mutation-status]');
+        if (status) status.textContent = status.dataset.retryLabel;
+        return Promise.reject(error('Items are updating; retry after the current change finishes'));
+    }
     if (!wire || !allowed.has(method)) return Promise.reject(error('Invalid document operation'));
     const state = stateFor(wire);
     if (state.blocked) return Promise.reject(error('Document operation blocked; review pending quantity changes'));
@@ -254,6 +264,7 @@ export function touchQuantityStepper(wire, config = {}) {
         confirmedQty: null,
         batchEpoch: 0,
         tap(direction) {
+            if (wire?.$el?.dataset?.rowMutationBusy === 'true') return;
             const input = this.$refs?.qtyInput;
             const liveDomIndex = Number.isInteger(Number(this.$refs?.stepperMeta?.dataset?.lineIndex))
                 ? Number(this.$refs.stepperMeta.dataset.lineIndex)

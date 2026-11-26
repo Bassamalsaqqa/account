@@ -9,6 +9,7 @@
     'disabled' => false,
     'field' => 'quantity',
     'previewInput' => false,
+    'deferInput' => false,
     'rowKey' => null,
 ])
 
@@ -53,6 +54,9 @@
                @if ($previewInput)
                    wire:model="lines.{{ $index }}.{{ $field }}"
                    data-purchase-preview-input
+               @elseif ($deferInput)
+                   wire:model="lines.{{ $index }}.{{ $field }}"
+                   wire:change="recalculate"
                @else
                    wire:model.blur="lines.{{ $index }}.{{ $field }}"
                    wire:change="recalculate"

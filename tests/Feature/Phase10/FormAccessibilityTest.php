@@ -66,11 +66,11 @@ final class FormAccessibilityTest extends TestCase
             ->call('toggleDiscountControl')
             ->set('discount_type', 'fixed');
         $this->assertNamedControls($invoice->html());
-        foreach (['desktop', 'mobile'] as $layout) {
-            foreach ([0, 1] as $index) {
-                $invoice->assertSee('id="invoice-'.$layout.'-line-'.$index.'-quantity"', false);
-                $invoice->assertSee('aria-label="'.__('sales.quantity').' '.($index + 1).'"', false);
-            }
+        foreach ([0, 1] as $index) {
+            $rowKey = $invoice->get('lines.'.$index.'.row_key');
+            $id = 'invoice-line-'.$rowKey.'-quantity';
+            $this->assertSame(1, substr_count($invoice->html(), 'id="'.$id.'"'));
+            $invoice->assertSee('aria-label="'.__('sales.quantity').' '.($index + 1).'"', false);
         }
         $invoice->assertSee('id="sales-discount-type"', false);
         $invoice->assertSee('id="sales-discount-value"', false);
@@ -110,8 +110,7 @@ final class FormAccessibilityTest extends TestCase
             ->assertSet('lines.0.item_description', 'Retained exact draft / مسودة محفوظة')
             ->assertSet('lines.0.unit_price', '2.500000');
         $this->assertError($invoice->html(), 'invoice-customer-id');
-        $this->assertError($invoice->html(), 'invoice-desktop-line-0-quantity');
-        $this->assertError($invoice->html(), 'invoice-mobile-line-0-quantity');
+        $this->assertError($invoice->html(), 'invoice-line-'.$invoice->get('lines.0.row_key').'-quantity');
         $this->assertNamedControls($invoice->html());
 
         $discountErrorInvoice = Livewire::test(InvoiceForm::class)

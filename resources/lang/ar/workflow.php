@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'retry_after_line_update' => 'انتظر اكتمال تحديث البنود، ثم أعد المحاولة.',
+    'updating_lines' => 'جارٍ تحديث البنود…',
     'open' => 'فتح',
     'edit' => 'تعديل',
     'delete' => 'حذف',

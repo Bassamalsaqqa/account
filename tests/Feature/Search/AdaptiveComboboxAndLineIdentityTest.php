@@ -69,19 +69,20 @@ class AdaptiveComboboxAndLineIdentityTest extends Phase5ETestCase
 
             $html = $component->html();
             $this->assertStringContainsString('wire:key="'.$desktopPrefix.$rowKey.'"', $html);
-            $this->assertStringContainsString('wire:key="'.$mobilePrefix.$rowKey.'"', $html);
+            $this->assertSame(1, substr_count($html, 'wire:key="'.$desktopPrefix.$rowKey.'"'));
+            $this->assertStringNotContainsString('-card-'.$rowKey, $html);
             $this->assertStringContainsString('selectProduct', $html);
             $this->assertStringContainsString($rowKey, $html);
 
             if ($componentClass === QuotationForm::class) {
                 $this->assertStringContainsString("context: 'quotation'", $html);
                 $this->assertStringNotContainsString("context: 'sales'", $html);
-                $this->assertStringContainsString('id="quote-desktop-line-0-quantity"', $html);
-                $this->assertStringContainsString('id="quote-mobile-line-0-quantity"', $html);
+                $this->assertSame(1, substr_count($html, 'id="quote-line-'.$rowKey.'-quantity"'));
+                $this->assertStringNotContainsString('quote-mobile-line-', $html);
             }
             if ($componentClass === InvoiceForm::class) {
-                $this->assertStringContainsString('id="invoice-desktop-line-0-quantity"', $html);
-                $this->assertStringContainsString('id="invoice-mobile-line-0-quantity"', $html);
+                $this->assertSame(1, substr_count($html, 'id="invoice-line-'.$rowKey.'-quantity"'));
+                $this->assertStringNotContainsString('invoice-mobile-line-', $html);
             }
         }
     }

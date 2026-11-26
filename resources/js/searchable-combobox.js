@@ -640,6 +640,7 @@ export function searchableCombobox(config) {
         },
 
         isBlocked() {
+            if (this.$wire?.$el?.dataset?.rowMutationBusy === 'true') return true;
             if (this.disabled) return true;
             if (typeof window !== 'undefined' && typeof window.isDocumentBlocked === 'function' && window.isDocumentBlocked(this.$wire)) {
                 return true;

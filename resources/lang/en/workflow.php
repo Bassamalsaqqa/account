@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 return [
+    'retry_after_line_update' => 'Wait for items to finish updating, then retry.',
+    'updating_lines' => 'Updating items…',
     'open' => 'Open',
     'edit' => 'Edit',
     'delete' => 'Delete',
