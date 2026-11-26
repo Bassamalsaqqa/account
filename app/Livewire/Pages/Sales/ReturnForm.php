@@ -141,6 +141,7 @@ class ReturnForm extends Component
 
     public function loadInvoiceLines(): void
     {
+        $this->resetErrorBag();
         if ($this->sales_invoice_id === null) {
             $this->lines = [];
             $this->resetTotals();
@@ -533,27 +534,31 @@ class ReturnForm extends Component
         $returnTax = BigDecimal::zero();
         $returnTotal = BigDecimal::zero();
         $hasPositiveReturn = false;
+        $firstError = null;
 
-        foreach ($this->lines as $line) {
+        foreach ($this->lines as $idx => $line) {
+            $this->resetErrorBag("lines.{$idx}.return_quantity");
             $qtyStr = trim((string) $line['return_quantity']);
             if ($qtyStr === '' || $qtyStr === '0') {
                 continue;
             }
 
             if (preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $qtyStr) !== 1) {
-                $this->returnCalculationError = __('sales.invalid_return_quantity');
-                $this->resetCalculatedTotals();
+                $message = __('sales.invalid_return_quantity');
+                $this->addError("lines.{$idx}.return_quantity", $message);
+                $firstError ??= $message;
 
-                return;
+                continue;
             }
 
             try {
                 $qty = BigDecimal::of($qtyStr);
             } catch (\Throwable) {
-                $this->returnCalculationError = __('sales.invalid_return_quantity');
-                $this->resetCalculatedTotals();
+                $message = __('sales.invalid_return_quantity');
+                $this->addError("lines.{$idx}.return_quantity", $message);
+                $firstError ??= $message;
 
-                return;
+                continue;
             }
 
             if (! $qty->isPositive()) {
@@ -563,10 +568,11 @@ class ReturnForm extends Component
             $salesInvoiceLineId = (int) $line['sales_invoice_line_id'];
             $sourceLine = $sourceLines->get($salesInvoiceLineId);
             if ($sourceLine === null) {
-                $this->returnCalculationError = __('refinement.source_line_not_found');
-                $this->resetCalculatedTotals();
+                $message = __('refinement.source_line_not_found');
+                $this->addError("lines.{$idx}.return_quantity", $message);
+                $firstError ??= $message;
 
-                return;
+                continue;
             }
 
             $priorLinesForLine = $allPriorReturnLines->get($sourceLine->id, collect());
@@ -577,10 +583,15 @@ class ReturnForm extends Component
             $serverMaxReturnable = BigDecimal::max('0', BigDecimal::of((string) $sourceLine->quantity)->minus($priorQty));
 
             if ($qty->isGreaterThan($serverMaxReturnable)) {
-                $this->returnCalculationError = __('sales.return_quantity_exceeds_remaining');
-                $this->resetCalculatedTotals();
+                $message = __('sales.return_quantity_exceeds_remaining');
+                $this->addError("lines.{$idx}.return_quantity", $message);
+                $firstError ??= $message;
 
-                return;
+                continue;
+            }
+
+            if ($firstError !== null) {
+                continue;
             }
 
             try {
@@ -596,11 +607,17 @@ class ReturnForm extends Component
                 $returnTotal = $returnTotal->plus($lineAmounts['total']);
                 $hasPositiveReturn = true;
             } catch (\Throwable) {
-                $this->returnCalculationError = __('sales.return_calculation_failed');
-                $this->resetCalculatedTotals();
-
-                return;
+                $message = __('sales.return_calculation_failed');
+                $this->addError("lines.{$idx}.return_quantity", $message);
+                $firstError = $message;
             }
+        }
+
+        if ($firstError !== null) {
+            $this->returnCalculationError = $firstError;
+            $this->resetCalculatedTotals();
+
+            return;
         }
 
         if (! $hasPositiveReturn) {
@@ -662,12 +679,22 @@ class ReturnForm extends Component
         ]);
 
         $dtoLines = [];
-        foreach ($this->lines as $line) {
-            $qty = BigDecimal::of((string) ($line['return_quantity'] ?: 0));
+        foreach ($this->lines as $idx => $line) {
+            $qtyStr = trim((string) $line['return_quantity']);
+            if ($qtyStr === '') {
+                $qtyStr = '0';
+            }
+            if (preg_match('/^\d{1,12}(?:\.\d{1,6})?$/D', $qtyStr) !== 1) {
+                $this->addError("lines.{$idx}.return_quantity", __('sales.invalid_return_quantity'));
+
+                return null;
+            }
+            $qty = BigDecimal::of($qtyStr);
             if ($qty->isPositive()) {
                 $max = BigDecimal::of((string) $line['max_returnable']);
                 if ($qty->isGreaterThan($max)) {
-                    $this->addError('lines', "Return quantity [{$qty}] cannot exceed max returnable [{$max}] for {$line['item_description']}.");
+                    $this->addError("lines.{$idx}.return_quantity", __('sales.return_quantity_exceeds_remaining'));
+                    $this->addError('lines', __('sales.return_quantity_exceeds_remaining'));
 
                     return null;
                 }

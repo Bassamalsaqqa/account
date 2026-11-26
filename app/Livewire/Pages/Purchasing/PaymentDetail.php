@@ -64,7 +64,7 @@ class PaymentDetail extends Component
         $this->pageCompanyId = (int) $context->companyId();
         $this->authorizePaymentFinancialRead();
 
-        $this->payment = VendorPayment::with(['vendor', 'moneyAccount', 'allocations.purchase', 'allocations.openingTradeItem', 'applicationEvents'])
+        $this->payment = VendorPayment::with(['vendor', 'moneyAccount', 'checkInstrument', 'allocations.purchase', 'allocations.openingTradeItem', 'allocations.applicationEvent'])
             ->where('company_id', $this->pageCompanyId)
             ->where('public_id', $publicId)
             ->firstOrFail();
@@ -132,7 +132,7 @@ class PaymentDetail extends Component
         }
 
         $this->payment->refresh();
-        $this->payment->load(['vendor', 'moneyAccount', 'allocations.purchase', 'allocations.openingTradeItem', 'applicationEvents']);
+        $this->payment->load(['vendor', 'moneyAccount', 'checkInstrument', 'allocations.purchase', 'allocations.openingTradeItem', 'allocations.applicationEvent']);
         $this->showCreditForm = false;
         session()->flash('success', __('purchasing.credit_applied_successfully'));
     }
@@ -154,7 +154,7 @@ class PaymentDetail extends Component
 
             return;
         }
-        $this->payment->load(['vendor', 'moneyAccount', 'allocations.purchase', 'allocations.openingTradeItem', 'applicationEvents']);
+        $this->payment->load(['vendor', 'moneyAccount', 'checkInstrument', 'allocations.purchase', 'allocations.openingTradeItem', 'allocations.applicationEvent']);
         session()->flash('success', __('purchasing.reversed_successfully'));
     }
 

@@ -1,7 +1,4 @@
 <div class="space-y-6">
-    @if(app(\App\Services\Purchasing\VendorFinancialRead::class)->allows((int) $payment->company_id))
-        <div class="flex justify-end"><x-document-actions route-name="pdf.vendor-payment" :parameters="['publicId' => $payment->public_id]" :permissions="['purchasing.document.pdf']" /></div>
-    @endif
     <!-- Flash Messages -->
     @if (session()->has('success'))
         <div class="p-4 rounded-control bg-success-bg border border-success text-success text-sm font-bold">
@@ -61,9 +58,13 @@
                     </a>
                 @endif
 
+                @if(app(\App\Services\Purchasing\VendorFinancialRead::class)->allows((int) $payment->company_id))
+                    <x-document-actions route-name="pdf.vendor-payment" :parameters="['publicId' => $payment->public_id]" :permissions="['purchasing.document.pdf']" />
+                @endif
+
                 <a href="{{ route('vendor-payments.index') }}"
                    class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
-                    {{ __('purchasing.cancel') }}
+                    {{ __('purchasing.back') }}
                 </a>
             </div>
         </div>
@@ -146,11 +147,16 @@
             </div>
 
             <div class="max-w-xs">
-                <label class="block text-sm font-bold text-text-primary mb-1">
+                <label for="vendor-payment-application-date" class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('purchasing.application_date') }} <span class="text-danger">*</span>
                 </label>
-                <input type="date" wire:model="applicationDate" class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm" required />
-                @error('applicationDate') <span class="text-danger text-sm mt-1 block">{{ $message }}</span> @enderror
+                <input id="vendor-payment-application-date"
+                       type="date"
+                       wire:model="applicationDate"
+                       @error('applicationDate') aria-invalid="true" aria-describedby="vendor-payment-application-date-error" @enderror
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm"
+                       required />
+                @error('applicationDate') <span id="vendor-payment-application-date-error" role="alert" class="text-danger text-sm mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div class="space-y-3 pt-2">
@@ -159,33 +165,42 @@
                 </h3>
 
                 @forelse ($openPurchases as $purchase)
-                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 rounded-control bg-canvas border border-border items-center text-sm">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-control bg-canvas border border-border items-center text-sm">
                         <div class="font-mono font-bold text-primary" dir="ltr">
                             {{ $purchase['number'] }}
                             <span class="block text-sm text-text-muted font-normal">{{ $purchase['date'] }}</span>
                         </div>
                         <div>
-                            <span class="text-text-muted block text-sm uppercase">{{ __('purchasing.total') }}</span>
-                            <span class="font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
-                        </div>
-                        <div>
                             <span class="text-text-muted block text-sm uppercase">{{ __('purchasing.outstanding_balance') }}</span>
                             <span class="font-mono font-bold text-danger" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase['outstanding'], $purchase['currency']) }} {{ $purchase['currency'] }}</span>
                         </div>
-                        <div>
-                            <label class="block text-sm text-text-muted uppercase mb-1">{{ __('purchasing.allocated') }}</label>
-                            <input type="text"
-                                   inputmode="decimal"
-                                   wire:model="creditAmounts.{{ $purchase['id'] }}"
-                                   placeholder="0.00"
-                                   class="w-full h-8 px-2 rounded-control border border-border bg-surface text-sm font-mono font-bold text-end"
-                                   dir="ltr" />
-                            <span class="text-sm" dir="ltr">{{ $purchase['currency'] }}</span>
+                        <div class="space-y-1">
+                            <label for="vendor-credit-amount-{{ $purchase['id'] }}" class="block text-sm text-text-muted uppercase">{{ __('purchasing.allocated') }}</label>
+                            <div class="flex items-center gap-2">
+                                <input id="vendor-credit-amount-{{ $purchase['id'] }}"
+                                       type="text"
+                                       inputmode="decimal"
+                                       wire:model="creditAmounts.{{ $purchase['id'] }}"
+                                       @error('creditAmounts.' . $purchase['id']) aria-invalid="true" aria-describedby="vendor-credit-amount-{{ $purchase['id'] }}-error" @enderror
+                                       placeholder="0.00"
+                                       class="w-full min-h-11 px-2 rounded-control border border-border bg-surface text-sm font-mono font-bold text-end"
+                                       dir="ltr" />
+                                <span class="text-sm shrink-0" dir="ltr">{{ $purchase['currency'] }}</span>
+                            </div>
                             @if($purchase['currency'] !== $payment->currency_code)
-                            <label class="block text-sm">{{ __('money.payment_consumed') }} ({{ $payment->currency_code }})<input type="text" inputmode="decimal" wire:model="creditPaymentAmounts.{{ $purchase['id'] }}" class="w-full border-border rounded-control p-2" dir="ltr" /></label>
+                                <label for="vendor-credit-payment-amount-{{ $purchase['id'] }}" class="block text-sm pt-1">
+                                    {{ __('money.payment_consumed') }} ({{ $payment->currency_code }})
+                                </label>
+                                <input id="vendor-credit-payment-amount-{{ $purchase['id'] }}"
+                                       type="text"
+                                       inputmode="decimal"
+                                       wire:model="creditPaymentAmounts.{{ $purchase['id'] }}"
+                                       @error('creditPaymentAmounts.' . $purchase['id']) aria-invalid="true" aria-describedby="vendor-credit-payment-amount-{{ $purchase['id'] }}-error" @enderror
+                                       class="w-full min-h-11 border border-border bg-surface rounded-control p-2 font-mono text-sm"
+                                       dir="ltr" />
                             @endif
-                            @error('creditAmounts.' . $purchase['id']) <span class="text-danger text-sm block mt-1">{{ $message }}</span> @enderror
-                            @error('creditPaymentAmounts.' . $purchase['id']) <span class="text-danger text-sm block mt-1">{{ $message }}</span> @enderror
+                            @error('creditAmounts.' . $purchase['id']) <span id="vendor-credit-amount-{{ $purchase['id'] }}-error" role="alert" class="text-danger text-sm block mt-1">{{ $message }}</span> @enderror
+                            @error('creditPaymentAmounts.' . $purchase['id']) <span id="vendor-credit-payment-amount-{{ $purchase['id'] }}-error" role="alert" class="text-danger text-sm block mt-1">{{ $message }}</span> @enderror
                         </div>
                     </div>
                 @empty
@@ -193,7 +208,7 @@
                 @endforelse
             </div>
 
-            @error('creditAmounts') <p class="text-danger text-sm font-bold">{{ $message }}</p> @enderror
+            @error('creditAmounts') <p role="alert" class="text-danger text-sm font-bold">{{ $message }}</p> @enderror
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-border">
                 <button type="button" wire:click="$set('showCreditForm', false)" class="px-3 py-1.5 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors cursor-pointer">
@@ -219,7 +234,7 @@
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_date') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.allocated') }}</th>
                         <th class="py-2.5 px-4 text-start">{{ __('purchasing.realized_fx') }}</th>
-                        <th class="py-2.5 px-4 text-start">{{ __('purchasing.all_statuses') }}</th>
+                        <th class="py-2.5 px-4 text-start">{{ __('purchasing.status') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
@@ -243,7 +258,7 @@
                                 {{ $alloc->purchase?->purchase_date ? $alloc->purchase->purchase_date->toDateString() : '—' }}
                             </td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
                             </td>
                             <td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php
@@ -253,7 +268,7 @@
                                 @endphp
                                 <span class="{{ $isPos ? 'text-danger font-bold' : ($isNeg ? 'text-success font-bold' : 'text-text-muted') }}">
                                     @if (! \App\Domain\Sales\Formatters\SalesMoneyFormatter::isZero($fxVal))
-                                        {{ $isPos ? '+' . \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($fxVal) . ' (' . __('purchasing.realized_fx_loss') . ')' : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($fxVal) . ' (' . __('purchasing.realized_fx_gain') . ')' }}
+                                        {{ $isPos ? '+' . \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($fxVal, $payment->base_currency_code) . ' (' . __('purchasing.realized_fx_loss') . ')' : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($fxVal, $payment->base_currency_code) . ' (' . __('purchasing.realized_fx_gain') . ')' }}
                                     @else
                                         —
                                     @endif
@@ -284,6 +299,30 @@
                     @endforelse
                 </tbody>
             </table>
+        </div>
+
+        <div class="p-6 bg-surface-soft/40 border-t border-border flex flex-col md:flex-row justify-between gap-6 text-sm">
+            <div class="space-y-3 max-w-md">
+                @if ($payment->reference_number)
+                    <div>
+                        <span class="font-bold text-text-primary block">{{ __('purchasing_documents.reference') }}</span>
+                        <p class="text-text-secondary text-sm font-mono"><bdi dir="ltr">{{ $payment->reference_number }}</bdi></p>
+                    </div>
+                @endif
+                @if ($payment->notes)
+                    <div>
+                        <span class="font-bold text-text-primary block">{{ __('purchasing.notes') }}</span>
+                        <p class="text-text-secondary text-sm break-words whitespace-pre-line">{{ $payment->notes }}</p>
+                    </div>
+                @endif
+            </div>
+
+            <div class="w-full md:w-64 space-y-2">
+                <div class="flex justify-between py-1 border-b border-border/50">
+                    <span class="text-text-muted">{{ __('purchasing.total') }}:</span>
+                    <span class="font-mono font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($payment->amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
+                </div>
+            </div>
         </div>
     </div>
 

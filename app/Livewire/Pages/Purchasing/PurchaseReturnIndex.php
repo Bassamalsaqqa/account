@@ -78,7 +78,7 @@ class PurchaseReturnIndex extends Component
         $query = PurchaseReturn::where('company_id', $company->id)
             ->select($fields)
             ->with([
-                'vendor' => fn ($q) => $q->withTrashed()->where('company_id', $company->id)->select(['id', 'name_ar', 'name_en', 'code']),
+                'vendor' => fn ($q) => $q->withTrashed()->where('company_id', $company->id)->select(['id', 'public_id', 'name_ar', 'name_en', 'code']),
                 'purchase' => fn ($q) => $q->where('company_id', $company->id)->select(['id', 'public_id', 'purchase_number', 'currency_minor_units']),
             ]);
 
@@ -103,6 +103,7 @@ class PurchaseReturnIndex extends Component
             'returns' => $query->orderByDesc('created_at')->orderByDesc('id')->paginate($this->tablePageSize()),
             'vendors' => Vendor::withTrashed()->where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en']),
             'withCost' => $withCost,
+            'canViewVendor' => auth()->user()->hasPermissionTo('vendors.view'),
             'canCreate' => $canCreate,
         ]);
     }

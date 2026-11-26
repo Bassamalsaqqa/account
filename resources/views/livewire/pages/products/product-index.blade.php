@@ -3,7 +3,6 @@
         @php
             $productPageActor = auth()->user();
             $canBrowseCatalogs = $productPageActor?->can('catalogs.view') && $productPageActor?->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
-            $canPrintLabels = $productPageActor?->can('inventory.barcode_labels.print') && $productPageActor?->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
         @endphp
         @if ($canManageProduct || $canBrowseCatalogs || $canPrintLabels)
             <div class="flex flex-wrap items-center gap-2">
@@ -114,7 +113,7 @@
                             <th class="p-3.5 text-center">{{ __('inventory.stock_value_short') }}</th>
                         @endif
                         <th class="p-3.5 text-center">{{ __('inventory.filter_status') }}</th>
-                        <th class="p-3.5 text-center w-24"></th>
+                        <th class="p-3.5 text-end">{{ __('refinement_lists.actions') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
@@ -197,26 +196,21 @@
                             </td>
 
                             <!-- Actions -->
-                            <td class="table-actions p-3.5 text-center">
-                                <div class="flex flex-nowrap items-center justify-center gap-2">
-                                    <a href="{{ route('products.show', $product->public_id) }}"
-                                       title="{{ __('inventory.product_details') }}"
-                                       class="touch-action p-1.5 text-text-secondary hover:bg-surface-soft hover:text-primary transition-colors">
-                                        <x-icon name="dashboard" class="w-4 h-4" /><span>{{ __('refinement_lists.open') }}</span>
-                                    </a>
+                            <td class="table-actions p-3.5 text-end">
+                                <div class="row-action-group justify-end" role="group" aria-label="{{ __('refinement_lists.actions') }}">
+                                    <x-row-action data-row-link :href="route('products.show', $product->public_id)" :label="__('inventory.product_details')" icon="eye" />
+                                    @if ($product->active && $canPrintLabels)
+                                        <x-row-action :href="route('labels.index', ['search' => mb_substr((string) ($product->sku ?: $product->name()), 0, 120)])" :label="__('refinement_lists.barcode_labels')" icon="barcode" />
+                                    @endif
                                     @if ($canManageProduct)
-                                        <a href="{{ route('products.edit', $product->public_id) }}"
-                                           title="{{ __('inventory.edit_product') }}"
-                                           class="touch-action p-1.5 text-text-secondary hover:bg-surface-soft hover:text-primary transition-colors">
-                                            <x-icon name="settings" class="w-4 h-4" /><span>{{ __('inventory.edit') }}</span>
-                                        </a>
+                                        <x-row-action :href="route('products.edit', $product->public_id)" :label="__('inventory.edit_product')" icon="edit" tone="primary" />
                                     @endif
                                 </div>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ $canViewCost ? 7 : 5 }}" class="p-8 text-center text-text-muted">
+                            <td colspan="{{ $canViewCost ? 8 : 6 }}" class="p-8 text-center text-text-muted">
                                 <x-icon name="box" class="w-10 h-10 mx-auto mb-2 text-text-muted/40" />
                                 <p>{{ __('inventory.no_products_found') }}</p>
                             </td>
@@ -291,20 +285,16 @@
                         @endif
                     </div>
 
-                    <div class="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border/40">
-                        <a href="{{ route('products.show', $product->public_id) }}"
-                           class="touch-action bg-surface-soft hover:bg-border/60 text-xs font-semibold text-text-secondary transition-colors">
-                            {{ __('inventory.product_details') }}
-                        </a>
-                        @can('inventory.barcode_labels.print')
-                            <a href="{{ route('labels.index') }}" class="touch-action bg-surface text-primary text-sm font-semibold"><x-icon name="barcode" class="h-4 w-4" />{{ __('refinement_lists.barcode_labels') }}</a>
-                        @endcan
-                        @if ($canManageProduct)
-                            <a href="{{ route('products.edit', $product->public_id) }}"
-                               class="touch-action bg-primary text-white text-xs font-semibold hover:bg-primary-hover transition-colors">
-                                {{ __('inventory.edit_product') }}
-                            </a>
-                        @endif
+                    <div class="pt-2 border-t border-border/40 flex justify-end">
+                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('refinement_lists.actions') }}">
+                            <x-row-action data-row-link :href="route('products.show', $product->public_id)" :label="__('inventory.product_details')" icon="eye" />
+                            @if ($product->active && $canPrintLabels)
+                                <x-row-action :href="route('labels.index', ['search' => mb_substr((string) ($product->sku ?: $product->name()), 0, 120)])" :label="__('refinement_lists.barcode_labels')" icon="barcode" />
+                            @endif
+                            @if ($canManageProduct)
+                                <x-row-action :href="route('products.edit', $product->public_id)" :label="__('inventory.edit_product')" icon="edit" tone="primary" />
+                            @endif
+                        </div>
                     </div>
                 </div>
             @empty

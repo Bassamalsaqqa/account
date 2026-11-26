@@ -33,6 +33,7 @@
                         @foreach (['vendor_code', 'vendor', 'phone', 'default_currency', 'status'] as $label)
                             <th class="px-4 py-3 text-start">{{ __('purchasing.' . $label) }}</th>
                         @endforeach
+                        <th class="px-4 py-3 text-end">{{ __('purchasing.actions') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-border">
@@ -46,9 +47,23 @@
                             <td class="px-4 py-4"><bdi>{{ $vendor->phone ?? $vendor->whatsapp ?? '—' }}</bdi></td>
                             <td class="px-4 py-4"><bdi>{{ $vendor->default_currency_code ?? '—' }}</bdi></td>
                             <td class="px-4 py-4"><span class="{{ $vendor->active ? 'text-success' : 'text-text-secondary' }} font-bold">{{ __('purchasing.' . $vendor->status) }}</span></td>
+                            <td class="table-actions px-4 py-4 text-end">
+                                <div class="row-action-group justify-end" role="group" aria-label="{{ __('purchasing.actions') }}">
+                                    <x-row-action data-row-link :href="route('vendors.show', $vendor->public_id)" :label="__('purchasing.vendor_details')" icon="eye" />
+                                    @if ($vendor->active && $canCreatePurchase)
+                                        <x-row-action :href="route('purchases.create', ['vendor_id' => $vendor->id])" :label="__('mobile.new_purchase')" icon="plus" tone="primary" />
+                                    @endif
+                                    @if ($vendor->active && $canCreatePayment)
+                                        <x-row-action :href="route('vendor-payments.create', ['vendor_id' => $vendor->id])" :label="__('mobile.record_vendor_payment')" icon="money" />
+                                    @endif
+                                    @if ($canManage)
+                                        <x-row-action :href="route('vendors.edit', $vendor->public_id)" :label="__('purchasing.edit_vendor')" icon="edit" tone="primary" />
+                                    @endif
+                                </div>
+                            </td>
                         </tr>
                     @empty
-                        <tr><td colspan="5" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_vendors_found') }}</td></tr>
+                        <tr><td colspan="6" class="p-8 text-center text-text-secondary">{{ __('purchasing.no_vendors_found') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -71,14 +86,19 @@
                                 <dd class="mt-1"><bdi>{{ $vendor->phone ?? $vendor->whatsapp ?? '—' }}</bdi></dd>
                             </div>
                     </dl>
-                    <div class="flex flex-wrap gap-2 pt-2 border-t border-border">
-                        <a href="{{ route('vendors.show', $vendor->public_id) }}" class="touch-action bg-surface-soft text-xs font-bold">{{ __('mobile.view_details') }}</a>
-                        @if(auth()->user()->can('purchasing.purchase.create') && auth()->user()->can('purchasing.cost.view'))
-                            <a href="{{ route('purchases.create') }}" class="touch-action bg-primary-50 text-primary text-sm font-semibold"><x-icon name="plus" class="h-4 w-4" />{{ __('purchasing.new_purchase') }}</a>
-                        @endif
-                        @if(auth()->user()->hasPermissionTo('money.vendor_payment.create') && auth()->user()->hasPermissionTo('purchasing.cost.view'))
-                            <a href="{{ route('vendor-payments.create', ['vendor_id' => $vendor->id]) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.record_vendor_payment') }}</a>
-                        @endif
+                    <div class="pt-2 border-t border-border flex justify-end">
+                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('purchasing.actions') }}">
+                            <x-row-action data-row-link :href="route('vendors.show', $vendor->public_id)" :label="__('purchasing.vendor_details')" icon="eye" />
+                            @if ($vendor->active && $canCreatePurchase)
+                                <x-row-action :href="route('purchases.create', ['vendor_id' => $vendor->id])" :label="__('mobile.new_purchase')" icon="plus" tone="primary" />
+                            @endif
+                            @if ($vendor->active && $canCreatePayment)
+                                <x-row-action :href="route('vendor-payments.create', ['vendor_id' => $vendor->id])" :label="__('mobile.record_vendor_payment')" icon="money" />
+                            @endif
+                            @if ($canManage)
+                                <x-row-action :href="route('vendors.edit', $vendor->public_id)" :label="__('purchasing.edit_vendor')" icon="edit" tone="primary" />
+                            @endif
+                        </div>
                     </div>
                 </article>
             @empty

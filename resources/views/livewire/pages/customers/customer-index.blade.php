@@ -109,6 +109,12 @@
                             <td class="table-actions py-3 px-4 text-end">
                                 <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
                                     <x-row-action data-row-link :href="route('customers.show', $customer->public_id)" :label="__('sales.customer_details')" icon="eye" />
+                                    @if ($customer->is_active && $canCreateInvoice)
+                                        <x-row-action :href="route('invoices.create', ['customer_id' => $customer->id])" :label="__('mobile.new_invoice')" icon="plus" tone="primary" />
+                                    @endif
+                                    @if ($customer->is_active && $canRecordPayment)
+                                        <x-row-action :href="route('payments.create', ['customer_id' => $customer->id])" :label="__('mobile.record_payment')" icon="money" />
+                                    @endif
                                     @if ($canManage)
                                         <x-row-action :href="route('customers.edit', $customer->public_id)" :label="__('sales.edit_customer')" icon="edit" tone="primary" />
                                     @endif
@@ -176,23 +182,19 @@
                         </div>
                     </div>
 
-                    <div class="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border">
-                        @can('sales.invoice.create')
-                            <a href="{{ route('invoices.create', ['customer_id' => $customer->id]) }}" class="touch-action bg-primary-50 text-primary text-xs font-bold">{{ __('mobile.new_invoice') }}</a>
-                        @endcan
-                        @can('money.receipt.create')
-                            <a href="{{ route('payments.create', ['customer_id' => $customer->id]) }}" class="touch-action border border-border text-xs font-bold">{{ __('mobile.record_payment') }}</a>
-                        @endcan
-                        <a href="{{ route('customers.show', $customer->public_id) }}"
-                           class="touch-action bg-surface-soft text-text-primary text-xs font-bold">
-                            {{ __('sales.customer_details') }}
-                        </a>
-                        @if ($canManage)
-                            <a href="{{ route('customers.edit', $customer->public_id) }}"
-                               class="touch-action bg-surface-soft text-text-secondary text-xs font-semibold">
-                                {{ __('sales.edit_customer') }}
-                            </a>
-                        @endif
+                    <div class="pt-2 border-t border-border flex justify-end">
+                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                            <x-row-action data-row-link :href="route('customers.show', $customer->public_id)" :label="__('sales.customer_details')" icon="eye" />
+                            @if ($customer->is_active && $canCreateInvoice)
+                                <x-row-action :href="route('invoices.create', ['customer_id' => $customer->id])" :label="__('mobile.new_invoice')" icon="plus" tone="primary" />
+                            @endif
+                            @if ($customer->is_active && $canRecordPayment)
+                                <x-row-action :href="route('payments.create', ['customer_id' => $customer->id])" :label="__('mobile.record_payment')" icon="money" />
+                            @endif
+                            @if ($canManage)
+                                <x-row-action :href="route('customers.edit', $customer->public_id)" :label="__('sales.edit_customer')" icon="edit" tone="primary" />
+                            @endif
+                        </div>
                     </div>
                 </div>
             @empty

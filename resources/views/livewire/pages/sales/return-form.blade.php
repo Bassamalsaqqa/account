@@ -31,16 +31,20 @@
     </div>
 
     <!-- Main Form -->
-    <div class="bg-surface rounded-card border border-border shadow-xs p-6 space-y-6">
+    <div class="bg-surface rounded-card border border-border shadow-xs p-4 sm:p-6 space-y-6">
         <!-- Invoice & Date Selection -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-border">
             <div class="md:col-span-2">
-                <label class="block text-sm font-bold text-text-primary mb-1">
+                <label for="sales-return-invoice" class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('sales.original_invoice') }} <span class="text-danger">*</span>
                 </label>
-                <select wire:model.live="sales_invoice_id" @disabled($draftPublicId !== null)
+                <select id="sales-return-invoice"
+                        wire:model.live="sales_invoice_id"
+                        @disabled($draftPublicId !== null)
+                        @error('sales_invoice_id') aria-invalid="true" aria-describedby="sales-return-invoice-error" @enderror
                         required
-                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono" :disabled="documentBusy || saving">
+                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono"
+                        :disabled="{{ $draftPublicId !== null ? 'true' : 'false' }} || documentBusy || saving">
                     <option value="">-- {{ __('sales.original_invoice') }} --</option>
                     @foreach ($invoices as $inv)
                         <option value="{{ $inv->id }}">
@@ -48,28 +52,35 @@
                         </option>
                     @endforeach
                 </select>
-                @error('sales_invoice_id') <span role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                @error('sales_invoice_id') <span id="sales-return-invoice-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div>
-                <label class="block text-sm font-bold text-text-primary mb-1">
+                <label for="sales-return-date" class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('sales.date') }} <span class="text-danger">*</span>
                 </label>
-                <input type="date"
+                <input id="sales-return-date"
+                       type="date"
                        wire:model="issue_date"
+                       @error('issue_date') aria-invalid="true" aria-describedby="sales-return-date-error" @enderror
                        required
-                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
-                @error('issue_date') <span role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
+                       :disabled="documentBusy || saving"/>
+                @error('issue_date') <span id="sales-return-date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div class="md:col-span-3">
-                <label class="block text-sm font-bold text-text-primary mb-1">
+                <label for="sales-return-reason" class="block text-sm font-bold text-text-primary mb-1">
                     {{ __('sales.return_reason') }}
                 </label>
-                <input type="text"
+                <input id="sales-return-reason"
+                       type="text"
                        wire:model="reason"
+                       @error('reason') aria-invalid="true" aria-describedby="sales-return-reason-error" @enderror
                        placeholder="{{ __('sales.return_reason_hint') }}"
-                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
+                       :disabled="documentBusy || saving"/>
+                @error('reason') <span id="sales-return-reason-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
         </div>
 
@@ -86,60 +97,79 @@
                     {{ $sales_invoice_id ? __('sales.all_items_returned') : __('sales.select_return_invoice') }}
                 </div>
             @else
-                <div class="md:hidden space-y-3 mt-4">
+                <div class="space-y-3 mt-4">
                     @foreach ($lines as $idx => $line)
-                        <article class="rounded-card border border-border bg-surface p-4 space-y-3" wire:key="mobile-return-{{ $line['sales_invoice_line_id'] }}">
-                            <h3 class="font-bold text-sm">{{ $line['item_description'] }}</h3>
-                            <p class="text-xs text-text-secondary">{{ $line['unit_name'] }}</p>
-                            <dl class="grid grid-cols-3 gap-2 rounded-control bg-surface-soft p-3 text-xs">
-                                <div><dt>{{ __('refinement.original_quantity') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['original_quantity']) }}</dd></div>
-                                <div><dt>{{ __('refinement.previously_returned') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['already_returned_quantity']) }}</dd></div>
-                                <div><dt>{{ __('refinement.remaining_quantity') }}</dt><dd dir="ltr" class="mt-1 font-mono tabular-nums font-bold text-primary">{{ $line['max_returnable'] }}</dd></div>
-                            </dl>
-                            <div class="flex items-center gap-2" dir="ltr">
-                                <x-touch-quantity-stepper :index="$idx" field="return_quantity" :step="$line['quantity_step'] ?? '1'" :allows-fraction="($line['quantity_step'] ?? '1') !== '1'" :max="$line['max_returnable']" id="sales-return-mobile-quantity-{{ $idx }}" aria-label="{{ __('refinement.return_quantity') }}" />
+                        <article class="rounded-card border border-border bg-surface p-3 sm:p-4 space-y-3" wire:key="sales-return-line-{{ $line['sales_invoice_line_id'] }}">
+                            <div class="flex flex-wrap items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <h3 class="font-bold text-sm text-text-primary break-words">{{ $line['item_description'] }}</h3>
+                                    @if (!empty($line['unit_name']))
+                                        <p class="text-xs text-text-secondary mt-0.5">{{ $line['unit_name'] }}</p>
+                                    @endif
+                                </div>
+                                <div class="text-xs text-text-secondary shrink-0">
+                                    <span>{{ __('sales.unit_price') }}:</span>
+                                    <bdi dir="ltr" class="font-mono font-bold tabular-nums text-text-primary">
+                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_price'], $currencyCode ?: null) }}
+                                    </bdi>
+                                </div>
                             </div>
-                            <button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
-                            @error("lines.{$idx}.return_quantity") <p role="alert" class="text-sm text-danger">{{ $message }}</p> @enderror
+
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start rounded-control bg-surface-soft p-3">
+                                <dl class="grid grid-cols-3 gap-2 text-xs md:col-span-6">
+                                    <div class="min-w-0">
+                                        <dt class="text-text-secondary">{{ __('refinement.original_quantity') }}</dt>
+                                        <dd dir="ltr" class="mt-1 font-mono tabular-nums text-text-primary font-semibold">
+                                            <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['original_quantity']) }}</bdi>
+                                        </dd>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <dt class="text-text-secondary">{{ __('refinement.previously_returned') }}</dt>
+                                        <dd dir="ltr" class="mt-1 font-mono tabular-nums text-text-primary font-semibold">
+                                            <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['already_returned_quantity']) }}</bdi>
+                                        </dd>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <dt class="text-text-secondary">{{ __('refinement.remaining_quantity') }}</dt>
+                                        <dd dir="ltr" class="mt-1 font-mono tabular-nums font-bold text-primary">
+                                            <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line['max_returnable']) }}</bdi>
+                                        </dd>
+                                    </div>
+                                </dl>
+
+                                <div class="md:col-span-6 space-y-2">
+                                    <label for="sales-return-quantity-{{ $idx }}" class="block text-xs font-semibold text-text-secondary">
+                                        {{ __('refinement.return_quantity') }}
+                                    </label>
+                                    <div class="flex flex-wrap items-start gap-2">
+                                        <div dir="ltr" class="shrink-0">
+                                            <x-touch-quantity-stepper
+                                                :index="$idx"
+                                                field="return_quantity"
+                                                :step="$line['quantity_step'] ?? '1'"
+                                                :allows-fraction="($line['quantity_step'] ?? '1') !== '1'"
+                                                :max="$line['max_returnable']"
+                                                id="sales-return-quantity-{{ $idx }}"
+                                                :aria-label="__('refinement.return_quantity') . ' ' . ($idx + 1)"
+                                            />
+                                        </div>
+                                        <button type="button"
+                                                @click="run('returnFullRemaining', [{{ $idx }}])"
+                                                :disabled="saving || window.isDocumentBlocked($wire)"
+                                                wire:loading.attr="disabled"
+                                                class="min-h-11 w-full sm:w-auto flex-1 rounded-control border border-primary px-3 py-2 text-sm text-primary font-semibold hover:bg-primary-50 transition-colors disabled:opacity-50 cursor-pointer">
+                                            {{ __('refinement.return_remaining') }}
+                                        </button>
+                                    </div>
+                                    @error("lines.{$idx}.return_quantity")
+                                        <p id="sales-return-quantity-{{ $idx }}-error" role="alert" class="text-sm text-danger font-medium">
+                                            {{ $message }}
+                                        </p>
+                                    @enderror
+                                </div>
+                            </div>
                         </article>
                     @endforeach
-                </div>
-                <div class="hidden md:block overflow-x-auto mt-4">
-                    <table class="data-table w-full text-start text-xs border-collapse">
-                        <thead>
-                            <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
-                                <th class="py-2.5 px-3 text-start">{{ __('sales.product') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('sales.quantity') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('sales.max_returnable') }}</th>
-                                <th class="py-2.5 px-3 text-start">{{ __('sales.unit_price') }}</th>
-                                <th class="py-2.5 px-3 text-end w-36">{{ __('sales.returned_quantity') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-border">
-                            @foreach ($lines as $idx => $line)
-                                <tr>
-                                    <td class="py-2.5 px-3 font-bold text-text-primary">
-                                        {{ $line['item_description'] }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['original_quantity']) }} {{ $line['unit_name'] }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono font-bold text-primary" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['max_returnable']) }}
-                                    </td>
-                                    <td class="py-2.5 px-3 font-mono" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line['unit_price']) }}
-                                    </td>
-                                    <td class="table-actions py-2.5 px-3 text-end">
-                                        <div class="flex items-center gap-2" dir="ltr">
-                                <x-touch-quantity-stepper :index="$idx" field="return_quantity" :step="$line['quantity_step'] ?? '1'" :allows-fraction="($line['quantity_step'] ?? '1') !== '1'" :max="$line['max_returnable']" id="sales-return-desktop-quantity-{{ $idx }}" aria-label="{{ __('refinement.return_quantity') }}" />
-                            </div>
-                            <button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
-                                    </td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
                 </div>
             @endif
         </div>
@@ -196,28 +226,34 @@
         @endif
 
         <div>
-            <label class="block text-sm font-bold text-text-primary mb-1">
+            <label for="sales-return-notes" class="block text-sm font-bold text-text-primary mb-1">
                 {{ __('sales.notes') }}
             </label>
-            <textarea wire:model="notes" rows="2" class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
+            <textarea id="sales-return-notes"
+                      wire:model="notes"
+                      rows="2"
+                      @error('notes') aria-invalid="true" aria-describedby="sales-return-notes-error" @enderror
+                      class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary outline-hidden"
+                      :disabled="documentBusy || saving"></textarea>
+            @error('notes') <span id="sales-return-notes-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
         </div>
 
         <!-- Buttons -->
         <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
             <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
             <a href="{{ route('returns.index') }}"
-               class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="min-h-11 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
             <button type="button"
                     @click="run('save', [false], true)" :disabled="saving || window.isDocumentBlocked($wire)"
-                    class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-sm font-bold transition-colors cursor-pointer" wire:loading.attr="disabled">
+                    class="min-h-11 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-sm font-bold transition-colors cursor-pointer" wire:loading.attr="disabled">
                 {{ __('sales.save_draft') }}
             </button>
             @if ($canPost)
                 <button type="button"
                         @click="run('save', [true], true)" :disabled="saving || window.isDocumentBlocked($wire)"
-                        class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled">
+                        class="min-h-11 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled">
                     ⚡ {{ __('sales.post') }}
                 </button>
             @endif

@@ -58,9 +58,13 @@
                         </a>
                     </td>
                     <td class="py-3 px-4">
-                        <a class="touch-action font-bold text-text-primary hover:text-primary transition-colors" href="{{ route('purchases.show', $purchase->public_id) }}">
-                            {{ $purchase->vendor->displayName() }}
-                        </a>
+                        @if($canViewVendor && $purchase->vendor?->public_id)
+                            <a class="touch-action font-bold text-text-primary hover:text-primary transition-colors" href="{{ route('vendors.show', $purchase->vendor->public_id) }}">
+                                {{ $purchase->vendor->displayName() }}
+                            </a>
+                        @else
+                            <span class="font-bold text-text-primary">{{ $purchase->vendor?->displayName() ?? '—' }}</span>
+                        @endif
                     </td>
                     <td class="py-3 px-4" dir="ltr">
                         {{ $purchase->purchase_date->format('Y-m-d') }}
@@ -101,7 +105,11 @@
             @forelse($purchases as $purchase)
                 <article class="p-4 space-y-3" wire:key="purchase-mobile-{{ $purchase->public_id }}">
                     <div class="flex justify-between gap-3">
-                        <a href="{{ route('purchases.show', $purchase->public_id) }}" class="touch-action font-bold text-primary text-sm">{{ $purchase->vendor->displayName() }}</a>
+                        @if($canViewVendor && $purchase->vendor?->public_id)
+                            <a href="{{ route('vendors.show', $purchase->vendor->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary text-sm">{{ $purchase->vendor->displayName() }}</a>
+                        @else
+                            <span class="font-bold text-text-primary text-sm">{{ $purchase->vendor?->displayName() ?? '—' }}</span>
+                        @endif
                         <div class="text-end">
                             <span class="text-xs">{{ __('purchasing.'.$purchase->status) }}</span>
                             @if($withCost && $purchase->isPosted() && isset($payablePositions[$purchase->id]))
@@ -113,7 +121,7 @@
                     </div>
                     <dl class="grid grid-cols-2 gap-3 text-xs">
                         <div><dt class="text-text-secondary">{{ __('purchasing.purchase_number') }}</dt>
-                                <dd><bdi>{{ $purchase->purchase_number ?? __('purchasing.draft') }}</bdi></dd>
+                                <dd><a href="{{ route('purchases.show', $purchase->public_id) }}" class="touch-action font-mono font-bold text-primary hover:underline" dir="ltr">{{ $purchase->purchase_number ?? __('purchasing.draft') }}</a></dd>
                             </div>
                         <div><dt class="text-text-secondary">{{ __('purchasing.purchase_date') }}</dt>
                                 <dd><bdi>{{ $purchase->purchase_date->format('Y-m-d') }}</bdi></dd>

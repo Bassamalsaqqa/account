@@ -144,7 +144,7 @@ class PurchaseIndex extends Component
         }
         $term = trim($this->search);
         $query = Purchase::where('company_id', $company->id)->select($fields)
-            ->with(['vendor' => fn ($q) => $q->where('company_id', $company->id)->select(['id', 'name_ar', 'name_en'])]);
+            ->with(['vendor' => fn ($q) => $q->withTrashed()->where('company_id', $company->id)->select(['id', 'public_id', 'name_ar', 'name_en'])]);
         if ($term !== '') {
             $query->where(fn ($q) => $q->where('vendor_invoice_number', 'like', "%{$term}%")
                 ->orWhere('purchase_number', 'like', "%{$term}%")
@@ -173,6 +173,7 @@ class PurchaseIndex extends Component
             'payablePositions' => $payablePositions,
             'vendors' => Vendor::where('company_id', $company->id)->orderBy('name_ar')->get(['id', 'name_ar', 'name_en']),
             'withCost' => $withCost,
+            'canViewVendor' => auth()->user()->hasPermissionTo('vendors.view'),
             'canCreate' => $withCost && auth()->user()->hasPermissionTo('purchasing.purchase.create'),
         ]);
     }

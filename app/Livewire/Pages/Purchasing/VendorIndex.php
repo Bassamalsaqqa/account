@@ -50,6 +50,8 @@ class VendorIndex extends Component
         $user = auth()->user();
 
         $canManage = $user->hasPermissionTo('vendors.manage');
+        $canCreatePurchase = $user->hasPermissionTo('purchasing.purchase.create') && $user->hasPermissionTo('purchasing.cost.view');
+        $canCreatePayment = $this->canReadVendorFinancials() && $user->hasPermissionTo('money.vendor_payment.create');
 
         $query = Vendor::where('company_id', $company->id);
 
@@ -78,6 +80,8 @@ class VendorIndex extends Component
         return view('livewire.pages.purchasing.vendor-index', [
             'vendors' => $vendors,
             'canManage' => $canManage,
+            'canCreatePurchase' => $canCreatePurchase,
+            'canCreatePayment' => $canCreatePayment,
             'company' => $company,
         ]);
     }

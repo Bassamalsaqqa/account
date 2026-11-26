@@ -55,9 +55,13 @@
                                 </a>
                             </td>
                             <td class="py-3 px-4">
-                                <a class="touch-action font-bold text-text-primary hover:text-primary transition-colors" href="{{ route('purchase-returns.show', $return->public_id) }}">
-                                    {{ $return->vendor->displayName() }}
-                                </a>
+                                @if($canViewVendor && $return->vendor?->public_id)
+                                    <a class="touch-action font-bold text-text-primary hover:text-primary transition-colors" href="{{ route('vendors.show', $return->vendor->public_id) }}">
+                                        {{ $return->vendor->displayName() }}
+                                    </a>
+                                @else
+                                    <span class="font-bold text-text-primary">{{ $return->vendor?->displayName() ?? '—' }}</span>
+                                @endif
                             </td>
                             <td class="py-3 px-4 font-mono">
                                 @if($return->purchase)
@@ -99,15 +103,23 @@
             @forelse($returns as $return)
                 <article class="p-4 space-y-3" wire:key="return-mobile-{{ $return->public_id }}">
                     <div class="flex justify-between gap-3">
-                        <a href="{{ route('purchase-returns.show', $return->public_id) }}" class="touch-action font-bold text-primary text-sm">
-                            {{ $return->vendor->displayName() }}
-                        </a>
+                        @if($canViewVendor && $return->vendor?->public_id)
+                            <a href="{{ route('vendors.show', $return->vendor->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary text-sm">
+                                {{ $return->vendor->displayName() }}
+                            </a>
+                        @else
+                            <span class="font-bold text-text-primary text-sm">{{ $return->vendor?->displayName() ?? '—' }}</span>
+                        @endif
                         <span class="text-xs">{{ __('purchasing.'.$return->status) }}</span>
                     </div>
                     <dl class="grid grid-cols-2 gap-3 text-xs">
                         <div>
                             <dt class="text-text-secondary">{{ __('purchasing.purchase_return_number') }}</dt>
-                            <dd><bdi>{{ $return->return_number ?? __('purchasing.draft') }}</bdi></dd>
+                            <dd>
+                                <a href="{{ route('purchase-returns.show', $return->public_id) }}" class="touch-action font-mono font-bold text-primary hover:underline" dir="ltr">
+                                    {{ $return->return_number ?? __('purchasing.draft') }}
+                                </a>
+                            </dd>
                         </div>
                         <div>
                             <dt class="text-text-secondary">{{ __('purchasing.return_date') }}</dt>
@@ -136,7 +148,12 @@
                             </div>
                         @endif
                     </dl>
-                <div class="row-action-group"><x-correction-shortcuts family="purchase_return" :public-id="$return->public_id" :status="$return->status" /></div>
+                <div class="pt-2 border-t border-border flex justify-end">
+                    <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                        <x-row-action data-row-link :href="route('purchase-returns.show', $return->public_id)" :label="__('workflow.open')" icon="eye" />
+                        <x-correction-shortcuts family="purchase_return" :public-id="$return->public_id" :status="$return->status" />
+                    </div>
+                </div>
                 </article>
             @empty
                 <p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchase_returns') }}</p>

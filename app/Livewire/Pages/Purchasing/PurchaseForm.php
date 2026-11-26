@@ -255,13 +255,14 @@ class PurchaseForm extends Component
         return $company;
     }
 
-    public function mount(CompanyContext $context, ?string $publicId = null, ?string $receiveProduct = null): void
+    public function mount(CompanyContext $context, ?string $publicId = null, ?string $receiveProduct = null, ?int $vendor_id = null): void
     {
         $this->pageCompanyId = $context->companyId();
         $this->publicId = $publicId;
         $this->confirmationRequestIdentity = app(PurchaseFormConfirmation::class)->identity($this->pageCompanyId, auth()->user(), $publicId);
         $receiveProduct ??= request()->query('receiveProduct');
         abort_unless($receiveProduct === null || is_string($receiveProduct), 422);
+        $vendor_id ??= request()->integer('vendor_id') ?: null;
         $company = $this->authorizeForm();
         // These are separate explicit entry intents; neither may silently replace the other's lines.
         abort_if($publicId === null && $receiveProduct !== null && request()->query('assistant') !== null, 422);
@@ -327,6 +328,16 @@ class PurchaseForm extends Component
         $this->previousCurrencyCode = $this->currency_code;
         if ($publicId === null) {
             $this->mountAiInput('purchase');
+            if ($this->aiFormToken === null && $vendor_id !== null && $vendor_id > 0) {
+                $vendor = Vendor::where('company_id', $company->id)
+                    ->where('status', 'active')
+                    ->find($vendor_id);
+                if ($vendor !== null) {
+                    $this->vendor_id = (int) $vendor->id;
+                    $this->updatedVendorId();
+                    $this->previousCurrencyCode = $this->currency_code;
+                }
+            }
         }
         $this->settlement['payment_date'] = now($company->timezone)->format('Y-m-d');
         $this->settlement['due_date'] = now($company->timezone)->format('Y-m-d');

@@ -47,6 +47,8 @@ class CustomerIndex extends Component
         }
 
         $canManage = $user->hasPermissionTo('customers.manage');
+        $canCreateInvoice = $user->hasPermissionTo('sales.invoice.create');
+        $canRecordPayment = $user->hasPermissionTo('money.receipt.create');
 
         $query = Customer::where('company_id', $company->id);
 
@@ -84,6 +86,8 @@ class CustomerIndex extends Component
             'balances' => $balances,
             'currencyBalances' => $currencyBalances,
             'canManage' => $canManage,
+            'canCreateInvoice' => $canCreateInvoice,
+            'canRecordPayment' => $canRecordPayment,
             'company' => $company,
         ]);
     }

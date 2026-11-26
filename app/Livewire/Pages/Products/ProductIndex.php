@@ -135,6 +135,8 @@ class ProductIndex extends Component
         $user = auth()->user();
         $canViewCost = $user->hasPermissionTo('inventory.cost.view');
         $canManageProduct = $user->hasPermissionTo('inventory.product.manage');
+        $canPrintLabels = $user->hasPermissionTo('inventory.barcode_labels.print')
+            && $user->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
 
         $query = Product::where('company_id', $company->id)
             ->with(['category', 'brand', 'baseUnit', 'primaryImage']);
@@ -222,6 +224,7 @@ class ProductIndex extends Component
             'brands' => $brands,
             'canViewCost' => $canViewCost,
             'canManageProduct' => $canManageProduct,
+            'canPrintLabels' => $canPrintLabels,
             'company' => $company,
         ]);
     }

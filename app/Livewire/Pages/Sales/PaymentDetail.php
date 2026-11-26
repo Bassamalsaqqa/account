@@ -114,7 +114,7 @@ class PaymentDetail extends Component
             abort(403, 'Unauthorized.');
         }
 
-        $this->payment = CustomerPayment::with(['customer', 'moneyAccount', 'allocations.salesInvoice', 'allocations.openingTradeItem'])
+        $this->payment = CustomerPayment::with(['customer', 'moneyAccount', 'checkInstrument', 'allocations.salesInvoice', 'allocations.openingTradeItem'])
             ->where('company_id', $company->id)
             ->where('public_id', $publicId)
             ->firstOrFail();
@@ -134,6 +134,7 @@ class PaymentDetail extends Component
         ]);
 
         $this->payment = $reverseAction->execute($this->payment, $user, $this->reversalReason);
+        $this->payment->load(['customer', 'moneyAccount', 'checkInstrument', 'allocations.salesInvoice', 'allocations.openingTradeItem']);
         session()->flash('success', __('sales.reversed_successfully'));
     }
 

@@ -165,7 +165,7 @@
                             </td>
                             <td class="py-2.5 px-4" dir="ltr">{{ $alloc->salesInvoice?->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}</td>
                             <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount) }} {{ $payment->currency_code }}</span>
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
                             </td>
                             @if($canViewFx)<td class="py-2.5 px-4 font-mono" dir="ltr">
                                 @php
