@@ -35,6 +35,7 @@ return [
 
     // Headers & Fields
     'details' => 'Catalog Details',
+    'optional_details' => 'Description & language options',
     'name_ar' => 'Catalog Name (Arabic)',
     'name_en' => 'Catalog Name (English)',
     'description_ar' => 'Description (Arabic)',
@@ -64,6 +65,7 @@ return [
     'selected_products' => 'Selected Products',
     'selected_count' => ':count of :max products selected',
     'no_products_selected' => 'No products selected yet. Search products below to add them to this catalog.',
+    'no_matching_products' => 'No matching active products found.',
     'search_products' => 'Search company products by name or SKU...',
     'add_product' => 'Add to Catalog',
     'already_added' => 'Already added',

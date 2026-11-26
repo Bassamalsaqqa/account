@@ -1,17 +1,38 @@
 <div class="space-y-6">
     <x-page-heading :title="__('inventory.products')" icon="box">
-        @if ($canManageProduct)
+        @php
+            $productPageActor = auth()->user();
+            $canBrowseCatalogs = $productPageActor?->can('catalogs.view') && $productPageActor?->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
+            $canPrintLabels = $productPageActor?->can('inventory.barcode_labels.print') && $productPageActor?->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
+        @endphp
+        @if ($canManageProduct || $canBrowseCatalogs || $canPrintLabels)
             <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('brands.index') }}"
-                   class="touch-action gap-1.5 border border-border bg-surface hover:bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-semibold transition-colors">
-                    <x-icon name="box" class="w-4 h-4" />
-                    <span>{{ __('inventory.brands') }}</span>
-                </a>
-                <a href="{{ route('products.create') }}"
-                   class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
-                    <x-icon name="plus" class="w-4 h-4" />
-                    <span>{{ __('inventory.add_product') }}</span>
-                </a>
+                @if ($canBrowseCatalogs)
+                    <a href="{{ route('catalogs.index') }}"
+                       class="touch-action gap-1.5 border border-border bg-surface hover:bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-semibold transition-colors">
+                        <x-icon name="share" class="w-4 h-4" />
+                        <span>{{ __('catalogs.catalogs') }}</span>
+                    </a>
+                @endif
+                @if ($canPrintLabels)
+                    <a href="{{ route('labels.index') }}"
+                       class="touch-action gap-1.5 border border-border bg-surface hover:bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-semibold transition-colors">
+                        <x-icon name="barcode" class="w-4 h-4" />
+                        <span>{{ __('labels.title') }}</span>
+                    </a>
+                @endif
+                @if ($canManageProduct)
+                    <a href="{{ route('brands.index') }}"
+                       class="touch-action gap-1.5 border border-border bg-surface hover:bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-semibold transition-colors">
+                        <x-icon name="box" class="w-4 h-4" />
+                        <span>{{ __('inventory.brands') }}</span>
+                    </a>
+                    <a href="{{ route('products.create') }}"
+                       class="touch-action bg-primary hover:bg-primary-hover text-white text-sm font-bold shadow-button transition-colors">
+                        <x-icon name="plus" class="w-4 h-4" />
+                        <span>{{ __('inventory.add_product') }}</span>
+                    </a>
+                @endif
             </div>
         @endif
     </x-page-heading>

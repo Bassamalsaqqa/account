@@ -297,35 +297,50 @@
                             <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_products') }}</span>
                         </div>
                     </a>
-                    @if(auth()->user()->can('inventory.product.manage'))
-                    <a href="{{ route('brands.index') }}" aria-current="{{ request()->routeIs('brands.*') ? 'page' : 'false' }}"
-                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('inventory.brands') }}" aria-label="{{ __('inventory.brands') }}"
-                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
-                              {{ request()->routeIs('brands.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
-                        <div class="flex items-center gap-2.5">
-                            <x-icon name="box" class="w-4.5 h-4.5 shrink-0" />
-                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('inventory.brands') }}</span>
+                    @php
+                        $canCatalogsNav = auth()->user()->can('catalogs.view') && auth()->user()->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
+                        $canLabelsNav = auth()->user()->can('inventory.barcode_labels.print') && auth()->user()->hasAnyPermission(['inventory.stock.view', 'inventory.product.manage']);
+                        $canBrandsNav = auth()->user()->can('inventory.product.manage');
+                    @endphp
+                    @if ($canCatalogsNav || $canLabelsNav || $canBrandsNav)
+                        <div class="space-y-0.5" :class="sidebarCollapsed ? '' : 'ms-4 ps-2.5 border-s border-border'">
+                            @if ($canCatalogsNav)
+                                <a href="{{ route('catalogs.index') }}" aria-current="{{ request()->routeIs('catalogs.*') ? 'page' : 'false' }}"
+                                   :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                                   title="{{ __('catalogs.catalogs') }}" aria-label="{{ __('catalogs.catalogs') }}"
+                                   class="flex items-center justify-between min-h-11 px-3 rounded-control text-sm text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                                          {{ request()->routeIs('catalogs.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                                    <div class="flex items-center gap-2.5">
+                                        <x-icon name="share" class="w-4.5 h-4.5 shrink-0" />
+                                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('catalogs.catalogs') }}</span>
+                                    </div>
+                                </a>
+                            @endif
+                            @if ($canLabelsNav)
+                                <a href="{{ route('labels.index') }}" aria-current="{{ request()->routeIs('labels.*') ? 'page' : 'false' }}"
+                                   :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                                   title="{{ __('labels.title') }}" aria-label="{{ __('labels.title') }}"
+                                   class="flex items-center justify-between min-h-11 px-3 rounded-control text-sm text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                                          {{ request()->routeIs('labels.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                                    <div class="flex items-center gap-2.5">
+                                        <x-icon name="barcode" class="w-4.5 h-4.5 shrink-0" />
+                                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('labels.title') }}</span>
+                                    </div>
+                                </a>
+                            @endif
+                            @if ($canBrandsNav)
+                                <a href="{{ route('brands.index') }}" aria-current="{{ request()->routeIs('brands.*') ? 'page' : 'false' }}"
+                                   :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
+                                   title="{{ __('inventory.brands') }}" aria-label="{{ __('inventory.brands') }}"
+                                   class="flex items-center justify-between min-h-11 px-3 rounded-control text-sm text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                                          {{ request()->routeIs('brands.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                                    <div class="flex items-center gap-2.5">
+                                        <x-icon name="box" class="w-4.5 h-4.5 shrink-0" />
+                                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('inventory.brands') }}</span>
+                                    </div>
+                                </a>
+                            @endif
                         </div>
-                    </a>
-                    @endif
-                    @if(auth()->user()->can('catalogs.view') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
-                    <a href="{{ route('catalogs.index') }}" aria-current="{{ request()->routeIs('catalogs.*') ? 'page' : 'false' }}"
-                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('catalogs.catalogs') }}" aria-label="{{ __('catalogs.catalogs') }}"
-                       class="flex min-h-11 items-center gap-2.5 px-3 text-sm rounded-control hover:bg-surface-soft hover:text-text-primary text-text-secondary font-semibold transition-colors">
-                        <x-icon name="file" class="w-4.5 h-4.5 shrink-0" />
-                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('catalogs.catalogs') }}</span>
-                    </a>
-                    @endif
-                    @if(auth()->user()->can('inventory.barcode_labels.print') && auth()->user()->hasAnyPermission(['inventory.stock.view','inventory.product.manage']))
-                    <a href="{{ route('labels.index') }}" aria-current="{{ request()->routeIs('labels.*') ? 'page' : 'false' }}"
-                       :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
-                       title="{{ __('labels.title') }}" aria-label="{{ __('labels.title') }}"
-                       class="flex min-h-11 items-center gap-2.5 px-3 text-sm rounded-control hover:bg-surface-soft hover:text-text-primary text-text-secondary font-semibold transition-colors">
-                        <x-icon name="barcode" class="w-4.5 h-4.5 shrink-0" />
-                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('labels.title') }}</span>
-                    </a>
                     @endif
                     <a href="{{ route('inventory.overview') }}" aria-current="{{ request()->routeIs('inventory.overview') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
@@ -365,21 +380,30 @@
                 <div id="sidebar-group-treasury" x-show="isGroupOpen('treasury', {{ $treasuryActive ? 'true' : 'false' }})"
                      class="space-y-0.5">
                     @if(auth()->user()->can('money.cash.view') || auth()->user()->can('money.bank.view'))
-                    <a href="{{ route('money.overview') }}" aria-current="{{ request()->routeIs('money.overview') ? 'page' : 'false' }}"
+                    @php
+                        $moneyOverviewActive = request()->routeIs('money.overview', 'money.cash', 'money.bank', 'money.accounts.*', 'money.transfers.*');
+                    @endphp
+                    <a href="{{ route('money.overview') }}" aria-current="{{ request()->routeIs('money.overview', 'money.cash', 'money.bank') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
                        title="{{ __('app.nav_treasury_banks') }}" aria-label="{{ __('app.nav_treasury_banks') }}"
-                       class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors">
-                        <x-icon name="bank" class="w-4.5 h-4.5 shrink-0" />
-                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_treasury_banks') }}</span>
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ $moneyOverviewActive ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="bank" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_treasury_banks') }}</span>
+                        </div>
                     </a>
                     @endif
                     @can('money.check.view')
                     <a href="{{ route('money.checks.index') }}" aria-current="{{ request()->routeIs('money.checks.*') ? 'page' : 'false' }}"
                        :class="sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''"
                        title="{{ __('app.nav_checkbook') }}" aria-label="{{ __('app.nav_checkbook') }}"
-                       class="flex items-center gap-2.5 min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors">
-                        <x-icon name="check" class="w-4.5 h-4.5 shrink-0" />
-                        <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_checkbook') }}</span>
+                       class="flex items-center justify-between min-h-11 px-3 rounded-control text-text-secondary hover:bg-surface-soft hover:text-text-primary font-semibold transition-colors
+                              {{ request()->routeIs('money.checks.*') ? 'bg-primary-50 text-primary! font-bold shadow-[inset_3px_0_0_#255fd6] rtl:shadow-[inset_-3px_0_0_#255fd6]' : '' }}">
+                        <div class="flex items-center gap-2.5">
+                            <x-icon name="check" class="w-4.5 h-4.5 shrink-0" />
+                            <span :class="sidebarCollapsed ? 'lg:hidden' : ''">{{ __('app.nav_checkbook') }}</span>
+                        </div>
                     </a>
                     @endcan
                     @can('money.expense.view')

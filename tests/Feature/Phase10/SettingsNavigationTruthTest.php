@@ -120,14 +120,19 @@ class SettingsNavigationTruthTest extends TestCase
 
         $response->assertOk();
         $response->assertSee(route('settings.index', ['section' => 'documents']));
+        $response->assertSee(route('settings.index', ['section' => 'data']));
         $response->assertSee(route('catalogs.index'));
         $response->assertSee(__('documents.title'));
-        $response->assertSee(__('settings.card_share_title'));
+        $response->assertSee(__('catalogs.catalogs'));
+        $response->assertSee(__('settings.group_business'));
+        $response->assertSee(__('settings.group_documents_printing'));
+        $response->assertSee(__('settings.group_integrations_data'));
 
         Livewire::actingAs($this->owner)
             ->test(SettingsIndex::class)
             ->assertSeeHtml(route('settings.index', ['section' => 'documents']))
-            ->assertSeeHtml(route('catalogs.index'));
+            ->assertSeeHtml(route('settings.index', ['section' => 'data']))
+            ->assertDontSeeHtml(route('catalogs.index'));
     }
 
     public function test_owner_can_navigate_to_document_settings_and_catalogs(): void
@@ -207,6 +212,10 @@ class SettingsNavigationTruthTest extends TestCase
         $response->assertSee(route('catalogs.index'));
         $response->assertDontSee(route('settings.index', ['section' => 'documents']));
 
+        Livewire::actingAs($catalogManager)
+            ->test(SettingsIndex::class)
+            ->assertDontSeeHtml(route('catalogs.index'));
+
         $this->actingAs($catalogManager)->get(route('catalogs.index'))->assertOk();
         $this->actingAs($catalogManager)->get(route('settings.documents'))->assertForbidden();
     }
@@ -251,7 +260,10 @@ class SettingsNavigationTruthTest extends TestCase
         $arResponse = $this->actingAs($this->owner)->get(route('settings.index'));
         $arResponse->assertOk();
         $arResponse->assertSee(__('documents.title', [], 'ar'));
-        $arResponse->assertSee(__('settings.card_share_title', [], 'ar'));
+        $arResponse->assertSee(__('catalogs.catalogs', [], 'ar'));
+        $arResponse->assertSee(__('settings.group_business', [], 'ar'));
+        $arResponse->assertSee(__('settings.identity_name_en', [], 'ar'));
+        $arResponse->assertDontSee('Company Name (English)');
 
         // English locale
         app()->setLocale('en');
@@ -259,6 +271,72 @@ class SettingsNavigationTruthTest extends TestCase
         $enResponse = $this->actingAs($this->owner)->get(route('settings.index'));
         $enResponse->assertOk();
         $enResponse->assertSee(__('documents.title', [], 'en'));
-        $enResponse->assertSee(__('settings.card_share_title', [], 'en'));
+        $enResponse->assertSee(__('catalogs.catalogs', [], 'en'));
+        $enResponse->assertSee(__('settings.group_business', [], 'en'));
+        $enResponse->assertSee(__('settings.identity_name_ar', [], 'en'));
+        $enResponse->assertDontSee('الاسم التجاري (عربي)');
+    }
+
+    public function test_security_section_has_no_duplicate_ai_switch_and_ai_section_has_single_control(): void
+    {
+        $securityResponse = $this->actingAs($this->owner)
+            ->get(route('settings.index', ['section' => 'security']));
+        $securityResponse->assertOk();
+        $securityResponse->assertDontSee('id="company-ai-control"', false);
+
+        $aiResponse = $this->actingAs($this->owner)
+            ->get(route('settings.index', ['section' => 'ai']));
+        $aiResponse->assertOk();
+        $this->assertSame(1, substr_count($aiResponse->getContent(), 'id="company-ai-control"'));
+        $aiResponse->assertSee(__('settings.card_ai_title'));
+    }
+
+    public function test_data_export_section_requires_owner_and_renders_download_form(): void
+    {
+        $unconfirmedOwnerResponse = $this->actingAs($this->owner)
+            ->get(route('settings.index', ['section' => 'data']));
+        $unconfirmedOwnerResponse->assertOk();
+        $unconfirmedOwnerResponse->assertSee('id="company-data-title"', false);
+        $unconfirmedOwnerResponse->assertSee('wire:click="prepareCompanyDataDownload"', false);
+
+        $confirmedOwnerResponse = $this->actingAs($this->owner)
+            ->withSession(['auth.password_confirmed_at' => time()])
+            ->get(route('settings.index', ['section' => 'data']));
+        $confirmedOwnerResponse->assertOk();
+        $confirmedOwnerResponse->assertSee('id="company-data-title"', false);
+        $confirmedOwnerResponse->assertSee(route('settings.company-data.download'));
+
+        $manager = $this->createMemberWithPermissions(['settings.company.view', 'settings.company.manage']);
+        $this->context->setCompany($this->company, $manager);
+
+        $this->actingAs($manager)
+            ->get(route('settings.index'))
+            ->assertOk()
+            ->assertDontSee(route('settings.index', ['section' => 'data']));
+
+        $this->actingAs($manager)
+            ->withSession(['auth.password_confirmed_at' => time()])
+            ->get(route('settings.index', ['section' => 'data']))
+            ->assertForbidden();
+    }
+
+    public function test_sidebar_active_highlights_for_catalogs_labels_and_money_routes(): void
+    {
+        $routes = [
+            'catalogs.index' => route('catalogs.index'),
+            'catalogs.create' => route('catalogs.index'),
+            'labels.index' => route('labels.index'),
+            'money.overview' => route('money.overview'),
+            'money.checks.index' => route('money.checks.index'),
+        ];
+
+        foreach ($routes as $routeName => $expectedHref) {
+            $html = $this->actingAs($this->owner)->get(route($routeName))->assertOk()->getContent();
+            $this->assertMatchesRegularExpression(
+                '/<a[^>]*href="'.preg_quote($expectedHref, '/').'"[^>]*bg-primary-50[^>]*>/s',
+                $html,
+                "Expected active highlight on sidebar link [{$expectedHref}] when visiting route [{$routeName}]."
+            );
+        }
     }
 }

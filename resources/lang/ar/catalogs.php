@@ -35,6 +35,7 @@ return [
 
     // Headers & Fields
     'details' => 'بيانات الكتالوج',
+    'optional_details' => 'الوصف وخيارات اللغة',
     'name_ar' => 'اسم الكتالوج (بالعربية)',
     'name_en' => 'اسم الكتالوج (بالإنجليزية)',
     'description_ar' => 'الوصف (بالعربية)',
@@ -64,6 +65,7 @@ return [
     'selected_products' => 'المنتجات المختارة',
     'selected_count' => 'تم اختيار :count من أصل :max منتج',
     'no_products_selected' => 'لم يتم اختيار أي منتجات بعد. ابحث عن المنتجات أدناه وأضفها للكتالوج.',
+    'no_matching_products' => 'لم يتم العثور على منتجات نشطة مطابقة.',
     'search_products' => 'البحث في منتجات الشركة بالاسم أو الرمز (SKU)...',
     'add_product' => 'إضافة للكتالوج',
     'already_added' => 'مضاف بالفعل',

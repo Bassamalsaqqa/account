@@ -159,11 +159,22 @@ class SharedSettingsShellTest extends TestCase
             'published_payload' => ['currency_code' => 'ILS', 'name_ar' => 'كتالوج معتمد'],
         ]);
 
-        // Access via catalogs route
+        // Access via catalogs route renders under Products (not Settings shell)
         $response = $this->actingAs($this->owner)->get(route('catalogs.edit', ['publicId' => $catalog->public_id]));
         $response->assertOk();
-        $response->assertSee(__('settings.breadcrumb_settings'));
+        $response->assertSee(__('inventory.products'));
+        $response->assertSee(__('catalogs.catalogs'));
+        $response->assertDontSee(__('settings.breadcrumb_settings'));
         $response->assertSee($catalog->public_id);
+        $this->assertMatchesRegularExpression(
+            '/<a[^>]*href="'.preg_quote(route('catalogs.index'), '/').'"[^>]*bg-primary-50[^>]*>/s',
+            $response->getContent()
+        );
+
+        // Legacy compatibility: ?section=catalogs redirects cleanly to catalogs.index
+        $this->actingAs($this->owner)
+            ->get(route('settings.index', ['section' => 'catalogs']))
+            ->assertRedirect(route('catalogs.index'));
 
         // Verify component locks to correct company and preserves revisions
         Livewire::actingAs($this->owner)
