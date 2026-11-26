@@ -100,15 +100,15 @@ final class RequestIdAndSanitizerTest extends TestCase
         $exception = new class('PRIVATE_MESSAGE') extends RuntimeException {};
         $contexts = [];
         Log::shouldReceive('error')->twice()->andReturnUsing(static function ($message, $context) use (&$contexts): void {
-            $contexts[] = $context;
+            $contexts[] = ['message' => $message, 'context' => $context];
         });
 
         SafeErrorLogger::report($exception, Request::create('/dashboard'));
-        SafeErrorLogger::reportBoundaryException('Boundary failure', $exception);
+        SafeErrorLogger::reportBoundaryException('Boundary failure: '.get_class($exception), $exception);
 
-        foreach ($contexts as $context) {
-            $this->assertSame(RuntimeException::class, $context['exception_class']);
-            $serialized = json_encode($context, JSON_THROW_ON_ERROR);
+        foreach ($contexts as $entry) {
+            $this->assertSame(RuntimeException::class, $entry['context']['exception_class']);
+            $serialized = json_encode($entry, JSON_THROW_ON_ERROR);
             $this->assertStringNotContainsString('@anonymous', $serialized);
             $this->assertStringNotContainsString(base_path(), $serialized);
             $this->assertStringNotContainsString('PRIVATE_MESSAGE', $serialized);

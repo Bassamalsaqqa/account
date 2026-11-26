@@ -85,6 +85,8 @@ final class SafeErrorLogger
             'release_source_sha' => self::releaseHex('release.source_sha', 40),
         ]), static fn (mixed $value): bool => $value !== null && $value !== []);
 
+        // Existing boundaries include the class in their label as well.
+        $label = str_replace(get_class($exception), $exceptionClass, $label);
         self::safeError($label, $context);
     }
 
