@@ -74,4 +74,7 @@ return [
     'current_language' => 'English',
     'future_module_notice' => 'This module is currently unavailable (coming soon)',
     'demo_indicator' => 'Preview',
+    'release_build_unknown' => 'Build unverified',
+    'show_password' => 'Show password',
+    'hide_password' => 'Hide password',
 ];

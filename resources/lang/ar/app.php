@@ -74,4 +74,7 @@ return [
     'current_language' => 'العربية',
     'future_module_notice' => 'هذه الوحدة غير متاحة حالياً (قريباً)',
     'demo_indicator' => 'عرض توضيحي',
+    'release_build_unknown' => 'الإصدار غير موثّق',
+    'show_password' => 'إظهار كلمة المرور',
+    'hide_password' => 'إخفاء كلمة المرور',
 ];

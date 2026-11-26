@@ -1,0 +1,1 @@
+<input type="checkbox" {{ $attributes->class(['size-5 shrink-0 rounded border-border-strong text-primary accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50']) }}>

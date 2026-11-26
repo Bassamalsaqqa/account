@@ -17,7 +17,13 @@ class AuthenticationTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSeeVolt('pages.auth.login');
+            ->assertSeeVolt('pages.auth.login')
+            ->assertSee('autocomplete="username"', false)
+            ->assertSee('autocomplete="current-password"', false)
+            ->assertSee('aria-controls="password"', false)
+            ->assertSee('id="remember"', false)
+            ->assertSee(config('release.version'));
+        $this->assertDoesNotMatchRegularExpression('/<input[^>]*id="remember"[^>]*\schecked(?:\s|=|>)/', $response->getContent());
     }
 
     public function test_users_can_authenticate_using_the_login_screen(): void
