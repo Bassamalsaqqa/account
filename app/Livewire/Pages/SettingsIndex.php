@@ -63,6 +63,7 @@ class SettingsIndex extends Component
         'roles',
         'audit',
         'ai',
+        'data',
         'documents',
         'taxes',
         'catalogs',
@@ -338,6 +339,10 @@ class SettingsIndex extends Component
             'ai' => $user->hasPermissionTo('ai.settings.manage')
                 ? true
                 : throw new AuthorizationException('Unauthorized to view AI settings.'),
+            'data' => CompanyUser::query()->where('company_id', $company->id)
+                ->where('user_id', $user->id)->where('status', 'active')->where('is_owner', true)->exists()
+                ? true
+                : throw new AuthorizationException('Unauthorized to view company data export.'),
             'documents' => ($user->hasPermissionTo('settings.company.view') && $user->hasPermissionTo('settings.documents.manage'))
                 ? true
                 : throw new AuthorizationException('Unauthorized to view document settings.'),
@@ -660,7 +665,9 @@ class SettingsIndex extends Component
             app(DeepSeekQuickConnect::class)->disableCompany($company, $actor, $password, $this->aiPolicyRevision);
             $this->resetMessages();
             session()->flash('ai_switch_success', __('ai_product.disabled_done'));
-            $this->redirect(route('settings.index'));
+            $this->redirect($this->activeSection === 'ai'
+                ? route('settings.index', ['section' => 'ai'])
+                : route('settings.index'));
         } catch (AssistantUnavailable $e) {
             $this->resetMessages();
             $this->errorMessage = __('ai_product.result_'.$e->diagnosticReason());
@@ -691,7 +698,9 @@ class SettingsIndex extends Component
             app(DeepSeekQuickConnect::class)->enableCompany($company, $actor, $password, $this->aiPolicyRevision);
             $this->resetMessages();
             session()->flash('ai_switch_success', __('ai_product.enabled_done'));
-            $this->redirect(route('settings.index'));
+            $this->redirect($this->activeSection === 'ai'
+                ? route('settings.index', ['section' => 'ai'])
+                : route('settings.index'));
         } catch (AssistantUnavailable $e) {
             $this->resetMessages();
             $this->errorMessage = __('ai_product.result_'.$e->diagnosticReason());
@@ -718,9 +727,13 @@ class SettingsIndex extends Component
         $aiNeedsTransition = false;
         $canManageAi = false;
 
+        $isCompanyOwner = false;
+
         if ($hasCompany && $company && auth()->check()) {
             /** @var User $user */
             $user = auth()->user();
+            $isCompanyOwner = CompanyUser::query()->where('company_id', $company->id)
+                ->where('user_id', $user->id)->where('status', 'active')->where('is_owner', true)->exists();
 
             $canManageAi = $user->can('ai.settings.manage');
             $isGloballyDisabled = config('ai_assistant.enabled') !== true
@@ -750,6 +763,9 @@ class SettingsIndex extends Component
             }
             if ($this->activeSection === 'users') {
                 abort_unless($user->hasAnyPermission(['settings.users.view', 'settings.users.manage']), 403);
+            }
+            if ($this->activeSection === 'data') {
+                abort_unless($isCompanyOwner, 403);
             }
 
             // Guard member list serialization
@@ -817,8 +833,7 @@ class SettingsIndex extends Component
         }
 
         return view('livewire.pages.settings-index', [
-            'isCompanyOwner' => $company && CompanyUser::query()->where('company_id', $company->id)
-                ->where('user_id', auth()->id())->where('status', 'active')->where('is_owner', true)->exists(),
+            'isCompanyOwner' => $isCompanyOwner,
             'personalTwoFactorEnabled' => auth()->user()->two_factor_secret !== null && auth()->user()->two_factor_confirmed_at !== null,
             'passwordConfirmed' => (int) session('auth.password_confirmed_at', 0) > time() - (int) config('auth.password_timeout', 10800),
             'hasCompany' => $hasCompany,

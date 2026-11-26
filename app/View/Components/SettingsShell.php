@@ -22,10 +22,27 @@ class SettingsShell extends Component
      *     label: string,
      *     icon: string,
      *     url: string,
-     *     is_livewire_section: bool
+     *     is_livewire_section: bool,
+     *     group: string
      * }>
      */
     public array $sections;
+
+    /**
+     * @var list<array{
+     *     key: string,
+     *     label: string,
+     *     items: list<array{
+     *         key: string,
+     *         label: string,
+     *         icon: string,
+     *         url: string,
+     *         is_livewire_section: bool,
+     *         group: string
+     *     }>
+     * }>
+     */
+    public array $groupedSections;
 
     public function __construct(string $activeSection = 'identity', ?Company $company = null)
     {
@@ -33,6 +50,7 @@ class SettingsShell extends Component
         $context = app(CompanyContext::class);
         $this->company = $company ?? ($context->hasCompany() ? $context->company() : null);
         $this->sections = SettingsNavigation::sections($this->company);
+        $this->groupedSections = SettingsNavigation::groupedSections($this->company);
     }
 
     public function currentSectionLabel(): string
