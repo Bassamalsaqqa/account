@@ -92,7 +92,8 @@ final class DashboardDetailSliceComponentTest extends TestCase
 
         $this->assertStringContainsString('role="dialog"', $html);
         $this->assertStringContainsString('aria-modal="true"', $html);
-        $this->assertStringContainsString("\$wire.\$set('showVoidModal', false);", $html);
+        $decoded = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $this->assertStringContainsString("\$wire.\$set('showVoidModal', false);", $decoded);
         $this->assertStringNotContainsString("\$wire.\$set('showVoidModal', false)()", $html);
     }
 

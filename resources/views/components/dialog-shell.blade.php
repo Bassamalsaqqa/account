@@ -46,7 +46,7 @@
             @if($saveTarget)
                 if (window.isDocumentBusy && window.isDocumentBusy($wire)) return;
             @endif
-            {!! str_replace('"', '&quot;', $wireClose) !!};
+            {{ $wireClose }};
         },
         destroy() {
             if (this._cleanupCommit) this._cleanupCommit();
