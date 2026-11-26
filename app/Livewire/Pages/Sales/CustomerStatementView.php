@@ -6,26 +6,24 @@ namespace App\Livewire\Pages\Sales;
 
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Domain\Sales\Queries\CustomerStatementQuery;
+use App\Livewire\FinancialShareManager;
 use App\Models\Customer;
-use App\Models\PublicShare;
-use App\Services\Sales\PublicShareService;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
 #[Layout('layouts.app')]
 class CustomerStatementView extends Component
 {
+    #[Locked]
+    public int $companyId;
+
+    #[Locked]
     public Customer $customer;
-
-    public ?string $shareUrl = null;
-
-    public int $shareExpiryDays = 30;
-
-    public ?string $sharePassword = null;
 
     #[Url(as: 'from')]
     public ?string $fromDate = null;
@@ -35,48 +33,58 @@ class CustomerStatementView extends Component
 
     public function mount(string $publicId, CompanyContext $context): void
     {
+        abort_unless(auth()->check() && $context->hasCompany(), 403);
         $company = $context->company();
-        $user = auth()->user();
+        app(ReportingGuard::class)->authorize($company, requiredPermissions: ['sales.statement.view']);
 
-        if (! $user->hasPermissionTo('sales.statement.view')) {
-            abort(403, 'Unauthorized.');
-        }
-
-        $this->customer = Customer::where('company_id', $company->id)
+        $this->companyId = (int) $company->id;
+        $this->customer = Customer::where('company_id', $this->companyId)
             ->where('public_id', $publicId)
             ->firstOrFail();
 
-        if ($this->fromDate === null) {
-            $this->fromDate = Carbon::now($company->timezone)->startOfYear()->toDateString();
-        }
-        if ($this->toDate === null) {
-            $this->toDate = Carbon::now($company->timezone)->toDateString();
-        }
+        $this->fromDate = $this->normalizeDateInput($this->fromDate)
+            ?? Carbon::now($company->timezone)->startOfYear()->toDateString();
+        $this->toDate = $this->normalizeDateInput($this->toDate)
+            ?? Carbon::now($company->timezone)->toDateString();
     }
 
-    public function createShareLink(PublicShareService $service): void
+    public function updated(string $property): void
     {
-        $this->validate(['shareExpiryDays' => ['integer', 'min:1', 'max:30'], 'sharePassword' => ['required', 'string', 'min:8', 'max:128']]);
-        $company = app(CompanyContext::class)->company();
-        $result = $service->createShare($company, auth()->user(), PublicShare::SUBJECT_CUSTOMER_STATEMENT, $this->customer->id,
-            Carbon::now()->addDays($this->shareExpiryDays), $this->sharePassword, scope: ['from' => $this->fromDate, 'to' => $this->toDate]);
-        $this->shareUrl = $result['url'];
-    }
-
-    public function revokeShareLink(PublicShareService $service): void
-    {
-        $company = app(CompanyContext::class)->company();
-        foreach (PublicShare::where('company_id', $company->id)->where('subject_type', PublicShare::SUBJECT_CUSTOMER_STATEMENT)->where('subject_id', $this->customer->id)->where('is_active', true)->get() as $share) {
-            $service->revokeShare($share, auth()->user());
+        if (! in_array($property, ['fromDate', 'toDate'], true)) {
+            return;
         }
-        $this->shareUrl = null;
+
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === $this->companyId, 403);
+        app(ReportingGuard::class)->authorize($context->company(), requiredPermissions: ['sales.statement.view']);
+
+        $customer = Customer::where('company_id', $this->companyId)
+            ->whereKey($this->customer->id)
+            ->firstOrFail();
+
+        $this->fromDate = $this->normalizeDateInput($this->fromDate);
+        $this->toDate = $this->normalizeDateInput($this->toDate);
+
+        $this->dispatch(
+            'customer-statement-dates-updated.customer_statement.'.$customer->id,
+            subjectType: 'customer_statement',
+            subjectId: $customer->id,
+            publicId: $customer->public_id,
+            fromDate: $this->fromDate,
+            toDate: $this->toDate,
+        )->to(FinancialShareManager::class);
     }
 
     public function render(CompanyContext $context, CustomerStatementQuery $statementQuery): View
     {
+        abort_unless(auth()->check() && $context->hasCompany() && (int) $context->companyId() === $this->companyId, 403);
         $company = $context->company();
-        app(ReportingGuard::class)->authorize($company, requiredPermissions: ['sales.statement.view']);
-        $customer = Customer::where('company_id', $company->id)->whereKey($this->customer->id)->firstOrFail();
+        $permissions = app(ReportingGuard::class)->readPermissions($company, requiredPermissions: ['sales.statement.view']);
+        $customer = Customer::where('company_id', $this->companyId)->whereKey($this->customer->id)->firstOrFail();
+
+        $this->fromDate = $this->normalizeDateInput($this->fromDate);
+        $this->toDate = $this->normalizeDateInput($this->toDate);
+
         $this->resetValidation(['fromDate', 'toDate']);
         $validator = validator(['fromDate' => $this->fromDate, 'toDate' => $this->toDate], [
             'fromDate' => ['required', 'date_format:Y-m-d'],
@@ -87,9 +95,23 @@ class CustomerStatementView extends Component
         }
         $statements = $validator->fails() ? ['currencies' => []] : $statementQuery->execute($customer, $this->fromDate, $this->toDate);
 
+        $canShare = collect(['sales.document.share', 'sales.statement.view', 'customers.statement.view'])
+            ->every(fn (string $permission): bool => in_array($permission, $permissions, true));
+
         return view('livewire.pages.sales.customer-statement-view', [
             'statements' => $statements['currencies'],
             'company' => $company,
+            'canShare' => $canShare,
         ]);
+    }
+
+    private function normalizeDateInput(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 }

@@ -34,9 +34,13 @@ final class FinancialShareManager extends Component
     public int $subjectId;
 
     #[Locked]
+    public ?string $subjectPublicId = null;
+
+    #[Locked]
     public string $requestKey;
 
-    public int $expiryDays = 7;
+    /** @var int|string|null */
+    public $expiryDays = 7;
 
     public string $locale = 'ar';
 
@@ -57,37 +61,97 @@ final class FinancialShareManager extends Component
 
     public bool $historyLoaded = false;
 
-    public function mount(string $subjectType, int $subjectId): void
+    public bool $historyOpen = false;
+
+    public function mount(string $subjectType, int $subjectId, ?string $initialFrom = null, ?string $initialTo = null): void
     {
         $companyContext = app(CompanyContext::class);
+        abort_unless(auth()->check() && $companyContext->hasCompany(), 403);
         $this->companyId = $companyContext->companyId();
         $this->subjectType = $subjectType;
         $this->subjectId = $subjectId;
         $this->requestKey = (string) Str::uuid();
 
-        $company = $companyContext->hasCompany() ? $companyContext->company() : null;
+        $company = $companyContext->company();
         $currentLocale = app()->getLocale();
-        $this->locale = ($company !== null && $company->isLanguageEnabled($currentLocale))
+        $this->locale = $company->isLanguageEnabled($currentLocale)
             ? $currentLocale
-            : ((string) ($company !== null ? $company->default_locale : 'ar'));
+            : ((string) ($company->default_locale ?: 'ar'));
 
-        $securitySettings = $company?->securitySettings;
+        $securitySettings = $company->securitySettings;
         $configuredExpiry = $securitySettings?->public_share_default_expiry_days;
         $defaultExpiry = ($configuredExpiry !== null && (int) $configuredExpiry > 0) ? (int) $configuredExpiry : 30;
         $this->expiryDays = $subjectType === PublicShare::SUBJECT_CUSTOMER_STATEMENT ? min($defaultExpiry, 30) : $defaultExpiry;
 
         $this->authorizeShare();
+
+        if ($subjectType === PublicShare::SUBJECT_CUSTOMER_STATEMENT) {
+            $customer = Customer::where('company_id', $this->companyId)
+                ->whereKey($this->subjectId)
+                ->firstOrFail();
+            $this->subjectPublicId = $customer->public_id;
+            $this->from = $this->normalizeDateInput($initialFrom);
+            $this->to = $this->normalizeDateInput($initialTo);
+        }
     }
 
-    public function loadHistory(): void
+    /** @return array<string, string> */
+    protected function getListeners(): array
+    {
+        if ($this->subjectType !== PublicShare::SUBJECT_CUSTOMER_STATEMENT) {
+            return [];
+        }
+
+        return [
+            "customer-statement-dates-updated.{$this->subjectType}.{$this->subjectId}" => 'syncStatementDates',
+        ];
+    }
+
+    public function syncStatementDates(
+        ?string $fromDate = null,
+        ?string $toDate = null,
+        ?string $subjectType = null,
+        ?int $subjectId = null,
+        ?string $publicId = null,
+    ): void {
+        $this->authorizeShare();
+
+        if ($this->subjectType !== PublicShare::SUBJECT_CUSTOMER_STATEMENT
+            || $subjectType !== PublicShare::SUBJECT_CUSTOMER_STATEMENT
+            || $subjectId !== $this->subjectId
+            || ! is_string($publicId)
+            || ! is_string($this->subjectPublicId)
+            || ! hash_equals($this->subjectPublicId, $publicId)) {
+            return;
+        }
+
+        $this->from = $this->normalizeDateInput($fromDate);
+        $this->to = $this->normalizeDateInput($toDate);
+        $this->resetValidation(['from', 'to']);
+    }
+
+    public function updated(string $property): void
+    {
+        if ($property === 'from') {
+            $this->from = $this->normalizeDateInput($this->from);
+        } elseif ($property === 'to') {
+            $this->to = $this->normalizeDateInput($this->to);
+        } elseif ($property === 'expiryDays') {
+            $this->expiryDays = $this->normalizeExpiryDaysInput($this->expiryDays);
+        }
+    }
+
+    public function loadHistory(bool $open = true): void
     {
         $this->authorizeShare();
         $this->historyLoaded = true;
+        $this->historyOpen = $open;
     }
 
     private function authorizeShare(): void
     {
-        abort_unless(auth()->check() && app(CompanyContext::class)->companyId() === $this->companyId, 403);
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && $context->companyId() === $this->companyId, 403);
         DB::transaction(fn () => app(FinancialSharePolicy::class)->authorize($this->companyId, auth()->user(), $this->subjectType));
     }
 
@@ -95,18 +159,24 @@ final class FinancialShareManager extends Component
     {
         $this->authorizeShare();
 
+        $this->from = $this->normalizeDateInput($this->from);
+        $this->to = $this->normalizeDateInput($this->to);
+        $this->password = $this->password === '' ? null : $this->password;
+
         $company = app(CompanyContext::class)->company();
         if (! $company->isLanguageEnabled($this->locale)) {
             $currentLocale = app()->getLocale();
             $this->locale = $company->isLanguageEnabled($currentLocale)
                 ? $currentLocale
-                : (string) ($company->default_locale ?? 'ar');
+                : (string) ($company->default_locale ?: 'ar');
         }
+
+        $this->expiryDays = $this->normalizeExpiryDaysInput($this->expiryDays);
 
         $securitySettings = $company->securitySettings;
         $configuredExpiry = $securitySettings?->public_share_default_expiry_days;
         $defaultExpiry = ($configuredExpiry !== null && (int) $configuredExpiry > 0) ? (int) $configuredExpiry : 30;
-        if ($this->expiryDays <= 0) {
+        if (is_int($this->expiryDays) && $this->expiryDays <= 0) {
             $this->expiryDays = $this->subjectType === PublicShare::SUBJECT_CUSTOMER_STATEMENT ? min($defaultExpiry, 30) : $defaultExpiry;
         }
 
@@ -115,7 +185,7 @@ final class FinancialShareManager extends Component
             'locale' => ['required', 'in:ar,en'],
             'password' => [$this->subjectType === PublicShare::SUBJECT_CUSTOMER_STATEMENT ? 'required' : 'nullable', 'string', 'min:8', 'max:128'],
             'from' => ['nullable', 'date_format:Y-m-d'],
-            'to' => array_filter(['nullable', 'date_format:Y-m-d', $this->from ? 'after_or_equal:from' : null]),
+            'to' => array_filter(['nullable', 'date_format:Y-m-d', $this->from !== null ? 'after_or_equal:from' : null]),
         ]);
 
         try {
@@ -125,10 +195,10 @@ final class FinancialShareManager extends Component
                 $this->subjectType,
                 $this->subjectId,
                 null,
-                $this->password === '' ? null : $this->password,
+                $this->password,
                 $this->requestKey,
                 ['locale' => $this->locale, 'from' => $this->from, 'to' => $this->to],
-                $this->expiryDays
+                (int) $this->expiryDays
             );
         } catch (\InvalidArgumentException) {
             $this->addError('share', __('sharing.issuance_unavailable'));
@@ -179,9 +249,11 @@ final class FinancialShareManager extends Component
     {
         $this->authorizeShare();
         app(PublicShareService::class)->revokeShare($this->managed($publicId), auth()->user());
-        $this->url = null;
-        $this->qr = null;
-        $this->selectedShareId = null;
+        if ($this->selectedShareId === null || $this->selectedShareId === $publicId) {
+            $this->url = null;
+            $this->qr = null;
+            $this->selectedShareId = null;
+        }
     }
 
     private function managed(string $publicId): PublicShare
@@ -192,15 +264,18 @@ final class FinancialShareManager extends Component
     public function render(): View
     {
         $this->authorizeShare();
+        $this->from = $this->normalizeDateInput($this->from);
+        $this->to = $this->normalizeDateInput($this->to);
         $preview = null;
         $previewError = null;
+        $companyTimezone = app(CompanyContext::class)->company()->timezone;
 
         try {
             $source = app(FinancialSharePolicy::class)->source($this->companyId, $this->subjectType, $this->subjectId);
             if ($source instanceof Customer) {
                 $dates = Validator::make(['from' => $this->from, 'to' => $this->to], [
                     'from' => ['nullable', 'date_format:Y-m-d'],
-                    'to' => array_filter(['nullable', 'date_format:Y-m-d', $this->from ? 'after_or_equal:from' : null]),
+                    'to' => array_filter(['nullable', 'date_format:Y-m-d', $this->from !== null ? 'after_or_equal:from' : null]),
                 ]);
                 if ($dates->fails()) {
                     $preview = null;
@@ -208,7 +283,7 @@ final class FinancialShareManager extends Component
                 } else {
                     app(DocumentRenderLimits::class)->assertStatementSource($this->companyId, $source->id);
                     $from = is_string($this->from) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $this->from) ? $this->from : null;
-                    $to = is_string($this->to) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $this->to) ? $this->to : now(app(CompanyContext::class)->company()->timezone)->format('Y-m-d');
+                    $to = is_string($this->to) && preg_match('/^\d{4}-\d{2}-\d{2}$/D', $this->to) ? $this->to : now($companyTimezone)->format('Y-m-d');
 
                     $preview = app(DocumentDataBuilder::class)->statement(app(CustomerStatementQuery::class)->execute($source, $from, $to), in_array($this->locale, ['ar', 'en'], true) ? $this->locale : 'ar');
                 }
@@ -277,6 +352,43 @@ final class FinancialShareManager extends Component
             'available' => $available,
             'shareMessage' => $shareMessage,
             'shareText' => $message,
+            'companyTimezone' => $companyTimezone,
         ]);
+    }
+
+    private function normalizeDateInput(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    private function normalizeExpiryDaysInput(mixed $value): int|string|null
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (preg_match('/^-?\d+$/', $trimmed) === 1) {
+            return (int) $trimmed;
+        }
+
+        return $trimmed;
     }
 }

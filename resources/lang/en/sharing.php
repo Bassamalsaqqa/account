@@ -35,6 +35,8 @@ return [
     'neutral_title' => 'Shared document', 'unavailable' => 'This link is unavailable. Ask the sender for a new link.',
     'deliberate_notice' => 'Open this document deliberately. If no password is required, anyone holding the link can open it.',
     'history' => 'Link history and advanced options',
+    'history_list' => 'Link history',
     'show_history' => 'Show history',
+    'no_shares' => 'No previous share links.',
     'password' => 'Password', 'view_document' => 'View document', 'cookie_notice' => 'Cookies are required. Access lasts up to 15 minutes; reopen the link to continue.',
 ];
