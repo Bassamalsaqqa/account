@@ -337,7 +337,21 @@ class MerchantUxBoundedGapsRegressionTest extends Phase6TestCase
             $twoEventsComponent = Livewire::test(PurchasingPaymentDetail::class, ['publicId' => $advancePayment->fresh()->public_id])
                 ->assertStatus(200);
         });
-        $htmlTwoEvents = $twoEventsComponent->call('openCreditForm')->assertStatus(200)->html(false);
+        $htmlTwoEvents = '';
+        $creditQueries = $this->captureQueries(function () use ($twoEventsComponent, &$htmlTwoEvents): void {
+            $htmlTwoEvents = $twoEventsComponent->call('openCreditForm')->assertStatus(200)->html(false);
+        });
+        $refreshQueries = $this->captureQueries(function () use ($twoEventsComponent): void {
+            $twoEventsComponent->call('$refresh')->assertStatus(200);
+        });
+        foreach ([$creditQueries, $refreshQueries] as $subsequentQueries) {
+            $this->assertSame(1, $this->countQueriesReferencing($subsequentQueries, '`vendor_payment_application_events`.`id` in'));
+            // Settlement-target EXISTS clauses legitimately compare event IDs;
+            // count direct belongsTo fetches, not correlated subqueries.
+            $lazyEventQueries = array_filter($subsequentQueries, static fn (string $sql): bool => preg_match('/^select .* from `vendor_payment_application_events` where `vendor_payment_application_events`\.`id` = \?/i', $sql) === 1
+            );
+            $this->assertCount(0, $lazyEventQueries);
+        }
 
         // Header placement & corrected labels/metadata assertions.
         $this->assertStringContainsString(__('purchasing.back'), $htmlTwoEvents);

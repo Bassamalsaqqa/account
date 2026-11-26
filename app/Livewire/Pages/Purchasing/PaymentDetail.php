@@ -161,6 +161,8 @@ class PaymentDetail extends Component
     public function render(CompanyContext $context): View
     {
         $this->authorizePaymentFinancialRead();
+        // Livewire rehydrates model properties by identity, without mount relations.
+        $this->payment->loadMissing(['vendor', 'moneyAccount', 'checkInstrument', 'allocations.purchase', 'allocations.openingTradeItem', 'allocations.applicationEvent']);
 
         $user = auth()->user();
         $canReverse = $user->hasPermissionTo('money.vendor_payment.reverse') && ! $this->payment->is_reversed && $this->payment->check_id === null;
