@@ -26,6 +26,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesDocumentLineIdentity;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
@@ -68,6 +69,7 @@ class PurchaseForm extends Component
     use AiUnsavedForm;
     use AuthorizesPurchasingPages;
     use CameraBarcodeScan;
+    use HandlesDocumentLineIdentity;
     use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
@@ -330,12 +332,14 @@ class PurchaseForm extends Component
         $this->settlement['due_date'] = now($company->timezone)->format('Y-m-d');
         $this->settlement['currency_code'] = $this->currency_code ?: $company->base_currency_code;
         $this->syncSettlementDefaults('settlement.mode');
+        $this->ensureLineIdentities();
         $this->recalculate();
     }
 
     public function hydrate(): void
     {
         $this->authorizeForm();
+        $this->ensureLineIdentities();
     }
 
     public function updatedVendorId(): void
@@ -464,8 +468,12 @@ class PurchaseForm extends Component
         $this->showMoreDetails = ! $this->showMoreDetails;
     }
 
-    public function toggleRowOptions(int $index): void
+    public function toggleRowOptions(int|string $lineRef): void
     {
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
         $this->expandedRowOptions[$index] = ! ($this->expandedRowOptions[$index] ?? false);
     }
 
@@ -738,44 +746,44 @@ class PurchaseForm extends Component
             $this->cancelPreview();
         }
         $this->authorizeForm();
-        $this->lines[] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
+        $this->lines[] = ['row_key' => $this->newUiIdentityKey(), 'product_id' => null, 'product_unit_id' => null, 'item_description' => '',
             'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
         $this->clearPurchaseTotals();
     }
 
-    public function removeLine(int $index): void
+    public function removeLine(int|string $lineRef): void
     {
         if ($this->showPreview) {
             $this->cancelPreview();
         }
         $this->authorizeForm();
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
         unset($this->lines[$index]);
         $this->lines = array_values($this->lines);
 
-        $newExpanded = [];
-        $newRowOptions = [];
-        foreach ($this->lines as $newIdx => $line) {
-            $oldIdx = $newIdx >= $index ? $newIdx + 1 : $newIdx;
-            if (isset($this->expandedLotCustomization[$oldIdx])) {
-                $newExpanded[$newIdx] = $this->expandedLotCustomization[$oldIdx];
-            }
-            if (isset($this->expandedRowOptions[$oldIdx])) {
-                $newRowOptions[$newIdx] = $this->expandedRowOptions[$oldIdx];
-            }
-        }
-        $this->expandedLotCustomization = $newExpanded;
-        $this->expandedRowOptions = $newRowOptions;
+        $this->expandedLotCustomization = $this->reindexRemovedLineMap($this->expandedLotCustomization, $index);
+        $this->expandedRowOptions = $this->reindexRemovedLineMap($this->expandedRowOptions, $index);
 
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, mixed $productId, mixed $productUnitId = null): bool
+    public function selectProduct(int|string $lineRef, mixed $productId, mixed $productUnitId = null): bool
     {
         if ($this->showPreview) {
             $this->cancelPreview();
         }
         $company = $this->authorizeForm();
-        abort_unless(isset($this->lines[$index]), 422);
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            if (is_int($lineRef)) {
+                abort(422);
+            }
+
+            return false;
+        }
         unset($this->expandedLotCustomization[$index]);
 
         $currentPublicId = $this->lines[$index]['public_id'] ?? null;
@@ -788,8 +796,8 @@ class PurchaseForm extends Component
 
                 return false;
             }
-            $this->lines[$index] = ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
-                'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
+            $this->lines[$index] = $this->preserveLineRowKey($index, ['product_id' => null, 'product_unit_id' => null, 'item_description' => '',
+                'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []]);
             $this->recalculate();
 
             return true;
@@ -841,12 +849,20 @@ class PurchaseForm extends Component
         return true;
     }
 
-    public function changeUnit(int $index, mixed $unitId): void
+    public function changeUnit(int|string $lineRef, mixed $unitId): void
     {
         if ($this->showPreview) {
             $this->cancelPreview();
         }
         $company = $this->authorizeForm();
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            if (is_int($lineRef)) {
+                abort(422);
+            }
+
+            return;
+        }
         abort_unless(isset($this->lines[$index]['product_id']), 422);
         unset($this->expandedLotCustomization[$index]);
 
@@ -901,9 +917,13 @@ class PurchaseForm extends Component
         $this->recalculate();
     }
 
-    public function customizeLots(int $index): void
+    public function customizeLots(int|string $lineRef): void
     {
         $company = $this->authorizeForm();
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
         $line = $this->lines[$index] ?? [];
         $product = Product::where('company_id', $company->id)->findOrFail($line['product_id'] ?? null);
         abort_unless($product->track_expiry, 422);
@@ -911,6 +931,7 @@ class PurchaseForm extends Component
         $this->expandedLotCustomization[$index] = true;
         if (empty($this->lines[$index]['lots'])) {
             $this->lines[$index]['lots'][] = [
+                'lot_key' => $this->newUiIdentityKey(),
                 'product_unit_id' => $line['product_unit_id'],
                 'lot_number' => '',
                 'expiry_date' => null,
@@ -919,21 +940,30 @@ class PurchaseForm extends Component
         }
     }
 
-    public function resetToAutoLot(int $index): void
+    public function resetToAutoLot(int|string $lineRef): void
     {
         $this->authorizeForm();
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
         $this->expandedLotCustomization[$index] = false;
         $this->lines[$index]['lots'] = [];
     }
 
-    public function addLot(int $index): void
+    public function addLot(int|string $lineRef): void
     {
         $company = $this->authorizeForm();
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
         $line = $this->lines[$index] ?? [];
         $product = Product::where('company_id', $company->id)->findOrFail($line['product_id'] ?? null);
         abort_unless($product->track_expiry, 422);
         $this->expandedLotCustomization[$index] = true;
         $this->lines[$index]['lots'][] = [
+            'lot_key' => $this->newUiIdentityKey(),
             'product_unit_id' => $line['product_unit_id'],
             'lot_number' => '',
             'expiry_date' => null,
@@ -941,10 +971,18 @@ class PurchaseForm extends Component
         ];
     }
 
-    public function removeLot(int $index, int $lot): void
+    public function removeLot(int|string $lineRef, int|string $lotRef): void
     {
         $this->authorizeForm();
-        unset($this->lines[$index]['lots'][$lot]);
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
+        $lotIndex = $this->resolveLotIndex($index, $lotRef);
+        if ($lotIndex === null) {
+            return;
+        }
+        unset($this->lines[$index]['lots'][$lotIndex]);
         $this->lines[$index]['lots'] = array_values($this->lines[$index]['lots']);
     }
 
@@ -953,6 +991,7 @@ class PurchaseForm extends Component
 
     public function recalculate(): void
     {
+        $this->ensureLineIdentities();
         // Livewire hydrates every edit before running the updated hooks. Let the
         // currency hook clear old-currency amounts before any preview is calculated.
         if ($this->currencyUpdatePending) {
@@ -1483,7 +1522,7 @@ class PurchaseForm extends Component
                 'discount_type' => $discountType !== 'none' ? $discountType : null,
                 'discount_value' => $discountType !== 'none' ? trim((string) ($line['discount_value'] ?? '0')) : '0',
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
-                'lots' => $line['lots'] ?? [],
+                'lots' => $this->stripUiKeysFromLots($line['lots'] ?? []),
             ];
         }
 
@@ -1533,7 +1572,7 @@ class PurchaseForm extends Component
                 'discount_type' => $discountType !== 'none' ? $discountType : null,
                 'discount_value' => $discountType !== 'none' ? trim((string) ($line['discount_value'] ?? '0')) : '0',
                 'tax_rate_id' => ! empty($line['tax_rate_id']) ? (int) $line['tax_rate_id'] : null,
-                'lots' => $line['lots'] ?? [],
+                'lots' => $this->stripUiKeysFromLots($line['lots'] ?? []),
             ];
         }
 
@@ -1767,7 +1806,10 @@ class PurchaseForm extends Component
 
         $lines = $this->lines;
         foreach ($lines as &$line) {
-            unset($line['preview_total']);
+            unset($line['preview_total'], $line['row_key']);
+            if (isset($line['lots']) && is_array($line['lots'])) {
+                $line['lots'] = $this->stripUiKeysFromLots($line['lots']);
+            }
             if (! empty($line['public_id']) && isset($this->persistedLineDiscounts[$line['public_id']])) {
                 $line['discount_type'] = $this->persistedLineDiscounts[$line['public_id']]['discount_type'];
                 $line['discount_value'] = $this->persistedLineDiscounts[$line['public_id']]['discount_value'];
@@ -1820,6 +1862,7 @@ class PurchaseForm extends Component
     public function render(): View
     {
         $company = $this->authorizeForm();
+        $this->ensureLineIdentities();
         $term = mb_substr(trim($this->productSearch), 0, 160);
         $products = Product::where('company_id', $company->id)->where('active', true)->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
         if ($term !== '') {

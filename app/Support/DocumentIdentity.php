@@ -7,6 +7,7 @@ namespace App\Support;
 final class DocumentIdentity
 {
     public const array FIELDS = [
+        'row_key',
         'id',
         'product_id',
         'product_unit_id',

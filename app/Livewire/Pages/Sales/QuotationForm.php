@@ -20,6 +20,7 @@ use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesDocumentLineIdentity;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
@@ -51,6 +52,7 @@ class QuotationForm extends Component
 {
     use AdjustsDocumentQuantity;
     use CameraBarcodeScan;
+    use HandlesDocumentLineIdentity;
     use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
@@ -298,6 +300,7 @@ class QuotationForm extends Component
     public function hydrate(CompanyContext $context): void
     {
         $this->authorizeQuoteAction();
+        $this->ensureLineIdentities();
     }
 
     protected function authorizeQuoteAction(): void
@@ -538,6 +541,7 @@ class QuotationForm extends Component
     {
         $this->authorizeQuoteAction();
         $this->lines[] = [
+            'row_key' => $this->newUiIdentityKey(),
             'product_id' => null,
             'product_unit_id' => null,
             'item_description' => '',
@@ -553,21 +557,32 @@ class QuotationForm extends Component
         ];
     }
 
-    public function removeLine(int $index): void
+    public function removeLine(int|string $lineRef): void
     {
         $this->authorizeQuoteAction();
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
         unset($this->lines[$index]);
         $this->lines = array_values($this->lines);
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, ?int $productId = null, ?int $productUnitId = null): bool
+    public function selectProduct(int|string $lineRef, ?int $productId = null, ?int $productUnitId = null): bool
     {
         $this->authorizeQuoteAction();
-        abort_unless(isset($this->lines[$index]), 422);
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            if (is_int($lineRef)) {
+                abort(422);
+            }
+
+            return false;
+        }
 
         if ($productId === null || $productId === 0) {
-            $this->lines[$index] = [
+            $this->lines[$index] = $this->preserveLineRowKey($index, [
                 'product_id' => null,
                 'product_unit_id' => null,
                 'item_description' => '',
@@ -576,7 +591,7 @@ class QuotationForm extends Component
                 'discount_type' => 'none',
                 'discount_value' => '0',
                 'tax_rate_id' => null,
-            ];
+            ]);
             $this->recalculate();
 
             return true;
@@ -592,21 +607,25 @@ class QuotationForm extends Component
         }
 
         $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->exchange_rate, null);
-        $this->lines[$index] = array_merge($this->lines[$index], $selected);
+        $this->lines[$index] = $this->preserveLineRowKey($index, array_merge($this->lines[$index], $selected));
         $this->recalculate();
 
         return true;
     }
 
-    public function changeUnit(int $index, int $productUnitId): void
+    public function changeUnit(int|string $lineRef, int $productUnitId): void
     {
         $this->authorizeQuoteAction();
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
+        }
         $productId = $this->lines[$index]['product_id'] ?? null;
         if ($productId === null) {
             return;
         }
         $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->exchange_rate, null);
-        $this->lines[$index] = array_merge($this->lines[$index], $selected);
+        $this->lines[$index] = $this->preserveLineRowKey($index, array_merge($this->lines[$index], $selected));
         $this->recalculate();
     }
 
@@ -615,6 +634,7 @@ class QuotationForm extends Component
 
     public function recalculate(): void
     {
+        $this->ensureLineIdentities();
         $this->documentTotalsValid = false;
         $company = app(CompanyContext::class)->company();
         foreach ($this->lines as $index => $line) {
@@ -856,6 +876,7 @@ class QuotationForm extends Component
     public function render(CompanyContext $context): View
     {
         $this->authorizeQuoteAction();
+        $this->ensureLineIdentities();
         $user = auth()->user();
         $company = $context->company();
 

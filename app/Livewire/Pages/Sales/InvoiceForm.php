@@ -24,6 +24,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\HandlesDocumentLineIdentity;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
@@ -64,6 +65,7 @@ class InvoiceForm extends Component
     use AdjustsDocumentQuantity;
     use AiUnsavedForm;
     use CameraBarcodeScan;
+    use HandlesDocumentLineIdentity;
     use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
@@ -358,7 +360,13 @@ class InvoiceForm extends Component
         }
         $this->updatedWarehouseId();
         $this->syncSettlementDefaults();
+        $this->ensureLineIdentities();
         $this->recalculate();
+    }
+
+    public function hydrate(): void
+    {
+        $this->ensureLineIdentities();
     }
 
     public function toggleDiscountControl(): void
@@ -619,6 +627,7 @@ class InvoiceForm extends Component
         }
 
         $this->lines[] = [
+            'row_key' => $this->newUiIdentityKey(),
             'product_id' => null,
             'product_unit_id' => null,
             'item_description' => '',
@@ -634,10 +643,15 @@ class InvoiceForm extends Component
         ];
     }
 
-    public function removeLine(int $index): void
+    public function removeLine(int|string $lineRef): void
     {
         if ($this->showPreview) {
             $this->cancelPreview();
+        }
+
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
         }
 
         unset($this->lines[$index]);
@@ -645,7 +659,7 @@ class InvoiceForm extends Component
         $this->recalculate();
     }
 
-    public function selectProduct(int $index, ?int $productId = null, ?int $productUnitId = null): bool
+    public function selectProduct(int|string $lineRef, ?int $productId = null, ?int $productUnitId = null): bool
     {
         if ($this->showPreview) {
             $this->cancelPreview();
@@ -656,10 +670,17 @@ class InvoiceForm extends Component
         $user = auth()->user();
         abort_unless($user->hasPermissionTo($this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'), 403);
 
-        abort_unless(isset($this->lines[$index]), 422);
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            if (is_int($lineRef)) {
+                abort(422);
+            }
+
+            return false;
+        }
 
         if ($productId === null || $productId === 0) {
-            $this->lines[$index] = [
+            $this->lines[$index] = $this->preserveLineRowKey($index, [
                 'product_id' => null,
                 'product_unit_id' => null,
                 'item_description' => '',
@@ -668,7 +689,7 @@ class InvoiceForm extends Component
                 'discount_type' => 'none',
                 'discount_value' => '0',
                 'tax_rate_id' => null,
-            ];
+            ]);
             $this->recalculate();
 
             return true;
@@ -689,16 +710,21 @@ class InvoiceForm extends Component
             $this->exchange_rate,
             $this->warehouse_id
         );
-        $this->lines[$index] = array_merge($this->lines[$index], $selected);
+        $this->lines[$index] = $this->preserveLineRowKey($index, array_merge($this->lines[$index], $selected));
         $this->recalculate();
 
         return true;
     }
 
-    public function changeUnit(int $index, int $productUnitId): void
+    public function changeUnit(int|string $lineRef, int $productUnitId): void
     {
         if ($this->showPreview) {
             $this->cancelPreview();
+        }
+
+        $index = $this->resolveLineIndex($lineRef);
+        if ($index === null) {
+            return;
         }
 
         $productId = $this->lines[$index]['product_id'] ?? null;
@@ -706,7 +732,7 @@ class InvoiceForm extends Component
             return;
         }
         $selected = app(SalesProductSelection::class)->select($productId, $productUnitId, $this->exchange_rate, $this->warehouse_id);
-        $this->lines[$index] = array_merge($this->lines[$index], $selected);
+        $this->lines[$index] = $this->preserveLineRowKey($index, array_merge($this->lines[$index], $selected));
         $this->recalculate();
     }
 
@@ -730,6 +756,7 @@ class InvoiceForm extends Component
 
     public function recalculate(): void
     {
+        $this->ensureLineIdentities();
         $this->documentTotalsValid = false;
         $this->recalculateSettlementPreview();
         if ($this->showPreview) {
@@ -1492,6 +1519,7 @@ class InvoiceForm extends Component
 
     public function render(CompanyContext $context): View
     {
+        $this->ensureLineIdentities();
         abort_unless(auth()->check() && $context->hasCompany() && $context->companyId() === $this->pageCompanyId, 403);
         $user = auth()->user();
         $company = DB::transaction(fn () => app(SalesActorGuard::class)->lockAndAuthorize(

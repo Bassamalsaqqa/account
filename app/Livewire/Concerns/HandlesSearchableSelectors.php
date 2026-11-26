@@ -13,10 +13,12 @@ use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\PaymentForm;
 use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\Company;
+use App\Models\CompanyUser;
 use App\Models\User;
 use App\Services\Search\SearchableSelectorService;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Auth\Access\AuthorizationException;
+use Livewire\Attributes\Renderless;
 
 trait HandlesSearchableSelectors
 {
@@ -78,6 +80,7 @@ trait HandlesSearchableSelectors
      *     company_id: int
      * }
      */
+    #[Renderless]
     public function searchSelector(
         string $type,
         string $query = '',
@@ -97,8 +100,13 @@ trait HandlesSearchableSelectors
 
         /** @var User $actor */
         $actor = auth()->user();
-        /** @var Company $company */
-        $company = $context->company();
+        $company = Company::find($companyId);
+        $membership = CompanyUser::where('company_id', $companyId)
+            ->where('user_id', (int) $actor->id)
+            ->first();
+        setPermissionsTeamId($companyId);
+        $actor->unsetRelation('roles')->unsetRelation('permissions');
+        abort_unless($company !== null && $company->status === 'active' && $membership?->status === 'active', 403);
 
         $clientGeneration = (int) ($options['generation'] ?? 0);
         $limit = isset($options['limit']) ? (int) $options['limit'] : SearchableSelectorService::DEFAULT_LIMIT;

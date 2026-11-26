@@ -215,7 +215,7 @@
                             @php
                                 $selectedProduct = !empty($line['product_id']) ? $products->firstWhere('id', $line['product_id']) : null;
                             @endphp
-                            <tr wire:key="inv-line-{{ $index }}">
+                            <tr wire:key="inv-line-{{ $line['row_key'] }}">
                                 <td class="py-2 px-2 align-top space-y-1">
 <div class="entry-product-fields">
                                     @php
@@ -226,17 +226,18 @@
                                         id="invoice-desktop-line-{{ $index }}-product-id"
                                         type="product"
                                         context="sales"
+                                        :row-key="$line['row_key']"
                                         :selected-id="$line['product_id'] ?? null"
                                         :selected-label="$lineProductLabel"
                                         on-select="selectProduct"
-                                        :extra-args="[$index]"
+                                        :extra-args="[$line['row_key']]"
                                         compact
                                         :placeholder="__('sales.product')"
                                         :aria-label="__('sales.product') . ' ' . ($index + 1)"
                                         :has-error="$errors->has('lines.'.$index.'.product_id')"
                                     />
                                     @error('lines.'.$index.'.product_id') <span id="invoice-desktop-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                                    <input id="invoice-desktop-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-item-description-error" @enderror type="text"
+                                    <input wire:key="inv-desc-{{ $line['row_key'] }}" id="invoice-desktop-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-item-description-error" @enderror type="text"
                                            wire:model="lines.{{ $index }}.item_description"
                                            placeholder="{{ __('sales.description') }}..."
                                            required
@@ -265,7 +266,7 @@
 
                                 <td class="py-2 px-2 align-top">
                                     @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
-                                        <select id="invoice-desktop-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)"
+                                        <select wire:key="inv-unit-{{ $line['row_key'] }}" id="invoice-desktop-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit('{{ $line['row_key'] }}', $event.target.value)"
                                                 class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
                                             @foreach ($selectedProduct->productUnits as $pu)
                                                  <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
@@ -285,6 +286,7 @@
                                     @endphp
                                     <x-touch-quantity-stepper
                                         :index="$index"
+                                        :row-key="$line['row_key']"
                                         :allows-fraction="$lineAllowsFraction"
                                         :step="\App\Support\QuantityStep::forUnit($selectedProductUnit?->unit)"
                                         id="invoice-desktop-line-{{ $index }}-quantity"
@@ -299,7 +301,7 @@
                                 </td>
 
                                 <td class="py-2 px-2 align-top">
-                                    <input id="invoice-desktop-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-unit-price-error" @enderror type="number" inputmode="decimal"
+                                    <input wire:key="inv-price-{{ $line['row_key'] }}" id="invoice-desktop-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-unit-price-error" @enderror type="number" inputmode="decimal"
                                            step="any"
                                            wire:model.blur="lines.{{ $index }}.unit_price"
                                            wire:change="recalculate"
@@ -313,7 +315,7 @@
 
                                 @if ($taxes->isNotEmpty())
                                     <td class="py-2 px-2 align-top">
-                                        <select id="invoice-desktop-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
+                                        <select wire:key="inv-tax-{{ $line['row_key'] }}" id="invoice-desktop-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-desktop-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
                                                 wire:change="recalculate"
                                                 class="w-full h-8 px-1.5 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
                                             <option value="">{{ __('sales.none') }} (0%)</option>
@@ -335,7 +337,7 @@
                                 <td class="table-actions py-2 px-1 align-top text-center">
                                     @if (count($lines) > 1)
                                         <button type="button"
-                                                wire:click="removeLine({{ $index }})"
+                                                wire:click="removeLine('{{ $line['row_key'] }}')"
                                                 title="{{ __('sales.remove_line') }}"
                                                 aria-label="{{ __('sales.remove_line') }} {{ $index + 1 }}"
                                                 class="min-h-10 min-w-10 inline-flex items-center justify-center rounded-control text-danger hover:bg-danger/10 hover:text-danger-hover transition-colors p-1 cursor-pointer" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
@@ -363,7 +365,7 @@
                             }
                         }
                     @endphp
-                    <div wire:key="inv-card-{{ $index }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
+                    <div wire:key="inv-card-{{ $line['row_key'] }}" class="p-3 bg-canvas rounded-card border border-border space-y-3">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-2">
                                 <span class="text-xs font-bold text-text-primary">#{{ $index + 1 }}</span>
@@ -375,7 +377,7 @@
                                 @endif
                             </div>
                             @if (count($lines) > 1)
-                                <button type="button" wire:click="removeLine({{ $index }})" class="min-h-[44px] px-3 text-danger text-sm font-bold cursor-pointer hover:bg-danger/10 rounded-control inline-flex items-center" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
+                                <button type="button" wire:click="removeLine('{{ $line['row_key'] }}')" class="min-h-[44px] px-3 text-danger text-sm font-bold cursor-pointer hover:bg-danger/10 rounded-control inline-flex items-center" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                                     {{ __('sales.remove_line') }}
                                 </button>
                             @endif
@@ -392,16 +394,17 @@
                                 id="invoice-mobile-line-{{ $index }}-product-id"
                                 type="product"
                                 context="sales"
+                                :row-key="$line['row_key']"
                                 :selected-id="$line['product_id'] ?? null"
                                 :selected-label="$mobileProductLabel"
                                 on-select="selectProduct"
-                                :extra-args="[$index]"
+                                :extra-args="[$line['row_key']]"
                                 :placeholder="__('sales.product')"
                                 :aria-label="__('sales.product') . ' ' . ($index + 1)"
                                 :has-error="$errors->has('lines.'.$index.'.product_id')"
                             />
                             @error('lines.'.$index.'.product_id') <span id="invoice-mobile-line-{{ $index }}-product-id-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
-                            <input id="invoice-mobile-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-item-description-error" @enderror type="text"
+                            <input wire:key="inv-mob-desc-{{ $line['row_key'] }}" id="invoice-mobile-line-{{ $index }}-item-description" aria-label="{{ __('sales.description') }} {{ $index + 1 }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-item-description-error" @enderror type="text"
                                    wire:model="lines.{{ $index }}.item_description"
                                    placeholder="{{ __('sales.description') }}..."
                                    required
@@ -413,7 +416,7 @@
                             <div>
                                 <label for="invoice-mobile-line-{{ $index }}-product-unit-id" class="block text-sm font-bold text-text-secondary">{{ __('sales.unit') }}</label>
                                 @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
-                                    <select id="invoice-mobile-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)"
+                                    <select wire:key="inv-mob-unit-{{ $line['row_key'] }}" id="invoice-mobile-line-{{ $index }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-product-unit-id-error" @enderror wire:change="changeUnit('{{ $line['row_key'] }}', $event.target.value)"
                                             class="w-full h-8 px-1.5 rounded-control border border-border bg-surface text-sm" :disabled="documentBusy || saving">
                                         @foreach ($selectedProduct->productUnits as $pu)
                                             <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
@@ -434,6 +437,7 @@
                                 @endphp
                                 <x-touch-quantity-stepper
                                     :index="$index"
+                                    :row-key="$line['row_key']"
                                     :allows-fraction="$lineAllowsFraction"
                                     :step="\App\Support\QuantityStep::forUnit($selectedProductUnit?->unit)"
                                     id="invoice-mobile-line-{{ $index }}-quantity"
@@ -451,7 +455,7 @@
                         <!-- Unit Price -->
                         <div>
                             <label for="invoice-mobile-line-{{ $index }}-unit-price" class="block text-sm font-bold text-text-secondary">{{ __('sales.unit_price') }}</label>
-                            <input id="invoice-mobile-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-unit-price-error" @enderror type="number" inputmode="decimal"
+                            <input wire:key="inv-mob-price-{{ $line['row_key'] }}" id="invoice-mobile-line-{{ $index }}-unit-price" aria-label="{{ __('sales.unit_price') }} {{ $index + 1 }}" @error('lines.'.$index.'.unit_price') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-unit-price-error" @enderror type="number" inputmode="decimal"
                                    step="any"
                                    wire:model.blur="lines.{{ $index }}.unit_price"
                                    wire:change="recalculate"
@@ -466,7 +470,7 @@
                         @if ($taxes->isNotEmpty())
                             <div>
                                 <label for="invoice-mobile-line-{{ $index }}-tax-rate-id" class="block text-sm font-bold text-text-secondary">{{ __('sales.tax') }}</label>
-                                <select id="invoice-mobile-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
+                                <select wire:key="inv-mob-tax-{{ $line['row_key'] }}" id="invoice-mobile-line-{{ $index }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-mobile-line-{{ $index }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
                                         wire:change="recalculate"
                                         class="w-full h-8 px-1.5 rounded-control border border-border bg-surface text-sm" :disabled="documentBusy || saving">
                                     <option value="">{{ __('sales.none') }} (0%)</option>

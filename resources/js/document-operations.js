@@ -1,9 +1,22 @@
 const queues = new Map();
 const allowed = new Set(['scanCameraBarcode', 'incrementQuantity', 'decrementQuantity', 'stepQuantity', 'addLine', 'saveDraft', 'saveAndConfirm', 'save', 'stepInventoryQuantity', 'stepReturnQuantity', 'returnFullRemaining', 'payRemaining', 'useFullBalance']);
-const identityFields = ['id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
+const identityFields = ['row_key', 'id', 'product_id', 'product_unit_id', 'item_description', 'unit_price', 'unit_cost', 'discount_type', 'discount_value', 'tax_rate_id', 'tax_inclusive', 'lot_id', 'lots', 'lot_allocations', 'warehouse_id', 'purchase_line_id', 'sales_invoice_line_id'];
 const keyFor = wire => wire.$id || wire.id || wire;
 const copy = value => JSON.parse(JSON.stringify(value));
-const lineFor = (wire, index) => wire.lines?.[index] ?? wire.$get?.(`lines.${index}`) ?? wire.get?.(`lines.${index}`);
+const linesFor = wire => wire.lines ?? wire.$get?.('lines') ?? wire.get?.('lines');
+const lineFor = (wire, index) => {
+    const all = linesFor(wire);
+    return Array.isArray(all) ? all[index] : (wire.$get?.(`lines.${index}`) ?? wire.get?.(`lines.${index}`));
+};
+const resolveLiveLineIndex = (wire, fallbackIndex, rowKey = null) => {
+    if (rowKey !== null && rowKey !== undefined && rowKey !== '') {
+        const all = linesFor(wire);
+        if (Array.isArray(all)) {
+            return all.findIndex(line => line && String(line.row_key ?? '') === String(rowKey));
+        }
+    }
+    return fallbackIndex;
+};
 const identityFor = line => Object.fromEntries(identityFields.map(key => [key, line?.[key] ?? null]));
 const same = (first, second) => JSON.stringify(first) === JSON.stringify(second);
 const error = message => new Error(message);
@@ -61,7 +74,7 @@ async function drain(state) {
         if (job.kind === 'quantity') {
             const current = lineFor(state.wire, job.index);
             if (!current || !same(identityFor(current), job.identity)) throw error('Line changed; review pending quantity changes');
-            const confirmedKey = `${job.index}:${job.field || 'quantity'}`;
+            const confirmedKey = `${job.identity?.row_key || job.index}:${job.field || 'quantity'}`;
             const confirmed = state.confirmed.get(confirmedKey);
             const expected = confirmed && same(confirmed.identity, job.identity) ? confirmed.quantity : job.expected;
             // A timeout is an ambiguous outcome, not permission to cancel/replay the edit.
@@ -164,19 +177,21 @@ export function flushQuantityBatch(wire) {
     if (state) { seal(state); void drain(state); }
 }
 export function enqueueQuantityStep(wire, index, direction, options = {}) {
-    if (!wire || !Number.isSafeInteger(index) || index < 0 || !['up', 'down'].includes(direction)) return Promise.reject(error('Invalid quantity operation'));
+    const requestedIndex = Number.isInteger(index) ? index : Number(index ?? -1);
+    const liveIndex = resolveLiveLineIndex(wire, requestedIndex, options.rowKey ?? null);
+    if (!wire || !Number.isSafeInteger(liveIndex) || liveIndex < 0 || !['up', 'down'].includes(direction)) return Promise.reject(error('Invalid quantity operation'));
     const state = stateFor(wire);
     if (state.blocked) return Promise.reject(error('Document operation blocked; review pending quantity changes'));
-    const line = lineFor(wire, index);
+    const line = lineFor(wire, liveIndex);
     const field = options.field || 'quantity';
     const currentQty = line?.[field];
     if (!line || typeof currentQty !== 'string') return Promise.reject(error('Invalid quantity line'));
     const identity = copy(identityFor(line));
     let job = state.open;
-    if (!job || job.index !== index || job.field !== field || !same(job.identity, identity) || job.directions.length >= 100) {
+    if (!job || job.index !== liveIndex || job.field !== field || !same(job.identity, identity) || job.directions.length >= 100) {
         if (state.jobs.length >= 10) return Promise.reject(error('Document queue full'));
         seal(state);
-        job = {kind: 'quantity', field, index, expected: currentQty, identity, directions: [], waiters: [], ready: false, timer: null, created: Date.now(), timeoutMs: Math.min(30000, Math.max(1, Number(options.timeoutMs) || 30000))};
+        job = {kind: 'quantity', field, index: liveIndex, expected: currentQty, identity, directions: [], waiters: [], ready: false, timer: null, created: Date.now(), timeoutMs: Math.min(30000, Math.max(1, Number(options.timeoutMs) || 30000))};
         state.jobs.push(job);
         state.open = job;
     }
@@ -218,14 +233,18 @@ export async function resyncDocumentQueue(wire, refreshOnly = false) {
     announce(state);
 }
 export function touchQuantityStepper(wire, config = {}) {
-    const index = Number.isInteger(config.index) ? config.index : Number(config.index ?? 0);
+    const fallbackIndex = Number.isInteger(config.index) ? config.index : Number(config.index ?? 0);
+    const configuredRowKey = config.rowKey ?? null;
     const quantum = config.quantum ?? '1';
     const min = config.min ?? '0';
     const max = config.max ?? null;
     const field = config.field || 'quantity';
-    const stepOptions = { field };
-    if (config.debounceMs !== undefined) stepOptions.debounceMs = config.debounceMs;
-    if (config.timeoutMs !== undefined) stepOptions.timeoutMs = config.timeoutMs;
+    const baseOptions = { field };
+    if (config.debounceMs !== undefined) baseOptions.debounceMs = config.debounceMs;
+    if (config.timeoutMs !== undefined) baseOptions.timeoutMs = config.timeoutMs;
+    if (configuredRowKey !== null && configuredRowKey !== undefined && configuredRowKey !== '') {
+        baseOptions.rowKey = configuredRowKey;
+    }
 
     return {
         pending: 0,
@@ -236,6 +255,16 @@ export function touchQuantityStepper(wire, config = {}) {
         batchEpoch: 0,
         tap(direction) {
             const input = this.$refs?.qtyInput;
+            const liveDomIndex = Number.isInteger(Number(this.$refs?.stepperMeta?.dataset?.lineIndex))
+                ? Number(this.$refs.stepperMeta.dataset.lineIndex)
+                : fallbackIndex;
+            const activeRowKey = this.$refs?.stepperMeta?.dataset?.rowKey || configuredRowKey;
+            const targetIndex = resolveLiveLineIndex(wire, liveDomIndex, activeRowKey || null);
+            if (!Number.isSafeInteger(targetIndex) || targetIndex < 0) {
+                this.failed = true;
+                return Promise.reject(error('Line changed; review pending quantity changes'));
+            }
+            const stepOptions = activeRowKey ? { ...baseOptions, rowKey: activeRowKey } : baseOptions;
             this.batchEpoch = (this.batchEpoch || 0) + 1;
             const currentEpoch = this.batchEpoch;
             if (!this.optimisticQty) {
@@ -254,7 +283,7 @@ export function touchQuantityStepper(wire, config = {}) {
                 input.value = this.optimisticQty;
             }
             this.pending++;
-            return enqueueQuantityStep(wire, index, direction, stepOptions)
+            return enqueueQuantityStep(wire, targetIndex, direction, stepOptions)
                 .then(result => {
                     if (this.batchEpoch !== currentEpoch) return;
                     if (result && typeof result.quantity === 'string') {

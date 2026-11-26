@@ -305,7 +305,9 @@ trait AiUnsavedForm
                 $this->{$field} = $value ?? (in_array($field, ['due_date', 'exchange_rate'], true) && ! property_exists($this, 'purchase_date') ? '' : null);
             }
         }
-        $this->lines = $result['payload']['lines'];
+        $previousLines = $this->lines;
+        $nextLines = is_array($result['payload']['lines'] ?? null) ? $result['payload']['lines'] : [];
+        $this->lines = $this->preserveRowKeysAcrossReplacement($previousLines, $nextLines);
         $this->recalculate();
     }
 
@@ -452,7 +454,14 @@ trait AiUnsavedForm
         if ($purchase) {
             $fields[] = 'lots';
         }
-        $payload['lines'] = array_map(fn ($line) => array_intersect_key($line, array_flip($fields)), $this->lines);
+        $payload['lines'] = array_map(function ($line) use ($fields) {
+            $filtered = array_intersect_key($line, array_flip($fields));
+            if (isset($filtered['lots']) && is_array($filtered['lots'])) {
+                $filtered['lots'] = $this->stripUiKeysFromLots($filtered['lots']);
+            }
+
+            return $filtered;
+        }, $this->lines);
 
         return $payload;
     }

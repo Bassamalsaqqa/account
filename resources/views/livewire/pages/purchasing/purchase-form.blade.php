@@ -278,7 +278,7 @@
                 $hasRowOptionErrors = $errors->hasAny(["lines.{$index}.item_description", "lines.{$index}.tax_rate_id", "lines.{$index}.lots.*"]);
                 $isRowOptionsOpen = ($expandedRowOptions[$index] ?? false) || $hasRowOptionErrors;
             @endphp
-            <article wire:key="purchase-line-{{ $index }}-{{ $line['product_id'] ?? 'new' }}" class="bg-surface border border-border rounded-card p-3 sm:p-4 space-y-3">
+            <article wire:key="purchase-line-{{ $line['row_key'] }}" class="bg-surface border border-border rounded-card p-3 sm:p-4 space-y-3">
                 <div class="flex justify-between items-center gap-2">
                     <div class="flex items-center gap-2">
                         <span class="text-xs font-mono text-text-muted font-bold">#<bdi>{{ $index + 1 }}</bdi></span>
@@ -290,10 +290,10 @@
                         @endif
                     </div>
                     <div class="flex items-center gap-2">
-                        <button type="button" wire:click="toggleRowOptions({{ $index }})" aria-expanded="{{ $isRowOptionsOpen ? 'true' : 'false' }}" aria-controls="purchase-line-options-{{ $index }}" class="px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary border border-border rounded-control hover:bg-surface-soft transition-colors cursor-pointer">
+                        <button type="button" wire:click="toggleRowOptions('{{ $line['row_key'] }}')" aria-expanded="{{ $isRowOptionsOpen ? 'true' : 'false' }}" aria-controls="purchase-line-options-{{ $index }}" class="px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary border border-border rounded-control hover:bg-surface-soft transition-colors cursor-pointer">
                             {{ __('purchasing.row_options') }}
                         </button>
-                        <button type="button" wire:click="removeLine({{ $index }})" class="min-h-[36px] px-2.5 text-danger text-xs font-bold cursor-pointer hover:bg-danger/10 rounded-control transition-colors" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
+                        <button type="button" wire:click="removeLine('{{ $line['row_key'] }}')" class="min-h-[36px] px-2.5 text-danger text-xs font-bold cursor-pointer hover:bg-danger/10 rounded-control transition-colors" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                             {{ __('purchasing.remove_line') }}
                         </button>
                     </div>
@@ -307,10 +307,11 @@
                             id="line-product-{{ $index }}"
                             type="product"
                             context="purchasing"
+                            :row-key="$line['row_key']"
                             :selected-id="$line['product_id'] ?? null"
                             :selected-label="$lineProdLabel"
                             on-select="selectProduct"
-                            :extra-args="[$index]"
+                            :extra-args="[$line['row_key']]"
                             :placeholder="__('purchasing.select_product')"
                             :aria-label="__('purchasing.product') . ' ' . ($index + 1)"
                             :has-error="$errors->has('lines.'.$index.'.product_id')"
@@ -320,7 +321,7 @@
 
                     <div class="lg:col-span-2">
                         <label for="line-unit-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.unit') }}</label>
-                        <select id="line-unit-{{ $index }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="line-unit-{{ $index }}-error" @enderror wire:change="changeUnit({{ $index }}, $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-xs" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving">
+                        <select wire:key="pf-unit-{{ $line['row_key'] }}" id="line-unit-{{ $index }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="line-unit-{{ $index }}-error" @enderror wire:change="changeUnit('{{ $line['row_key'] }}', $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-xs" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving">
                             <option value="">{{ __('purchasing.select_unit') }}</option>
                             @foreach($unitOptions[$index] ?? [] as $unit)
                                 <option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>
@@ -333,6 +334,7 @@
                         <label for="line-quantity-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.quantity') }} <span class="text-danger">*</span></label>
                         <x-touch-quantity-stepper
                             :index="$index"
+                            :row-key="$line['row_key']"
                             :preview-input="true"
                             :allows-fraction="$lineAllowsFraction"
                             :step="\App\Support\QuantityStep::forUnit($selectedUnit?->unit)"
@@ -344,7 +346,7 @@
 
                     <div class="lg:col-span-2">
                         <label for="line-unit_cost-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.unit_cost') }} <span class="text-danger">*</span></label>
-                        <input id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.unit_cost" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-xs font-mono text-end" placeholder="0.00" :disabled="documentBusy || saving"/>
+                        <input wire:key="pf-cost-{{ $line['row_key'] }}" id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.unit_cost" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-xs font-mono text-end" placeholder="0.00" :disabled="documentBusy || saving"/>
                         @error('lines.'.$index.'.unit_cost') <span id="line-unit_cost-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                         @if(isset($lastPriceHints[$index]))
                             <p class="text-[11px] text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
@@ -379,13 +381,13 @@
                     <div class="grid sm:grid-cols-2 gap-3">
                         <div>
                             <label for="line-description-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.description') }}</label>
-                            <input id="line-description-{{ $index }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="line-description-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving"/>
+                            <input wire:key="pf-desc-{{ $line['row_key'] }}" id="line-description-{{ $index }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="line-description-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving"/>
                             @error('lines.'.$index.'.item_description') <span id="line-description-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                         @if($taxes->isNotEmpty())
                             <div>
                                 <label for="line-tax-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.tax') }}</label>
-                                <select id="line-tax-{{ $index }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="line-tax-{{ $index }}-error" @enderror wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
+                                <select wire:key="pf-tax-{{ $line['row_key'] }}" id="line-tax-{{ $index }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="line-tax-{{ $index }}-error" @enderror wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
                                     <option value="">{{ __('purchasing.no_tax') }}</option>
                                     @foreach($taxes as $tax)
                                         <option value="{{ $tax->id }}">{{ $tax->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($tax->rate, 'ILS') }}%) — {{ __('refinement.tax_'.$tax->calculation) }}</option>
@@ -405,14 +407,14 @@
                                 </div>
                                 <div class="flex items-center gap-2">
                                     @if(! ($expandedLotCustomization[$index] ?? false))
-                                        <button type="button" wire:click="customizeLots({{ $index }})" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-primary text-xs font-medium cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="customizeLots" :disabled="documentBusy || saving">
+                                        <button type="button" wire:click="customizeLots('{{ $line['row_key'] }}')" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-primary text-xs font-medium cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="customizeLots" :disabled="documentBusy || saving">
                                             {{ __('purchase_settlement.customize_lots') }}
                                         </button>
                                     @else
-                                        <button type="button" wire:click="resetToAutoLot({{ $index }})" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-text-secondary text-xs cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="resetToAutoLot" :disabled="documentBusy || saving">
+                                        <button type="button" wire:click="resetToAutoLot('{{ $line['row_key'] }}')" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-text-secondary text-xs cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="resetToAutoLot" :disabled="documentBusy || saving">
                                             {{ __('purchase_settlement.collapse_lots') }}
                                         </button>
-                                        <button type="button" wire:click="addLot({{ $index }})" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-primary text-xs font-bold cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="addLot" :disabled="documentBusy || saving">
+                                        <button type="button" wire:click="addLot('{{ $line['row_key'] }}')" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-primary text-xs font-bold cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="addLot" :disabled="documentBusy || saving">
                                             {{ __('purchasing.add_lot') }}
                                         </button>
                                     @endif
@@ -428,23 +430,23 @@
                                 </div>
                             @else
                                 @foreach($line['lots'] ?? [] as $lotIndex => $lot)
-                                    <div wire:key="intent-{{ $index }}-{{ $lotIndex }}" class="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-surface rounded-control p-2.5 border border-border/50">
+                                    <div wire:key="intent-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" class="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-surface rounded-control p-2.5 border border-border/50">
                                         <div>
                                             <label for="lot-{{ $index }}-{{ $lotIndex }}-lot_number" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.lot_number') }}</label>
-                                            <input id="lot-{{ $index }}-{{ $lotIndex }}-lot_number" @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" @enderror type="text" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.lot_number" dir="ltr" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
+                                            <input wire:key="pf-lot-num-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-lot_number" @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" @enderror type="text" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.lot_number" dir="ltr" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
                                             @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') <span id="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                         </div>
                                         <div>
                                             <label for="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.expiry_date') }}</label>
-                                            <input id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" @enderror type="date" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.expiry_date" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs" :disabled="documentBusy || saving"/>
+                                            <input wire:key="pf-lot-exp-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" @enderror type="date" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.expiry_date" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs" :disabled="documentBusy || saving"/>
                                             @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') <span id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                         </div>
                                         <div>
                                             <label for="lot-{{ $index }}-{{ $lotIndex }}-quantity" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.allocated_quantity') }}</label>
-                                            <input id="lot-{{ $index }}-{{ $lotIndex }}-quantity" @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" @enderror type="text" inputmode="decimal" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.quantity" dir="ltr" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
+                                            <input wire:key="pf-lot-qty-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-quantity" @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" @enderror type="text" inputmode="decimal" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.quantity" dir="ltr" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
                                             @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') <span id="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                         </div>
-                                        <button type="button" wire:click="removeLot({{ $index }}, {{ $lotIndex }})" class="self-end min-h-[36px] px-3 text-danger text-xs font-semibold cursor-pointer hover:bg-danger/10 rounded-control" wire:loading.attr="disabled" wire:target="removeLot" :disabled="documentBusy || saving">{{ __('purchasing.remove_lot') }}</button>
+                                        <button type="button" wire:click="removeLot('{{ $line['row_key'] }}', '{{ $lot['lot_key'] }}')" class="self-end min-h-[36px] px-3 text-danger text-xs font-semibold cursor-pointer hover:bg-danger/10 rounded-control" wire:loading.attr="disabled" wire:target="removeLot" :disabled="documentBusy || saving">{{ __('purchasing.remove_lot') }}</button>
                                     </div>
                                 @endforeach
                             @endif

@@ -9,11 +9,13 @@
     'disabled' => false,
     'field' => 'quantity',
     'previewInput' => false,
+    'rowKey' => null,
 ])
 
 @php
     $field = (string) ($field ?? 'quantity');
     $index = (int) $index;
+    $rowKey = is_string($rowKey) && $rowKey !== '' ? $rowKey : null;
     $inputId = $id ?? 'line-' . $field . '-' . $index;
     $label = $ariaLabel ?? __('mobile.quantity') . ' ' . ($index + 1);
     $quantum = (string) ($step ?? ($allowsFraction ? '0.01' : '1'));
@@ -21,9 +23,11 @@
     $maxVal = $max !== null ? (string) $max : null;
 @endphp
 
-<div class="inline-flex flex-col items-start gap-1 touch-manipulation"
-     x-data="touchQuantityStepper($wire,{index:@js($index),quantum:@js($quantum),min:@js($minVal),max:@js($maxVal),field:@js($field)})"
+<div @if($rowKey) wire:key="stepper-{{ $rowKey }}-{{ $field }}" @endif
+     class="inline-flex flex-col items-start gap-1 touch-manipulation"
+     x-data="touchQuantityStepper($wire,{index:@js($index),rowKey:@js($rowKey),quantum:@js($quantum),min:@js($minVal),max:@js($maxVal),field:@js($field)})"
      @document-operation-state.window="onOperationState($event.detail)">
+    <span hidden x-ref="stepperMeta" data-line-index="{{ $index }}" data-row-key="{{ $rowKey ?? '' }}"></span>
     <div class="inline-flex items-stretch border border-border rounded-control bg-surface shadow-xs overflow-hidden">
         <!-- Decrement Button (>=44px touch target, clear contrast) -->
         <button type="button"
@@ -38,6 +42,7 @@
 
         <!-- Quantity Input (stays enabled during batch steps for stable display/typing, readonly during tap batch) -->
         <input id="{{ $inputId }}"
+               @if($rowKey) wire:key="stepper-input-{{ $rowKey }}-{{ $field }}" @endif
                x-ref="qtyInput"
                @focus="onInputFocus()"
                @input="onInputTyped()"
