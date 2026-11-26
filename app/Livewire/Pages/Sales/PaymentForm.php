@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\Money\EligibleMoneyAccounts;
 use App\Services\Money\MoneyActorGuard;
 use App\Services\Sales\ReceiptPreview;
+use App\Services\Sales\SalesInvoiceFinancialSummaryBatch;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -233,18 +234,20 @@ class PaymentForm extends Component
 
         $company = app(CompanyContext::class)->company();
 
-        $invoices = SalesInvoice::with('allocations')
-            ->where('company_id', $company->id)
+        $invoices = SalesInvoice::where('company_id', $company->id)
             ->where('customer_id', $this->customer_id)
             ->whereIn('currency_code', CompanyCurrency::where('company_id', $company->id)->where('enabled', true)->select('currency_code'))
             ->where('status', SalesInvoice::STATUS_POSTED)
             ->orderBy('issue_date')
             ->get();
 
+        $invoiceSummaries = app(SalesInvoiceFinancialSummaryBatch::class)
+            ->summarize($invoices, (int) $company->id);
+
         $this->allocations = [];
 
         foreach ($invoices as $inv) {
-            $outstanding = $inv->calculateOutstanding();
+            $outstanding = $invoiceSummaries[(int) $inv->id]['outstanding'];
             if ($outstanding->isPositive()) {
                 $this->allocations[] = [
                     'sales_invoice_id' => $inv->id,
@@ -432,7 +435,8 @@ class PaymentForm extends Component
         if ($this->sourceInvoiceId !== null) {
             $document = $this->quickBalanceDocuments()->whereKey($this->sourceInvoiceId)->first();
             if ($document !== null) {
-                $remaining = $document->calculateOutstanding();
+                $remaining = app(SalesInvoiceFinancialSummaryBatch::class)
+                    ->summarize([$document], $this->pageCompanyId)[(int) $document->id]['outstanding'];
                 if ($remaining->isPositive()) {
                     $this->amount = SalesMoneyFormatter::formatMoneyInput($remaining);
                     foreach ($this->allocations as $idx => $alloc) {
@@ -449,9 +453,12 @@ class PaymentForm extends Component
             }
         }
 
+        $documents = $this->quickBalanceDocuments()->get();
+        $documentSummaries = app(SalesInvoiceFinancialSummaryBatch::class)
+            ->summarize($documents, $this->pageCompanyId);
         $total = BigDecimal::zero();
-        foreach ($this->quickBalanceDocuments()->get() as $document) {
-            $remaining = $document->calculateOutstanding();
+        foreach ($documents as $document) {
+            $remaining = $documentSummaries[(int) $document->id]['outstanding'];
             if ($remaining->isPositive()) {
                 $total = $total->plus($remaining);
             }

@@ -184,25 +184,55 @@ class EmployeeDetail extends Component
 
         $detail = $readService->employeeDetail($employee, $user);
 
+        $canAdvance = $detail['has_salary_view'] || $detail['has_advance_manage'];
+        $canSalary = $detail['has_salary_view'];
+
+        $allowedTabs = ['overview'];
+        if ($canAdvance) {
+            $allowedTabs[] = 'advances';
+        }
+        if ($canSalary) {
+            $allowedTabs[] = 'salaries';
+            $allowedTabs[] = 'statement';
+        }
+        if (! in_array($this->tab, $allowedTabs, true)) {
+            $this->tab = 'overview';
+        }
+
         $advancePositions = [];
-        if ($detail['has_salary_view'] || $detail['has_advance_manage']) {
-            $advancePositions = $readService->advancePositions($employee, $user);
+        $advanceCount = 0;
+        if ($canAdvance) {
+            if ($this->tab === 'advances') {
+                $advancePositions = $readService->advancePositions($employee, $user);
+                $advanceCount = count($advancePositions);
+            } else {
+                $advanceCount = $readService->advanceCount($employee, $user);
+            }
         }
 
         $salaryPositions = [];
+        $salaryCount = 0;
         $statement = ['events' => [], 'balances_by_currency' => []];
-        if ($detail['has_salary_view']) {
-            $salaryPositions = $readService->salaryPositions($employee, $user);
-            $statement = $readService->employeeStatement($employee, $user);
+        if ($canSalary) {
+            if ($this->tab === 'salaries') {
+                $salaryPositions = $readService->salaryPositions($employee, $user);
+                $salaryCount = count($salaryPositions);
+            } else {
+                $salaryCount = $readService->salaryCount($employee, $user);
+            }
+
+            if ($this->tab === 'statement') {
+                $statement = $readService->employeeStatement($employee, $user);
+            }
         }
 
         return view('livewire.pages.payroll.employee-detail', [
             'employee' => $detail['employee'],
             'detail' => $detail,
             'advancePositions' => $this->paginateTableRows($advancePositions, 'advancesPage'),
-            'advanceCount' => count($advancePositions),
+            'advanceCount' => $advanceCount,
             'salaryPositions' => $this->paginateTableRows($salaryPositions, 'salariesPage'),
-            'salaryCount' => count($salaryPositions),
+            'salaryCount' => $salaryCount,
             'statement' => $statement,
             'statementEvents' => $this->paginateTableRows($statement['events'], 'statementPage'),
             'canPostSalary' => $this->canMoney('payroll.salary.post'),

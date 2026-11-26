@@ -239,6 +239,9 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @forelse ($tabInvoices as $inv)
+                            @php
+                                $invSummary = $tabInvoiceSummaries[$inv->id] ?? $inv->calculateFinancialSummary();
+                            @endphp
                             <tr class="hover:bg-surface-soft/60">
                                 <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
                                     <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline">
@@ -253,14 +256,14 @@
                                 </td>
                                 <td class="py-2.5 px-3">
                                     <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-surface-soft text-text-secondary">
-                                        {{ __('sales.' . $inv->derivedPaymentStatus()) }}
+                                        {{ __('sales.' . $invSummary['payment_status']) }}
                                     </span>
                                 </td>
                                 <td class="py-2.5 px-3 font-bold" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->grand_total_currency, $inv->currency_code) }} {{ $inv->currency_code }}
                                 </td>
                                 <td class="py-2.5 px-3 font-bold text-danger" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->calculateOutstanding(), $inv->currency_code) }} {{ $inv->currency_code }}
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invSummary['outstanding'], $inv->currency_code) }} {{ $inv->currency_code }}
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
                                     <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">

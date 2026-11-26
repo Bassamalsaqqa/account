@@ -14,6 +14,7 @@ use App\Models\CustomerPayment;
 use App\Models\Quotation;
 use App\Models\SalesInvoice;
 use App\Models\SalesReturn;
+use App\Services\Sales\SalesInvoiceFinancialSummaryBatch;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Carbon\Carbon;
@@ -104,6 +105,7 @@ class CustomerDetail extends Component
 
         // Tab data
         $tabInvoices = [];
+        $tabInvoiceSummaries = [];
         $tabQuotations = [];
         $tabPayments = [];
         $tabReturns = [];
@@ -115,6 +117,8 @@ class CustomerDetail extends Component
                 ->orderByDesc('issue_date')
                 ->orderByDesc('id')
                 ->paginate($this->tablePageSize());
+            $tabInvoiceSummaries = app(SalesInvoiceFinancialSummaryBatch::class)
+                ->summarize($tabInvoices->getCollection(), (int) $company->id);
         } elseif ($this->activeTab === 'quotations') {
             $tabQuotations = Quotation::where('company_id', $company->id)
                 ->where('customer_id', $this->customer->id)
@@ -129,7 +133,10 @@ class CustomerDetail extends Component
                 ->orderByDesc('id')
                 ->paginate($this->tablePageSize());
         } elseif ($this->activeTab === 'returns') {
-            $tabReturns = SalesReturn::where('company_id', $company->id)
+            $tabReturns = SalesReturn::with([
+                'salesInvoice' => fn ($q) => $q->where('company_id', $company->id),
+            ])
+                ->where('company_id', $company->id)
                 ->where('customer_id', $this->customer->id)
                 ->orderByDesc('issue_date')
                 ->orderByDesc('id')
@@ -151,6 +158,7 @@ class CustomerDetail extends Component
             'currencyBalances' => $formattedBalances,
             'isOverCreditLimit' => $isOverCreditLimit,
             'tabInvoices' => $tabInvoices,
+            'tabInvoiceSummaries' => $tabInvoiceSummaries,
             'tabQuotations' => $tabQuotations,
             'tabPayments' => $tabPayments,
             'tabReturns' => $tabReturns,

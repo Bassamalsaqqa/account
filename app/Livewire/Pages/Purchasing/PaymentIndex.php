@@ -9,6 +9,7 @@ use App\Livewire\Pages\Purchasing\Concerns\AuthorizesPurchasingPages;
 use App\Models\MoneyAccount;
 use App\Models\Vendor;
 use App\Models\VendorPayment;
+use App\Services\Purchasing\VendorPaymentAllocationSummary;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -72,7 +73,7 @@ class PaymentIndex extends Component
         $user = auth()->user();
         $canCreate = $user->hasPermissionTo('money.vendor_payment.create');
 
-        $query = VendorPayment::with(['vendor', 'moneyAccount', 'checkInstrument', 'allocations'])
+        $query = VendorPayment::with(['vendor', 'moneyAccount', 'checkInstrument'])
             ->where('company_id', $companyId);
 
         if (trim($this->search) !== '') {
@@ -97,11 +98,14 @@ class PaymentIndex extends Component
         }
 
         $payments = $query->orderByDesc('created_at')->orderByDesc('id')->paginate($this->tablePageSize());
+        $allocationSummaries = app(VendorPaymentAllocationSummary::class)
+            ->summarize($payments->getCollection(), $companyId);
         $vendors = Vendor::where('company_id', $companyId)->orderBy('name_ar')->get();
         $accounts = MoneyAccount::where('company_id', $companyId)->where('is_active', true)->get();
 
         return view('livewire.pages.purchasing.payment-index', [
             'payments' => $payments,
+            'allocationSummaries' => $allocationSummaries,
             'vendors' => $vendors,
             'accounts' => $accounts,
             'canCreate' => $canCreate,

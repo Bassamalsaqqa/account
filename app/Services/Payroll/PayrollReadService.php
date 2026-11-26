@@ -6,14 +6,17 @@ namespace App\Services\Payroll;
 
 use App\Models\Employee;
 use App\Models\EmployeeAdvance;
+use App\Models\SalaryAdvanceAllocation;
 use App\Models\SalaryEntry;
 use App\Models\SalaryPayment;
+use App\Models\SalaryPaymentAllocation;
 use App\Models\User;
 use App\Services\Phase7\Phase7FinancialRead;
 use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 final class PayrollReadService
 {
@@ -91,6 +94,32 @@ final class PayrollReadService
         ];
     }
 
+    public function advanceCount(Employee $employee, User $actor): int
+    {
+        $companyId = (int) $employee->company_id;
+        app(Phase7FinancialRead::class)->actor($companyId, $actor, 'employees.view');
+        setPermissionsTeamId($companyId);
+        if (! app(Phase7FinancialRead::class)->allows($companyId, 'payroll.salary.view') && ! app(Phase7FinancialRead::class)->advance($companyId)) {
+            throw new AuthorizationException('User does not have permission to view employee advance positions.');
+        }
+
+        return EmployeeAdvance::where('company_id', $companyId)
+            ->where('employee_id', $employee->id)
+            ->where('status', EmployeeAdvance::STATUS_POSTED)
+            ->count();
+    }
+
+    public function salaryCount(Employee $employee, User $actor): int
+    {
+        $companyId = (int) $employee->company_id;
+        app(Phase7FinancialRead::class)->actor($companyId, $actor, 'payroll.salary.view');
+
+        return SalaryEntry::where('company_id', $companyId)
+            ->where('employee_id', $employee->id)
+            ->where('status', SalaryEntry::STATUS_POSTED)
+            ->count();
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -106,15 +135,25 @@ final class PayrollReadService
         $advances = EmployeeAdvance::where('company_id', $companyId)
             ->where('employee_id', $employee->id)
             ->where('status', EmployeeAdvance::STATUS_POSTED)
-            ->with(['allocations' => fn ($q) => $q->where('status', 'active')])
+            ->with(['check' => fn ($q) => $q->where('company_id', $companyId)])
             ->orderByDesc('advance_date')
             ->orderByDesc('id')
             ->get();
 
+        $advanceSums = $this->batchAdvanceAllocationSums($companyId, $advances);
+
         $positions = [];
         foreach ($advances as $advance) {
-            $remaining = $advance->getRemainingAmount();
-            $remainingBase = $advance->getRemainingBaseAmount();
+            if ($advance->isReversed()) {
+                $remaining = BigDecimal::zero();
+                $remainingBase = BigDecimal::zero();
+            } else {
+                $sums = $advanceSums[(int) $advance->id] ?? null;
+                $allocated = $sums !== null ? $sums['allocated'] : BigDecimal::zero();
+                $consumed = $sums !== null ? $sums['base_consumed'] : BigDecimal::zero();
+                $remaining = BigDecimal::of($advance->amount)->minus($allocated);
+                $remainingBase = BigDecimal::of($advance->base_amount)->minus($consumed);
+            }
 
             $positions[] = [
                 'advance' => $advance,
@@ -140,15 +179,24 @@ final class PayrollReadService
         $entries = SalaryEntry::where('company_id', $companyId)
             ->where('employee_id', $employee->id)
             ->where('status', SalaryEntry::STATUS_POSTED)
-            ->with(['paymentAllocations' => fn ($q) => $q->where('status', 'active')])
             ->orderByDesc('recognition_date')
             ->orderByDesc('id')
             ->get();
 
+        $salarySums = $this->batchSalaryAllocationSums($companyId, $entries);
+
         $positions = [];
         foreach ($entries as $entry) {
-            $remainingPayable = $entry->getRemainingPayableAmount();
-            $remainingPayableBase = $entry->getRemainingPayableBaseAmount();
+            if ($entry->isReversed()) {
+                $remainingPayable = BigDecimal::zero();
+                $remainingPayableBase = BigDecimal::zero();
+            } else {
+                $sums = $salarySums[(int) $entry->id] ?? null;
+                $paid = $sums !== null ? $sums['allocated'] : BigDecimal::zero();
+                $relieved = $sums !== null ? $sums['book_relief_base'] : BigDecimal::zero();
+                $remainingPayable = BigDecimal::of($entry->net_payable)->minus($paid);
+                $remainingPayableBase = BigDecimal::of($entry->base_payable)->minus($relieved);
+            }
 
             $positions[] = [
                 'entry' => $entry,
@@ -250,6 +298,9 @@ final class PayrollReadService
         });
 
         // Compute balances per currency from active records
+        $advanceSums = $this->batchAdvanceAllocationSums($companyId, $advances);
+        $entrySums = $this->batchSalaryAllocationSums($companyId, $entries);
+
         $currencies = [];
         $allCurrencies = array_unique(array_merge(
             $advances->pluck('currency_code')->all(),
@@ -260,12 +311,20 @@ final class PayrollReadService
         foreach ($allCurrencies as $curr) {
             $outstandingAdvance = BigDecimal::zero();
             foreach ($advances->where('currency_code', $curr) as $adv) {
-                $outstandingAdvance = $outstandingAdvance->plus($adv->getRemainingAmount());
+                if ($adv->isReversed()) {
+                    continue;
+                }
+                $allocated = $advanceSums[(int) $adv->id]['allocated'] ?? BigDecimal::zero();
+                $outstandingAdvance = $outstandingAdvance->plus(BigDecimal::of($adv->amount)->minus($allocated));
             }
 
             $outstandingPayable = BigDecimal::zero();
             foreach ($entries->where('currency_code', $curr) as $ent) {
-                $outstandingPayable = $outstandingPayable->plus($ent->getRemainingPayableAmount());
+                if ($ent->isReversed()) {
+                    continue;
+                }
+                $paid = $entrySums[(int) $ent->id]['allocated'] ?? BigDecimal::zero();
+                $outstandingPayable = $outstandingPayable->plus(BigDecimal::of($ent->net_payable)->minus($paid));
             }
 
             $currencies[$curr] = [
@@ -279,6 +338,98 @@ final class PayrollReadService
             'events' => $events,
             'balances_by_currency' => $currencies,
         ];
+    }
+
+    /**
+     * @param  iterable<EmployeeAdvance>  $advances
+     * @return array<int, array{allocated: BigDecimal, base_consumed: BigDecimal}>
+     */
+    private function batchAdvanceAllocationSums(int $companyId, iterable $advances): array
+    {
+        if ($companyId <= 0) {
+            throw new InvalidArgumentException('Payroll batch allocation lookup requires a positive company_id.');
+        }
+
+        $activeIds = [];
+        foreach ($advances as $advance) {
+            if ((int) $advance->company_id !== $companyId) {
+                throw new InvalidArgumentException('Payroll advance allocation batch cannot mix companies.');
+            }
+            if (! $advance->isReversed()) {
+                $activeIds[(int) $advance->id] = (int) $advance->id;
+            }
+        }
+
+        if ($activeIds === []) {
+            return [];
+        }
+
+        $rows = SalaryAdvanceAllocation::query()
+            ->where('company_id', $companyId)
+            ->whereIn('employee_advance_id', array_values($activeIds))
+            ->where('status', SalaryAdvanceAllocation::STATUS_ACTIVE)
+            ->selectRaw('employee_advance_id, SUM(allocated_amount) AS total_allocated, SUM(advance_base_consumed) AS total_base_consumed')
+            ->groupBy('employee_advance_id')
+            ->get();
+
+        $sums = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->getAttribute('employee_advance_id');
+            $alloc = $row->getAttribute('total_allocated');
+            $base = $row->getAttribute('total_base_consumed');
+            $sums[$id] = [
+                'allocated' => $alloc !== null ? BigDecimal::of((string) $alloc) : BigDecimal::zero(),
+                'base_consumed' => $base !== null ? BigDecimal::of((string) $base) : BigDecimal::zero(),
+            ];
+        }
+
+        return $sums;
+    }
+
+    /**
+     * @param  iterable<SalaryEntry>  $entries
+     * @return array<int, array{allocated: BigDecimal, book_relief_base: BigDecimal}>
+     */
+    private function batchSalaryAllocationSums(int $companyId, iterable $entries): array
+    {
+        if ($companyId <= 0) {
+            throw new InvalidArgumentException('Payroll batch allocation lookup requires a positive company_id.');
+        }
+
+        $activeIds = [];
+        foreach ($entries as $entry) {
+            if ((int) $entry->company_id !== $companyId) {
+                throw new InvalidArgumentException('Payroll salary allocation batch cannot mix companies.');
+            }
+            if (! $entry->isReversed()) {
+                $activeIds[(int) $entry->id] = (int) $entry->id;
+            }
+        }
+
+        if ($activeIds === []) {
+            return [];
+        }
+
+        $rows = SalaryPaymentAllocation::query()
+            ->where('company_id', $companyId)
+            ->whereIn('salary_entry_id', array_values($activeIds))
+            ->where('status', SalaryPaymentAllocation::STATUS_ACTIVE)
+            ->selectRaw('salary_entry_id, SUM(allocated_amount) AS total_allocated, SUM(salary_book_relief_base) AS total_book_relief_base')
+            ->groupBy('salary_entry_id')
+            ->get();
+
+        $sums = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->getAttribute('salary_entry_id');
+            $alloc = $row->getAttribute('total_allocated');
+            $relief = $row->getAttribute('total_book_relief_base');
+            $sums[$id] = [
+                'allocated' => $alloc !== null ? BigDecimal::of((string) $alloc) : BigDecimal::zero(),
+                'book_relief_base' => $relief !== null ? BigDecimal::of((string) $relief) : BigDecimal::zero(),
+            ];
+        }
+
+        return $sums;
     }
 
     /** @return list<string> */

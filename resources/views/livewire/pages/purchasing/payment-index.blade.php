@@ -64,6 +64,12 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse ($payments as $pmt)
+                        @php
+                            $pmtSummary = $allocationSummaries[$pmt->id] ?? [
+                                'allocated' => $pmt->allocated_amount,
+                                'unallocated' => $pmt->unallocated_amount,
+                            ];
+                        @endphp
                         <tr class="hover:bg-surface-soft/60 transition-colors">
                             <td class="py-3 px-4 font-mono font-bold" dir="ltr">
                                 <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline">
@@ -94,10 +100,10 @@
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
                             </td>
                             <td class="py-3 px-4 text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->allocated_amount, $pmt->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['allocated'], $pmt->currency_code) }}
                             </td>
                             <td class="py-3 px-4 text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->unallocated_amount, $pmt->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['unallocated'], $pmt->currency_code) }}
                             </td>
                             <td class="py-3 px-4">
                                 @if ($pmt->is_reversed)
@@ -134,6 +140,12 @@
         <!-- Mobile View -->
         <div class="lg:hidden divide-y divide-border">
             @forelse ($payments as $pmt)
+                @php
+                    $pmtSummary = $allocationSummaries[$pmt->id] ?? [
+                        'allocated' => $pmt->allocated_amount,
+                        'unallocated' => $pmt->unallocated_amount,
+                    ];
+                @endphp
                 <div class="p-4 space-y-3">
                     <div class="flex items-start justify-between gap-2">
                         <div>
@@ -169,13 +181,13 @@
                         <div>
                             <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.allocated') }}</span>
                             <span class="text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->allocated_amount, $pmt->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['allocated'], $pmt->currency_code) }}
                             </span>
                         </div>
                         <div>
                             <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.unallocated') }}</span>
                             <span class="text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->unallocated_amount, $pmt->currency_code) }}
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['unallocated'], $pmt->currency_code) }}
                             </span>
                         </div>
                     </div>

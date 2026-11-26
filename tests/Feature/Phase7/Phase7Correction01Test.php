@@ -590,7 +590,10 @@ final class Phase7Correction01Test extends Phase7TestCase
         $financialReader = $this->customActor(['employees.view', 'payroll.salary.view']);
         $this->activate($financialReader);
         $stale = Livewire::actingAs($financialReader)->test(EmployeeDetail::class, ['publicId' => $this->employee->public_id]);
-        $stale->assertViewHas('salaryPositions', fn ($positions) => count($positions) === 1);
+        $stale->assertViewHas('salaryCount', 1)
+            ->assertViewHas('salaryPositions', fn ($positions) => count($positions) === 0 && $positions->total() === 0);
+        $stale->set('tab', 'salaries')
+            ->assertViewHas('salaryPositions', fn ($positions) => count($positions) === 1);
         $financialReader->roles()->firstOrFail()->revokePermissionTo('payroll.salary.view');
         $stale->call('$refresh')->assertStatus(200)
             ->assertViewHas('salaryPositions', fn ($positions) => count($positions) === 0 && $positions->total() === 0)
