@@ -187,6 +187,7 @@
                     {{ __('sales.invoice_details') }}
                 </h2>
                 <button type="button"
+                        data-row-mutation-action
                         @click="handleAddLine()"
                         class="px-2.5 py-1 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors inline-flex items-center gap-1.5 cursor-pointer">
                     <span>+ {{ __('sales.add_line') }}</span>
@@ -317,6 +318,7 @@
                     {{ __('sales.cancel') }}
                 </a>
                 <button type="button"
+                        data-row-mutation-action
                         @click="handleSaveDraft()"
                         wire:loading.attr="disabled"
                         class="px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-sm font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5">
@@ -326,6 +328,7 @@
                 @if ($canPost)
                     <button id="invoice-post-button"
                             type="button"
+                            data-row-mutation-action
                             @click="if (!saving && !window.isDocumentBlocked($wire)) { saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { this.operationFailed = true; }).finally(() => saving = false); }"
                             wire:loading.attr="disabled"
                             class="px-5 py-2 rounded-control bg-primary text-white text-xs font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">

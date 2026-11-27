@@ -255,7 +255,7 @@
         <!-- Table Action Bar (Clean: No visual shortcut/count clutter) -->
         <div class="px-4 py-2.5 bg-surface border border-border rounded-card flex items-center justify-between">
             <h2 class="font-bold text-sm text-text-primary">{{ __('purchasing.purchase_lines') }}</h2>
-            <button type="button" @click="handleAddLine()" class="h-9 px-3 text-primary border border-border bg-surface hover:bg-surface-soft rounded-control text-xs font-bold inline-flex items-center gap-1 cursor-pointer shadow-2xs transition-colors">
+            <button type="button" data-row-mutation-action @click="handleAddLine()" class="h-9 px-3 text-primary border border-border bg-surface hover:bg-surface-soft rounded-control text-xs font-bold inline-flex items-center gap-1 cursor-pointer shadow-2xs transition-colors">
                 + {{ __('purchasing.add_line') }}
             </button>
         </div>
@@ -603,7 +603,7 @@
     <!-- Footer Actions -->
     <footer class="flex flex-wrap items-center gap-3 pt-2">
         @can('purchasing.purchase.post')
-            <button type="button" @click="if (!saving && !window.isDocumentBlocked($wire)) { clearTimeout(previewTimer); previewPending = false; saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { operationFailed = true; }).finally(() => { saving = false; flushPendingPreview(); }); }" :disabled="saving || documentBusy" class="min-h-11 px-5 bg-primary text-white font-bold text-sm rounded-control hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+            <button type="button" data-row-mutation-action @click="if (!saving && !window.isDocumentBlocked($wire)) { clearTimeout(previewTimer); previewPending = false; saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { operationFailed = true; }).finally(() => { saving = false; flushPendingPreview(); }); }" :disabled="saving || documentBusy" class="min-h-11 px-5 bg-primary text-white font-bold text-sm rounded-control hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
                 {{ __('purchasing.post_purchase') }}
             </button>
         @endcan

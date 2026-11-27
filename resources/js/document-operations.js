@@ -25,8 +25,17 @@ function stateFor(wire) {
     if (!queues.has(key)) queues.set(key, {wire, jobs: [], active: null, open: null, blocked: false, failed: [], confirmed: new Map()});
     return queues.get(key);
 }
+function failedTargets(state) {
+    return (state.failed || [])
+        .filter(job => job.kind === 'quantity')
+        .map(job => ({
+            rowKey: job.identity?.row_key ?? null,
+            index: job.index,
+            field: job.field ?? 'quantity',
+        }));
+}
 function announce(state) {
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('document-operation-state', {detail: {id: state.wire.$id, busy: isDocumentBusy(state.wire), blocked: state.blocked}}));
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('document-operation-state', {detail: {id: state.wire.$id, busy: isDocumentBusy(state.wire), blocked: state.blocked, failedTargets: failedTargets(state)}}));
 }
 export function isDocumentBusy(wire) {
     const state = queues.get(keyFor(wire));
@@ -289,6 +298,8 @@ export function touchQuantityStepper(wire, config = {}) {
     return {
         pending: 0,
         failed: false,
+        ownFailed: false,
+        primaryRecovery: false,
         recovering: false,
         optimisticQty: null,
         confirmedQty: null,
@@ -306,13 +317,19 @@ export function touchQuantityStepper(wire, config = {}) {
 
             return meta;
         },
+        shouldShowRecoveryCard() {
+            return Boolean(this.failed && (this.ownFailed || this.primaryRecovery));
+        },
         tap(direction) {
+            if (this.failed || this.recovering) return Promise.resolve();
             if (wire?.$el?.dataset?.rowMutationBusy === 'true') return;
             const input = this.$refs?.qtyInput;
             const meta = this.syncMeta();
             const targetIndex = resolveLiveLineIndex(wire, meta.lineIndex, meta.rowKey || null);
             if (!Number.isSafeInteger(targetIndex) || targetIndex < 0) {
                 this.failed = true;
+                this.ownFailed = true;
+                this.primaryRecovery = true;
                 return Promise.reject(error('Line changed; review pending quantity changes'));
             }
             const stepOptions = meta.rowKey ? { ...baseOptions, rowKey: meta.rowKey } : baseOptions;
@@ -344,6 +361,8 @@ export function touchQuantityStepper(wire, config = {}) {
                 .catch(() => {
                     if (this.batchEpoch !== currentEpoch) return;
                     this.failed = true;
+                    this.ownFailed = true;
+                    this.primaryRecovery = true;
                     if (this.confirmedQty !== null && input) {
                         input.value = this.confirmedQty;
                     }
@@ -370,15 +389,42 @@ export function touchQuantityStepper(wire, config = {}) {
         },
         onOperationState(detail) {
             if (!detail || detail.id == null || detail.id !== wire?.$id) return;
-            this.syncMeta();
-            if (detail.blocked) this.failed = true;
-            else if (!detail.busy) this.failed = false;
+            const meta = this.syncMeta();
+            if (detail.blocked) {
+                this.failed = true;
+                const targets = Array.isArray(detail.failedTargets) ? detail.failedTargets : [];
+                const matched = targets.some(target => {
+                    if ((target.field || 'quantity') !== fallback.field) return false;
+                    if (meta.rowKey && target.rowKey) return target.rowKey === meta.rowKey;
+                    return Number(target.index) === Number(meta.lineIndex);
+                });
+                if (matched) {
+                    this.ownFailed = true;
+                }
+                if (this.ownFailed) {
+                    this.primaryRecovery = true;
+                } else if (targets.length === 0) {
+                    const scope = wire?.$el && typeof wire.$el.querySelector === 'function'
+                        ? wire.$el
+                        : (typeof document !== 'undefined' ? document : null);
+                    const first = scope?.querySelector?.('[data-touch-stepper]') ?? null;
+                    this.primaryRecovery = first === null || this.$el === first || Number(meta.lineIndex) === 0;
+                } else {
+                    this.primaryRecovery = false;
+                }
+            } else if (!detail.busy) {
+                this.failed = false;
+                this.ownFailed = false;
+                this.primaryRecovery = false;
+            }
         },
         async resync() {
             this.recovering = true;
             try {
                 await resyncDocumentQueue(wire);
                 this.failed = false;
+                this.ownFailed = false;
+                this.primaryRecovery = false;
             } catch {
                 this.failed = true;
             } finally {

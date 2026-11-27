@@ -36,7 +36,7 @@
 
         <x-slot:footer>
             <button type="button" @click="dismiss()" class="min-h-11 px-4 py-2 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft cursor-pointer" :disabled="isSaving" wire:loading.attr="disabled" wire:target="closeQuickProductModal">{{ __('workflow.cancel') }}</button>
-            <button type="button" wire:click="saveQuickProduct" wire:loading.attr="disabled" wire:target="saveQuickProduct" class="min-h-11 px-4 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer">
+            <button type="button" data-row-mutation-action wire:click="saveQuickProduct" wire:loading.attr="disabled" wire:target="saveQuickProduct" class="min-h-11 px-4 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer">
                 <span wire:loading.remove wire:target="saveQuickProduct">{{ __('quick_product.save') }}</span>
                 <span wire:loading wire:target="saveQuickProduct" role="status">{{ __('quick_product.saving') }}</span>
             </button>

@@ -32,7 +32,7 @@
                     <span>{{ __('assistant_v2.transcript_replace_warning') }}</span>
                 </label>
                 @if ($aiTranscriptQuestions === [])
-                    <button type="button" @click="applyTyped(true)" :disabled="busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.reprocess_transcript') }}</button>
+                    <button type="button" data-row-mutation-action @click="applyTyped(true)" :disabled="busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.reprocess_transcript') }}</button>
                 @else
                     <p class="font-semibold">{{ __('assistant_v2.clarification') }}</p>
                     @foreach ($aiTranscriptQuestions as $index => $question)
@@ -56,7 +56,7 @@
                             @endif
                         </label>
                     @endforeach
-                    <button type="button" @click="applyTyped(true, true)" :disabled="busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.continue') }}</button>
+                    <button type="button" data-row-mutation-action @click="applyTyped(true, true)" :disabled="busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.continue') }}</button>
                 @endif
                 <button type="button" @click="clear(); $wire.closeAiTranscript()" class="min-h-11 px-2 font-semibold underline">{{ __('assistant_v2.cancel') }}</button>
                 <p x-show="busy" x-cloak role="status">{{ __('assistant.working') }}</p>
@@ -64,7 +64,7 @@
                 @if ($aiCorrectionError)<p role="alert" class="text-danger">{{ $aiCorrectionError }}</p>@endif
             @endif
         </div>
-        <button type="button" wire:click="discardAiInput" class="min-h-11 px-2 font-semibold underline underline-offset-4">{{ __('assistant_v2.discard_memory') }}</button>
+        <button type="button" data-row-mutation-action wire:click="discardAiInput" class="min-h-11 px-2 font-semibold underline underline-offset-4">{{ __('assistant_v2.discard_memory') }}</button>
         @php($aiPolicy = app(\App\Application\AI\AiGovernance::class)->authorizeUse(app(\App\Support\Tenancy\CompanyContext::class)->company(), auth()->user(), property_exists($this, 'purchase_date') ? 'purchase' : 'sales'))
         @if ($aiPolicy->follow_up_enabled)
             <div class="space-y-2 border-t border-info/20 pt-3"
@@ -73,10 +73,10 @@
                 <input id="ai-correction-{{ $this->getId() }}" wire:model="aiCorrectionText" maxlength="4000"
                     placeholder="{{ __('assistant_v2.correction_example') }}" class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-base" :disabled="busy" />
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" @click="applyTyped()" :disabled="busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold disabled:opacity-50">{{ __('assistant_v2.apply_correction') }}</button>
+                    <button type="button" data-row-mutation-action @click="applyTyped()" :disabled="busy" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold disabled:opacity-50">{{ __('assistant_v2.apply_correction') }}</button>
                     <button type="button" x-show="busy" x-cloak @click="clear(); $wire.cancelAiCorrection()" class="min-h-11 px-3 underline">{{ __('assistant_v2.cancel') }}</button>
                     @if ($aiCanUndo)
-                        <button type="button" wire:click="undoAiInput" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.undo') }}</button>
+                        <button type="button" data-row-mutation-action wire:click="undoAiInput" wire:loading.attr="disabled" class="min-h-11 rounded-control border border-border bg-surface px-3 font-semibold">{{ __('assistant_v2.undo') }}</button>
                     @endif
                 </div>
                 <p class="text-text-secondary">{{ __('assistant_v2.correction_help') }}</p>

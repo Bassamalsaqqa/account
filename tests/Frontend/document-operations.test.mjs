@@ -548,3 +548,54 @@ test('touchQuantityStepper reads dynamic quantum, min, and max from stepperMeta 
     await controller.tap('down');
     assert.equal(qtyInput.value, '0.5');
 });
+
+test('touchQuantityStepper feedback uses permanent reserved slot and shows recovery card only for failing row', async () => {
+    const { readFileSync } = await import('node:fs');
+    const template = readFileSync(new URL('../../resources/views/components/touch-quantity-stepper.blade.php', import.meta.url), 'utf8');
+    assert.match(template, /data-stepper-feedback[\s\S]*role="status"[\s\S]*aria-live="polite"/);
+    assert.match(template, /h-6 min-h-6 max-h-6/);
+    assert.doesNotMatch(template, /x-show="pending \|\| failed"/);
+    assert.match(template, /<template x-if="shouldShowRecoveryCard\(\)">/);
+
+    const listeners = [];
+    const prevWindow = globalThis.window;
+    try {
+        globalThis.window = {
+            dispatchEvent(event) {
+                for (const fn of listeners) fn(event.detail);
+            },
+        };
+        const wire = {
+            $id: 'stepper-reserved-slot-doc',
+            lines: [
+                { row_key: 'row-a', quantity: '1' },
+                { row_key: 'row-b', quantity: '2' },
+            ],
+            async batchStepQuantity() {
+                throw new Error('Offline');
+            },
+            async recalculate() {},
+        };
+
+        const rowA = touchQuantityStepper(wire, { index: 0, rowKey: 'row-a', debounceMs: 5 });
+        const rowB = touchQuantityStepper(wire, { index: 1, rowKey: 'row-b', debounceMs: 5 });
+        rowA.$refs = { qtyInput: { value: '1' }, stepperMeta: { dataset: { lineIndex: '0', rowKey: 'row-a', quantum: '1', min: '0', max: '' } } };
+        rowB.$refs = { qtyInput: { value: '2' }, stepperMeta: { dataset: { lineIndex: '1', rowKey: 'row-b', quantum: '1', min: '0', max: '' } } };
+        listeners.push(detail => rowA.onOperationState(detail), detail => rowB.onOperationState(detail));
+
+        await rowA.tap('up');
+        assert.equal(rowA.failed, true);
+        assert.equal(rowA.shouldShowRecoveryCard(), true);
+        assert.equal(rowB.failed, true);
+        assert.equal(rowB.shouldShowRecoveryCard(), false);
+
+        await rowA.resync();
+        assert.equal(rowA.failed, false);
+        assert.equal(rowA.shouldShowRecoveryCard(), false);
+        assert.equal(rowB.failed, false);
+        assert.equal(rowB.shouldShowRecoveryCard(), false);
+    } finally {
+        if (prevWindow === undefined) delete globalThis.window;
+        else globalThis.window = prevWindow;
+    }
+});

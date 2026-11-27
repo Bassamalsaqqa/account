@@ -175,6 +175,7 @@
                     </div>
                 </div>
                 <button type="button"
+                        data-row-mutation-action
                         @click="handleAddLine()"
                         class="min-h-11 shrink-0 px-2.5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors inline-flex items-center gap-1.5 cursor-pointer">
                     <span>+ {{ __('sales.add_line') }}</span>
@@ -329,6 +330,7 @@
                         <span class="hidden xs:inline text-xs">{{ __('mobile.scan') }}</span>
                     </button>
                     <button type="button"
+                            data-row-mutation-action
                             :disabled="busy || saving || window.isDocumentBlocked($wire)"
                             wire:loading.attr="disabled"
                             wire:target="addLine,scanBarcode,saveDraft,save"
@@ -339,6 +341,7 @@
                         <span class="hidden xs:inline text-xs">{{ __('mobile.add_item') }}</span>
                     </button>
                     <button type="button"
+                            data-row-mutation-action
                             :disabled="busy || saving || window.isDocumentBlocked($wire)"
                             wire:loading.attr="disabled"
                             wire:target="saveDraft,save,addLine,scanBarcode"

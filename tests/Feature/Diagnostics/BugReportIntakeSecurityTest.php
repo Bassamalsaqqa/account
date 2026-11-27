@@ -6,15 +6,20 @@ namespace Tests\Feature\Diagnostics;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Application\Platform\PlatformAccess;
+use App\Application\Platform\PlatformAudit;
 use App\Models\BugReport;
 use App\Models\Company;
+use App\Models\PlatformAuditEvent;
 use App\Models\PlatformOperatorGrant;
 use App\Models\User;
+use App\Services\Operations\DTO\ReconciliationRunResult;
+use App\Services\Operations\ReconciliationAlertService;
 use App\Support\Diagnostics\RequestId;
 use App\Support\Tenancy\CompanyContext;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -405,5 +410,125 @@ final class BugReportIntakeSecurityTest extends TestCase
         $this->assertStringNotContainsString('canary.owner@example.test', $serialized);
         $this->assertStringNotContainsString('Canary Owner SecretName', $serialized);
         $this->assertStringNotContainsString('Canary Trading LLC', $serialized);
+    }
+
+    public function test_context_construction_canary_and_logger_failure_fall_through_framework_without_leaks(): void
+    {
+        config(['app.debug' => false]);
+        $capturedErrors = [];
+        Log::listen(static function ($entry) use (&$capturedErrors): void {
+            if ($entry->level === 'error') {
+                $capturedErrors[] = ['message' => $entry->message, 'context' => $entry->context];
+            }
+        });
+
+        Route::middleware('web')->get('/__test/context-canary-boom', static function (Request $request): never {
+            $realRoute = $request->route();
+            $armed = true;
+            $request->setRouteResolver(static function () use ($realRoute, &$armed) {
+                if ($armed) {
+                    $armed = false;
+                    throw new RuntimeException('CANARY_CTX_SQL SELECT secret FROM users');
+                }
+
+                return $realRoute;
+            });
+
+            throw new RuntimeException('CANARY_INNER_EXCEPTION_SQL amount=9999.99');
+        });
+
+        $first = $this->get('/__test/context-canary-boom');
+        $first->assertStatus(500);
+        $requestId = $first->headers->get(RequestId::HEADER);
+        $this->assertTrue(RequestId::isValid($requestId));
+        $first->assertHeader('X-Content-Type-Options', 'nosniff');
+        $first->assertSee($requestId);
+        $this->assertStringNotContainsString('CANARY_CTX_SQL', $first->getContent());
+        $this->assertStringNotContainsString('CANARY_INNER_EXCEPTION_SQL', $first->getContent());
+        $this->assertStringNotContainsString('9999.99', $first->getContent());
+
+        // Strictly one sanitized framework log entry (zero duplicates, zero canary SQL/messages)
+        $this->assertCount(1, $capturedErrors);
+        $logJson = json_encode($capturedErrors, JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('CANARY_CTX_SQL', $logJson);
+        $this->assertStringNotContainsString('CANARY_INNER_EXCEPTION_SQL', $logJson);
+
+        // API v1 falls through to Phase11ApiBoundary without adding web X-Request-Id
+        config(['commands.api_enabled' => false]);
+        $api = $this->getJson('/api/v1/commands/unknown');
+        $api->assertStatus(404);
+        $this->assertNotEmpty($api->headers->get('X-Trace-Id'));
+        $api->assertHeaderMissing(RequestId::HEADER);
+
+        // Now combine context-construction canary WITH total logger failure through the real framework
+        Log::shouldReceive('error')->andThrow(new RuntimeException('CANARY_LOG_STORAGE_DOWN'));
+
+        $second = $this->get('/__test/context-canary-boom');
+        $second->assertStatus(500);
+        $secondId = $second->headers->get(RequestId::HEADER);
+        $this->assertTrue(RequestId::isValid($secondId));
+        $second->assertSee($secondId);
+        $this->assertStringNotContainsString('CANARY_CTX_SQL', $second->getContent());
+        $this->assertStringNotContainsString('CANARY_INNER_EXCEPTION_SQL', $second->getContent());
+        $this->assertStringNotContainsString('CANARY_LOG_STORAGE_DOWN', $second->getContent());
+    }
+
+    public function test_exception_isolation_preserves_financial_responses_and_security_operational_alerts(): void
+    {
+        config(['app.debug' => false, 'reconciliation.alerts.enabled' => false]);
+        $warnings = [];
+        Log::listen(static function ($entry) use (&$warnings): void {
+            if ($entry->level === 'warning') {
+                $warnings[] = ['message' => $entry->message, 'context' => $entry->context];
+            }
+        });
+
+        Route::middleware('web')->get('/__test/context-alert-isolation', static function (Request $request): never {
+            $realRoute = $request->route();
+            $armed = true;
+            $request->setRouteResolver(static function () use ($realRoute, &$armed) {
+                if ($armed) {
+                    $armed = false;
+                    throw new RuntimeException('CANARY_ROUTE_FAILURE_SQL');
+                }
+
+                return $realRoute;
+            });
+
+            throw new RuntimeException('CANARY_UNHANDLED_SQL');
+        });
+
+        $crash = $this->get('/__test/context-alert-isolation');
+        $crash->assertStatus(500);
+
+        // Operational reconciliation alert and platform security audit must remain unsuppressed
+        $alertResult = new ReconciliationRunResult(
+            status: 'NONZERO_FINDINGS',
+            durationSeconds: 0.25,
+            companiesAudited: 1,
+            domainSummary: ['accounting' => ['healthy' => false, 'violation_count' => 1]],
+            findings: [[
+                'company_public_id' => $this->company->public_id,
+                'domain' => 'accounting',
+                'category' => 'trial_balance',
+                'status' => 'violation',
+                'count' => 1,
+            ]],
+        );
+        app(ReconciliationAlertService::class)->sendNonzeroAlert($alertResult);
+
+        $this->assertCount(1, $warnings);
+        $this->assertSame('Reconciliation integrity violations detected during audit.', $warnings[0]['message']);
+
+        app(PlatformAudit::class)->record('support.started', $this->owner->id, $this->company->id, ['reason' => 'diagnostics-check']);
+        $this->assertTrue(
+            PlatformAuditEvent::query()->where('event_key', 'support.started')->where('actor_user_id', $this->owner->id)->exists()
+        );
+
+        // Financial UI / draft creation route still responds cleanly after isolated reporter failure
+        $this->actingAs($this->owner)
+            ->withSession(['active_company_id' => $this->company->id])
+            ->get(route('invoices.index'))
+            ->assertOk();
     }
 }

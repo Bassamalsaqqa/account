@@ -45,25 +45,33 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontFlash(['current_password', 'provider_secret', 'password', 'password_confirmation', 'code', 'recovery_code']);
 
         $exceptions->reportable(static function (Throwable $exception): ?bool {
-            $request = app()->bound('request') ? app('request') : null;
-            if (app()->runningInConsole() && ! ($request instanceof Request && $request->attributes->has(RequestId::ATTRIBUTE))) {
-                $request = null;
-            }
-            if ($request instanceof Request && ($request->is('api/v1') || $request->is('api/v1/*'))) {
-                return null;
-            }
+            try {
+                $request = app()->bound('request') ? app('request') : null;
+                if (app()->runningInConsole() && ! ($request instanceof Request && $request->attributes->has(RequestId::ATTRIBUTE))) {
+                    $request = null;
+                }
+                if ($request instanceof Request && ($request->is('api/v1') || $request->is('api/v1/*'))) {
+                    return null;
+                }
 
-            SafeErrorLogger::report($exception, $request instanceof Request ? $request : null);
+                SafeErrorLogger::report($exception, $request instanceof Request ? $request : null);
+            } catch (Throwable) {
+                // Never propagate context-assembly or diagnostic reporting failures into HTTP handling.
+            }
 
             return false;
         });
 
         $exceptions->respond(static function (Response $response, Throwable $exception, Request $request): Response {
-            if (! RequestId::isApiBoundaryRequest($request)) {
-                $response->headers->set(RequestId::HEADER, RequestId::forRequest($request));
-                if (! $response->headers->has('X-Content-Type-Options')) {
-                    $response->headers->set('X-Content-Type-Options', 'nosniff');
+            try {
+                if (! RequestId::isApiBoundaryRequest($request)) {
+                    $response->headers->set(RequestId::HEADER, RequestId::forRequest($request));
+                    if (! $response->headers->has('X-Content-Type-Options')) {
+                        $response->headers->set('X-Content-Type-Options', 'nosniff');
+                    }
                 }
+            } catch (Throwable) {
+                // Preserve original HTTP response when diagnostic header attachment fails.
             }
 
             return $response;

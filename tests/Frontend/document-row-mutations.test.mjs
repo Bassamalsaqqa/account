@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {lockRowEditors} from '../../resources/js/document-row-mutations.js';
+import {lockRowEditors, shouldGuardRowAction, shouldGuardRowEdit} from '../../resources/js/document-row-mutations.js';
 
 function fixture() {
     const fields = ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].map(tagName => ({tagName, readOnly: false, disabled: false, isConnected: true}));
@@ -77,6 +77,148 @@ test('an initially empty document registers structural protection before its fir
         assert.equal(registered, true);
         for (const cleanup of cleanups) cleanup();
     } finally {
+        if (priorDocument === undefined) delete globalThis.document; else globalThis.document = priorDocument;
+        if (priorWindow === undefined) delete globalThis.window; else globalThis.window = priorWindow;
+    }
+});
+
+test('structural guard blocks locked row editors and mutation/save actions while allowing Cancel anchors, outside notes, and unrelated modals', async () => {
+    const status = {textContent: '', dataset: {busyLabel: 'Updating items…', retryLabel: 'Retry after update'}};
+    const makeTarget = ({matchesSelectors = [], ancestors = {}, tagName = 'INPUT', type = 'text', attrs = {}} = {}) => {
+        const el = {
+            tagName,
+            type,
+            readOnly: false,
+            disabled: false,
+            isConnected: true,
+            getAttribute: name => attrs[name] ?? null,
+            matches: selector => selector.split(',').map(s => s.trim()).some(s => matchesSelectors.includes(s)),
+            closest: selector => {
+                for (const key of selector.split(',').map(s => s.trim())) {
+                    if (ancestors[key]) return ancestors[key];
+                }
+                return null;
+            },
+        };
+        if (tagName === 'BUTTON') {
+            ancestors['button'] = el;
+        } else if (tagName === 'INPUT' && type === 'submit') {
+            ancestors['input[type="submit"]'] = el;
+        }
+        return el;
+    };
+
+    const rowMarker = {setAttribute() {}, removeAttribute() {}};
+    const rowInput = makeTarget({ancestors: {'[data-document-row]': rowMarker}});
+    const rowRemoveBtn = makeTarget({tagName: 'BUTTON', type: 'button', attrs: {'wire:click': "removeLine('rk-1')"}, ancestors: {'[data-document-row]': rowMarker}});
+    const addLineBtn = makeTarget({tagName: 'BUTTON', type: 'button', ancestors: {'[data-row-mutation-action]': true}});
+    const mobileConfirmBtn = makeTarget({tagName: 'BUTTON', type: 'button', ancestors: {'[data-mobile-confirm]': true}});
+    const quickProductSaveBtn = makeTarget({tagName: 'BUTTON', type: 'button', attrs: {'wire:click': 'saveQuickProduct'}, ancestors: {'[role="dialog"]': true, '[data-row-mutation-action]': true}});
+    const formSubmitBtn = makeTarget({tagName: 'BUTTON', type: 'submit'});
+    const barcodeInput = makeTarget({ancestors: {'[data-row-mutation-enter]': true}});
+
+    const cancelAnchor = makeTarget({tagName: 'A'});
+    const outsideNotes = makeTarget({tagName: 'TEXTAREA'});
+    const discountToggleBtn = makeTarget({tagName: 'BUTTON', type: 'button', attrs: {'wire:click': 'toggleDiscountControl'}});
+    const quickCustomerSaveBtn = makeTarget({tagName: 'BUTTON', type: 'button', attrs: {'wire:click': 'saveQuickCustomer'}, ancestors: {'[role="dialog"]': true}});
+    const modalDismissBtn = makeTarget({tagName: 'BUTTON', type: 'button', ancestors: {'[role="dialog"]': true}});
+    const modalSubmitBtn = makeTarget({tagName: 'BUTTON', type: 'submit', ancestors: {'[role="dialog"]': true}});
+    const modalInput = makeTarget({tagName: 'INPUT', ancestors: {'[role="dialog"]': true}});
+
+    // Direct boundary predicate assertions
+    assert.equal(shouldGuardRowEdit({type: 'beforeinput', target: rowInput}), true);
+    assert.equal(shouldGuardRowEdit({type: 'keydown', key: 'Enter', target: rowInput}), true);
+    assert.equal(shouldGuardRowEdit({type: 'keydown', key: 'Enter', target: barcodeInput}), true);
+    assert.equal(shouldGuardRowAction(rowRemoveBtn), true);
+    assert.equal(shouldGuardRowAction(addLineBtn), true);
+    assert.equal(shouldGuardRowAction(mobileConfirmBtn), true);
+    assert.equal(shouldGuardRowAction(quickProductSaveBtn), true);
+    assert.equal(shouldGuardRowAction(formSubmitBtn), true);
+
+    assert.equal(shouldGuardRowEdit({type: 'keydown', key: 'Enter', target: cancelAnchor}), false);
+    assert.equal(shouldGuardRowAction(cancelAnchor), false);
+    assert.equal(shouldGuardRowEdit({type: 'beforeinput', target: outsideNotes}), false);
+    assert.equal(shouldGuardRowEdit({type: 'keydown', key: 'Enter', target: outsideNotes}), false);
+    assert.equal(shouldGuardRowAction(discountToggleBtn), false);
+    assert.equal(shouldGuardRowAction(quickCustomerSaveBtn), false);
+    assert.equal(shouldGuardRowAction(modalDismissBtn), false);
+    assert.equal(shouldGuardRowAction(modalSubmitBtn), false);
+    assert.equal(shouldGuardRowEdit({type: 'keydown', key: 'Enter', target: modalInput}), false);
+
+    // End-to-end Livewire intercept listener reproduction during active delayed removeLine
+    const priorDocument = globalThis.document;
+    const priorWindow = globalThis.window;
+    let init;
+    let interceptCb;
+    const listeners = new Map();
+    const cleanups = [];
+    const component = {
+        el: {
+            dataset: {},
+            getAttribute: () => 'doc-comp-1',
+            dispatchEvent() {},
+            querySelector: selector => selector === '[data-row-mutation-status]' ? status : null,
+            querySelectorAll: selector => selector === '[data-document-row]' ? [rowMarker] : [rowInput, rowRemoveBtn],
+            addEventListener: (name, fn, capture) => listeners.set(`${name}:${Boolean(capture)}`, fn),
+            removeEventListener: (name, fn, capture) => listeners.delete(`${name}:${Boolean(capture)}`),
+        },
+        $wire: {
+            $interceptMessage(cb) { interceptCb = cb; return () => {}; },
+        },
+    };
+    try {
+        globalThis.document = {addEventListener: (name, callback) => {init = callback;}};
+        globalThis.window = {Livewire: {hook: (name, callback) => callback({component, cleanup: callback => cleanups.push(callback)})}};
+        await import('../../resources/js/document-row-mutations.js?scoped-capture');
+        init();
+
+        let onSuccessCb;
+        let onFinishCb;
+        interceptCb({
+            message: {actions: [{name: 'removeLine'}]},
+            onSuccess: cb => { onSuccessCb = cb; },
+            onFinish: cb => { onFinishCb = cb; },
+        });
+        assert.equal(component.el.dataset.rowMutationBusy, 'true');
+        assert.equal(rowInput.readOnly, true);
+        assert.equal(rowRemoveBtn.disabled, true);
+
+        const dispatch = (type, extra) => {
+            const evt = {type, defaultPrevented: false, stopped: false, preventDefault() { this.defaultPrevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...extra};
+            listeners.get(`${type}:true`)(evt);
+            return evt;
+        };
+
+        // Guarded during busy
+        assert.equal(dispatch('keydown', {key: 'Enter', target: rowInput}).defaultPrevented, true);
+        assert.equal(dispatch('beforeinput', {target: rowInput}).defaultPrevented, true);
+        assert.equal(dispatch('click', {target: addLineBtn}).defaultPrevented, true);
+        assert.equal(dispatch('click', {target: quickProductSaveBtn}).defaultPrevented, true);
+        assert.equal(dispatch('submit', {target: makeTarget({tagName: 'FORM'})}).defaultPrevented, true);
+        assert.equal(status.textContent, 'Retry after update');
+
+        // Unblocked during busy: Cancel anchor Enter/click, outside notes Enter/input, quick-customer modal
+        status.textContent = 'Updating items…';
+        for (const allowed of [
+            dispatch('keydown', {key: 'Enter', target: cancelAnchor}),
+            dispatch('click', {target: cancelAnchor}),
+            dispatch('keydown', {key: 'Enter', target: outsideNotes}),
+            dispatch('beforeinput', {target: outsideNotes}),
+            dispatch('keydown', {key: 'Enter', target: modalInput}),
+            dispatch('click', {target: quickCustomerSaveBtn}),
+            dispatch('click', {target: modalDismissBtn}),
+            dispatch('submit', {target: makeTarget({tagName: 'FORM', ancestors: {'[role="dialog"]': true}})}),
+        ]) {
+            assert.equal(allowed.defaultPrevented, false);
+            assert.equal(allowed.stopped, false);
+        }
+        assert.equal(status.textContent, 'Updating items…');
+
+        onSuccessCb({payload: {effects: {html: '<div></div>'}}, onRender: fn => fn()});
+        onFinishCb();
+        assert.equal(component.el.dataset.rowMutationBusy, undefined);
+    } finally {
+        for (const cleanup of cleanups) cleanup();
         if (priorDocument === undefined) delete globalThis.document; else globalThis.document = priorDocument;
         if (priorWindow === undefined) delete globalThis.window; else globalThis.window = priorWindow;
     }

@@ -39,15 +39,19 @@ final class RequestId
             return self::generate();
         }
 
-        $existing = $request->attributes->get(self::ATTRIBUTE);
-        if (is_string($existing) && self::isValid($existing)) {
-            return $existing;
+        try {
+            $existing = $request->attributes->get(self::ATTRIBUTE);
+            if (is_string($existing) && self::isValid($existing)) {
+                return $existing;
+            }
+
+            $generated = self::generate();
+            $request->attributes->set(self::ATTRIBUTE, $generated);
+
+            return $generated;
+        } catch (Throwable) {
+            return self::generate();
         }
-
-        $generated = self::generate();
-        $request->attributes->set(self::ATTRIBUTE, $generated);
-
-        return $generated;
     }
 
     public static function current(): ?string
@@ -68,17 +72,21 @@ final class RequestId
      */
     public static function isApiBoundaryRequest(Request $request): bool
     {
-        return $request->is(
-            'api/v1',
-            'api/v1/*',
-            'api/mobile/v1',
-            'api/mobile/v1/*',
-            'api/mobile/v2',
-            'api/mobile/v2/*',
-            'sales-assistant/audio',
-            'assistant/audio',
-            'settings/ai/credentials',
-        );
+        try {
+            return $request->is(
+                'api/v1',
+                'api/v1/*',
+                'api/mobile/v1',
+                'api/mobile/v1/*',
+                'api/mobile/v2',
+                'api/mobile/v2/*',
+                'sales-assistant/audio',
+                'assistant/audio',
+                'settings/ai/credentials',
+            );
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public static function captureActorSnapshot(
@@ -105,20 +113,19 @@ final class RequestId
      */
     public static function actorSnapshot(?Request $request): array
     {
-        if ($request !== null) {
-            $captured = $request->attributes->get(self::ACTOR_SNAPSHOT_ATTRIBUTE);
-            if (is_array($captured)) {
-                return [
-                    'actual_user_id' => is_int($captured['actual_user_id'] ?? null) ? $captured['actual_user_id'] : null,
-                    'effective_user_id' => is_int($captured['effective_user_id'] ?? null) ? $captured['effective_user_id'] : null,
-                    'company_id' => is_int($captured['company_id'] ?? null) ? $captured['company_id'] : null,
-                    'is_impersonated' => (bool) ($captured['is_impersonated'] ?? false),
-                    'support_correlation_id' => is_string($captured['support_correlation_id'] ?? null) ? $captured['support_correlation_id'] : null,
-                ];
-            }
-        }
-
         try {
+            if ($request !== null) {
+                $captured = $request->attributes->get(self::ACTOR_SNAPSHOT_ATTRIBUTE);
+                if (is_array($captured)) {
+                    return [
+                        'actual_user_id' => is_int($captured['actual_user_id'] ?? null) ? $captured['actual_user_id'] : null,
+                        'effective_user_id' => is_int($captured['effective_user_id'] ?? null) ? $captured['effective_user_id'] : null,
+                        'company_id' => is_int($captured['company_id'] ?? null) ? $captured['company_id'] : null,
+                        'is_impersonated' => (bool) ($captured['is_impersonated'] ?? false),
+                        'support_correlation_id' => is_string($captured['support_correlation_id'] ?? null) ? $captured['support_correlation_id'] : null,
+                    ];
+                }
+            }
             $support = app()->bound(SupportViewContext::class) ? app(SupportViewContext::class) : null;
             $companyContext = app()->bound(CompanyContext::class) ? app(CompanyContext::class) : null;
             $guard = auth()->guard();

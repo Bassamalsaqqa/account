@@ -24,8 +24,9 @@
     $maxVal = $max !== null ? (string) $max : null;
 @endphp
 
-<div @if($rowKey) wire:key="stepper-{{ $rowKey }}-{{ $field }}" @endif
-     class="inline-flex flex-col items-start gap-1 touch-manipulation"
+<div data-touch-stepper
+     @if($rowKey) wire:key="stepper-{{ $rowKey }}-{{ $field }}" @endif
+     class="relative inline-flex flex-col items-start gap-1 touch-manipulation"
      x-data="touchQuantityStepper($wire,{index:@js($index),rowKey:@js($rowKey),quantum:@js($quantum),min:@js($minVal),max:@js($maxVal),field:@js($field)})"
      @document-operation-state.window="onOperationState($event.detail)">
     <span hidden
@@ -86,19 +87,34 @@
         </button>
     </div>
 
-    <!-- Visible Pending / Failure State with Discard/Resync -->
-    <div x-cloak x-show="pending || failed" class="text-xs leading-tight select-none">
-        <span x-show="pending && !failed" class="text-text-muted inline-flex items-center gap-1">
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse" aria-hidden="true"></span>
-            <span>{{ __('mobile.quantity_pending') }}</span>
-        </span>
-        <div x-show="failed" role="alert" class="text-danger inline-flex items-center gap-1.5 font-medium">
+    <!-- Reserved single-line status slot (constant height eliminates layout shift across idle, pending, and failed states) -->
+    <div data-stepper-feedback
+         dir="{{ app()->isLocale('ar') ? 'rtl' : 'ltr' }}"
+         role="status"
+         aria-live="polite"
+         aria-atomic="true"
+         class="h-6 min-h-6 max-h-6 w-full max-w-[154px] flex items-center gap-1 text-xs leading-6 whitespace-nowrap overflow-hidden select-none transition-colors"
+         :class="failed ? 'text-danger font-medium' : 'text-text-muted'">
+        <span class="inline-block w-1.5 h-1.5 rounded-full shrink-0 transition-opacity"
+              :class="failed ? 'bg-danger opacity-100' : (pending > 0 ? 'bg-primary animate-pulse opacity-100' : 'opacity-0')"
+              aria-hidden="true"></span>
+        <span class="truncate"
+              x-text="failed ? @js(__('mobile.quantity_recovery_short')) : (pending > 0 ? @js(__('mobile.quantity_pending')) : '')"></span>
+    </div>
+
+    <!-- Out-of-flow floating recovery alert rendered only on failure so row heights remain invariant -->
+    <template x-if="shouldShowRecoveryCard()">
+        <div data-stepper-recovery-card
+             dir="{{ app()->isLocale('ar') ? 'rtl' : 'ltr' }}"
+             role="alert"
+             class="fixed bottom-24 md:bottom-6 inset-x-4 sm:inset-x-auto sm:end-6 sm:w-96 sm:max-w-[calc(100vw-2rem)] z-40 rounded-card border border-danger bg-surface p-3 shadow-lg text-xs text-danger font-medium flex flex-col gap-2">
             <span>{{ __('mobile.quantity_recovery') }}</span>
             <button type="button"
-                    @click.stop="resync()" :disabled="recovering || pending > 0"
-                    class="min-h-11 rounded-control border border-danger px-3 py-2 font-semibold disabled:opacity-50">
+                    @click.stop="resync()"
+                    :disabled="recovering || pending > 0"
+                    class="min-h-11 rounded-control border border-danger bg-danger-bg px-3 py-2 font-semibold text-danger hover:opacity-90 disabled:opacity-50 cursor-pointer">
                 {{ __('mobile.quantity_discard') }}
             </button>
         </div>
-    </div>
+    </template>
 </div>

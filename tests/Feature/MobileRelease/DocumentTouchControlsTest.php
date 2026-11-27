@@ -118,6 +118,16 @@ class DocumentTouchControlsTest extends Phase5ETestCase
         $this->assertStringNotContainsString('optimisticQty', $html);
         $this->assertStringNotContainsString('<script>', $html);
         $this->assertStringContainsString('\\u0027\\u0022\\u003Cscript\\u003E', $html);
+
+        // Reserved height status slot prevents pending/failure row layout shift without hidden 0-height alerts
+        $this->assertStringContainsString('data-touch-stepper', $html);
+        $this->assertStringContainsString('data-stepper-feedback', $html);
+        $this->assertStringContainsString('role="status"', $html);
+        $this->assertStringContainsString('aria-live="polite"', $html);
+        $this->assertStringContainsString('h-6 min-h-6 max-h-6', $html);
+        $this->assertStringNotContainsString('x-show="pending || failed"', $html);
+        $this->assertStringContainsString('<template x-if="shouldShowRecoveryCard()">', $html);
+        $this->assertStringContainsString('data-stepper-recovery-card', $html);
     }
 
     public function test_stepper_meta_updates_quantum_bounds_on_retained_row_across_product_and_unit_switches(): void

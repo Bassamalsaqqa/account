@@ -3,12 +3,13 @@
     <div class="flex gap-2 items-start">
         <div class="flex min-w-0 flex-1 items-center rounded-control border border-border bg-canvas focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
         <input id="{{ $prefix }}-barcodeSearch" x-ref="scanner" type="text" maxlength="128" autocomplete="off" dir="ltr"
+               data-row-mutation-enter
                x-model="entry" @keydown.enter.prevent="if (!$event.repeat) submit()" @input="scanned = false"
                placeholder="{{ __('workflow.scan_barcode_hint') }}"
                class="min-w-0 w-full h-11 px-3 rounded-control border-0 bg-transparent text-sm text-text-primary focus:ring-0 outline-hidden" />
             <x-camera-scanner :compact="true" button-class="min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-primary hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />
         </div>
-        <button type="button" @click="submit()" :disabled="pending > 0"
+        <button type="button" data-row-mutation-action @click="submit()" :disabled="pending > 0"
                 class="shrink-0 min-h-11 px-3 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50">
             {{ __('workflow.add_scanned_product') }}
         </button>

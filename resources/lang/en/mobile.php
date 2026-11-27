@@ -8,6 +8,7 @@ return [
 
     'quantity_pending' => 'Confirming quantity?',
     'quantity_recovery' => 'Quantity changes were not confirmed. Review the visible quantity before continuing.',
+    'quantity_recovery_short' => 'Not confirmed',
     'quantity_discard' => 'Keep visible quantity and discard pending taps',
     'quantity_stale' => 'This line changed. Review its product, unit and quantity before trying again.',
 

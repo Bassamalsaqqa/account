@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 final class RequestIdAndSanitizerTest extends TestCase
@@ -166,5 +167,66 @@ final class RequestIdAndSanitizerTest extends TestCase
         }
         $this->assertStringContainsString('free_text: OMITTED', $brief);
         $this->assertGreaterThan(strpos($brief, '[UNVERIFIED_CLIENT_HINTS]'), strpos($brief, 'claimed_page_request_id:'));
+    }
+
+    public function test_safe_error_logger_isolates_context_construction_canaries_and_prevents_recursion(): void
+    {
+        $captured = [];
+        Log::listen(static function ($entry) use (&$captured): void {
+            $captured[] = [
+                'message' => $entry->message,
+                'context' => $entry->context,
+            ];
+
+            // Attempt re-entrant reporting from inside log listener — must not recurse or emit extra entries.
+            $nested = new RuntimeException('CANARY_REENTRANT_SQL SELECT * FROM users');
+            SafeErrorLogger::report($nested, Request::create('/nested'), 500);
+            SafeErrorLogger::reportBoundaryException('NestedBoundary: '.RuntimeException::class, $nested, ['trace_id' => 'tr-nested']);
+            SafeErrorLogger::safeError('CANARY_REENTRANT_SAFE_ERROR');
+        });
+
+        $request = Request::create('/invoices/create', 'POST');
+        $request->setRouteResolver(static function (): never {
+            throw new RuntimeException('CANARY_ROUTE_RESOLVER_SQL SELECT secret FROM tokens');
+        });
+
+        $exception = new class('CANARY_INNER_EXCEPTION_SQL SELECT password FROM users') extends HttpException
+        {
+            public function __construct(string $message)
+            {
+                parent::__construct(500, $message);
+            }
+
+            public function getStatusCode(): int
+            {
+                throw new RuntimeException('CANARY_STATUS_GETTER_SECRET');
+            }
+        };
+
+        SafeErrorLogger::report($exception, $request);
+
+        $this->assertCount(1, $captured);
+        $serialized = json_encode($captured, JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('CANARY_ROUTE_RESOLVER_SQL', $serialized);
+        $this->assertStringNotContainsString('CANARY_INNER_EXCEPTION_SQL', $serialized);
+        $this->assertStringNotContainsString('CANARY_STATUS_GETTER_SECRET', $serialized);
+        $this->assertStringNotContainsString('CANARY_REENTRANT_SQL', $serialized);
+        $this->assertStringNotContainsString('CANARY_REENTRANT_SAFE_ERROR', $serialized);
+        $this->assertSame('Handled application exception', $captured[0]['message']);
+        $this->assertSame(500, $captured[0]['context']['status']);
+        $this->assertArrayNotHasKey('route_name', $captured[0]['context']);
+        $this->assertArrayNotHasKey('route_uri', $captured[0]['context']);
+
+        // Boundary logger must sanitize extra identifiers & label and isolate status/context failures.
+        SafeErrorLogger::reportBoundaryException(
+            'BoundaryFailure: '.get_class($exception),
+            $exception,
+            ['trace_id' => "tr-clean\nCANARY_NEWLINE", 'ignored' => 'CANARY_IGNORED_SECRET']
+        );
+        $this->assertCount(2, $captured);
+        $boundaryJson = json_encode($captured[1], JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('CANARY_IGNORED_SECRET', $boundaryJson);
+        $this->assertStringNotContainsString("\n", $captured[1]['context']['trace_id']);
+        $this->assertStringNotContainsString('@anonymous', $captured[1]['message']);
     }
 }

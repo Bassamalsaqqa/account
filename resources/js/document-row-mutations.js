@@ -1,7 +1,44 @@
 // Positional Livewire models must not accept edits while the server changes the
 // row/lot structure. Keep text controls focused and selectable with readonly.
 const mutations = new Set(['addLine', 'removeLine', 'selectProduct', 'changeUnit', 'scanBarcode', 'scanCameraBarcode', 'saveQuickProduct', 'customizeLots', 'resetToAutoLot', 'addLot', 'removeLot', 'applyPreparedAiInput', 'applyPreparedAiTranscript', 'undoAiInput', 'mountAiInput']);
+const guardedDocumentActions = new Set([
+    ...mutations,
+    'save',
+    'saveDraft',
+    'saveAndConfirm',
+    'confirmPost',
+    'cancelPreview',
+    'discardAiInput',
+    'cancelAiCorrection',
+]);
 const locks = new WeakMap();
+
+function wireClickMethod(button) {
+    const raw = button?.getAttribute?.('wire:click') || '';
+    const openParen = raw.indexOf('(');
+    return (openParen >= 0 ? raw.slice(0, openParen) : raw).trim();
+}
+
+export function shouldGuardRowAction(target) {
+    const button = target?.closest?.('button, input[type="submit"]');
+    if (!button) return false;
+    if (button.closest?.('[data-document-row]')) return true;
+    if (button.closest?.('[data-row-mutation-action], [data-mobile-confirm]')) return true;
+    if (guardedDocumentActions.has(wireClickMethod(button))) return true;
+    return button.type === 'submit' && !button.closest?.('[role="dialog"]');
+}
+
+export function shouldGuardRowEdit(event) {
+    if (event?.type === 'beforeinput') {
+        return Boolean(event.target?.closest?.('[data-document-row]'));
+    }
+    if (event?.type === 'keydown') {
+        if (event.key !== 'Enter') return false;
+        if (event.target?.closest?.('[data-document-row], [data-row-mutation-enter]')) return true;
+        return shouldGuardRowAction(event.target);
+    }
+    return false;
+}
 export function lockRowEditors(root) {
     const existing = locks.get(root);
     if (existing) { existing.count++; return (...args) => existing.release(...args); }
@@ -44,23 +81,27 @@ if (typeof document !== 'undefined') document.addEventListener('livewire:init', 
             const status = component.el.querySelector('[data-row-mutation-status]');
             if (status) status.textContent = status.dataset.retryLabel;
         };
-        // Stop global add/scan/quick-create actions and top-layer picker clicks
-        // through their controllers as well as the row's native controls.
+        // Guard ONLY structurally locked line controls, row-mutation actions, and save/confirm submission controls.
+        // Never block Cancel/Back anchors, outside free-form notes, or unrelated quick-create modals.
         const stopAction = event => {
-            if (!releases.size || !event.target.closest('button')) return;
+            if (!releases.size || !shouldGuardRowAction(event.target)) return;
             showRetry();
             event.preventDefault(); event.stopImmediatePropagation();
         };
         const stopEdit = event => {
-            if (!releases.size) return;
-            if (event.type === 'beforeinput' && !event.target.closest('[data-document-row]')) return;
-            if (event.type === 'keydown' && event.key !== 'Enter') return;
+            if (!releases.size || !shouldGuardRowEdit(event)) return;
+            showRetry();
+            event.preventDefault(); event.stopImmediatePropagation();
+        };
+        const stopSubmit = event => {
+            if (!releases.size || event.target?.closest?.('[role="dialog"]')) return;
             showRetry();
             event.preventDefault(); event.stopImmediatePropagation();
         };
         component.el.addEventListener('click', stopAction, true);
         component.el.addEventListener('beforeinput', stopEdit, true);
         component.el.addEventListener('keydown', stopEdit, true);
+        component.el.addEventListener('submit', stopSubmit, true);
         const stop = component.$wire.$interceptMessage(({message, onSuccess, onFinish}) => {
             const changesRows = [...message.actions].some(action => mutations.has(action.name));
             if (!changesRows) return;
@@ -72,6 +113,6 @@ if (typeof document !== 'undefined') document.addEventListener('livewire:init', 
             onSuccess(({payload, onRender}) => { rendering = true; onRender(() => release(Boolean(payload.effects?.html))); });
             onFinish(() => { if (!rendering) release(); });
         });
-        cleanup(() => { stop(); for (const release of releases) release(); releases.clear(); component.el.removeEventListener('click', stopAction, true); component.el.removeEventListener('beforeinput', stopEdit, true); component.el.removeEventListener('keydown', stopEdit, true); });
+        cleanup(() => { stop(); for (const release of releases) release(); releases.clear(); component.el.removeEventListener('click', stopAction, true); component.el.removeEventListener('beforeinput', stopEdit, true); component.el.removeEventListener('keydown', stopEdit, true); component.el.removeEventListener('submit', stopSubmit, true); });
     });
 });
