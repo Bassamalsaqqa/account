@@ -351,7 +351,7 @@
                         <input wire:key="pf-cost-{{ $line['row_key'] }}" id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.unit_cost" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-xs font-mono text-end" placeholder="0.00" :disabled="documentBusy || saving"/>
                         @error('lines.'.$index.'.unit_cost') <span id="line-unit_cost-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                         @if(isset($lastPriceHints[$index]))
-                            <p class="text-[11px] text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
+                            <p class="text-xs text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
                                 @php
                                     $hintPrice = (string) $lastPriceHints[$index]['unit_cost'];
                                     $hintTrimmed = strpos($hintPrice, '.') !== false ? rtrim(rtrim($hintPrice, '0'), '.') : $hintPrice;
@@ -466,7 +466,7 @@
             <section class="bg-surface border border-border rounded-card p-4 space-y-3">
                 <div class="flex items-center justify-between pb-2 border-b border-border/60">
                     <span class="text-xs font-bold text-text-primary uppercase tracking-wider">{{ __('purchasing.purchase_summary') ?? __('sales.invoice_details') }}</span>
-                    <span class="text-[11px] text-text-muted font-mono">{{ $currency_code }}</span>
+                    <span class="text-xs text-text-muted font-mono">{{ $currency_code }}</span>
                 </div>
 
                 <div class="min-h-5"><p wire:loading.delay wire:target="lines,exchange_rate,discount_value,discount_type,currency_code,vendor_id" role="status" class="text-xs text-text-secondary">{{ __('purchasing.updating_totals') }}</p></div>
@@ -499,8 +499,8 @@
                                     </div>
                                     <div class="grid @if($discount_type !== 'none') grid-cols-2 @else grid-cols-1 @endif gap-2">
                                         <div>
-                                            <label for="purchase-discount-type" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount') }}</label>
-                                            <select id="purchase-discount-type" wire:model.live="discount_type" class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
+                                            <label for="purchase-discount-type" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.discount') }}</label>
+                                            <select id="purchase-discount-type" wire:model.live="discount_type" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border bg-surface rounded-control text-base md:text-sm" :disabled="documentBusy || saving">
                                                 <option value="none">{{ __('purchasing.discount_none') }}</option>
                                                 <option value="percent">{{ __('purchasing.discount_percent') }}</option>
                                                 <option value="fixed">{{ __('purchasing.discount_fixed') }}</option>
@@ -508,8 +508,8 @@
                                         </div>
                                         @if ($discount_type !== 'none')
                                             <div>
-                                                <label for="purchase-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('purchasing.discount_value') }}</label>
-                                                <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" data-purchase-preview-input class="w-full h-8 px-2 border border-border bg-surface rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
+                                                <label for="purchase-discount-value" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.discount_value') }}</label>
+                                                <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" data-purchase-preview-input class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border bg-surface rounded-control text-base md:text-sm font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
                                             </div>
                                         @endif
                                     </div>

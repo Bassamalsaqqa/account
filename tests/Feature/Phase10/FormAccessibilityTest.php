@@ -4,15 +4,25 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Phase10;
 
+use App\Actions\Purchasing\CreatePurchaseDraftAction;
+use App\Actions\Purchasing\EnsurePurchasingFoundationAction;
+use App\Actions\Purchasing\PostPurchaseAction;
 use App\Livewire\Pages\Customers\CustomerForm;
 use App\Livewire\Pages\Customers\CustomerIndex;
 use App\Livewire\Pages\Products\ProductForm;
 use App\Livewire\Pages\Products\ProductIndex;
+use App\Livewire\Pages\Purchasing\PurchaseForm;
+use App\Livewire\Pages\Purchasing\PurchaseReturnForm;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\InvoiceIndex;
+use App\Livewire\Pages\Sales\QuotationForm;
 use App\Models\Product;
+use App\Models\ProductUnit;
 use App\Models\Unit;
+use App\Models\Warehouse;
 use App\Services\Inventory\ProductCatalogService;
+use App\Services\Purchasing\VendorCatalogService;
+use App\Support\Tenancy\CompanyContext;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
@@ -195,5 +205,109 @@ final class FormAccessibilityTest extends TestCase
         }
 
         return new DOMXPath($document);
+    }
+
+    private function ensurePurchasingProvisioned(string $locale): void
+    {
+        $this->owner->update(['locale' => $locale]);
+        session()->put('locale', $locale);
+        app()->setLocale($locale);
+        $context = app(CompanyContext::class);
+        $context->clear();
+        app(EnsurePurchasingFoundationAction::class)->execute($this->company);
+        $context->setCompany($this->company, $this->owner);
+    }
+
+    #[DataProvider('locales')]
+    public function test_discount_controls_meet_touch_and_mobile_font_sizing_without_micro_labels(string $locale): void
+    {
+        $this->ensurePurchasingProvisioned($locale);
+
+        $forms = [
+            [InvoiceForm::class, 'sales-discount-type', 'sales-discount-value'],
+            [QuotationForm::class, 'quote-discount-type', 'quote-discount-value'],
+            [PurchaseForm::class, 'purchase-discount-type', 'purchase-discount-value'],
+        ];
+
+        foreach ($forms as [$component, $typeId, $valueId]) {
+            $html = Livewire::test($component)
+                ->call('toggleDiscountControl')
+                ->set('discount_type', 'fixed')
+                ->html();
+
+            $this->assertStringNotContainsString('text-[11px]', $html);
+
+            $xpath = $this->xpath($html);
+            foreach ([$typeId, $valueId] as $controlId) {
+                $label = $xpath->query('//label[@for="'.$controlId.'"]')->item(0);
+                $this->assertInstanceOf(DOMElement::class, $label, "Missing label[for={$controlId}] on {$component}");
+                $this->assertStringNotContainsString('text-[11px]', $label->getAttribute('class'));
+
+                $node = $xpath->query('//*[@id="'.$controlId.'"]')->item(0);
+                $this->assertInstanceOf(DOMElement::class, $node, "Missing control #{$controlId} on {$component}");
+                $classes = $node->getAttribute('class');
+                $this->assertStringContainsString('min-h-11', $classes);
+                $this->assertStringContainsString('lg:min-h-9.5', $classes);
+                $this->assertStringContainsString('text-base', $classes);
+                $this->assertStringContainsString('md:text-sm', $classes);
+                $this->assertDoesNotMatchRegularExpression('/\bh-8\b/', $classes);
+            }
+        }
+    }
+
+    #[DataProvider('locales')]
+    public function test_purchase_return_quantity_stepper_binds_label_and_error_id(string $locale): void
+    {
+        $this->ensurePurchasingProvisioned($locale);
+
+        $vendor = app(VendorCatalogService::class)->save($this->company, $this->owner, [
+            'name_ar' => 'مورد إتاحة',
+            'name_en' => 'A11y Vendor',
+            'code' => 'VEND-A11Y',
+        ]);
+        $warehouse = Warehouse::where('company_id', $this->company->id)->where('is_default', true)->firstOrFail();
+        $unit = Unit::where('company_id', $this->company->id)->where('code', 'piece')->firstOrFail();
+        $product = app(ProductCatalogService::class)->createProduct($this->company, [
+            'sku' => 'PR-A11Y-1',
+            'name_ar' => 'صنف مرتجع',
+            'name_en' => 'Returnable Item',
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'track_expiry' => false,
+            'base_unit_id' => $unit->id,
+            'default_purchase_cost_base' => '10.000000',
+            'default_sale_price_base' => '15.000000',
+        ], $this->owner->id);
+        $productUnit = ProductUnit::where('product_id', $product->id)->where('is_base', true)->firstOrFail();
+
+        $draft = app(CreatePurchaseDraftAction::class)->execute($this->company, $this->owner, [
+            'vendor_id' => $vendor->id,
+            'warehouse_id' => $warehouse->id,
+            'currency_code' => 'ILS',
+            'exchange_rate' => '1',
+            'purchase_date' => '2026-11-25',
+            'lines' => [[
+                'product_id' => $product->id,
+                'product_unit_id' => $productUnit->id,
+                'item_description' => $product->name_en,
+                'quantity' => '5',
+                'unit_cost' => '10.00',
+            ]],
+        ]);
+        $purchase = app(PostPurchaseAction::class)->execute($draft, $this->owner);
+
+        $component = Livewire::test(PurchaseReturnForm::class, ['publicId' => $purchase->public_id]);
+        $this->assertNamedControls($component->html());
+
+        $xpathInitial = $this->xpath($component->html());
+        $label = $xpathInitial->query('//label[@for="purchase-return-quantity-0"]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $label);
+
+        $invalid = $component
+            ->set('lines.0.return_quantity', '99')
+            ->call('saveDraft')
+            ->assertHasErrors(['lines.0.return_quantity']);
+
+        $this->assertError($invalid->html(), 'purchase-return-quantity-0');
     }
 }

@@ -94,25 +94,6 @@
                     @endif
                 </div>
             @endif
-
-            <!-- Future Modules Group (Explicitly quiet/unavailable) -->
-            <div class="space-y-1">
-                <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_future') }}</span>
-                <div class="flex items-center justify-between px-2.5 py-2 rounded-control text-sm text-text-muted cursor-not-allowed select-none">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                        <x-icon name="chart" class="w-4 h-4 shrink-0 opacity-60" />
-                        <span class="truncate">{{ __('platform.nav_system_health') }}</span>
-                    </div>
-                    <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
-                </div>
-                <div class="flex items-center justify-between px-2.5 py-2 rounded-control text-sm text-text-muted cursor-not-allowed select-none">
-                    <div class="flex items-center gap-2.5 min-w-0">
-                        <x-icon name="shield" class="w-4 h-4 shrink-0 opacity-60" />
-                        <span class="truncate">{{ __('platform.nav_global_policies') }}</span>
-                    </div>
-                    <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
-                </div>
-            </div>
         </nav>
 
         <!-- Sidebar Footer Controls -->
@@ -206,24 +187,6 @@
                         @endif
                     </div>
                 @endif
-
-                <div class="space-y-1">
-                    <span class="px-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted block mb-1.5">{{ __('platform.nav_future') }}</span>
-                    <div class="flex min-h-11 items-center justify-between px-3 rounded-control text-sm text-text-muted select-none">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <x-icon name="chart" class="w-5 h-5 shrink-0 opacity-60" />
-                            <span class="truncate">{{ __('platform.nav_system_health') }}</span>
-                        </div>
-                        <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
-                    </div>
-                    <div class="flex min-h-11 items-center justify-between px-3 rounded-control text-sm text-text-muted select-none">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <x-icon name="shield" class="w-5 h-5 shrink-0 opacity-60" />
-                            <span class="truncate">{{ __('platform.nav_global_policies') }}</span>
-                        </div>
-                        <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-surface-soft text-text-muted border border-border shrink-0">{{ __('platform.coming_soon') }}</span>
-                    </div>
-                </div>
             </nav>
 
             <!-- Drawer Footer -->

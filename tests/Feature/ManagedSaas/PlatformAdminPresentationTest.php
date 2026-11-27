@@ -64,8 +64,10 @@ final class PlatformAdminPresentationTest extends TestCase
             $response->assertSee(__('platform.title'));
             $response->assertSee(__('platform.nav_core'));
             $response->assertSee(__('platform.nav_governance'));
-            $response->assertSee(__('platform.nav_future'));
-            $response->assertSee(__('platform.coming_soon'));
+            $response->assertDontSee(__('platform.nav_future'));
+            $response->assertDontSee(__('platform.nav_system_health'));
+            $response->assertDontSee(__('platform.nav_global_policies'));
+            $response->assertDontSee(__('platform.coming_soon'));
             $response->assertSee(__('platform.operator_badge'));
             $response->assertSee(__('platform.tenant_portal'));
             $response->assertSee('id="platform-sidebar"', false);

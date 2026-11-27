@@ -121,16 +121,24 @@
                         <p class="font-semibold mt-0.5"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['remaining_quantity']) }}</bdi> {{ $line['unit_name'] }}</p>
                     </div>
                     <div class="col-span-2 sm:col-span-3">
-                        <label class="text-text-secondary font-semibold">{{ __('purchasing.return_quantity') }}</label>
+                        <label for="purchase-return-quantity-{{ $idx }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.return_quantity') }}</label>
                         <div class="flex items-center gap-2" dir="ltr">
-                            <x-touch-quantity-stepper :index="$idx" field="return_quantity" :step="$line['quantity_step'] ?? '1'" :allows-fraction="($line['quantity_step'] ?? '1') !== '1'" :max="$line['remaining_quantity']" aria-label="{{ __('refinement.return_quantity') }}" />
+                            <x-touch-quantity-stepper
+                                :index="$idx"
+                                field="return_quantity"
+                                :step="$line['quantity_step'] ?? '1'"
+                                :allows-fraction="($line['quantity_step'] ?? '1') !== '1'"
+                                :max="$line['remaining_quantity']"
+                                id="purchase-return-quantity-{{ $idx }}"
+                                :aria-label="__('refinement.return_quantity') . ' ' . ($idx + 1)"
+                            />
                         </div>
                         <button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
                     </div>
                 </div>
 
                 @error("lines.{$idx}.return_quantity")
-                    <p role="alert" class="text-danger text-xs">{{ $message }}</p>
+                    <p id="purchase-return-quantity-{{ $idx }}-error" role="alert" class="text-danger text-xs mt-1">{{ $message }}</p>
                 @enderror
 
                 @if($line['track_expiry'] && count($line['allocations']))

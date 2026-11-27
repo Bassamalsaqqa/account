@@ -241,8 +241,8 @@
                                 </div>
                                 <div class="grid @if($discount_type !== 'none') grid-cols-2 @else grid-cols-1 @endif gap-2">
                                     <div>
-                                        <label for="sales-discount-type" class="block text-[11px] text-text-secondary mb-0.5">{{ __('sales.discount') }}</label>
-                                        <select id="sales-discount-type" wire:model.live="discount_type" wire:change="recalculate" class="w-full h-8 px-2 border border-border bg-canvas rounded-control text-xs" :disabled="documentBusy || saving">
+                                        <label for="sales-discount-type" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('sales.discount') }}</label>
+                                        <select id="sales-discount-type" wire:model.live="discount_type" wire:change="recalculate" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border bg-canvas rounded-control text-base md:text-sm" :disabled="documentBusy || saving">
                                             <option value="none">{{ __('sales.discount_none') }}</option>
                                             <option value="percent">{{ __('sales.discount_percent') }}</option>
                                             <option value="fixed">{{ __('sales.discount_fixed') }}</option>
@@ -250,8 +250,8 @@
                                     </div>
                                     @if ($discount_type !== 'none')
                                         <div>
-                                            <label for="sales-discount-value" class="block text-[11px] text-text-secondary mb-0.5">{{ __('sales.discount_value') }}</label>
-                                            <input id="sales-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="sales-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" wire:change="recalculate" class="w-full h-8 px-2 border border-border bg-canvas rounded-control text-xs font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
+                                            <label for="sales-discount-value" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('sales.discount_value') }}</label>
+                                            <input id="sales-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="sales-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" wire:change="recalculate" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border bg-canvas rounded-control text-base md:text-sm font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
                                         </div>
                                     @endif
                                 </div>
