@@ -40,7 +40,7 @@
         <!-- Decrement Button (>=44px touch target, clear contrast) -->
         <button type="button"
                 wire:loading.attr="disabled"
-                wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
+                wire:target="save,saveDraft,selectProduct,quickAddProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || @js((bool) $disabled)"
                 @click="tap('down')"
                 class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-danger-bg hover:bg-danger-bg active:bg-rose-200 text-danger border-e border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
@@ -78,7 +78,7 @@
         <!-- Increment Button (>=44px touch target, clear contrast) -->
         <button type="button"
                 wire:loading.attr="disabled"
-                wire:target="save,saveDraft,selectProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
+                wire:target="save,saveDraft,selectProduct,quickAddProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || @js((bool) $disabled)"
                 @click="tap('up')"
                 class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-success-bg hover:bg-success-bg active:bg-emerald-200 text-success border-s border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"

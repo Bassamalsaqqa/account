@@ -94,6 +94,8 @@
             @click="handleTriggerClick()"
             @keydown="handleKeydown($event)"
             :placeholder="placeholder"
+            :readonly="syncing"
+            :aria-busy="(pendingDebounce || searching || syncing) ? 'true' : null"
             :disabled="disabled || (typeof saving !== 'undefined' && saving) || (typeof documentBusy !== 'undefined' && documentBusy)"
             autocomplete="off"
             spellcheck="false"
@@ -173,6 +175,8 @@
                             :aria-label="ariaLabel || placeholder"
                             :aria-controls="listboxId"
                             :aria-activedescendant="activeId"
+                            :readonly="syncing"
+                            :aria-busy="(pendingDebounce || searching || syncing) ? 'true' : null"
                             autocomplete="off"
                             spellcheck="false"
                             dir="auto"
@@ -210,7 +214,7 @@
                         </div>
                     </template>
 
-                    <template x-if="failed && !offline">
+                    <template x-if="searchFailed && !offline">
                         <div role="alert" class="p-3 text-xs text-danger font-semibold bg-danger-bg/50 flex items-center justify-between gap-2">
                             <span>{{ __('search.error_occurred') }}</span>
                             <button
@@ -228,7 +232,7 @@
                         </div>
                     </template>
 
-                    <template x-if="!pendingDebounce && !searching && !failed && !offline && items.length === 0">
+                    <template x-if="!pendingDebounce && !searching && !searchFailed && !offline && items.length === 0">
                         <div role="status" class="p-3 text-xs text-text-muted text-center">
                             {{ __('search.no_results') }}
                         </div>
@@ -249,13 +253,26 @@
                             class="min-h-[44px] md:min-h-9 px-3 py-2 flex items-center justify-between gap-2 cursor-pointer transition-colors select-none"
                         >
                             <div class="flex-1 min-w-0 flex items-center gap-2">
-                                <span x-show="String(item.id) === String(selectedId)" class="text-primary font-bold text-xs" aria-hidden="true">&check;</span>
+                                <span x-show="String(item.id) === String(selectedId)" class="text-primary font-bold text-xs shrink-0" aria-hidden="true">&check;</span>
                                 <span class="truncate text-sm" x-text="item.label" dir="auto"></span>
                             </div>
 
                             <template x-if="item.sublabel">
-                                <span class="shrink-0 text-xs text-text-muted font-mono tabular-nums">
-                                    <bdi dir="ltr" x-text="item.sublabel"></bdi>
+                                <span class="min-w-0 max-w-[45%] flex items-center justify-end gap-1 text-xs text-text-muted overflow-hidden">
+                                    <template x-if="item.meta?.business_name">
+                                        <span class="min-w-0 w-full flex items-center justify-end gap-1">
+                                            <template x-if="item.meta?.code || item.meta?.phone">
+                                                <bdi dir="ltr" class="shrink-0 max-w-[50%] truncate font-mono tabular-nums" x-text="item.meta.code || item.meta.phone"></bdi>
+                                            </template>
+                                            <template x-if="item.meta?.code || item.meta?.phone">
+                                                <span aria-hidden="true" class="shrink-0">&middot;</span>
+                                            </template>
+                                            <span class="min-w-0 truncate" dir="auto" x-text="item.meta.business_name"></span>
+                                        </span>
+                                    </template>
+                                    <template x-if="!item.meta?.business_name">
+                                        <bdi dir="ltr" class="block min-w-0 truncate font-mono tabular-nums" x-text="item.sublabel"></bdi>
+                                    </template>
                                 </span>
                             </template>
                         </div>

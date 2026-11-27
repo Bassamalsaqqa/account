@@ -3,11 +3,21 @@
          saving: false, documentBusy: false, operationFailed: false,
          handleSaveDraft() {
              if (this.saving || window.isDocumentBlocked($wire) || [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length)) return;
+             if ($wire.$el?.dataset?.rowMutationBusy === 'true') {
+                 const status = $wire.$el.querySelector('[data-row-mutation-status]');
+                 if (status) status.textContent = status.dataset.retryLabel;
+                 return;
+             }
              this.saving = true;
              window.enqueueDocumentOperation($wire, 'saveDraft').catch(() => { this.operationFailed = true; }).finally(() => this.saving = false);
          },
          handleAddLine() {
              if (this.saving || window.isDocumentBlocked($wire) || [...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length)) return;
+             if ($wire.$el?.dataset?.rowMutationBusy === 'true') {
+                 const status = $wire.$el.querySelector('[data-row-mutation-status]');
+                 if (status) status.textContent = status.dataset.retryLabel;
+                 return;
+             }
              window.enqueueDocumentOperation($wire, 'addLine').catch(() => { this.operationFailed = true; });
          }
      }"
@@ -160,25 +170,28 @@
                     <h2 class="text-sm font-bold text-text-primary">
                         {{ __('sales.quotation_details') }}
                     </h2>
-                    <div class="flex w-full md:w-auto min-w-0 md:flex-1 max-w-md items-center gap-2">
-                        <div class="flex-1 min-w-0">
-                            <x-searchable-combobox
-                                id="quotation-product-search"
-                                type="product"
-                                context="quotation"
-                                on-select="quickAddProduct"
-                                :reset-after-select="true"
-                                :placeholder="__('workflow.search_products')"
-                                :aria-label="__('workflow.search_products')"
-                            />
+                    <div class="w-full md:w-auto min-w-0 md:flex-1 max-w-md">
+                        <div class="flex items-center gap-2">
+                            <div class="flex-1 min-w-0">
+                                <x-searchable-combobox
+                                    id="quotation-product-search"
+                                    type="product"
+                                    context="quotation"
+                                    on-select="quickAddProduct"
+                                    :reset-after-select="true"
+                                    :has-error="$errors->has('quickProduct')"
+                                    :placeholder="__('workflow.search_products')"
+                                    :aria-label="__('workflow.search_products')"
+                                />
+                            </div>
+                            @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
+                                <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
+                                    + {{ __('quick_product.create') }}
+                                </button>
+                            @endif
                         </div>
-                        @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                            <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
-                                + {{ __('quick_product.create') }}
-                            </button>
-                        @endif
+                        @error('quickProduct') <span id="quotation-product-search-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                     </div>
-                    @error('quickProduct') <span role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                 </div>
                 <button type="button"
                         data-row-mutation-action

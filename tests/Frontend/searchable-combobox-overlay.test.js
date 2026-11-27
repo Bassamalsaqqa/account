@@ -394,3 +394,240 @@ test('resetAfterSelect clears quick-add combobox after server acceptance and rol
     assert.equal(comp.selectedId, null);
     comp.destroy();
 });
+
+test('resetAfterSelect does not wipe newer input typed while select RPC is pending', async () => {
+    let resolveQuickAdd;
+    const comp = makeComponent({
+        id: 'purchase-product-search',
+        type: 'product',
+        context: 'purchasing',
+        onSelect: 'quickAddProduct',
+        resetAfterSelect: true,
+        options: [{ id: 5, label: 'Toothpaste (TP-1)' }],
+    });
+    comp.$wire = {
+        quickAddProduct: () => new Promise((resolve) => { resolveQuickAdd = resolve; }),
+    };
+
+    const pendingSelect = comp.selectItem(comp.items[0]);
+    assert.equal(comp.syncing, true);
+    assert.equal(comp.query, 'Toothpaste (TP-1)');
+
+    // Simulate newer typing occurring before quickAddProduct RPC settles
+    comp.query = 'زيت';
+    comp.handleInput();
+    assert.equal(comp.query, 'زيت');
+
+    resolveQuickAdd(true);
+    await pendingSelect;
+
+    assert.equal(comp.syncing, false);
+    assert.equal(comp.selectedId, null);
+    assert.equal(comp.query, 'زيت');
+    comp.destroy();
+});
+
+test('failed selectItem on cached empty-query browse clears cleanly on reopen without clearing real search errors or nextCursor', async () => {
+    const cachedOptions = [
+        { id: 10, label: 'Cached Item A' },
+        { id: 11, label: 'Cached Item B' },
+    ];
+    const seenCursors = [];
+    let failNextLoadMore = true;
+    const comp = makeComponent({
+        id: 'browse-refusal-cb',
+        onSelect: 'quickAddProduct',
+        resetAfterSelect: true,
+        options: cachedOptions,
+    });
+    comp.hasMore = true;
+    comp.nextCursor = 'cursor-next';
+    comp.lastSearchedQuery = '';
+    comp.$wire = {
+        quickAddProduct: async () => false,
+        searchSelector: async (_t, _q, _s, opts) => {
+            seenCursors.push(opts.cursor ?? null);
+            if (failNextLoadMore) {
+                failNextLoadMore = false;
+                throw new Error('503 search outage');
+            }
+            return {
+                generation: opts.generation,
+                items: [{ id: 12, label: 'Page 2 Item C' }],
+                has_more: false,
+                next_cursor: null,
+            };
+        },
+    };
+
+    // 1. Failed selection with cached empty-query browse items sets failed=true, searchFailed=false, and preserves nextCursor
+    comp.open = true;
+    await comp.selectItem(cachedOptions[0]);
+    assert.equal(comp.open, false);
+    assert.equal(comp.failed, true);
+    assert.equal(comp.searchFailed, false);
+    assert.equal(comp.items.length, 2);
+    assert.equal(comp.hasMore, true);
+    assert.equal(comp.nextCursor, 'cursor-next');
+
+    // Reopening valid cached browse must NOT show stale search error banner
+    comp.handleFocus();
+    assert.equal(comp.open, true);
+    assert.equal(comp.failed, false);
+    assert.equal(comp.searchFailed, false);
+    assert.equal(seenCursors.length, 0);
+    assert.equal(comp.nextCursor, 'cursor-next');
+
+    // 2. Real loadMore failure sets searchFailed=true and loadMoreFailed=true and persists across close/reopen
+    await comp.loadMore();
+    assert.deepEqual(seenCursors, ['cursor-next']);
+    assert.equal(comp.failed, true);
+    assert.equal(comp.searchFailed, true);
+    assert.equal(comp.loadMoreFailed, true);
+    assert.equal(comp.nextCursor, 'cursor-next');
+
+    comp.closeOverlay();
+    comp.handleFocus();
+    assert.equal(comp.open, true);
+    assert.equal(comp.failed, true);
+    assert.equal(comp.searchFailed, true);
+    assert.equal(comp.loadMoreFailed, true);
+
+    // Clicking Retry dispatches loadMore with preserved nextCursor
+    comp.retrySearch();
+    await new Promise((r) => setTimeout(r, 15));
+    assert.deepEqual(seenCursors, ['cursor-next', 'cursor-next']);
+    assert.equal(comp.failed, false);
+    assert.equal(comp.searchFailed, false);
+    assert.equal(comp.loadMoreFailed, false);
+    assert.deepEqual(comp.items.map((i) => i.id), [10, 11, 12]);
+    comp.destroy();
+});
+
+test('non-reset selectItem and clear rollback preserve nextCursor without desynchronizing hasMore', async () => {
+    const comp = makeComponent({
+        id: 'party-cursor-cb',
+        onSelect: 'selectVendor',
+        resetAfterSelect: false,
+        options: [
+            { id: 1, label: 'Vendor 1' },
+            { id: 2, label: 'Vendor 2' },
+        ],
+    });
+    comp.hasMore = true;
+    comp.nextCursor = 'vendor-cursor-2';
+    comp.lastSearchedQuery = '';
+    let allowClear = false;
+    comp.$wire = {
+        selectVendor: async (_id) => allowClear,
+    };
+
+    // Successful selection keeps cached page 1 cursor intact for subsequent reopen + loadMore
+    allowClear = true;
+    await comp.selectItem(comp.items[0]);
+    assert.equal(comp.selectedId, '1');
+    assert.equal(comp.hasMore, true);
+    assert.equal(comp.nextCursor, 'vendor-cursor-2');
+
+    // Failed clear() restores nextCursor alongside items and hasMore
+    allowClear = false;
+    await comp.clear();
+    assert.equal(comp.failed, true);
+    assert.equal(comp.selectedId, '1');
+    assert.equal(comp.items.length, 2);
+    assert.equal(comp.hasMore, true);
+    assert.equal(comp.nextCursor, 'vendor-cursor-2');
+    comp.destroy();
+});
+
+test('isBlocked respects rowMutationBusy and window.isDocumentBusy', () => {
+    const comp = makeComponent({ id: 'busy-check-cb' });
+    const wire = { $el: { dataset: {} } };
+    comp.$wire = wire;
+
+    assert.equal(comp.isBlocked(), false);
+    wire.$el.dataset.rowMutationBusy = 'true';
+    assert.equal(comp.isBlocked(), true);
+    delete wire.$el.dataset.rowMutationBusy;
+    assert.equal(comp.isBlocked(), false);
+
+    const prevWindow = globalThis.window;
+    try {
+        globalThis.window = { isDocumentBusy: (w) => w === wire };
+        assert.equal(comp.isBlocked(), true);
+    } finally {
+        if (prevWindow === undefined) delete globalThis.window;
+        else globalThis.window = prevWindow;
+    }
+    comp.destroy();
+});
+
+test('desktop Escape closes overlay after Load More blur via overlay and document keydown handlers', () => {
+    const comp = makeComponent({ id: 'escape-overlay-cb' });
+    const keydownListeners = [];
+    let focusCalled = false;
+    const prevDocument = globalThis.document;
+    const prevWindow = globalThis.window;
+
+    try {
+        globalThis.document = {
+            body: {},
+            activeElement: null,
+            addEventListener(type, fn) {
+                if (type === 'keydown') keydownListeners.push(fn);
+            },
+            removeEventListener(type, fn) {
+                if (type === 'keydown') {
+                    const idx = keydownListeners.indexOf(fn);
+                    if (idx !== -1) keydownListeners.splice(idx, 1);
+                }
+            },
+        };
+        globalThis.document.activeElement = globalThis.document.body;
+        globalThis.window = {
+            addEventListener() {},
+            removeEventListener() {},
+        };
+
+        comp.$refs = {
+            searchInput: {
+                focus() { focusCalled = true; },
+            },
+            overlayPanel: { contains: () => false },
+        };
+        comp.overlayMode = 'popup';
+        comp.open = true;
+        comp.attachOpenListeners();
+
+        let stopped = false;
+        let prevented = false;
+        comp.handleOverlayKeydown({
+            key: 'Escape',
+            preventDefault() { prevented = true; },
+            stopPropagation() { stopped = true; },
+        });
+        assert.equal(comp.open, false);
+        assert.equal(prevented, true);
+        assert.equal(stopped, true);
+        assert.equal(focusCalled, true);
+
+        focusCalled = false;
+        comp.open = true;
+        comp.attachOpenListeners();
+        assert.equal(keydownListeners.length, 1);
+        keydownListeners[0]({
+            key: 'Escape',
+            preventDefault() {},
+            stopPropagation() {},
+        });
+        assert.equal(comp.open, false);
+        assert.equal(focusCalled, true);
+        assert.equal(keydownListeners.length, 0);
+    } finally {
+        comp.destroy();
+        if (prevDocument === undefined) delete globalThis.document;
+        else globalThis.document = prevDocument;
+        if (prevWindow === undefined) delete globalThis.window;
+        else globalThis.window = prevWindow;
+    }
+});

@@ -1,6 +1,6 @@
 // Positional Livewire models must not accept edits while the server changes the
 // row/lot structure. Keep text controls focused and selectable with readonly.
-const mutations = new Set(['addLine', 'removeLine', 'selectProduct', 'changeUnit', 'scanBarcode', 'scanCameraBarcode', 'saveQuickProduct', 'customizeLots', 'resetToAutoLot', 'addLot', 'removeLot', 'applyPreparedAiInput', 'applyPreparedAiTranscript', 'undoAiInput', 'mountAiInput']);
+const mutations = new Set(['addLine', 'removeLine', 'selectProduct', 'quickAddProduct', 'changeUnit', 'scanBarcode', 'scanCameraBarcode', 'saveQuickProduct', 'customizeLots', 'resetToAutoLot', 'addLot', 'removeLot', 'applyPreparedAiInput', 'applyPreparedAiTranscript', 'undoAiInput', 'mountAiInput']);
 const guardedDocumentActions = new Set([
     ...mutations,
     'save',

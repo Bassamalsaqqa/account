@@ -191,6 +191,11 @@ export function flushQuantityBatch(wire) {
     if (state) { seal(state); void drain(state); }
 }
 export function enqueueQuantityStep(wire, index, direction, options = {}) {
+    if (wire?.$el?.dataset?.rowMutationBusy === 'true') {
+        const status = wire.$el.querySelector('[data-row-mutation-status]');
+        if (status) status.textContent = status.dataset.retryLabel;
+        return Promise.reject(error('Items are updating; retry after the current change finishes'));
+    }
     const requestedIndex = Number.isInteger(index) ? index : Number(index ?? -1);
     const liveIndex = resolveLiveLineIndex(wire, requestedIndex, options.rowKey ?? null);
     if (!wire || !Number.isSafeInteger(liveIndex) || liveIndex < 0 || !['up', 'down'].includes(direction)) return Promise.reject(error('Invalid quantity operation'));

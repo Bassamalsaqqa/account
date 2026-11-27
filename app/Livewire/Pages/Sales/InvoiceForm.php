@@ -642,6 +642,18 @@ class InvoiceForm extends Component
             $this->isEditing ? 'sales.invoice.edit_draft' : 'sales.invoice.create'
         ));
 
+        if ($this->isEditing) {
+            $invoiceId = $this->invoice->id ?? $this->quickProductDocumentId;
+            $freshInvoice = $invoiceId !== null
+                ? SalesInvoice::where('company_id', $company->id)->whereKey($invoiceId)->first()
+                : null;
+            if ($freshInvoice === null || ! $freshInvoice->isDraft()) {
+                $this->addError('quickProduct', __('sales.cannot_modify_posted'));
+
+                return false;
+            }
+        }
+
         if ($productId === null || $productId <= 0) {
             return false;
         }

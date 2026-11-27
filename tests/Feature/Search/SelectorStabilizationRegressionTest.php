@@ -19,6 +19,9 @@ use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductBarcode;
 use App\Models\ProductUnit;
+use App\Models\Purchase;
+use App\Models\SalesInvoice;
+use App\Models\SalesInvoiceLine;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vendor;
@@ -28,6 +31,8 @@ use App\Services\Search\ArabicSearchNormalizer;
 use App\Services\Search\SearchableSelectorService;
 use App\Services\Tenancy\CompanyRoleService;
 use App\Support\Tenancy\CompanyContext;
+use App\Support\Tenancy\CompanyScope;
+use Brick\Math\BigDecimal;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -526,6 +531,468 @@ final class SelectorStabilizationRegressionTest extends TestCase
         } finally {
             setPermissionsTeamId($previousTeam);
         }
+    }
+
+    public function test_quick_add_product_preserves_unsaved_free_text_row_on_all_three_forms(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $product = $this->createProduct('QA-FREE-1', 'صنف مضاف', 'Quick Item', Product::TYPE_STOCK, true, '25.00', '40.00');
+        $vendor = Vendor::create([
+            'company_id' => $this->company->id,
+            'code' => 'V-FREE',
+            'name_ar' => 'مورد اختبار',
+            'name_en' => 'Test Vendor',
+            'status' => 'active',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'C-FREE',
+            'name_ar' => 'عميل اختبار',
+            'name_en' => 'Test Customer',
+            'status' => 'active',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+
+        $purchase = Livewire::test(PurchaseForm::class)
+            ->set('vendor_id', $vendor->id)
+            ->set('lines.0.item_description', 'شحن يدوي غير محفوظ')
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_cost', '15.00')
+            ->call('quickAddProduct', $product->id);
+
+        $purchase->assertHasNoErrors();
+        $purchase->assertReturned(true);
+        /** @var array<int, array<string, mixed>> $purchaseLines */
+        $purchaseLines = $purchase->get('lines');
+        $this->assertCount(2, $purchaseLines);
+        $this->assertNull($purchaseLines[0]['product_id'] ?: null);
+        $this->assertSame('شحن يدوي غير محفوظ', $purchaseLines[0]['item_description']);
+        $this->assertSame('15.00', (string) $purchaseLines[0]['unit_cost']);
+        $this->assertSame($product->id, (int) $purchaseLines[1]['product_id']);
+
+        $invoice = Livewire::test(InvoiceForm::class)
+            ->set('customer_id', $customer->id)
+            ->set('lines.0.item_description', 'تركيب يدوي غير محفوظ')
+            ->set('lines.0.quantity', '3')
+            ->set('lines.0.unit_price', '55.00')
+            ->call('quickAddProduct', $product->id);
+
+        $invoice->assertHasNoErrors();
+        $invoice->assertReturned(true);
+        /** @var array<int, array<string, mixed>> $invoiceLines */
+        $invoiceLines = $invoice->get('lines');
+        $this->assertCount(2, $invoiceLines);
+        $this->assertNull($invoiceLines[0]['product_id'] ?: null);
+        $this->assertSame('تركيب يدوي غير محفوظ', $invoiceLines[0]['item_description']);
+        $this->assertSame('55.00', (string) $invoiceLines[0]['unit_price']);
+        $this->assertSame($product->id, (int) $invoiceLines[1]['product_id']);
+
+        $quotation = Livewire::test(QuotationForm::class)
+            ->set('customer_id', $customer->id)
+            ->set('lines.0.item_description', 'بند عرض سعر يدوي')
+            ->set('lines.0.quantity', '4')
+            ->set('lines.0.unit_price', '75.00')
+            ->call('quickAddProduct', $product->id);
+
+        $quotation->assertHasNoErrors();
+        $quotation->assertReturned(true);
+        /** @var array<int, array<string, mixed>> $quotationLines */
+        $quotationLines = $quotation->get('lines');
+        $this->assertCount(2, $quotationLines);
+        $this->assertNull($quotationLines[0]['product_id'] ?: null);
+        $this->assertSame('بند عرض سعر يدوي', $quotationLines[0]['item_description']);
+        $this->assertSame('75.00', (string) $quotationLines[0]['unit_price']);
+        $this->assertSame($product->id, (int) $quotationLines[1]['product_id']);
+    }
+
+    public function test_barcode_lookup_and_quick_add_preserve_non_base_product_unit_price_and_cost(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $product = $this->createProduct('SKU-MULTI-U', 'زيت زيتون', 'Olive Oil', Product::TYPE_STOCK, true, '10.00', '15.00');
+        $boxUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'BOX12',
+            'name_ar' => 'كرتونة 12',
+            'name_en' => 'Box 12',
+            'symbol_ar' => 'كرتونة',
+            'symbol_en' => 'BOX',
+            'allows_fraction' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        $boxProductUnit = ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $boxUnit->id,
+            'conversion_to_base' => '12',
+            'is_base' => false,
+            'is_default_purchase' => false,
+            'is_default_sale' => false,
+            'default_purchase_price_base' => '95.00',
+            'default_sale_price_base' => '140.00',
+            'active' => true,
+        ]);
+        ProductBarcode::create([
+            'company_id' => $this->company->id,
+            'product_id' => $product->id,
+            'unit_id' => $boxUnit->id,
+            'barcode' => '6259990001122',
+            'type' => 'ean13',
+            'is_primary' => false,
+        ]);
+
+        /** @var SearchableSelectorService $selector */
+        $selector = app(SearchableSelectorService::class);
+        $search = $selector->search($this->company, $this->owner, 'product', '6259990001122', null, 10, ['context' => 'sales']);
+        $this->assertCount(1, $search['items']);
+        $this->assertSame((string) $product->id, $search['items'][0]['id']);
+        $this->assertSame($boxProductUnit->id, (int) $search['items'][0]['meta']['matched_product_unit_id']);
+
+        $purchase = Livewire::test(PurchaseForm::class)
+            ->call('quickAddProduct', $product->id, $boxProductUnit->id);
+        $purchase->assertHasNoErrors();
+        $purchase->assertReturned(true);
+        /** @var array<int, array<string, mixed>> $pLines */
+        $pLines = $purchase->get('lines');
+        $this->assertSame($boxProductUnit->id, (int) $pLines[0]['product_unit_id']);
+        $this->assertTrue(BigDecimal::of((string) $pLines[0]['unit_cost'])->isEqualTo('95.00'));
+
+        $invoice = Livewire::test(InvoiceForm::class)
+            ->call('quickAddProduct', $product->id, $boxProductUnit->id);
+        $invoice->assertHasNoErrors();
+        $invoice->assertReturned(true);
+        /** @var array<int, array<string, mixed>> $iLines */
+        $iLines = $invoice->get('lines');
+        $this->assertSame($boxProductUnit->id, (int) $iLines[0]['product_unit_id']);
+        $this->assertTrue(BigDecimal::of((string) $iLines[0]['unit_price'])->isEqualTo('140.00'));
+
+        $quotation = Livewire::test(QuotationForm::class)
+            ->call('quickAddProduct', $product->id, $boxProductUnit->id);
+        $quotation->assertHasNoErrors();
+        $quotation->assertReturned(true);
+        /** @var array<int, array<string, mixed>> $qLines */
+        $qLines = $quotation->get('lines');
+        $this->assertSame($boxProductUnit->id, (int) $qLines[0]['product_unit_id']);
+        $this->assertTrue(BigDecimal::of((string) $qLines[0]['unit_price'])->isEqualTo('140.00'));
+    }
+
+    public function test_foreign_company_product_is_denied_on_search_and_quick_add_across_all_three_forms(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $foreignCompany = Company::factory()->create(['base_currency_code' => $this->company->base_currency_code]);
+        [$foreignProduct, $foreignUnitRow] = CompanyScope::executeWithoutScope(function () use ($foreignCompany): array {
+            $foreignUnit = Unit::create([
+                'company_id' => $foreignCompany->id,
+                'code' => 'FPCS',
+                'name_ar' => 'قطعة أجنبية',
+                'name_en' => 'Foreign Piece',
+                'symbol_ar' => 'قطعة',
+                'symbol_en' => 'PCS',
+                'allows_fraction' => false,
+                'decimal_places' => 0,
+                'active' => true,
+            ]);
+            $product = Product::create([
+                'company_id' => $foreignCompany->id,
+                'sku' => 'FOREIGN-SECRET-SKU',
+                'name_ar' => 'صنف شركة أخرى',
+                'name_en' => 'Foreign Company Product',
+                'base_unit_id' => $foreignUnit->id,
+                'product_type' => Product::TYPE_STOCK,
+                'track_stock' => true,
+                'default_purchase_cost_base' => '10.00',
+                'default_sale_price_base' => '20.00',
+                'active' => true,
+                'created_by' => $this->owner->id,
+            ]);
+            $unitRow = ProductUnit::create([
+                'company_id' => $foreignCompany->id,
+                'product_id' => $product->id,
+                'unit_id' => $foreignUnit->id,
+                'conversion_to_base' => '1',
+                'is_base' => true,
+                'is_default_sale' => true,
+                'is_default_purchase' => true,
+                'active' => true,
+            ]);
+
+            return [$product, $unitRow];
+        });
+
+        /** @var SearchableSelectorService $selector */
+        $selector = app(SearchableSelectorService::class);
+        $search = $selector->search($this->company, $this->owner, 'product', 'FOREIGN-SECRET-SKU', $foreignProduct->id, 10, ['context' => 'sales']);
+        $this->assertSame([], $search['items']);
+
+        foreach ([PurchaseForm::class, InvoiceForm::class, QuotationForm::class] as $componentClass) {
+            $component = Livewire::test($componentClass)
+                ->call('quickAddProduct', $foreignProduct->id, $foreignUnitRow->id);
+
+            $component->assertReturned(false);
+            $component->assertHasErrors(['quickProduct']);
+            /** @var array<int, array<string, mixed>> $lines */
+            $lines = $component->get('lines');
+            $this->assertCount(1, $lines);
+            $this->assertNull($lines[0]['product_id'] ?: null);
+        }
+    }
+
+    public function test_posted_invoice_edit_refuses_quick_add_and_purchase_missing_fx_reports_inline_quick_product_error(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $existingProduct = $this->createProduct('INV-ORIG', 'صنف الفاتورة الأصلي', 'Original Line', 'service', false, '10.00', '100.00');
+        $extraProduct = $this->createProduct('INV-NEW', 'صنف إضافي مرفوض', 'Rejected Extra Line', 'service', false, '20.00', '50.00');
+        $basePuId = (int) ProductUnit::where('product_id', $existingProduct->id)->value('id');
+
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'C-POST-GUARD',
+            'name_ar' => 'عميل فاتورة مرحلة',
+            'name_en' => 'Posted Guard Customer',
+            'status' => 'active',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+
+        $invoice = SalesInvoice::create([
+            'company_id' => $this->company->id,
+            'customer_id' => $customer->id,
+            'warehouse_id' => $this->warehouse->id,
+            'currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1',
+            'issue_date' => '2026-11-26',
+            'status' => SalesInvoice::STATUS_DRAFT,
+            'subtotal_base' => '100.00',
+            'discount_total_base' => '0.00',
+            'tax_total_base' => '0.00',
+            'grand_total_base' => '100.00',
+            'cogs_total_base' => '0.00',
+            'subtotal_currency' => '100.00',
+            'discount_total_currency' => '0.00',
+            'tax_total_currency' => '0.00',
+            'grand_total_currency' => '100.00',
+            'document_locale' => 'ar',
+            'created_by' => $this->owner->id,
+        ]);
+        SalesInvoiceLine::create([
+            'company_id' => $this->company->id,
+            'sales_invoice_id' => $invoice->id,
+            'line_number' => 1,
+            'product_id' => $existingProduct->id,
+            'product_unit_id' => $basePuId,
+            'item_description' => 'صنف الفاتورة الأصلي',
+            'quantity' => '1',
+            'unit_price' => '100.00',
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'manual_discount_amount' => '0.00',
+            'allocated_document_discount' => '0.00',
+            'tax_inclusive' => false,
+            'line_subtotal' => '100.00',
+            'line_discount' => '0.00',
+            'line_tax' => '0.00',
+            'line_total' => '100.00',
+            'line_subtotal_base' => '100.00',
+            'line_discount_base' => '0.00',
+            'line_tax_base' => '0.00',
+            'line_total_base' => '100.00',
+            'cogs_total_base' => '0.00',
+            'cogs_unit_base' => '0.00',
+            'unit_conversion_ratio' => '1',
+            'quantity_base' => '1',
+        ]);
+
+        $invoiceComponent = Livewire::test(InvoiceForm::class, ['publicId' => $invoice->public_id]);
+
+        DB::table('sales_invoices')
+            ->where('id', $invoice->id)
+            ->update(['status' => SalesInvoice::STATUS_POSTED]);
+
+        $invoiceComponent->call('quickAddProduct', $extraProduct->id);
+        $invoiceComponent->assertReturned(false);
+        $invoiceComponent->assertHasErrors(['quickProduct']);
+
+        /** @var array<int, array<string, mixed>> $invLines */
+        $invLines = $invoiceComponent->get('lines');
+        $this->assertCount(1, $invLines);
+        $this->assertSame($existingProduct->id, (int) $invLines[0]['product_id']);
+        $this->assertSame(
+            1,
+            DB::table('sales_invoice_lines')->where('sales_invoice_id', $invoice->id)->count()
+        );
+
+        $foreignCurrency = strtoupper((string) $this->company->base_currency_code) === 'USD' ? 'JOD' : 'USD';
+        $purchaseComponent = Livewire::test(PurchaseForm::class)
+            ->set('currency_code', $foreignCurrency)
+            ->set('exchange_rate', '')
+            ->set('lines.0.item_description', 'مسودة شراء محفوظة')
+            ->call('quickAddProduct', $extraProduct->id);
+
+        $purchaseComponent->assertReturned(false);
+        $purchaseComponent->assertHasErrors(['exchange_rate', 'quickProduct']);
+        $this->assertSame('', (string) $purchaseComponent->get('exchange_rate'));
+        /** @var array<int, array<string, mixed>> $purchLines */
+        $purchLines = $purchaseComponent->get('lines');
+        $this->assertCount(1, $purchLines);
+        $this->assertSame('مسودة شراء محفوظة', $purchLines[0]['item_description']);
+    }
+
+    public function test_escape_like_and_mariadb_search_treat_backslash_percent_and_underscore_literally(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $this->assertSame('100\\%\\_off\\\\box', ArabicSearchNormalizer::escapeLike('100%_off\\box'));
+
+        $literal = $this->createProduct('SKU-100%_off\\box', 'صندوق خصم 100%_off\\box', 'Box 100%_off\\box', Product::TYPE_STOCK, true, '5.00', '10.00');
+        $this->createProduct('SKU-1000XoffZbox', 'صندوق 1000XoffZbox', 'Decoy 1', Product::TYPE_STOCK, true, '5.00', '10.00');
+        $this->createProduct('SKU-100X_off_box', 'صندوق 100X_off_box', 'Decoy 2', Product::TYPE_STOCK, true, '5.00', '10.00');
+
+        /** @var SearchableSelectorService $selector */
+        $selector = app(SearchableSelectorService::class);
+        $result = $selector->search($this->company, $this->owner, 'product', '100%_off\\box', null, 15, ['context' => 'sales']);
+
+        $this->assertSame([(string) $literal->id], array_column($result['items'], 'id'));
+    }
+
+    public function test_party_selector_returns_distinct_business_name_meta_and_preserves_sublabel(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $customer = Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'C-AR-900',
+            'name_ar' => 'سالم المصري',
+            'name_en' => 'Salem Masri',
+            'business_name_ar' => 'مؤسسة سالم للتوريدات الغذائية والمستلزمات التجارية الدولية',
+            'business_name_en' => 'Salem Trading Supplies Est.',
+            'phone' => '0599123456',
+            'status' => 'active',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+
+        $sameBusinessCustomer = Customer::create([
+            'company_id' => $this->company->id,
+            'code' => 'C-SAME-1',
+            'name_ar' => 'شركة النور',
+            'name_en' => 'Al Noor Co',
+            'business_name_ar' => 'شركة النور',
+            'status' => 'active',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+
+        /** @var SearchableSelectorService $selector */
+        $selector = app(SearchableSelectorService::class);
+        $res1 = $selector->search($this->company, $this->owner, 'customer', 'C-AR-900', null, 10, ['context' => 'sales']);
+        $this->assertCount(1, $res1['items']);
+        $this->assertSame('C-AR-900', $res1['items'][0]['meta']['code']);
+        $this->assertSame('0599123456', $res1['items'][0]['meta']['phone']);
+        $this->assertNotEmpty($res1['items'][0]['meta']['business_name']);
+        $this->assertStringContainsString((string) $res1['items'][0]['meta']['business_name'], (string) $res1['items'][0]['sublabel']);
+
+        $res2 = $selector->search($this->company, $this->owner, 'customer', 'C-SAME-1', null, 10, ['context' => 'sales']);
+        $this->assertCount(1, $res2['items']);
+        $this->assertNull($res2['items'][0]['meta']['business_name'] ?? null);
+        $this->assertSame('C-SAME-1', $res2['items'][0]['sublabel']);
+        $this->assertNotSame($customer->id, $sameBusinessCustomer->id);
+    }
+
+    public function test_payment_vendor_selector_allows_soft_deleted_vendor_only_with_posted_purchase(): void
+    {
+        $this->actingAs($this->owner);
+        app(CompanyContext::class)->setCompany($this->company, $this->owner);
+
+        $vendorPosted = Vendor::create([
+            'company_id' => $this->company->id,
+            'code' => 'V-SOFT-POSTED',
+            'name_ar' => 'مورد محذوف بمرحلة',
+            'name_en' => 'Deleted Posted Vendor',
+            'status' => 'active',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+        $vendorDraftOnly = Vendor::create([
+            'company_id' => $this->company->id,
+            'code' => 'V-SOFT-DRAFT',
+            'name_ar' => 'مورد محذوف بمسودة',
+            'name_en' => 'Deleted Draft Vendor',
+            'status' => 'active',
+            'active' => true,
+            'created_by' => $this->owner->id,
+        ]);
+
+        $postedPurchase = Purchase::create([
+            'company_id' => $this->company->id,
+            'vendor_id' => $vendorPosted->id,
+            'warehouse_id' => $this->warehouse->id,
+            'status' => Purchase::STATUS_DRAFT,
+            'purchase_date' => '2026-11-26',
+            'currency_code' => $this->company->base_currency_code,
+            'base_currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1',
+            'document_locale' => 'ar',
+            'subtotal_currency' => '100.00',
+            'discount_total_currency' => '0.00',
+            'tax_total_currency' => '0.00',
+            'grand_total_currency' => '100.00',
+            'subtotal_base' => '100.00',
+            'discount_total_base' => '0.00',
+            'tax_total_base' => '0.00',
+            'grand_total_base' => '100.00',
+            'created_by' => $this->owner->id,
+        ]);
+        DB::table('purchases')
+            ->where('id', $postedPurchase->id)
+            ->update(['status' => Purchase::STATUS_POSTED]);
+
+        Purchase::create([
+            'company_id' => $this->company->id,
+            'vendor_id' => $vendorDraftOnly->id,
+            'warehouse_id' => $this->warehouse->id,
+            'status' => Purchase::STATUS_DRAFT,
+            'purchase_date' => '2026-11-26',
+            'currency_code' => $this->company->base_currency_code,
+            'base_currency_code' => $this->company->base_currency_code,
+            'exchange_rate' => '1',
+            'document_locale' => 'ar',
+            'subtotal_currency' => '100.00',
+            'discount_total_currency' => '0.00',
+            'tax_total_currency' => '0.00',
+            'grand_total_currency' => '100.00',
+            'subtotal_base' => '100.00',
+            'discount_total_base' => '0.00',
+            'tax_total_base' => '0.00',
+            'grand_total_base' => '100.00',
+            'created_by' => $this->owner->id,
+        ]);
+
+        $vendorPosted->delete();
+        $vendorDraftOnly->delete();
+
+        /** @var SearchableSelectorService $selector */
+        $selector = app(SearchableSelectorService::class);
+        $paymentSearch = $selector->search($this->company, $this->owner, 'vendor', 'V-SOFT-', null, 15, ['context' => 'payment']);
+        $paymentIds = array_column($paymentSearch['items'], 'id');
+        $this->assertContains((string) $vendorPosted->id, $paymentIds);
+        $this->assertNotContains((string) $vendorDraftOnly->id, $paymentIds);
+
+        $purchasingSearch = $selector->search($this->company, $this->owner, 'vendor', 'V-SOFT-', null, 15, ['context' => 'purchasing']);
+        $purchasingIds = array_column($purchasingSearch['items'], 'id');
+        $this->assertSame([], $purchasingIds);
     }
 
     private function createProduct(

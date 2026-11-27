@@ -3,11 +3,21 @@
          saving: false, documentBusy: false, operationFailed: false,
          handleSaveDraft() {
              if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBlocked($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             if ($wire.$el?.dataset?.rowMutationBusy === 'true') {
+                 const status = $wire.$el.querySelector('[data-row-mutation-status]');
+                 if (status) status.textContent = status.dataset.retryLabel;
+                 return;
+             }
              this.saving = true;
              window.enqueueDocumentOperation($wire, 'saveDraft').catch(() => { this.operationFailed = true; }).finally(() => { this.saving = false; });
          },
          handleAddLine() {
              if ([...document.querySelectorAll('[role=dialog]')].some(el => el.getClientRects().length > 0) || this.saving || window.isDocumentBlocked($wire) || $wire.showPreview || $wire.showQuickCustomerModal) return;
+             if ($wire.$el?.dataset?.rowMutationBusy === 'true') {
+                 const status = $wire.$el.querySelector('[data-row-mutation-status]');
+                 if (status) status.textContent = status.dataset.retryLabel;
+                 return;
+             }
              window.enqueueDocumentOperation($wire, 'addLine').catch(() => { this.operationFailed = true; });
          }
      }"
@@ -172,6 +182,7 @@
                         context="sales"
                         on-select="quickAddProduct"
                         :reset-after-select="true"
+                        :has-error="$errors->has('quickProduct')"
                         :placeholder="__('sales.search_products_hint')"
                         :aria-label="__('sales.search_products')"
                     />
@@ -182,7 +193,7 @@
                     </button>
                 @endif
             </div>
-            @error('quickProduct') <span role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
+            @error('quickProduct') <span id="invoice-product-search-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
         </div>
     </div>
 

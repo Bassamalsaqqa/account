@@ -385,6 +385,49 @@ final class SearchableSelectorService
     }
 
     /**
+     * Build a consistent searchable option array for a customer or vendor.
+     *
+     * @return array{id: string, label: string, sublabel: ?string, meta: array<string, mixed>, selected: bool}
+     */
+    private function formatPartyOption(
+        Customer|Vendor $party,
+        string $baseCurrency,
+        string $locale,
+        bool $selected,
+        bool $includeTaxNumber = false
+    ): array {
+        $ar = (string) ($party->name_ar ?? '');
+        $en = (string) ($party->name_en ?? '');
+        $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
+        $curr = $party->default_currency_code ?: $baseCurrency;
+        $label = "{$name} ({$curr})";
+
+        $bizAr = (string) ($party->business_name_ar ?? '');
+        $bizEn = (string) ($party->business_name_en ?? '');
+        $businessName = trim($locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr));
+        $distinctBusinessName = ($businessName !== '' && $businessName !== trim($name)) ? $businessName : null;
+
+        $meta = [
+            'code' => $party->code,
+            'phone' => $party->phone,
+            'currency_code' => $curr,
+            'business_name' => $distinctBusinessName,
+        ];
+
+        if ($includeTaxNumber && $party instanceof Customer) {
+            $meta['tax_number'] = $party->tax_number;
+        }
+
+        return (new SearchableOptionDTO(
+            id: (string) $party->id,
+            label: $label,
+            sublabel: $this->formatPartySublabel($party->code ?: $party->phone, $businessName, $name),
+            meta: $meta,
+            selected: $selected
+        ))->toArray();
+    }
+
+    /**
      * Search customers with priority: exact code/phone -> prefix -> contains.
      *
      * @param  array<string, mixed>  $options
@@ -440,30 +483,8 @@ final class SearchableSelectorService
             }
             $seen[$customer->id] = true;
 
-            $ar = (string) ($customer->name_ar ?? '');
-            $en = (string) ($customer->name_en ?? '');
-            $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
-            $curr = $customer->default_currency_code ?: $baseCurrency;
-            $label = "{$name} ({$curr})";
-
-            $bizAr = (string) ($customer->business_name_ar ?? '');
-            $bizEn = (string) ($customer->business_name_en ?? '');
-            $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
-            $sublabel = $this->formatPartySublabel($customer->code ?: $customer->phone, $businessName, $name);
             $isSelected = ($selectedId !== null && (int) $customer->id === $selectedId);
-
-            $dto = (new SearchableOptionDTO(
-                id: (string) $customer->id,
-                label: $label,
-                sublabel: $sublabel,
-                meta: [
-                    'code' => $customer->code,
-                    'phone' => $customer->phone,
-                    'currency_code' => $curr,
-                    'tax_number' => $customer->tax_number,
-                ],
-                selected: $isSelected
-            ))->toArray();
+            $dto = $this->formatPartyOption($customer, $baseCurrency, $locale, $isSelected, includeTaxNumber: true);
 
             $items[] = $dto;
             if ($isSelected) {
@@ -478,25 +499,7 @@ final class SearchableSelectorService
                 ->where('status', 'active')
                 ->first();
             if ($selectedRecord !== null) {
-                $ar = (string) ($selectedRecord->name_ar ?? '');
-                $en = (string) ($selectedRecord->name_en ?? '');
-                $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
-                $curr = $selectedRecord->default_currency_code ?: $baseCurrency;
-                $bizAr = (string) ($selectedRecord->business_name_ar ?? '');
-                $bizEn = (string) ($selectedRecord->business_name_en ?? '');
-                $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
-                $selectedItem = (new SearchableOptionDTO(
-                    id: (string) $selectedRecord->id,
-                    label: "{$name} ({$curr})",
-                    sublabel: $this->formatPartySublabel($selectedRecord->code ?: $selectedRecord->phone, $businessName, $name),
-                    meta: [
-                        'code' => $selectedRecord->code,
-                        'phone' => $selectedRecord->phone,
-                        'currency_code' => $curr,
-                        'tax_number' => $selectedRecord->tax_number,
-                    ],
-                    selected: true
-                ))->toArray();
+                $selectedItem = $this->formatPartyOption($selectedRecord, $baseCurrency, $locale, true, includeTaxNumber: true);
             }
         }
 
@@ -576,29 +579,8 @@ final class SearchableSelectorService
             }
             $seen[$vendor->id] = true;
 
-            $ar = (string) ($vendor->name_ar ?? '');
-            $en = (string) ($vendor->name_en ?? '');
-            $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
-            $curr = $vendor->default_currency_code ?: $baseCurrency;
-            $label = "{$name} ({$curr})";
-
-            $bizAr = (string) ($vendor->business_name_ar ?? '');
-            $bizEn = (string) ($vendor->business_name_en ?? '');
-            $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
-            $sublabel = $this->formatPartySublabel($vendor->code ?: $vendor->phone, $businessName, $name);
             $isSelected = ($selectedId !== null && (int) $vendor->id === $selectedId);
-
-            $dto = (new SearchableOptionDTO(
-                id: (string) $vendor->id,
-                label: $label,
-                sublabel: $sublabel,
-                meta: [
-                    'code' => $vendor->code,
-                    'phone' => $vendor->phone,
-                    'currency_code' => $curr,
-                ],
-                selected: $isSelected
-            ))->toArray();
+            $dto = $this->formatPartyOption($vendor, $baseCurrency, $locale, $isSelected);
 
             $items[] = $dto;
             if ($isSelected) {
@@ -619,24 +601,7 @@ final class SearchableSelectorService
             }
             $selectedRecord = $selQuery->first();
             if ($selectedRecord !== null) {
-                $ar = (string) ($selectedRecord->name_ar ?? '');
-                $en = (string) ($selectedRecord->name_en ?? '');
-                $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
-                $curr = $selectedRecord->default_currency_code ?: $baseCurrency;
-                $bizAr = (string) ($selectedRecord->business_name_ar ?? '');
-                $bizEn = (string) ($selectedRecord->business_name_en ?? '');
-                $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
-                $selectedItem = (new SearchableOptionDTO(
-                    id: (string) $selectedRecord->id,
-                    label: "{$name} ({$curr})",
-                    sublabel: $this->formatPartySublabel($selectedRecord->code ?: $selectedRecord->phone, $businessName, $name),
-                    meta: [
-                        'code' => $selectedRecord->code,
-                        'phone' => $selectedRecord->phone,
-                        'currency_code' => $curr,
-                    ],
-                    selected: true
-                ))->toArray();
+                $selectedItem = $this->formatPartyOption($selectedRecord, $baseCurrency, $locale, true);
             }
         }
 

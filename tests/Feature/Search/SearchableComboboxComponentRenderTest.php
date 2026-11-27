@@ -111,5 +111,24 @@ final class SearchableComboboxComponentRenderTest extends TestCase
 
         $this->assertStringContainsString('resetAfterSelect: true', $html);
         $this->assertStringContainsString('data-reset-after-select="1"', $html);
+        $this->assertStringContainsString(':readonly="syncing"', $html);
+    }
+
+    public function test_combobox_renders_search_failed_separation_and_sublabel_bidi_clamp(): void
+    {
+        $html = Blade::render(
+            '<x-searchable-combobox
+                id="party-sublabel-check"
+                type="customer"
+                context="sales"
+                aria-label="العميل"
+            />'
+        );
+
+        $this->assertStringContainsString('searchFailed', $html);
+        $this->assertStringContainsString('max-w-[45%]', $html);
+        $this->assertStringContainsString('item.meta?.business_name', $html);
+        $this->assertStringContainsString('dir="auto"', $html);
+        $this->assertStringContainsString('<bdi dir="ltr"', $html);
     }
 }

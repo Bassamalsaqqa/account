@@ -70,8 +70,16 @@ test('an initially empty document registers structural protection before its fir
     const component = {el: {querySelector: selector => selector === '[data-row-mutation-status]' ? status : null, addEventListener() {}, removeEventListener() {}}, $wire: {$interceptMessage() {registered = true; return () => {};}}};
     const cleanups = [];
     try {
-        globalThis.document = {addEventListener: (name, callback) => {init = callback;}};
-        globalThis.window = {Livewire: {hook: (name, callback) => callback({component, cleanup: callback => cleanups.push(callback)})}};
+        globalThis.document = {
+            addEventListener: (name, callback) => {init = callback;},
+            dispatchEvent: () => true,
+        };
+        globalThis.window = {
+            dispatchEvent: () => true,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            Livewire: {hook: (name, callback) => callback({component, cleanup: callback => cleanups.push(callback)})},
+        };
         await import('../../resources/js/document-row-mutations.js?empty-document');
         init();
         assert.equal(registered, true);
@@ -167,8 +175,16 @@ test('structural guard blocks locked row editors and mutation/save actions while
         },
     };
     try {
-        globalThis.document = {addEventListener: (name, callback) => {init = callback;}};
-        globalThis.window = {Livewire: {hook: (name, callback) => callback({component, cleanup: callback => cleanups.push(callback)})}};
+        globalThis.document = {
+            addEventListener: (name, callback) => {init = callback;},
+            dispatchEvent: () => true,
+        };
+        globalThis.window = {
+            dispatchEvent: () => true,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            Livewire: {hook: (name, callback) => callback({component, cleanup: callback => cleanups.push(callback)})},
+        };
         await import('../../resources/js/document-row-mutations.js?scoped-capture');
         init();
 
@@ -217,6 +233,128 @@ test('structural guard blocks locked row editors and mutation/save actions while
         onSuccessCb({payload: {effects: {html: '<div></div>'}}, onRender: fn => fn()});
         onFinishCb();
         assert.equal(component.el.dataset.rowMutationBusy, undefined);
+    } finally {
+        for (const cleanup of cleanups) cleanup();
+        if (priorDocument === undefined) delete globalThis.document; else globalThis.document = priorDocument;
+        if (priorWindow === undefined) delete globalThis.window; else globalThis.window = priorWindow;
+    }
+});
+
+test('quickAddProduct triggers structural busy lock, blocks row editors/actions/FIFO queue, and releases on render', async () => {
+    const {enqueueDocumentOperation, enqueueQuantityStep} = await import('../../resources/js/document-operations.js');
+    const status = {textContent: '', dataset: {busyLabel: 'Updating items…', retryLabel: 'Retry after update'}};
+    const rowMarker = {setAttribute() {}, removeAttribute() {}};
+    const makeControl = (tagName, type = 'text', attrs = {}, ancestors = {}) => {
+        const el = {
+            tagName,
+            type,
+            readOnly: false,
+            disabled: false,
+            isConnected: true,
+            getAttribute: name => attrs[name] ?? null,
+            closest: selector => {
+                for (const key of selector.split(',').map(s => s.trim())) {
+                    if (ancestors[key]) return ancestors[key];
+                }
+                return null;
+            },
+        };
+        if (tagName === 'BUTTON') ancestors['button'] = el;
+        return el;
+    };
+
+    const rowInput = makeControl('INPUT', 'text', {}, {'[data-document-row]': rowMarker});
+    const rowRemoveBtn = makeControl('BUTTON', 'button', {'wire:click': "removeLine('rk-1')"}, {'[data-document-row]': rowMarker});
+    const saveDraftBtn = makeControl('BUTTON', 'submit', {});
+    const confirmBtn = makeControl('BUTTON', 'button', {}, {'[data-row-mutation-action]': true, '[data-mobile-confirm]': true});
+    const addLineBtn = makeControl('BUTTON', 'button', {}, {'[data-row-mutation-action]': true});
+    const barcodeInput = makeControl('INPUT', 'text', {}, {'[data-row-mutation-enter]': true});
+
+    const priorDocument = globalThis.document;
+    const priorWindow = globalThis.window;
+    let init;
+    let interceptCb;
+    const listeners = new Map();
+    const cleanups = [];
+    let wireCalls = 0;
+
+    const component = {
+        el: {
+            dataset: {},
+            getAttribute: () => 'doc-quickadd-1',
+            dispatchEvent() {},
+            querySelector: selector => selector === '[data-row-mutation-status]' ? status : null,
+            querySelectorAll: selector => selector === '[data-document-row]' ? [rowMarker] : [rowInput, rowRemoveBtn],
+            addEventListener: (name, fn, capture) => listeners.set(`${name}:${Boolean(capture)}`, fn),
+            removeEventListener: (name, fn, capture) => listeners.delete(`${name}:${Boolean(capture)}`),
+        },
+        $wire: {
+            $interceptMessage(cb) { interceptCb = cb; return () => {}; },
+        },
+    };
+    const wireProxy = {
+        $id: 'doc-quickadd-1',
+        $el: component.el,
+        saveDraft: async () => { wireCalls++; },
+        saveAndConfirm: async () => { wireCalls++; },
+        addLine: async () => { wireCalls++; },
+        scanCameraBarcode: async () => { wireCalls++; },
+    };
+
+    try {
+        globalThis.document = {
+            addEventListener: (name, callback) => {init = callback;},
+            dispatchEvent: () => true,
+        };
+        globalThis.window = {
+            dispatchEvent: () => true,
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            Livewire: {hook: (name, callback) => callback({component, cleanup: callback => cleanups.push(callback)})},
+        };
+        await import('../../resources/js/document-row-mutations.js?quickadd-structural');
+        init();
+
+        let onSuccessCb;
+        let onFinishCb;
+        interceptCb({
+            message: {actions: [{name: 'quickAddProduct'}]},
+            onSuccess: cb => { onSuccessCb = cb; },
+            onFinish: cb => { onFinishCb = cb; },
+        });
+
+        assert.equal(component.el.dataset.rowMutationBusy, 'true');
+        assert.equal(rowInput.readOnly, true);
+        assert.equal(rowRemoveBtn.disabled, true);
+        assert.equal(status.textContent, 'Updating items…');
+
+        const dispatch = (type, extra) => {
+            const evt = {type, defaultPrevented: false, stopped: false, preventDefault() { this.defaultPrevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...extra};
+            listeners.get(`${type}:true`)(evt);
+            return evt;
+        };
+
+        assert.equal(dispatch('click', {target: saveDraftBtn}).defaultPrevented, true);
+        assert.equal(dispatch('click', {target: confirmBtn}).defaultPrevented, true);
+        assert.equal(dispatch('click', {target: addLineBtn}).defaultPrevented, true);
+        assert.equal(dispatch('click', {target: rowRemoveBtn}).defaultPrevented, true);
+        assert.equal(dispatch('beforeinput', {target: rowInput}).defaultPrevented, true);
+        assert.equal(dispatch('keydown', {key: 'Enter', target: barcodeInput}).defaultPrevented, true);
+        assert.equal(dispatch('submit', {target: makeControl('FORM')}).defaultPrevented, true);
+        assert.equal(status.textContent, 'Retry after update');
+
+        await assert.rejects(enqueueDocumentOperation(wireProxy, 'saveDraft'), /updating/);
+        await assert.rejects(enqueueDocumentOperation(wireProxy, 'saveAndConfirm'), /updating/);
+        await assert.rejects(enqueueDocumentOperation(wireProxy, 'addLine'), /updating/);
+        await assert.rejects(enqueueDocumentOperation(wireProxy, 'scanCameraBarcode', ['123']), /updating/);
+        await assert.rejects(enqueueQuantityStep({$id: 'doc-quickadd-1', $el: component.el, lines: [{quantity: '1'}]}, 0, 'up'), /updating/);
+        assert.equal(wireCalls, 0);
+
+        onSuccessCb({payload: {effects: {html: '<div></div>'}}, onRender: fn => fn()});
+        onFinishCb();
+        assert.equal(component.el.dataset.rowMutationBusy, undefined);
+        await enqueueDocumentOperation(wireProxy, 'saveDraft');
+        assert.equal(wireCalls, 1);
     } finally {
         for (const cleanup of cleanups) cleanup();
         if (priorDocument === undefined) delete globalThis.document; else globalThis.document = priorDocument;

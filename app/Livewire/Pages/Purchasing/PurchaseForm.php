@@ -790,6 +790,7 @@ class PurchaseForm extends Component
 
         if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
             $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+            $this->addError('quickProduct', __('purchasing.exchange_rate_required'));
 
             return false;
         }
@@ -832,7 +833,7 @@ class PurchaseForm extends Component
             $this->lines[] = $newLine;
         }
 
-        $this->resetErrorBag('quickProduct');
+        $this->resetErrorBag(['quickProduct', 'exchange_rate']);
         $this->recalculate();
 
         return true;

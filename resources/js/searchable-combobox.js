@@ -201,6 +201,8 @@ export function searchableCombobox(config) {
         loadingMore: false,
         syncing: false,
         failed: false,
+        searchFailed: false,
+        loadMoreFailed: false,
         offline: false,
         liveAnnouncement: '',
         currentCompanyId: null,
@@ -558,8 +560,18 @@ export function searchableCombobox(config) {
                 });
             };
 
+            this._onDocKeydown = (e) => {
+                if (!this.open || e.key !== 'Escape' || this.isBlocked()) {
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation?.();
+                this.closeOverlay({ restoreFocus: true });
+            };
+
             document.addEventListener('pointerdown', this._onDocPointerDown, true);
             document.addEventListener('focusin', this._onDocFocusIn, true);
+            document.addEventListener('keydown', this._onDocKeydown, true);
             window.addEventListener('resize', this._onViewportChange, { passive: true });
             window.addEventListener('scroll', this._onViewportChange, { capture: true, passive: true });
             if (window.visualViewport) {
@@ -581,6 +593,10 @@ export function searchableCombobox(config) {
             if (this._onDocFocusIn) {
                 document.removeEventListener('focusin', this._onDocFocusIn, true);
                 this._onDocFocusIn = null;
+            }
+            if (this._onDocKeydown) {
+                document.removeEventListener('keydown', this._onDocKeydown, true);
+                this._onDocKeydown = null;
             }
             if (this._onViewportChange) {
                 window.removeEventListener('resize', this._onViewportChange);
@@ -647,8 +663,13 @@ export function searchableCombobox(config) {
         isBlocked() {
             if (this.$wire?.$el?.dataset?.rowMutationBusy === 'true') return true;
             if (this.disabled) return true;
-            if (typeof window !== 'undefined' && typeof window.isDocumentBlocked === 'function' && window.isDocumentBlocked(this.$wire)) {
-                return true;
+            if (typeof window !== 'undefined') {
+                if (typeof window.isDocumentBlocked === 'function' && window.isDocumentBlocked(this.$wire)) {
+                    return true;
+                }
+                if (typeof window.isDocumentBusy === 'function' && window.isDocumentBusy(this.$wire)) {
+                    return true;
+                }
             }
             if (this.$wire && (this.$wire.documentBusy === true || this.$wire.saving === true)) {
                 return true;
@@ -662,7 +683,6 @@ export function searchableCombobox(config) {
                 clearTimeout(debounceTimer);
                 debounceTimer = null;
             }
-            this.nextCursor = null;
             this.loadingMore = false;
             this.pendingDebounce = false;
             this.searching = false;
@@ -684,11 +704,18 @@ export function searchableCombobox(config) {
             this.open = false;
             this.activeIndex = -1;
             this.activeId = null;
+            this.failed = false;
+            this.searchFailed = false;
+            this.loadMoreFailed = false;
+            this.offline = false;
             this.lastSearchedQuery = undefined;
         },
 
         openOverlay() {
             if (this.isBlocked()) return;
+            if (!this.searchFailed) {
+                this.failed = false;
+            }
             closeActiveCombobox(this);
             activeComboboxController = this;
             this.open = true;
@@ -720,7 +747,10 @@ export function searchableCombobox(config) {
             if (activeComboboxController && activeComboboxController.id === this.id) {
                 activeComboboxController = null;
             }
-            if (restoreFocus && wasSheet && this.$refs?.searchInput?.focus) {
+            const shouldRestoreDesktopTrigger = typeof document !== 'undefined'
+                && document.activeElement !== this.$refs?.searchInput
+                && (!document.activeElement || document.activeElement === document.body || this.$refs?.overlayPanel?.contains?.(document.activeElement));
+            if (restoreFocus && (wasSheet || shouldRestoreDesktopTrigger) && this.$refs?.searchInput?.focus) {
                 if (typeof this.$nextTick === 'function') {
                     this.$nextTick(() => this.focusTrigger());
                 } else {
@@ -757,6 +787,9 @@ export function searchableCombobox(config) {
             this.activeIndex = -1;
             this.activeId = null;
             this.failed = false;
+            this.searchFailed = false;
+            this.loadMoreFailed = false;
+            this.lastSearchedQuery = undefined;
             this.pendingDebounce = true;
 
             if (!this.open) {
@@ -788,12 +821,18 @@ export function searchableCombobox(config) {
 
         retrySearch() {
             if (this.isBlocked()) return;
-            if (this.items.length > 0 && this.hasMore && this.nextCursor) {
+            if (this.loadMoreFailed && this.items.length > 0 && this.hasMore && this.nextCursor) {
                 this.failed = false;
+                this.searchFailed = false;
+                this.loadMoreFailed = false;
                 this.offline = false;
                 this.loadMore();
                 return;
             }
+            this.failed = false;
+            this.searchFailed = false;
+            this.loadMoreFailed = false;
+            this.offline = false;
             const displayingSelected = this.isSelected && this.query === this.selectedLabel;
             this.performSearch(undefined, displayingSelected ? '' : this.query, this.inputVersion);
         },
@@ -802,15 +841,18 @@ export function searchableCombobox(config) {
             if (this.isBlocked()) return;
             if (expectedGen !== undefined && expectedGen !== generation) return;
             this.pendingDebounce = false;
+            this.loadMoreFailed = false;
             if (!this.$wire || typeof this.$wire.searchSelector !== 'function') {
                 this.searching = false;
                 this.failed = true;
+                this.searchFailed = true;
                 return;
             }
 
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                 this.offline = true;
                 this.failed = true;
+                this.searchFailed = true;
                 this.searching = false;
                 return;
             }
@@ -820,8 +862,17 @@ export function searchableCombobox(config) {
             const searchQuery = expectedQuery !== undefined ? expectedQuery : (displayingSelected ? '' : this.query);
             const expectedCompanyId = this.currentCompanyId;
 
+            if (this.lastSearchedQuery !== undefined && this.lastSearchedQuery !== searchQuery) {
+                this.items = [];
+                this.hasMore = false;
+                this.nextCursor = null;
+                this.lastSearchedQuery = undefined;
+            }
+
             this.searching = true;
             this.failed = false;
+            this.searchFailed = false;
+            this.loadMoreFailed = false;
             this.offline = false;
 
             try {
@@ -875,6 +926,7 @@ export function searchableCombobox(config) {
             } catch (err) {
                 if (currentGen === generation) {
                     this.failed = true;
+                    this.searchFailed = true;
                     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                         this.offline = true;
                     }
@@ -893,12 +945,16 @@ export function searchableCombobox(config) {
             if (!this.$wire || typeof this.$wire.searchSelector !== 'function') {
                 this.loadingMore = false;
                 this.failed = true;
+                this.searchFailed = true;
+                this.loadMoreFailed = true;
                 return;
             }
 
             if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                 this.offline = true;
                 this.failed = true;
+                this.searchFailed = true;
+                this.loadMoreFailed = true;
                 this.loadingMore = false;
                 return;
             }
@@ -912,6 +968,8 @@ export function searchableCombobox(config) {
 
             this.loadingMore = true;
             this.failed = false;
+            this.searchFailed = false;
+            this.loadMoreFailed = false;
             this.offline = false;
 
             try {
@@ -951,6 +1009,8 @@ export function searchableCombobox(config) {
             } catch (err) {
                 if (currentGen === generation) {
                     this.failed = true;
+                    this.searchFailed = true;
+                    this.loadMoreFailed = true;
                     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
                         this.offline = true;
                     }
@@ -963,13 +1023,16 @@ export function searchableCombobox(config) {
         },
 
         handleOverlayKeydown(e) {
-            if (this.overlayMode !== 'sheet' || !this.open) {
+            if (!this.open) {
                 return;
             }
             if (e.key === 'Escape') {
                 e.preventDefault();
                 e.stopPropagation();
                 this.closeOverlay({ restoreFocus: true });
+                return;
+            }
+            if (this.overlayMode !== 'sheet') {
                 return;
             }
             if (e.key === 'Tab') {
@@ -1085,6 +1148,7 @@ export function searchableCombobox(config) {
 
             this.invalidateIntent();
             const currentToken = ++selectionToken;
+            const capturedInputVersion = this.inputVersion;
             const prevId = this.selectedId;
             const prevLabel = this.selectedLabel;
             const prevQuery = this.query;
@@ -1096,6 +1160,8 @@ export function searchableCombobox(config) {
             this.query = item.label;
             this.closeOverlay({ restoreFocus: wasSheet, preserveQuery: true });
             this.failed = false;
+            this.searchFailed = false;
+            this.loadMoreFailed = false;
             this.syncing = true;
 
             this.$dispatch('combobox-selected', {
@@ -1104,6 +1170,12 @@ export function searchableCombobox(config) {
                 value: item.id,
                 item: item,
             });
+
+            const restoreQueryIfUntyped = () => {
+                if (this.inputVersion === capturedInputVersion && this.query === item.label) {
+                    this.query = prevQuery;
+                }
+            };
 
             try {
                 if (this.onSelect && this.$wire && typeof this.$wire[this.onSelect] === 'function') {
@@ -1118,8 +1190,9 @@ export function searchableCombobox(config) {
                     if (success === false) {
                         this.selectedId = prevId;
                         this.selectedLabel = prevLabel;
-                        this.query = prevQuery;
+                        restoreQueryIfUntyped();
                         this.failed = true;
+                        this.searchFailed = false;
                         this.$dispatch('combobox-selected', {
                             id: this.id,
                             type: this.type,
@@ -1140,8 +1213,9 @@ export function searchableCombobox(config) {
                 } else if (this.onSelect || this.wireModel) {
                     this.selectedId = prevId;
                     this.selectedLabel = prevLabel;
-                    this.query = prevQuery;
+                    restoreQueryIfUntyped();
                     this.failed = true;
+                    this.searchFailed = false;
                     this.$dispatch('combobox-selected', {
                         id: this.id,
                         type: this.type,
@@ -1156,9 +1230,12 @@ export function searchableCombobox(config) {
                 }
 
                 if (this.resetAfterSelect) {
+                    const userTypedDuringSync = this.inputVersion !== capturedInputVersion || this.query !== item.label;
                     this.selectedId = null;
                     this.selectedLabel = '';
-                    this.query = '';
+                    if (!userTypedDuringSync) {
+                        this.query = '';
+                    }
                     this.items = [];
                     this.hasMore = false;
                     this.nextCursor = null;
@@ -1170,12 +1247,14 @@ export function searchableCombobox(config) {
                     this.lastSyncedSelectedLabel = item.label;
                 }
                 this.failed = false;
+                this.searchFailed = false;
             } catch (err) {
                 if (currentToken === selectionToken) {
                     this.selectedId = prevId;
                     this.selectedLabel = prevLabel;
-                    this.query = prevQuery;
+                    restoreQueryIfUntyped();
                     this.failed = true;
+                    this.searchFailed = false;
                     this.$dispatch('combobox-selected', {
                         id: this.id,
                         type: this.type,
@@ -1200,6 +1279,9 @@ export function searchableCombobox(config) {
             const prevQuery = this.query;
             const prevItems = this.items;
             const prevHasMore = this.hasMore;
+            const prevNextCursor = this.nextCursor;
+            const prevLastSearchedQuery = this.lastSearchedQuery;
+            const prevLoadMoreFailed = this.loadMoreFailed;
             this.selectedId = null;
             this.selectedLabel = '';
             this.query = '';
@@ -1211,6 +1293,8 @@ export function searchableCombobox(config) {
             this.pendingDebounce = false;
             this.closeOverlay({ restoreFocus: false, preserveQuery: true });
             this.failed = false;
+            this.searchFailed = false;
+            this.loadMoreFailed = false;
             this.lastSearchedQuery = undefined;
             this.syncing = true;
 
@@ -1233,7 +1317,11 @@ export function searchableCombobox(config) {
                         this.query = prevQuery;
                         this.items = prevItems;
                         this.hasMore = prevHasMore;
+                        this.nextCursor = prevNextCursor;
+                        this.lastSearchedQuery = prevLastSearchedQuery;
+                        this.loadMoreFailed = prevLoadMoreFailed;
                         this.failed = true;
+                        this.searchFailed = false;
                         return;
                     }
                 } else if (this.wireModel && this.$wire && (typeof this.$wire.$set === 'function' || typeof this.$wire.set === 'function')) {
@@ -1251,7 +1339,11 @@ export function searchableCombobox(config) {
                     this.query = prevQuery;
                     this.items = prevItems;
                     this.hasMore = prevHasMore;
+                    this.nextCursor = prevNextCursor;
+                    this.lastSearchedQuery = prevLastSearchedQuery;
+                    this.loadMoreFailed = prevLoadMoreFailed;
                     this.failed = true;
+                    this.searchFailed = false;
                     return;
                 }
 
@@ -1262,6 +1354,8 @@ export function searchableCombobox(config) {
                 this.lastSyncedSelectedId = null;
                 this.lastSyncedSelectedLabel = '';
                 this.failed = false;
+                this.searchFailed = false;
+                this.loadMoreFailed = false;
             } catch (err) {
                 if (currentToken === selectionToken) {
                     this.selectedId = prevId;
@@ -1269,7 +1363,11 @@ export function searchableCombobox(config) {
                     this.query = prevQuery;
                     this.items = prevItems;
                     this.hasMore = prevHasMore;
+                    this.nextCursor = prevNextCursor;
+                    this.lastSearchedQuery = prevLastSearchedQuery;
+                    this.loadMoreFailed = prevLoadMoreFailed;
                     this.failed = true;
+                    this.searchFailed = false;
                 }
             } finally {
                 if (currentToken === selectionToken) {
