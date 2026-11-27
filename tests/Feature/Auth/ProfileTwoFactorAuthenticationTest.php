@@ -382,4 +382,28 @@ class ProfileTwoFactorAuthenticationTest extends TestCase
         $this->assertGuest();
         $this->assertSame($user->id, session('login.id'));
     }
+
+    public function test_profile_two_factor_modals_and_alerts_enforce_dismissal_guards_and_accessibility_semantics(): void
+    {
+        $user = User::factory()->create();
+
+        $html = $this->actingAs($user)
+            ->get('/profile')
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('@keydown.escape.window="if (showPasswordModal) { $event.preventDefault(); $event.stopPropagation(); cancelPasswordConfirm(); }"', $html);
+        $this->assertStringContainsString('@click="if (!confirmingPassword) cancelPasswordConfirm()"', $html);
+        $this->assertStringContainsString('id="reauth_password_error" role="alert"', $html);
+        $this->assertStringContainsString('x-bind:aria-invalid="confirmPasswordError ? \'true\' : null"', $html);
+        $this->assertStringContainsString('x-bind:aria-describedby="confirmPasswordError ? \'reauth_password_error\' : null"', $html);
+        $this->assertStringContainsString('openRegenerateModal($event.currentTarget)', $html);
+        $this->assertStringContainsString('openDisableModal($event.currentTarget)', $html);
+        $this->assertStringContainsString('closeRegenerateModal()', $html);
+        $this->assertStringContainsString('closeDisableModal()', $html);
+        $this->assertStringContainsString('aria-label="'.__('workflow.close').'"', $html);
+        $this->assertStringNotContainsString('aria-label="'.__('app.clear_search').'"', $html);
+        $this->assertStringContainsString('min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-success', $html);
+        $this->assertStringContainsString('min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-danger', $html);
+    }
 }

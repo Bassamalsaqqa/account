@@ -7,8 +7,58 @@ export function profileTwoFactor(config = {}) {
     const translations = config.translations || {};
     let generation = 0;
     let reauthentication = null;
+    let modalReturnTarget = null;
     const controllers = new Map();
     const cancelled = () => new DOMException('Operation cancelled', 'AbortError');
+
+    const isInsideAnyModal = (element, refs) => [
+        refs?.passwordDialog,
+        refs?.disableDialog,
+        refs?.regenerateDialog,
+    ].some((dialog) => dialog && typeof dialog.contains === 'function' && dialog.contains(element));
+
+    const captureOpener = (explicitTrigger, refs) => {
+        if (typeof document === 'undefined') return null;
+        const candidate = explicitTrigger && typeof explicitTrigger.focus === 'function'
+            ? explicitTrigger
+            : document.activeElement;
+        if (!candidate || candidate === document.body || typeof candidate.focus !== 'function') {
+            return null;
+        }
+        if (!explicitTrigger && isInsideAnyModal(candidate, refs)) {
+            return null;
+        }
+
+        return {
+            element: candidate,
+            id: candidate.id || null,
+            href: document.location?.href ?? null,
+        };
+    };
+
+    const restoreOpener = (saved, component) => {
+        if (!saved || typeof document === 'undefined') return;
+        const applyFocus = () => {
+            if (saved.href && document.location?.href && document.location.href !== saved.href) return;
+            const target = saved.id && typeof document.getElementById === 'function'
+                ? (document.getElementById(saved.id) || saved.element)
+                : saved.element;
+            if (!target || typeof target.focus !== 'function') return;
+            if ('isConnected' in target && !target.isConnected) return;
+            if (target.disabled || (typeof target.getAttribute === 'function' && target.getAttribute('aria-disabled') === 'true')) return;
+            if (typeof target.closest === 'function' && target.closest('[inert]')) return;
+            if (typeof target.getClientRects === 'function' && target.getClientRects().length === 0) return;
+            target.focus({ preventScroll: true });
+        };
+
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => requestAnimationFrame(applyFocus));
+        } else if (typeof component?.$nextTick === 'function') {
+            component.$nextTick(applyFocus);
+        } else {
+            applyFocus();
+        }
+    };
 
     return {
         // Lifecycle status: 'disabled' | 'pending' | 'enabled'
@@ -121,6 +171,8 @@ export function profileTwoFactor(config = {}) {
                     controllers.delete(controller);
                     clearTimeout(timeout);
                     if (!reauthentication) {
+                        const captured = captureOpener(null, this.$refs);
+                        if (captured) modalReturnTarget = captured;
                         let resolve, reject;
                         const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
                         reauthentication = { promise, resolve, reject };
@@ -173,15 +225,56 @@ export function profileTwoFactor(config = {}) {
                 });
                 this.showPasswordModal = false;
                 this.confirmPasswordInput = '';
+                this.confirmPasswordError = null;
+                const returnTarget = modalReturnTarget;
+                modalReturnTarget = null;
                 const waiting = reauthentication;
                 reauthentication = null;
                 waiting?.resolve();
+                restoreOpener(returnTarget, this);
             } catch (error) {
                 if (error.name !== 'AbortError') this.confirmPasswordError = error.message;
             } finally { this.confirmingPassword = false; }
         },
 
-        cancelPasswordConfirm() { this.clearSecrets(); },
+        cancelPasswordConfirm() {
+            if (this.confirmingPassword) return;
+            const returnTarget = modalReturnTarget;
+            modalReturnTarget = null;
+            this.confirmPasswordError = null;
+            this.clearSecrets();
+            restoreOpener(returnTarget, this);
+        },
+
+        openDisableModal(trigger = null) {
+            if (this.loading || this.setupLoading || this.uncertain || this.confirmingPassword) return;
+            modalReturnTarget = captureOpener(trigger, this.$refs) || modalReturnTarget;
+            this.showDisableModal = true;
+            this.$nextTick(() => this.$refs?.disableCancelButton?.focus());
+        },
+
+        closeDisableModal() {
+            if (this.loading || this.confirmingPassword) return;
+            const returnTarget = modalReturnTarget;
+            modalReturnTarget = null;
+            this.showDisableModal = false;
+            restoreOpener(returnTarget, this);
+        },
+
+        openRegenerateModal(trigger = null) {
+            if (this.loading || this.setupLoading || this.uncertain || this.confirmingPassword) return;
+            modalReturnTarget = captureOpener(trigger, this.$refs) || modalReturnTarget;
+            this.showRegenerateModal = true;
+            this.$nextTick(() => this.$refs?.regenerateCancelButton?.focus());
+        },
+
+        closeRegenerateModal() {
+            if (this.loading || this.confirmingPassword) return;
+            const returnTarget = modalReturnTarget;
+            modalReturnTarget = null;
+            this.showRegenerateModal = false;
+            restoreOpener(returnTarget, this);
+        },
 
         async enableTwoFactor() {
             if (this.loading || this.uncertain) return;

@@ -59,19 +59,19 @@
     </header>
 
     {{-- Feedback Alerts --}}
-    <div x-cloak x-show="success" x-transition class="rounded-control border border-success/30 bg-success-bg p-4 text-xs font-semibold text-success flex items-start gap-2.5" aria-live="polite">
-        <x-icon name="check-circle" class="w-4 h-4 shrink-0 mt-0.5" />
+    <div x-cloak x-show="success" x-transition class="rounded-control border border-success/30 bg-success-bg p-4 text-xs font-semibold text-success flex items-center gap-2.5" aria-live="polite">
+        <x-icon name="check-circle" class="w-4 h-4 shrink-0" />
         <span class="flex-1" x-text="success"></span>
-        <button type="button" @click="success = null" class="text-success hover:opacity-75" aria-label="{{ __('app.clear_search') }}">
-            <x-icon name="close" class="w-3.5 h-3.5" />
+        <button type="button" @click="success = null" class="min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-success hover:opacity-75 shrink-0 cursor-pointer" aria-label="{{ __('workflow.close') }}">
+            <x-icon name="close" class="w-4 h-4" />
         </button>
     </div>
 
-    <div x-cloak x-show="error" x-transition class="rounded-control border border-danger/30 bg-danger-bg p-4 text-xs font-semibold text-danger flex items-start gap-2.5" role="alert">
-        <x-icon name="close" class="w-4 h-4 shrink-0 mt-0.5" />
+    <div x-cloak x-show="error" x-transition class="rounded-control border border-danger/30 bg-danger-bg p-4 text-xs font-semibold text-danger flex items-center gap-2.5" role="alert">
+        <x-icon name="close" class="w-4 h-4 shrink-0" />
         <span class="flex-1" x-text="error"></span>
-        <button type="button" @click="error = null" class="text-danger hover:opacity-75" aria-label="{{ __('app.clear_search') }}">
-            <x-icon name="close" class="w-3.5 h-3.5" />
+        <button type="button" @click="error = null" class="min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-danger hover:opacity-75 shrink-0 cursor-pointer" aria-label="{{ __('workflow.close') }}">
+            <x-icon name="close" class="w-4 h-4" />
         </button>
     </div>
 
@@ -183,7 +183,7 @@
                         <span x-show="showingRecoveryCodes">{{ __('profile_security.hide_recovery_codes') }}</span>
                     </x-secondary-button>
 
-                    <x-secondary-button type="button" @click="showRegenerateModal = true" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 text-xs">
+                    <x-secondary-button type="button" @click="openRegenerateModal($event.currentTarget)" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 text-xs">
                         {{ __('profile_security.regenerate_recovery_codes') }}
                     </x-secondary-button>
                 </div>
@@ -216,7 +216,7 @@
 
         {{-- Disable 2FA Action --}}
         <div class="pt-4 border-t border-border flex items-center justify-between">
-            <x-danger-button type="button" @click="showDisableModal = true" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
+            <x-danger-button type="button" @click="openDisableModal($event.currentTarget)" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
                 {{ __('profile_security.disable_action') }}
             </x-danger-button>
         </div>
@@ -224,13 +224,14 @@
 
     {{-- Modal 1: Password Confirmation Reauthentication (HTTP 423) --}}
     <div x-cloak x-show="showPasswordModal"
+         x-ref="passwordDialog"
          class="fixed inset-0 z-50 overflow-y-auto px-4 py-6 sm:px-0"
          role="dialog"
          aria-modal="true"
          aria-labelledby="confirm-password-modal-title"
          x-trap.inert.noscroll="showPasswordModal"
-         @keydown.escape.window="if(showPasswordModal) { $event.preventDefault(); $event.stopPropagation(); cancelPasswordConfirm(); }">
-        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="cancelPasswordConfirm"></div>
+         @keydown.escape.window="if (showPasswordModal) { $event.preventDefault(); $event.stopPropagation(); cancelPasswordConfirm(); }">
+        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="if (!confirmingPassword) cancelPasswordConfirm()"></div>
 
         <div class="relative mb-6 bg-surface rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
             <div class="flex items-center gap-2">
@@ -250,13 +251,15 @@
                     <x-text-input id="reauth_password_input"
                                   x-ref="passwordConfirmInput"
                                   x-model="confirmPasswordInput"
+                                  x-bind:aria-invalid="confirmPasswordError ? 'true' : null"
+                                  x-bind:aria-describedby="confirmPasswordError ? 'reauth_password_error' : null"
                                   type="password"
                                   placeholder="{{ __('profile_security.password_placeholder') }}"
                                   class="w-full"
                                   autocomplete="current-password"
                                   required />
                     <template x-if="confirmPasswordError">
-                        <p class="mt-1.5 text-xs font-semibold text-danger" x-text="confirmPasswordError"></p>
+                        <p id="reauth_password_error" role="alert" class="mt-1.5 text-xs font-semibold text-danger" x-text="confirmPasswordError"></p>
                     </template>
                 </div>
 
@@ -276,13 +279,14 @@
 
     {{-- Modal 2: Confirm Disable 2FA --}}
     <div x-cloak x-show="showDisableModal"
+         x-ref="disableDialog"
          class="fixed inset-0 z-50 overflow-y-auto px-4 py-6 sm:px-0"
          role="dialog"
          aria-modal="true"
          aria-labelledby="confirm-disable-modal-title"
          x-trap.inert.noscroll="showDisableModal && !showPasswordModal"
-         @keydown.escape.window="if(showDisableModal && !loading) { $event.preventDefault(); $event.stopPropagation(); showDisableModal = false; }">
-        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="showDisableModal = false"></div>
+         @keydown.escape.window="if (showDisableModal && !showPasswordModal) { $event.preventDefault(); $event.stopPropagation(); closeDisableModal(); }">
+        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="closeDisableModal()"></div>
 
         <div class="relative mb-6 bg-surface rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
             <h3 id="confirm-disable-modal-title" class="text-base font-bold text-text-primary">
@@ -294,7 +298,7 @@
             </p>
 
             <div class="flex justify-end gap-3 pt-2">
-                <x-secondary-button type="button" @click="showDisableModal = false" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
+                <x-secondary-button type="button" x-ref="disableCancelButton" @click="closeDisableModal()" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
                     {{ __('profile_security.cancel_button') }}
                 </x-secondary-button>
 
@@ -308,13 +312,14 @@
 
     {{-- Modal 3: Confirm Regenerate Recovery Codes --}}
     <div x-cloak x-show="showRegenerateModal"
+         x-ref="regenerateDialog"
          class="fixed inset-0 z-50 overflow-y-auto px-4 py-6 sm:px-0"
          role="dialog"
          aria-modal="true"
          aria-labelledby="confirm-regenerate-modal-title"
          x-trap.inert.noscroll="showRegenerateModal && !showPasswordModal"
-         @keydown.escape.window="if(showRegenerateModal && !loading) { $event.preventDefault(); $event.stopPropagation(); showRegenerateModal = false; }">
-        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="showRegenerateModal = false"></div>
+         @keydown.escape.window="if (showRegenerateModal && !showPasswordModal) { $event.preventDefault(); $event.stopPropagation(); closeRegenerateModal(); }">
+        <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity" @click="closeRegenerateModal()"></div>
 
         <div class="relative mb-6 bg-surface rounded-card overflow-hidden shadow-panel border border-border max-w-md mx-auto my-8 p-6 z-10 space-y-4">
             <h3 id="confirm-regenerate-modal-title" class="text-base font-bold text-text-primary">
@@ -326,7 +331,7 @@
             </p>
 
             <div class="flex justify-end gap-3 pt-2">
-                <x-secondary-button type="button" @click="showRegenerateModal = false" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
+                <x-secondary-button type="button" x-ref="regenerateCancelButton" @click="closeRegenerateModal()" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
                     {{ __('profile_security.cancel_button') }}
                 </x-secondary-button>
 

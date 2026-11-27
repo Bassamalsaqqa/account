@@ -117,3 +117,132 @@ test('uncertain mutation outcome blocks blind retries and rapid double operation
     await target.enableTwoFactor();
     assert.equal(count,1);
 });
+
+test('cancelPasswordConfirm during in-flight POST /confirm-password does not abort, set uncertain, or drop secrets', async () => {
+    let resolveConfirm;
+    let confirmAborted = false;
+    global.fetch = async (url, opts) => {
+        if (url === '/confirm') {
+            opts.signal.addEventListener('abort', () => { confirmAborted = true; });
+            return new Promise((resolve) => { resolveConfirm = resolve; });
+        }
+        return json({}, 423);
+    };
+
+    const target = make();
+    const pendingWork = target.loadSetupData().catch(() => {});
+    await tick();
+    assert.equal(target.showPasswordModal, true);
+
+    target.confirmPasswordInput = 'secret-pass';
+    const confirming = target.submitPasswordConfirm();
+    assert.equal(target.confirmingPassword, true);
+
+    // Attempt cancel while confirmation request is actively in-flight
+    target.cancelPasswordConfirm();
+    assert.equal(confirmAborted, false);
+    assert.equal(target.uncertain, false);
+    assert.equal(target.showPasswordModal, true);
+
+    // Resolve POST /confirm cleanly and confirm subsequent retry runs without uncertain
+    let qrCalls = 0;
+    global.fetch = async (url) => {
+        qrCalls++;
+        return url === '/qr' ? json({svg: '<svg>ok</svg>'}) : json({secretKey: 'KEY-OK'});
+    };
+    resolveConfirm(json({}));
+    await confirming;
+    await pendingWork;
+
+    assert.equal(target.confirmingPassword, false);
+    assert.equal(target.showPasswordModal, false);
+    assert.equal(target.uncertain, false);
+    assert.equal(qrCalls, 2);
+});
+
+test('modal focus management focuses safe controls on open, restores opener focus on close, and keeps clearSecrets working during background purge', async () => {
+    let focusedElement = null;
+    const makeBtn = (id) => ({
+        id,
+        isConnected: true,
+        disabled: false,
+        getAttribute: () => null,
+        closest: () => null,
+        getClientRects: () => [{ width: 80, height: 44 }],
+        focus() { focusedElement = this; },
+    });
+
+    const regenTrigger = makeBtn('regen-trigger');
+    const regenCancelBtn = makeBtn('regen-cancel');
+    const disableTrigger = makeBtn('disable-trigger');
+    const disableCancelBtn = makeBtn('disable-cancel');
+    const passwordInput = makeBtn('reauth_password_input');
+
+    global.document = {
+        querySelector: () => null,
+        activeElement: regenTrigger,
+        body: {},
+        location: { href: 'http://localhost/profile' },
+        getElementById: (id) => ({ 'regen-trigger': regenTrigger, 'disable-trigger': disableTrigger }[id] || null),
+        addEventListener() {},
+        removeEventListener() {},
+    };
+
+    const target = Object.assign(
+        profileTwoFactor({ routes, translations: { generic_error: 'Failed', request_uncertain: 'Reload status' } }),
+        {
+            $nextTick: (fn) => fn(),
+            $refs: {
+                regenerateCancelButton: regenCancelBtn,
+                disableCancelButton: disableCancelBtn,
+                passwordConfirmInput: passwordInput,
+            },
+        }
+    );
+
+    target.openRegenerateModal(regenTrigger);
+    assert.equal(target.showRegenerateModal, true);
+    assert.equal(focusedElement, regenCancelBtn);
+    target.closeRegenerateModal();
+    assert.equal(target.showRegenerateModal, false);
+    assert.equal(focusedElement, regenTrigger);
+
+    focusedElement = null;
+    target.openDisableModal(disableTrigger);
+    assert.equal(target.showDisableModal, true);
+    assert.equal(focusedElement, disableCancelBtn);
+    target.closeDisableModal();
+    assert.equal(target.showDisableModal, false);
+    assert.equal(focusedElement, disableTrigger);
+
+    // Cancel before POST submission closes password modal and returns focus
+    global.fetch = async () => json({}, 423);
+    global.document.activeElement = regenTrigger;
+    focusedElement = null;
+    const blocked = target.loadSetupData();
+    await tick();
+    assert.equal(focusedElement, passwordInput);
+    target.cancelPasswordConfirm();
+    await blocked;
+    assert.equal(focusedElement, regenTrigger);
+
+    // Lifecycle clearSecrets still works unconditionally during confirmingPassword
+    let aborted = false;
+    global.fetch = async (url, opts) => {
+        if (url === '/confirm') {
+            opts.signal.addEventListener('abort', () => { aborted = true; });
+            return new Promise(() => {});
+        }
+        return json({}, 423);
+    };
+    const blocked2 = target.loadSetupData();
+    await tick();
+    target.confirmPasswordInput = 'secret-pass';
+    void target.submitPasswordConfirm();
+    assert.equal(target.confirmingPassword, true);
+    target.clearSecrets();
+    await blocked2;
+    assert.equal(aborted, true);
+    assert.equal(target.showPasswordModal, false);
+    assert.equal(target.confirmPasswordInput, '');
+});
