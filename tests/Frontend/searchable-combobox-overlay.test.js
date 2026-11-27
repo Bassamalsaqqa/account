@@ -504,6 +504,45 @@ test('failed selectItem on cached empty-query browse clears cleanly on reopen wi
     comp.destroy();
 });
 
+test('nonempty search pagination failure refreshes browse on reopen and never reuses a cross-query cursor', async () => {
+    const calls = [];
+    const comp = makeComponent({ resetAfterSelect: true });
+    comp.$wire = {
+        searchSelector: async (_type, query, _selected, options) => {
+            calls.push({ query, cursor: options.cursor ?? null });
+            if (options.cursor === 'olive-next') throw new Error('Temporary outage');
+            return {
+                generation: options.generation,
+                items: [{ id: query === 'olive' ? 1 : 2, label: query || 'Browse' }],
+                has_more: true,
+                next_cursor: query === 'olive' ? 'olive-next' : 'browse-next',
+            };
+        },
+    };
+    comp.query = 'olive';
+    comp.openOverlay();
+    await comp.performSearch(undefined, 'olive', comp.inputVersion);
+    await comp.loadMore();
+    assert.equal(comp.loadMoreFailed, true);
+    comp.closeOverlay();
+    assert.equal(comp.query, '');
+    comp.handleFocus();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(comp.lastSearchedQuery, '');
+    assert.equal(comp.nextCursor, 'browse-next');
+    assert.equal(comp.loadMoreFailed, false);
+    comp.retrySearch();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(calls.some((call) => call.query === '' && call.cursor === 'olive-next'), false);
+    assert.deepEqual(comp.items.map((item) => item.id), [2]);
+
+    // Direct pagination callers also refresh instead of sending an obsolete cursor.
+    comp.query = 'other';
+    await comp.loadMore();
+    assert.deepEqual(calls.at(-1), { query: 'other', cursor: null });
+    comp.destroy();
+});
+
 test('non-reset selectItem and clear rollback preserve nextCursor without desynchronizing hasMore', async () => {
     const comp = makeComponent({
         id: 'party-cursor-cb',

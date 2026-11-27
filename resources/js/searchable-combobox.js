@@ -813,7 +813,8 @@ export function searchableCombobox(config) {
                 const displayingSelected = this.isSelected && this.query === this.selectedLabel;
                 const effectiveBrowseQuery = displayingSelected ? '' : this.query;
                 const needsSelectedBrowse = displayingSelected && (this.lastSearchedQuery !== '' || this.items.length <= 1);
-                if (!this.items.length || needsSelectedBrowse || (this.query && this.query !== this.selectedLabel)) {
+                const queryChangedSinceLastSearch = this.lastSearchedQuery !== undefined && this.lastSearchedQuery !== effectiveBrowseQuery;
+                if (!this.items.length || needsSelectedBrowse || queryChangedSinceLastSearch || (this.query && this.query !== this.selectedLabel)) {
                     this.performSearch(undefined, effectiveBrowseQuery, this.inputVersion);
                 }
             }
@@ -965,6 +966,11 @@ export function searchableCombobox(config) {
             const expectedInputVersion = this.inputVersion;
             const displayingSelected = this.isSelected && this.query === this.selectedLabel;
             const searchQuery = displayingSelected ? '' : this.query;
+
+            if (this.lastSearchedQuery !== undefined && this.lastSearchedQuery !== searchQuery) {
+                await this.performSearch(undefined, searchQuery, this.inputVersion);
+                return;
+            }
 
             this.loadingMore = true;
             this.failed = false;
