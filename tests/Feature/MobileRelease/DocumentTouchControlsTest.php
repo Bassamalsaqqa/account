@@ -7,8 +7,11 @@ namespace Tests\Feature\MobileRelease;
 use App\Livewire\Pages\Purchasing\PurchaseForm;
 use App\Livewire\Pages\Sales\InvoiceForm;
 use App\Livewire\Pages\Sales\QuotationForm;
+use App\Models\Product;
 use App\Models\ProductBarcode;
+use App\Models\ProductUnit;
 use App\Models\Unit;
+use App\Services\Inventory\ProductCatalogService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Feature\Phase5E\Phase5ETestCase;
@@ -115,6 +118,97 @@ class DocumentTouchControlsTest extends Phase5ETestCase
         $this->assertStringNotContainsString('optimisticQty', $html);
         $this->assertStringNotContainsString('<script>', $html);
         $this->assertStringContainsString('\\u0027\\u0022\\u003Cscript\\u003E', $html);
+    }
+
+    public function test_stepper_meta_updates_quantum_bounds_on_retained_row_across_product_and_unit_switches(): void
+    {
+        $kgUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'KG-META',
+            'name_ar' => 'كغم',
+            'name_en' => 'Kilogram',
+            'allows_fraction' => true,
+            'decimal_places' => 2,
+            'active' => true,
+        ]);
+        $pieceUnit = Unit::create([
+            'company_id' => $this->company->id,
+            'code' => 'PC-META',
+            'name_ar' => 'قطعة',
+            'name_en' => 'Piece',
+            'allows_fraction' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+
+        $productCatalog = app(ProductCatalogService::class);
+        $fractionalProduct = $productCatalog->createProduct($this->company, [
+            'sku' => 'META-FRAC-1',
+            'name_ar' => 'سكر وزن',
+            'name_en' => 'Bulk Sugar',
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'track_expiry' => false,
+            'base_unit_id' => $kgUnit->id,
+            'default_purchase_cost_base' => '4.000000',
+            'default_sale_price_base' => '6.000000',
+        ], $this->owner->id);
+
+        $altPieceUnit = $productCatalog->addOrUpdateAlternateUnit(
+            $fractionalProduct,
+            $pieceUnit->id,
+            '10.000000',
+            false,
+            false
+        );
+
+        $wholeOnlyProduct = $productCatalog->createProduct($this->company, [
+            'sku' => 'META-WHOLE-1',
+            'name_ar' => 'علبة كاملة',
+            'name_en' => 'Single Pack',
+            'product_type' => Product::TYPE_STOCK,
+            'track_stock' => true,
+            'track_expiry' => false,
+            'base_unit_id' => $pieceUnit->id,
+            'default_purchase_cost_base' => '8.000000',
+            'default_sale_price_base' => '12.000000',
+        ], $this->owner->id);
+
+        $fractionalBaseUnit = ProductUnit::where('product_id', $fractionalProduct->id)->where('is_base', true)->firstOrFail();
+
+        foreach ([InvoiceForm::class, QuotationForm::class, PurchaseForm::class] as $componentClass) {
+            $page = Livewire::test($componentClass);
+            $initialRowKey = $page->get('lines.0.row_key');
+
+            $page->call('selectProduct', 0, $fractionalProduct->id);
+            $fractionalHtml = $page->html();
+            $this->assertMatchesRegularExpression(
+                '/data-line-index="0"[^>]*data-row-key='.preg_quote('"'.$initialRowKey.'"', '/').'[^>]*data-quantum="0\.01"[^>]*data-min="0"[^>]*data-max=""/',
+                $fractionalHtml
+            );
+
+            $page->call('changeUnit', 0, $altPieceUnit->id);
+            $wholeHtml = $page->html();
+            $this->assertSame($initialRowKey, $page->get('lines.0.row_key'));
+            $this->assertMatchesRegularExpression(
+                '/data-line-index="0"[^>]*data-row-key='.preg_quote('"'.$initialRowKey.'"', '/').'[^>]*data-quantum="1"[^>]*data-min="0"[^>]*data-max=""/',
+                $wholeHtml
+            );
+
+            $page->call('changeUnit', 0, $fractionalBaseUnit->id);
+            $this->assertSame($initialRowKey, $page->get('lines.0.row_key'));
+            $this->assertMatchesRegularExpression(
+                '/data-line-index="0"[^>]*data-row-key='.preg_quote('"'.$initialRowKey.'"', '/').'[^>]*data-quantum="0\.01"[^>]*data-min="0"[^>]*data-max=""/',
+                $page->html()
+            );
+
+            $page->call('selectProduct', 0, $wholeOnlyProduct->id);
+            $this->assertSame($initialRowKey, $page->get('lines.0.row_key'));
+            $this->assertMatchesRegularExpression(
+                '/data-line-index="0"[^>]*data-row-key='.preg_quote('"'.$initialRowKey.'"', '/').'[^>]*data-quantum="1"[^>]*data-min="0"[^>]*data-max=""/',
+                $page->html()
+            );
+        }
     }
 
     /** @return array<string,int> */

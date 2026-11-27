@@ -460,5 +460,91 @@ test('touchQuantityStepper registers on window and Alpine.data safely before or 
 
     const template = readFileSync(new URL('../../resources/views/components/touch-quantity-stepper.blade.php', import.meta.url), 'utf8');
     assert.match(template, /x-data="touchQuantityStepper\(\$wire,/);
+    assert.match(template, /data-quantum="\{\{\s*\$quantum\s*\}\}"/);
+    assert.match(template, /data-min="\{\{\s*\$minVal\s*\}\}"/);
+    assert.match(template, /data-max="\{\{\s*\$maxVal \?\? ''\s*\}\}"/);
     assert.doesNotMatch(template, /optimisticQty|confirmedQty|batchEpoch/);
+});
+
+test('touchQuantityStepper reads dynamic quantum, min, and max from stepperMeta across unit and product switches on a retained row', async () => {
+    let activeUnitId = 10;
+    const wire = {
+        $id: 'wire-unit-switch',
+        lines: [{row_key: 'row-1', product_id: 7, product_unit_id: 10, item_description: 'Sugar', quantity: '1'}],
+        $get(path) {
+            if (path === 'lines') return this.lines;
+            return undefined;
+        },
+        async batchStepQuantity(index, expectedQty, identity, directions) {
+            assert.equal(identity.product_unit_id, activeUnitId);
+            const meta = controller.$refs.stepperMeta.dataset;
+            let next = expectedQty;
+            for (const d of directions) {
+                next = stepExactString(next, d, meta.quantum, meta.min, meta.max === '' ? null : meta.max);
+            }
+            this.lines[index].quantity = next;
+            return { ok: true, quantity: next, documentTotalsValid: false };
+        },
+    };
+
+    const controller = touchQuantityStepper(wire, {
+        index: 0,
+        rowKey: 'row-1',
+        quantum: '1',
+        min: '0',
+        max: '2',
+        field: 'quantity',
+        debounceMs: 5,
+    });
+    const stepperMeta = {
+        dataset: {
+            lineIndex: '0',
+            rowKey: 'row-1',
+            quantum: '1',
+            min: '0',
+            max: '2',
+        },
+    };
+    const qtyInput = { value: '1' };
+    controller.$refs = { qtyInput, stepperMeta };
+
+    await controller.tap('up');
+    assert.equal(qtyInput.value, '2');
+
+    // Switch retained row to a fractional unit with min 0.25, step 0.25, and no max bound (data-max="")
+    activeUnitId = 20;
+    wire.lines[0].product_unit_id = 20;
+    wire.lines[0].quantity = '1';
+    qtyInput.value = '1';
+    stepperMeta.dataset.quantum = '0.25';
+    stepperMeta.dataset.min = '0.25';
+    stepperMeta.dataset.max = '';
+    controller.onOperationState({ id: wire.$id, busy: false, blocked: false });
+
+    await controller.tap('up');
+    assert.equal(qtyInput.value, '1.25');
+    await controller.tap('up');
+    await controller.tap('up');
+    await controller.tap('up');
+    assert.equal(qtyInput.value, '2.00');
+    await controller.tap('up');
+    assert.equal(qtyInput.value, '2.25');
+
+    // Switch retained row again to a capped product with quantum 0.5, min 0.5, max 1.5
+    activeUnitId = 30;
+    wire.lines[0].product_id = 8;
+    wire.lines[0].product_unit_id = 30;
+    wire.lines[0].quantity = '1';
+    qtyInput.value = '1';
+    stepperMeta.dataset.quantum = '0.5';
+    stepperMeta.dataset.min = '0.5';
+    stepperMeta.dataset.max = '1.5';
+
+    await controller.tap('up');
+    await controller.tap('up');
+    assert.equal(qtyInput.value, '1.5');
+    await controller.tap('down');
+    await controller.tap('down');
+    await controller.tap('down');
+    assert.equal(qtyInput.value, '0.5');
 });

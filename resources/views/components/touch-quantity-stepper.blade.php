@@ -28,7 +28,13 @@
      class="inline-flex flex-col items-start gap-1 touch-manipulation"
      x-data="touchQuantityStepper($wire,{index:@js($index),rowKey:@js($rowKey),quantum:@js($quantum),min:@js($minVal),max:@js($maxVal),field:@js($field)})"
      @document-operation-state.window="onOperationState($event.detail)">
-    <span hidden x-ref="stepperMeta" data-line-index="{{ $index }}" data-row-key="{{ $rowKey ?? '' }}"></span>
+    <span hidden
+          x-ref="stepperMeta"
+          data-line-index="{{ $index }}"
+          data-row-key="{{ $rowKey ?? '' }}"
+          data-quantum="{{ $quantum }}"
+          data-min="{{ $minVal }}"
+          data-max="{{ $maxVal ?? '' }}"></span>
     <div class="inline-flex items-stretch border border-border rounded-control bg-surface shadow-xs overflow-hidden">
         <!-- Decrement Button (>=44px touch target, clear contrast) -->
         <button type="button"

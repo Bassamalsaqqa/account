@@ -242,18 +242,48 @@ export async function resyncDocumentQueue(wire, refreshOnly = false) {
     queues.delete(keyFor(wire));
     announce(state);
 }
+function readStepperMeta(refs, fallback) {
+    const dataset = refs?.stepperMeta?.dataset;
+    const hasMeta = dataset !== undefined && dataset !== null;
+    const quantum = hasMeta && dataset.quantum !== undefined && dataset.quantum !== ''
+        ? dataset.quantum
+        : fallback.quantum;
+    const min = hasMeta && dataset.min !== undefined && dataset.min !== ''
+        ? dataset.min
+        : fallback.min;
+    const max = hasMeta && Object.prototype.hasOwnProperty.call(dataset, 'max')
+        ? (dataset.max !== '' ? dataset.max : null)
+        : fallback.max;
+    const lineIndex = hasMeta && dataset.lineIndex !== undefined && dataset.lineIndex !== '' && Number.isInteger(Number(dataset.lineIndex))
+        ? Number(dataset.lineIndex)
+        : fallback.index;
+    const rowKey = hasMeta && Object.prototype.hasOwnProperty.call(dataset, 'rowKey')
+        ? (dataset.rowKey || null)
+        : (fallback.rowKey || null);
+
+    return {
+        quantum,
+        min,
+        max,
+        lineIndex,
+        rowKey,
+        signature: `${rowKey ?? ''}|${quantum}|${min}|${max ?? ''}`,
+    };
+}
 export function touchQuantityStepper(wire, config = {}) {
-    const fallbackIndex = Number.isInteger(config.index) ? config.index : Number(config.index ?? 0);
-    const configuredRowKey = config.rowKey ?? null;
-    const quantum = config.quantum ?? '1';
-    const min = config.min ?? '0';
-    const max = config.max ?? null;
+    const fallback = {
+        index: Number.isInteger(config.index) ? config.index : Number(config.index ?? 0),
+        rowKey: config.rowKey ?? null,
+        quantum: config.quantum ?? '1',
+        min: config.min ?? '0',
+        max: config.max ?? null,
+    };
     const field = config.field || 'quantity';
     const baseOptions = { field };
     if (config.debounceMs !== undefined) baseOptions.debounceMs = config.debounceMs;
     if (config.timeoutMs !== undefined) baseOptions.timeoutMs = config.timeoutMs;
-    if (configuredRowKey !== null && configuredRowKey !== undefined && configuredRowKey !== '') {
-        baseOptions.rowKey = configuredRowKey;
+    if (fallback.rowKey !== null && fallback.rowKey !== undefined && fallback.rowKey !== '') {
+        baseOptions.rowKey = fallback.rowKey;
     }
 
     return {
@@ -263,19 +293,29 @@ export function touchQuantityStepper(wire, config = {}) {
         optimisticQty: null,
         confirmedQty: null,
         batchEpoch: 0,
+        lastMetaSignature: `${fallback.rowKey ?? ''}|${fallback.quantum}|${fallback.min}|${fallback.max ?? ''}`,
+        syncMeta() {
+            const meta = readStepperMeta(this.$refs, fallback);
+            if (meta.signature !== this.lastMetaSignature) {
+                this.lastMetaSignature = meta.signature;
+                if (this.pending === 0) {
+                    this.optimisticQty = null;
+                    this.confirmedQty = null;
+                }
+            }
+
+            return meta;
+        },
         tap(direction) {
             if (wire?.$el?.dataset?.rowMutationBusy === 'true') return;
             const input = this.$refs?.qtyInput;
-            const liveDomIndex = Number.isInteger(Number(this.$refs?.stepperMeta?.dataset?.lineIndex))
-                ? Number(this.$refs.stepperMeta.dataset.lineIndex)
-                : fallbackIndex;
-            const activeRowKey = this.$refs?.stepperMeta?.dataset?.rowKey || configuredRowKey;
-            const targetIndex = resolveLiveLineIndex(wire, liveDomIndex, activeRowKey || null);
+            const meta = this.syncMeta();
+            const targetIndex = resolveLiveLineIndex(wire, meta.lineIndex, meta.rowKey || null);
             if (!Number.isSafeInteger(targetIndex) || targetIndex < 0) {
                 this.failed = true;
                 return Promise.reject(error('Line changed; review pending quantity changes'));
             }
-            const stepOptions = activeRowKey ? { ...baseOptions, rowKey: activeRowKey } : baseOptions;
+            const stepOptions = meta.rowKey ? { ...baseOptions, rowKey: meta.rowKey } : baseOptions;
             this.batchEpoch = (this.batchEpoch || 0) + 1;
             const currentEpoch = this.batchEpoch;
             if (!this.optimisticQty) {
@@ -286,9 +326,9 @@ export function touchQuantityStepper(wire, config = {}) {
             this.optimisticQty = stepExactString(
                 this.optimisticQty,
                 direction,
-                quantum,
-                min,
-                max
+                meta.quantum,
+                meta.min,
+                meta.max
             );
             if (input) {
                 input.value = this.optimisticQty;
@@ -330,6 +370,7 @@ export function touchQuantityStepper(wire, config = {}) {
         },
         onOperationState(detail) {
             if (!detail || detail.id == null || detail.id !== wire?.$id) return;
+            this.syncMeta();
             if (detail.blocked) this.failed = true;
             else if (!detail.busy) this.failed = false;
         },
