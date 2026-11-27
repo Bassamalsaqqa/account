@@ -22,7 +22,7 @@ const same = (first, second) => JSON.stringify(first) === JSON.stringify(second)
 const error = message => new Error(message);
 function stateFor(wire) {
     const key = keyFor(wire);
-    if (!queues.has(key)) queues.set(key, {wire, jobs: [], active: null, open: null, blocked: false, failed: [], confirmed: new Map()});
+    if (!queues.has(key)) queues.set(key, {wire, jobs: [], active: null, open: null, blocked: false, failed: [], recoveryOwner: null, recoveryPromise: null, confirmed: new Map()});
     return queues.get(key);
 }
 function failedTargets(state) {
@@ -35,7 +35,7 @@ function failedTargets(state) {
         }));
 }
 function announce(state) {
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('document-operation-state', {detail: {id: state.wire.$id, busy: isDocumentBusy(state.wire), blocked: state.blocked, failedTargets: failedTargets(state)}}));
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('document-operation-state', {detail: {id: state.wire.$id, busy: isDocumentBusy(state.wire), blocked: state.blocked, recovering: Boolean(state.recoveryPromise), failedTargets: failedTargets(state)}}));
 }
 export function isDocumentBusy(wire) {
     const state = queues.get(keyFor(wire));
@@ -243,13 +243,22 @@ export async function resyncDocumentQueue(wire, refreshOnly = false) {
     const state = queues.get(keyFor(wire));
     if (!state?.blocked) return;
     if (state.active || state.jobs.length) throw error('Wait for the current request to finish');
-    if (refreshOnly) await wire.$refresh();
-    else await wire.recalculate();
-    state.failed = [];
-    state.confirmed.clear();
-    state.blocked = false;
-    queues.delete(keyFor(wire));
+    if (state.recoveryPromise) return state.recoveryPromise;
+    // Assign before invoking Livewire so every controller shares the same admission.
+    state.recoveryPromise = Promise.resolve().then(async () => {
+        if (refreshOnly) await wire.$refresh();
+        else await wire.recalculate();
+        state.failed = [];
+        state.confirmed.clear();
+        state.blocked = false;
+        state.recoveryOwner = null;
+        queues.delete(keyFor(wire));
+    }).finally(() => {
+        state.recoveryPromise = null;
+        announce(state);
+    });
     announce(state);
+    return state.recoveryPromise;
 }
 function readStepperMeta(refs, fallback) {
     const dataset = refs?.stepperMeta?.dataset;
@@ -318,7 +327,14 @@ export function touchQuantityStepper(wire, config = {}) {
             return meta;
         },
         shouldShowRecoveryCard() {
-            return Boolean(this.failed && (this.ownFailed || this.primaryRecovery));
+            if (!this.failed) return false;
+            const state = stateFor(wire);
+            const meta = this.syncMeta();
+            const key = target => JSON.stringify([target.rowKey || Number(target.index), target.field || 'quantity']);
+            const first = failedTargets(state)[0];
+            const ownKey = key({rowKey: meta.rowKey, index: meta.lineIndex, field});
+            state.recoveryOwner ??= first ? key(first) : ownKey;
+            return state.recoveryOwner === ownKey;
         },
         tap(direction) {
             if (this.failed || this.recovering) return Promise.resolve();
@@ -390,11 +406,12 @@ export function touchQuantityStepper(wire, config = {}) {
         onOperationState(detail) {
             if (!detail || detail.id == null || detail.id !== wire?.$id) return;
             const meta = this.syncMeta();
+            this.recovering = Boolean(detail.recovering);
             if (detail.blocked) {
                 this.failed = true;
                 const targets = Array.isArray(detail.failedTargets) ? detail.failedTargets : [];
                 const matched = targets.some(target => {
-                    if ((target.field || 'quantity') !== fallback.field) return false;
+                    if ((target.field || 'quantity') !== field) return false;
                     if (meta.rowKey && target.rowKey) return target.rowKey === meta.rowKey;
                     return Number(target.index) === Number(meta.lineIndex);
                 });

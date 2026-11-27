@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue, stepExactString, touchQuantityStepper} from '../../resources/js/document-operations.js';
+import {flushQuantityBatch, enqueueDocumentOperation, enqueueQuantityStep, isDocumentBusy, isDocumentBlocked, resyncDocumentQueue, stepExactString, touchQuantityStepper} from '../../resources/js/document-operations.js';
 import {barcodeEntry} from '../../resources/js/barcode-entry.js';
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -597,5 +597,44 @@ test('touchQuantityStepper feedback uses permanent reserved slot and shows recov
     } finally {
         if (prevWindow === undefined) delete globalThis.window;
         else globalThis.window = prevWindow;
+    }
+});
+
+test('two quarantined rows elect one recovery card and share recovery admission', async () => {
+    const previous = globalThis.window;
+    const controllers = [];
+    globalThis.window = {dispatchEvent: event => controllers.forEach(row => row.onOperationState(event.detail))};
+    let rejectStep;
+    let finishRecovery;
+    let recoveryCalls = 0;
+    const wire = {
+        $id: 'two-row-shared-recovery',
+        lines: [{row_key: 'a', return_quantity: '1'}, {row_key: 'b', return_quantity: '2'}],
+        batchStepQuantity: () => new Promise((resolve, reject) => { rejectStep = reject; }),
+        recalculate: () => { recoveryCalls++; return new Promise(resolve => { finishRecovery = resolve; }); },
+    };
+    try {
+        for (const [index, rowKey] of ['a', 'b'].entries()) {
+            controllers.push(createStepperController(wire, {index, rowKey, field: 'return_quantity', debounceMs: 0}, String(index + 1)).controller);
+        }
+        const first = controllers[0].tap('up');
+        flushQuantityBatch(wire);
+        const second = controllers[1].tap('up');
+        rejectStep(Error('offline'));
+        await Promise.all([first, second]);
+        assert.deepEqual(controllers.map(row => row.shouldShowRecoveryCard()), [true, false]);
+        const recoveryA = controllers[0].resync();
+        const recoveryB = controllers[1].resync();
+        await Promise.resolve();
+        assert.equal(recoveryCalls, 1);
+        assert.deepEqual(controllers.map(row => row.recovering), [true, true]);
+        finishRecovery();
+        await Promise.all([recoveryA, recoveryB]);
+        assert.equal(isDocumentBlocked(wire), false);
+        assert.deepEqual(controllers.map(row => row.shouldShowRecoveryCard()), [false, false]);
+        assert.deepEqual(controllers.map(row => row.recovering), [false, false]);
+    } finally {
+        if (previous === undefined) delete globalThis.window;
+        else globalThis.window = previous;
     }
 });
