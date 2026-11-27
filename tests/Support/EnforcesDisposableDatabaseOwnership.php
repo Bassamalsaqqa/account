@@ -4,22 +4,36 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Support\Tenancy\CompanyContext;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
+use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Enforces explicit disposable database ownership for non-transactional test lifecycles.
  *
  * Guarantees that tests without RefreshDatabase outer transactions only execute against
  * an explicitly owned disposable MariaDB database on 127.0.0.1:3342 matching
- * accounting_p8_tmp_* with valid cryptographic proof nonce.
+ * accounting_p8_tmp_* with valid cryptographic proof nonce, and isolate committed
+ * fixtures into a dedicated owned schema without mutating the batch primary schema.
  */
 trait EnforcesDisposableDatabaseOwnership
 {
     protected bool $disposableDatabaseOwnershipAdmitted = false;
 
     protected ?string $admittedDatabaseName = null;
+
+    protected ?DisposableMariaDbSchema $isolatedFixtureSchema = null;
+
+    /** @var array<string, int> */
+    protected array $primaryTableCounts = [];
+
+    /** @var list<string> */
+    protected array $primaryTableNames = [];
+
+    /** @var list<string> */
+    protected array $primaryMigrations = [];
 
     /**
      * Explicitly assert that the active database connection is an owned, disposable MariaDB
@@ -170,5 +184,135 @@ trait EnforcesDisposableDatabaseOwnership
         }
 
         return $actual;
+    }
+
+    /**
+     * Assert primary disposable schema ownership and snapshot baseline tables, migrations,
+     * and row counts so tearDown can prove zero committed state leaked onto primary.
+     */
+    protected function capturePrimaryDisposableBaseline(): string
+    {
+        $this->assertOwnedDisposableDatabase();
+        $primary = (string) $this->admittedDatabaseName;
+        $connection = DB::connection();
+
+        $tables = array_map(
+            static fn (object $row): string => (string) array_values((array) $row)[0],
+            $connection->select('SHOW TABLES')
+        );
+        sort($tables, SORT_STRING);
+
+        $this->primaryTableNames = $tables;
+        $this->primaryMigrations = in_array('migrations', $tables, true)
+            ? $connection->table('migrations')->orderBy('migration')->pluck('migration')->map('strval')->all()
+            : [];
+
+        $counts = [];
+        foreach ($tables as $table) {
+            $counts[$table] = (int) $connection->table($table)->count();
+        }
+        $this->primaryTableCounts = $counts;
+
+        return $primary;
+    }
+
+    /**
+     * Create, migrate, and switch to an isolated per-test disposable schema so non-transactional
+     * DDL and multi-process commits never mutate the shared batch primary schema.
+     */
+    protected function enterIsolatedDisposableSchema(): DisposableMariaDbSchema
+    {
+        $primary = $this->capturePrimaryDisposableBaseline();
+        $schema = DisposableMariaDbSchema::createFromSource($primary);
+        $schema->switchLaravelConnection();
+        $this->isolatedFixtureSchema = $schema;
+
+        if (DB::transactionLevel() !== 0) {
+            throw new RuntimeException('Isolated disposable schema started with non-zero transaction level.');
+        }
+
+        return $schema;
+    }
+
+    protected function requireIsolatedDisposableSchema(): DisposableMariaDbSchema
+    {
+        if ($this->isolatedFixtureSchema === null || ! $this->isolatedFixtureSchema->isOwned()) {
+            throw new RuntimeException('Isolated disposable schema is not active or not owned.');
+        }
+
+        return $this->isolatedFixtureSchema;
+    }
+
+    /**
+     * Clean up the isolated per-test disposable schema, restore and revalidate primary ownership,
+     * and verify zero tables, migrations, or committed rows leaked onto the batch primary schema.
+     */
+    protected function exitAndVerifyIsolatedDisposableSchema(?callable $beforeRestore = null): void
+    {
+        if (! $this->isDisposableDatabaseOwnershipAdmitted()) {
+            $this->isolatedFixtureSchema = null;
+            $this->primaryTableCounts = [];
+            $this->primaryTableNames = [];
+            $this->primaryMigrations = [];
+
+            return;
+        }
+
+        try {
+            if ($beforeRestore !== null) {
+                $beforeRestore();
+            }
+
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+
+            app(CompanyContext::class)->clear();
+            auth()->forgetUser();
+            setPermissionsTeamId(null);
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+            if ($this->isolatedFixtureSchema !== null) {
+                $this->isolatedFixtureSchema->restoreLaravelConnection();
+                $this->isolatedFixtureSchema->drop();
+                $this->isolatedFixtureSchema = null;
+            }
+
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack(0);
+            }
+
+            $this->revalidateOwnedDisposableDatabase();
+            $this->assertSame(0, DB::transactionLevel(), 'Primary disposable schema must have transaction level 0 after tearDown.');
+
+            $connection = DB::connection();
+            $actualTables = array_map(
+                static fn (object $row): string => (string) array_values((array) $row)[0],
+                $connection->select('SHOW TABLES')
+            );
+            sort($actualTables, SORT_STRING);
+            $this->assertSame($this->primaryTableNames, $actualTables, 'Primary disposable schema tables drifted during isolated test execution.');
+
+            if (in_array('migrations', $actualTables, true)) {
+                $actualMigrations = $connection->table('migrations')->orderBy('migration')->pluck('migration')->map('strval')->all();
+                $this->assertSame($this->primaryMigrations, $actualMigrations, 'Primary disposable schema migrations drifted during isolated test execution.');
+            }
+
+            foreach ($this->primaryTableCounts as $table => $expectedCount) {
+                $this->assertSame(
+                    $expectedCount,
+                    (int) $connection->table($table)->count(),
+                    "Committed qualification fixtures must not leak into primary test schema table [{$table}]."
+                );
+            }
+        } finally {
+            $this->isolatedFixtureSchema = null;
+            $this->primaryTableCounts = [];
+            $this->primaryTableNames = [];
+            $this->primaryMigrations = [];
+            $this->disposableDatabaseOwnershipAdmitted = false;
+            $this->admittedDatabaseName = null;
+            auth()->forgetUser();
+        }
     }
 }

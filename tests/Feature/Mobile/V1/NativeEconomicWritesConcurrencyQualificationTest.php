@@ -80,6 +80,22 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
 
     private ExpenseCategory $expenseCategory;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->enterIsolatedDisposableSchema();
+        $this->setupFixture();
+    }
+
+    protected function tearDown(): void
+    {
+        try {
+            $this->exitAndVerifyIsolatedDisposableSchema();
+        } finally {
+            parent::tearDown();
+        }
+    }
+
     private function setupFixture(): void
     {
         app(CompanyContext::class)->clear();
@@ -301,14 +317,10 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
 
     public function test_customer_payment_concurrent_identical_and_conflict_races(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             // 1. Same key identical requests converge: 201 Created + 200 OK replay
             $key = 'race-cust-'.(string) Str::uuid();
@@ -446,24 +458,24 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
 
             $this->assertAllSixReconciliationsPass();
         } finally {
-            if (isset($directory) && is_dir($directory)) {
+            foreach ([$workerA ?? null, $workerB ?? null, $workerAConf ?? null, $workerBConf ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+            if (is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 
     public function test_vendor_payment_concurrent_identical_and_conflict_races(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             $key = 'race-supp-'.(string) Str::uuid();
             $uri = "/api/mobile/v1/companies/{$this->company->public_id}/suppliers/{$this->vendor->public_id}/payments";
@@ -571,24 +583,24 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
             $this->assertSame(2, VendorPayment::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertAllSixReconciliationsPass();
         } finally {
-            if (isset($directory) && is_dir($directory)) {
+            foreach ([$workerA ?? null, $workerB ?? null, $workerAConf ?? null, $workerBConf ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+            if (is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 
     public function test_expense_concurrent_identical_and_conflict_races(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             $key = 'race-exp-'.(string) Str::uuid();
             $uri = "/api/mobile/v1/companies/{$this->company->public_id}/expenses";
@@ -700,24 +712,24 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
             $this->assertSame(2, Expense::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertAllSixReconciliationsPass();
         } finally {
-            if (isset($directory) && is_dir($directory)) {
+            foreach ([$workerA ?? null, $workerB ?? null, $workerAConf ?? null, $workerBConf ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+            if (is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 
     public function test_inventory_adjust_concurrent_identical_and_conflict_races(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             $key = 'race-inv-'.(string) Str::uuid();
             $uri = "/api/mobile/v1/companies/{$this->company->public_id}/inventory/adjustments";
@@ -833,23 +845,24 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
             $this->assertSame(2, StockMovement::withoutGlobalScopes()->where('company_id', $this->company->id)->count());
             $this->assertAllSixReconciliationsPass();
         } finally {
-            if (isset($directory) && is_dir($directory)) {
+            foreach ([$workerA ?? null, $workerB ?? null, $workerAConf ?? null, $workerBConf ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+            if (is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 
     public function test_concurrent_purchase_return_replays_original_receipt_and_commits_once(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
         $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
         mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupFixture();
             $this->staff->givePermissionTo(['purchasing.return.manage', 'purchasing.return.post']);
             $bill = app(RecordStagedPurchaseBillAction::class)->execute(
                 company: $this->company,
@@ -898,30 +911,27 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
             $this->assertSame(1, DB::table('native_command_receipts')->where('command_type', 'purchase_return')->count());
             $this->assertAllSixReconciliationsPass();
         } finally {
-            if (isset($holder)) {
+            if (isset($holder) && $holder->isRunning()) {
                 $holder->stop();
             }
-            if (isset($contender)) {
+            if (isset($contender) && $contender->isRunning()) {
                 $contender->stop();
             }
-            foreach (glob($directory.'/*') as $file) {
-                unlink($file);
+            if (is_dir($directory)) {
+                foreach (glob($directory.'/*') ?: [] as $file) {
+                    @unlink($file);
+                }
+                @rmdir($directory);
             }
-            rmdir($directory);
-            $schema->drop();
         }
     }
 
     public function test_grn_concurrent_distinct_keys_total_requested_exceeds_remaining_limits_and_bounds(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             // 1. Create a staged purchase bill for 100 units canonically
             $billKey = 'grn-race-bill-'.(string) Str::uuid();
@@ -1090,11 +1100,15 @@ final class NativeEconomicWritesConcurrencyQualificationTest extends TestCase
 
             $this->assertAllSixReconciliationsPass();
         } finally {
-            if (isset($directory) && is_dir($directory)) {
+            foreach ([$workerA ?? null, $workerB ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+            if (is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 }

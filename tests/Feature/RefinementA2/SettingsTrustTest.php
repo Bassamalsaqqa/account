@@ -167,8 +167,10 @@ class SettingsTrustTest extends TestCase
     public function test_owner_export_preparation_requires_recent_password_confirmation(): void
     {
         Livewire::actingAs($this->owner)->test(SettingsIndex::class)
-            ->call('prepareCompanyDataDownload')->assertRedirect(route('password.confirm'));
-        $this->assertSame(route('settings.index'), session('url.intended'));
+            ->call('prepareCompanyDataDownload')
+            ->assertRedirect(route('password.confirm'))
+            ->assertSet('errorMessage', __('settings.password_confirmation_required'));
+        $this->assertSame(route('settings.index', ['section' => 'data']), session('url.intended'));
     }
 
     public function test_restricted_settings_has_no_privileged_navigation_and_cannot_prepare_owner_export(): void

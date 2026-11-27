@@ -109,7 +109,7 @@ final class OnlineCashSaleQualificationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->assertOwnedDisposableDatabase();
+        $this->enterIsolatedDisposableSchema();
 
         config([
             'mobile.enabled' => true,
@@ -129,43 +129,11 @@ final class OnlineCashSaleQualificationTest extends TestCase
 
     protected function tearDown(): void
     {
-        if (! $this->isDisposableDatabaseOwnershipAdmitted()) {
-            parent::tearDown();
-
-            return;
-        }
-
         try {
-            $this->revalidateOwnedDisposableDatabase();
-
-            if (DB::transactionLevel() > 0) {
-                DB::rollBack(0);
-            }
-
-            CompanyScope::executeWithoutScope(function () {
-                if (isset($this->company)) {
-                    $companyId = $this->company->id;
-                    DB::table('mobile_event_receipts')->where('company_id', $companyId)->delete();
-                    DB::table('mobile_offline_sale_leases')->where('company_id', $companyId)->delete();
-                    DB::table('customer_payment_allocations')->where('company_id', $companyId)->delete();
-                    DB::table('customer_payments')->where('company_id', $companyId)->delete();
-                    DB::table('sales_invoice_lot_allocations')->where('company_id', $companyId)->delete();
-                    DB::table('sales_invoice_lines')->where('company_id', $companyId)->delete();
-                    DB::table('sales_invoices')->where('company_id', $companyId)->delete();
-                    DB::table('inventory_lot_balances')->where('company_id', $companyId)->delete();
-                    DB::table('inventory_balances')->where('company_id', $companyId)->delete();
-                    DB::table('stock_movements')->where('company_id', $companyId)->delete();
-                    DB::table('inventory_lots')->where('company_id', $companyId)->delete();
-                    DB::table('posting_lines')->where('company_id', $companyId)->delete();
-                    DB::table('posting_batches')->where('company_id', $companyId)->delete();
-                }
+            $this->exitAndVerifyIsolatedDisposableSchema(static function (): void {
+                ExecuteImmediateOnlineCashSaleAction::$simulatedFaultStage = null;
             });
-
-            app(CompanyContext::class)->clear();
         } finally {
-            $this->disposableDatabaseOwnershipAdmitted = false;
-            $this->admittedDatabaseName = null;
-            auth()->forgetUser();
             parent::tearDown();
         }
     }
@@ -1675,16 +1643,17 @@ final class OnlineCashSaleQualificationTest extends TestCase
      */
     private function runOrderedOfflineRace(array $holder, array $contender, string $table): array
     {
+        $schema = $this->requireIsolatedDisposableSchema();
         $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
         mkdir($directory, 0700);
         try {
-            $first = $this->startWorkerProcess(null, $directory, 'worker-a', $holder + [
+            $first = $this->startWorkerProcess($schema, $directory, 'worker-a', $holder + [
                 'hold_lock_table' => $table, 'wait_for_file' => 'release-holder',
             ]);
             touch($directory.'/go-worker-a');
             StrictBarrier::await(fn (): bool => is_file($directory.'/worker-a.locked'), fn (): bool => $first->isRunning());
 
-            $second = $this->startWorkerProcess(null, $directory, 'worker-b', $contender);
+            $second = $this->startWorkerProcess($schema, $directory, 'worker-b', $contender);
             touch($directory.'/go-worker-b');
             $contenderId = trim((string) file_get_contents($directory.'/worker-b.connection'));
             $database = DB::connection()->getDatabaseName();
@@ -1716,8 +1685,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
                     $worker->stop();
                 }
             }
-            array_map('unlink', glob($directory.'/*') ?: []);
-            rmdir($directory);
+            if (is_dir($directory)) {
+                array_map('unlink', glob($directory.'/*') ?: []);
+                rmdir($directory);
+            }
         }
     }
 
@@ -1730,14 +1701,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
     #[TestWith([true, true])]
     public function test_two_process_concurrent_cash_sale_converges_to_single_sale(bool $offline, bool $lastLeaseSlot = false): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupQualificationFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             $eventId = (string) Str::uuid();
             $payload = $this->validSalePayload($eventId);
@@ -1872,7 +1839,6 @@ final class OnlineCashSaleQualificationTest extends TestCase
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 
@@ -3246,14 +3212,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
      */
     public function test_two_process_concurrent_unpaid_sale_converges_to_single_sale(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupQualificationFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             $eventId = (string) Str::uuid();
             $payload = $this->validSalePayload(
@@ -3359,11 +3321,15 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
             $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
         } finally {
+            foreach ([$workerA ?? null, $workerB ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
             if (isset($directory) && is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 
@@ -3373,14 +3339,10 @@ final class OnlineCashSaleQualificationTest extends TestCase
      */
     public function test_two_process_concurrent_partial_sale_converges_to_single_sale(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
+        $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
+        mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupQualificationFixture();
-
-            $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
-            mkdir($directory, 0700);
 
             $eventId = (string) Str::uuid();
             $partialAmount = '20.000000';
@@ -3486,11 +3448,15 @@ final class OnlineCashSaleQualificationTest extends TestCase
             $this->assertTrue(app(MoneyReconciliationService::class)->reconcile($this->company)->isHealthy, 'Money reconciliation must pass');
             $this->assertTrue(app(Phase7ReconciliationService::class)->reconcile($this->company)->isHealthy, 'Phase7 reconciliation must pass');
         } finally {
+            foreach ([$workerA ?? null, $workerB ?? null] as $worker) {
+                if ($worker instanceof Process && $worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
             if (isset($directory) && is_dir($directory)) {
                 @array_map('unlink', glob($directory.'/*') ?: []);
                 @rmdir($directory);
             }
-            $schema->drop();
         }
     }
 

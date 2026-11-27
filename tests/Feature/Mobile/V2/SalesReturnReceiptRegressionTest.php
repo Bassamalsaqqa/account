@@ -97,7 +97,7 @@ final class SalesReturnReceiptRegressionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->assertOwnedDisposableDatabase();
+        $this->enterIsolatedDisposableSchema();
 
         config([
             'mobile.enabled' => true,
@@ -117,9 +117,14 @@ final class SalesReturnReceiptRegressionTest extends TestCase
 
     protected function tearDown(): void
     {
-        app(CompanyContext::class)->clear();
-        auth()->forgetUser();
-        parent::tearDown();
+        try {
+            $this->exitAndVerifyIsolatedDisposableSchema(static function (): void {
+                NativeCommandReceiptManager::$failBeforeReceiptInsertForTesting = false;
+                Carbon::setTestNow();
+            });
+        } finally {
+            parent::tearDown();
+        }
     }
 
     private function setupQualificationFixture(): void
@@ -463,13 +468,10 @@ final class SalesReturnReceiptRegressionTest extends TestCase
 
     public function test_concurrent_sales_return_replays_original_receipt_and_commits_once(): void
     {
-        $schema = DisposableMariaDbSchema::create();
+        $schema = $this->requireIsolatedDisposableSchema();
         $directory = sys_get_temp_dir().'/mobile_receipt_race_'.bin2hex(random_bytes(8));
         mkdir($directory, 0700);
         try {
-            $schema->migrate();
-            $schema->switchLaravelConnection();
-            $this->setupQualificationFixture();
             $payload = $this->returnPayload();
             $input = [
                 'mode' => 'http',
@@ -507,17 +509,18 @@ final class SalesReturnReceiptRegressionTest extends TestCase
             $this->assertSame(1, DB::table('posting_batches')->where('company_id', $this->company->id)->where('source_type', 'sales_return')->count());
             $this->assertAllSixReconciliationsPass();
         } finally {
-            if (isset($holder)) {
+            if (isset($holder) && $holder->isRunning()) {
                 $holder->stop();
             }
-            if (isset($contender)) {
+            if (isset($contender) && $contender->isRunning()) {
                 $contender->stop();
             }
-            foreach (glob($directory.'/*') as $file) {
-                unlink($file);
+            if (is_dir($directory)) {
+                foreach (glob($directory.'/*') ?: [] as $file) {
+                    @unlink($file);
+                }
+                @rmdir($directory);
             }
-            rmdir($directory);
-            $schema->drop();
         }
     }
 
