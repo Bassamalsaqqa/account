@@ -28,8 +28,9 @@ php artisan app:create-user --name="Admin User" --email="admin@example.com" --lo
 php artisan app:bootstrap-company --email="admin@example.com" --name-ar="شركة التجارة النموذجية" --name-en="Sample Trading Co" --base-currency=ILS --timezone=Asia/Hebron
 ```
 
-- **Local dev server:** `php artisan serve --port=8000` (optional `npm run dev` or `composer dev`).
-- **Platform operator (new isolated local dev ONLY):** `php artisan platform:operator admin@example.com` (grants full cross-tenant control-plane authority; never run on staging/production without Owner authorization).
+- **Default-OFF templates vs live:** `.env.example` and `.env.production.example` keep optional flags OFF (`false`) by default; the deployed live environment runs with Mobile V1 and AI enabled while Mobile V2, offline sales, and subscription enforcement remain OFF.
+- **Local dev server:** `php artisan serve --port=8000` (optional `npm run dev` or `composer dev`). Unstamped dev builds display `Build unverified` alongside `VERSION` (`ReleaseIdentity`).
+- **Platform operator (new isolated local dev ONLY):** `php artisan platform:operator admin@example.com` grants `PlatformAccess::CORE_PERMISSIONS` without diagnostic bug-report triage; add `--permission=support.bug_reports.view` and/or `--permission=support.bug_reports.manage` explicitly when diagnostic access is authorized. Export sanitized briefs via `php artisan bugs:brief` (omits untrusted user-entered free text). Never run `platform:operator` on staging/production without Owner authorization.
 - **Never run `composer setup` on existing data** (uses `npm install` and runs `migrate --force` against `.env`).
 - **Never run `migrate:fresh`, `migrate:refresh`, `db:wipe`, or destructive reseeding** against persistent data.
 
@@ -91,8 +92,8 @@ SHOW GLOBAL VARIABLES LIKE 'explicit_defaults_for_timestamp';
 ## 4. Operations, Reconciliation & Release Links
 
 - **Six-Domain Reconciliations:** Run `php artisan reconciliation:run --force` or individual domain CLIs (`accounting:reconcile`, `inventory:reconcile --all`, `sales:reconcile`, `payables:reconcile` [alias `purchasing:reconcile`], `money:reconcile`, `phase7:reconcile` [alias `accounting:reconcile-phase7`]). See [Reconciliation Operations Guide](RECONCILIATION_OPERATIONAL_GUIDE.md).
-- **Backup & recovery:** A current production snapshot restored and migrated successfully in isolation on 2026-11-25; six reconciliations passed for both companies. Historical compatibility and independent key-loss recovery remain unverified. See [Backup & Restore Runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md).
-- **Production deployment:** The web release is live from `main`; retain exact operator release pins. Follow [Hostinger Deployment Guide](HOSTINGER_DEPLOYMENT_GUIDE.md) and [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) (`bin/deploy.sh` keeps maintenance held; permissions `0755`/`0644`, never `777`; no source maps; private data/keys never stored in Git).
+- **Backup & recovery:** A current production snapshot restored and migrated successfully in isolation on 2026-11-25; six reconciliations passed for both companies. Historical compatibility and independent key-loss/disaster recovery remain unverified (`bin/recovery-preflight.php` is inspection-only). See [Backup & Restore Runbook](PHASE_10_BACKUP_RESTORE_RUNBOOK.md).
+- **Production deployment:** Last live web release from `main` remains `37dff12` (candidate `b1.3` is not deployed); retain exact operator release pins externally. Follow [Hostinger Deployment Guide](HOSTINGER_DEPLOYMENT_GUIDE.md) and [Controlled Release Checklist](CONTROLLED_RELEASE_CHECKLIST.md) (`bin/deploy.sh` keeps maintenance held; permissions `0755`/`0644`, never `777`; no source maps; private data/keys never stored in Git).
 
 | Private Out-of-Band Artifact | Destination / Purpose |
 |---|---|
