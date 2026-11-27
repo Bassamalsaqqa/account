@@ -832,12 +832,13 @@ final class SelectorStabilizationRegressionTest extends TestCase
             DB::table('sales_invoice_lines')->where('sales_invoice_id', $invoice->id)->count()
         );
 
+        $purchasableProduct = $this->createProduct('PUR-FX', 'صنف شراء بسعر صرف مطلوب', 'Purchase FX Product', Product::TYPE_STOCK, true, '20.00', '50.00');
         $foreignCurrency = strtoupper((string) $this->company->base_currency_code) === 'USD' ? 'JOD' : 'USD';
         $purchaseComponent = Livewire::test(PurchaseForm::class)
             ->set('currency_code', $foreignCurrency)
             ->set('exchange_rate', '')
             ->set('lines.0.item_description', 'مسودة شراء محفوظة')
-            ->call('quickAddProduct', $extraProduct->id);
+            ->call('quickAddProduct', $purchasableProduct->id);
 
         $purchaseComponent->assertReturned(false);
         $purchaseComponent->assertHasErrors(['exchange_rate', 'quickProduct']);
