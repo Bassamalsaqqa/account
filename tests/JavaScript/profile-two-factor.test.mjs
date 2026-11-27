@@ -246,3 +246,51 @@ test('modal focus management focuses safe controls on open, restores opener focu
     assert.equal(target.showPasswordModal, false);
     assert.equal(target.confirmPasswordInput, '');
 });
+
+test('cancelPasswordConfirm restores opener focus even when opener button blurred after becoming disabled on submit', async () => {
+    let focusedElement = null;
+    const enableBtn = {
+        id: 'enable-2fa-btn',
+        isConnected: true,
+        disabled: false,
+        getAttribute: () => null,
+        closest: () => null,
+        getClientRects: () => [{ width: 140, height: 44 }],
+        focus() { focusedElement = this; },
+    };
+    const passwordInput = { id: 'reauth_password_input', focus() { focusedElement = this; } };
+
+    global.document = {
+        querySelector: () => null,
+        activeElement: enableBtn,
+        body: {},
+        location: { href: 'http://localhost/profile' },
+        getElementById: (id) => (id === 'enable-2fa-btn' ? enableBtn : null),
+        addEventListener() {},
+        removeEventListener() {},
+    };
+
+    // Simulate browser blurring the button to body as soon as loading disables it
+    global.fetch = async () => {
+        enableBtn.disabled = true;
+        global.document.activeElement = global.document.body;
+        return json({}, 423);
+    };
+
+    const target = Object.assign(
+        profileTwoFactor({ routes, translations: { generic_error: 'Failed', request_uncertain: 'Reload status' } }),
+        { $nextTick: (fn) => fn(), $refs: { passwordConfirmInput: passwordInput } }
+    );
+
+    const work = target.enableTwoFactor(enableBtn);
+    await tick();
+    assert.equal(target.showPasswordModal, true);
+    assert.equal(focusedElement, passwordInput);
+
+    // Re-enable before restore ticks as Alpine does when loading flips back to false
+    enableBtn.disabled = false;
+    focusedElement = null;
+    target.cancelPasswordConfirm();
+    await work;
+    assert.equal(focusedElement, enableBtn);
+});

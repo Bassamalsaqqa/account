@@ -82,7 +82,7 @@
         </p>
 
         <div>
-            <x-primary-button type="button" @click="enableTwoFactor" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
+            <x-primary-button type="button" @click="enableTwoFactor($event.currentTarget)" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
                 <span x-show="!(loading && loadingAction === 'enabling')">{{ __('profile_security.enable_action') }}</span>
                 <span x-show="loading && loadingAction === 'enabling'">{{ __('profile_security.processing') }}</span>
             </x-primary-button>
@@ -101,7 +101,7 @@
             </p>
         </div>
 
-        <button type="button" @click="loadSetupData()" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 px-3 rounded-control border border-border bg-surface text-sm font-semibold focus-visible:ring-2 focus-visible:ring-primary">{{ __('profile_security.show_setup') }}</button>
+        <button type="button" @click="loadSetupData($event.currentTarget)" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 px-3 rounded-control border border-border bg-surface text-sm font-semibold focus-visible:ring-2 focus-visible:ring-primary">{{ __('profile_security.show_setup') }}</button>
         <div class="grid gap-6 md:grid-cols-2 items-start">
             {{-- QR Code & Manual Key --}}
             <div class="space-y-4">
@@ -151,7 +151,7 @@
                             <span x-show="loading && loadingAction === 'confirming'">{{ __('profile_security.processing') }}</span>
                         </x-primary-button>
 
-                        <x-secondary-button type="button" @click="cancelPending" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
+                        <x-secondary-button type="button" @click="cancelPending($event.currentTarget)" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11">
                             {{ __('profile_security.cancel_setup_action') }}
                         </x-secondary-button>
                     </div>
@@ -178,7 +178,7 @@
                     </p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <x-secondary-button type="button" @click="toggleRecoveryCodes" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 text-xs">
+                    <x-secondary-button type="button" @click="toggleRecoveryCodes($event.currentTarget)" x-bind:disabled="loading || setupLoading || uncertain" class="min-h-11 text-xs">
                         <span x-show="!showingRecoveryCodes">{{ __('profile_security.show_recovery_codes') }}</span>
                         <span x-show="showingRecoveryCodes">{{ __('profile_security.hide_recovery_codes') }}</span>
                     </x-secondary-button>

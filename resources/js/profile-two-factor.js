@@ -276,8 +276,14 @@ export function profileTwoFactor(config = {}) {
             restoreOpener(returnTarget, this);
         },
 
-        async enableTwoFactor() {
+        rememberTrigger(trigger = null) {
+            const captured = captureOpener(trigger, this.$refs);
+            if (captured) modalReturnTarget = captured;
+        },
+
+        async enableTwoFactor(trigger = null) {
             if (this.loading || this.uncertain) return;
+            this.rememberTrigger(trigger);
             this.resetFeedback();
             this.loading = true;
             this.loadingAction = 'enabling';
@@ -296,8 +302,9 @@ export function profileTwoFactor(config = {}) {
             }
         },
 
-        async loadSetupData() {
+        async loadSetupData(trigger = null) {
             if (this.setupLoading || this.uncertain) return;
+            this.rememberTrigger(trigger);
             this.setupLoading = true;
             const version = generation;
             try {
@@ -320,6 +327,7 @@ export function profileTwoFactor(config = {}) {
 
         async confirmTwoFactor() {
             if (this.loading || this.uncertain) return;
+            this.rememberTrigger();
             this.resetFeedback();
             const cleanCode = (this.confirmationCode || '').replace(/\s+/g, '');
             if (!cleanCode) {
@@ -356,8 +364,9 @@ export function profileTwoFactor(config = {}) {
             }
         },
 
-        async cancelPending() {
+        async cancelPending(trigger = null) {
             if (this.loading || this.uncertain) return;
+            this.rememberTrigger(trigger);
             this.resetFeedback();
             this.loading = true;
             this.loadingAction = 'cancelling';
@@ -377,13 +386,14 @@ export function profileTwoFactor(config = {}) {
             }
         },
 
-        async toggleRecoveryCodes() {
+        async toggleRecoveryCodes(trigger = null) {
             if (this.loading) return;
             if (this.showingRecoveryCodes) {
                 this.recoveryCodes = [];
                 this.showingRecoveryCodes = false;
                 return;
             }
+            this.rememberTrigger(trigger);
             await this.fetchRecoveryCodes();
         },
 
