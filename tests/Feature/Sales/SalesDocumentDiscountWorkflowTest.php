@@ -691,4 +691,131 @@ class SalesDocumentDiscountWorkflowTest extends TestCase
             ],
         ]);
     }
+
+    /** @return array<string, array{0: class-string}> */
+    public static function salesDiscountDocumentForms(): array
+    {
+        return [
+            'invoice' => [InvoiceForm::class],
+            'quotation' => [QuotationForm::class],
+        ];
+    }
+
+    #[DataProvider('salesDiscountDocumentForms')]
+    public function test_blank_and_invalid_non_none_document_discounts_fail_preview_and_save_without_writes(string $component): void
+    {
+        $table = $component === InvoiceForm::class ? 'sales_invoices' : 'quotations';
+        $saveMethod = $component === InvoiceForm::class ? 'saveDraft' : 'save';
+
+        foreach (['fixed' => ['', '   ', '-5', '200.00', 5.5], 'percent' => ['', '   ', '-1', '101', 12.5]] as $type => $invalidValues) {
+            foreach ($invalidValues as $invalidValue) {
+                $form = Livewire::test($component)
+                    ->set('customer_id', $this->customer->id)
+                    ->set('currency_code', 'ILS')
+                    ->set('exchange_rate', '1.0000000000')
+                    ->set('issue_date', '2026-11-25')
+                    ->set('lines.0.item_description', 'Service line')
+                    ->set('lines.0.quantity', '2')
+                    ->set('lines.0.unit_price', '50.00')
+                    ->call('recalculate')
+                    ->assertSet('documentTotalsValid', true)
+                    ->assertSet('previewGrandTotal', '100.00')
+                    ->call('toggleDiscountControl')
+                    ->set('discount_type', $type)
+                    ->set('discount_value', $invalidValue)
+                    ->call('recalculate');
+
+                $form->assertSet('documentTotalsValid', false)
+                    ->assertSet('previewGrandTotal', '0.00')
+                    ->assertSet('previewDiscountTotal', '0.00')
+                    ->assertHasErrors(['discount_value']);
+
+                $form->call($saveMethod)
+                    ->assertHasErrors(['discount_value']);
+
+                if ($component === InvoiceForm::class) {
+                    $form->call('save', true)
+                        ->assertHasErrors(['discount_value']);
+                }
+
+                $this->assertSame(0, DB::table($table)->where('company_id', $this->company->id)->count());
+                $this->assertSame(0, DB::table('posting_batches')->where('company_id', $this->company->id)->count());
+                $this->assertSame(0, DB::table('stock_movements')->where('company_id', $this->company->id)->count());
+            }
+        }
+    }
+
+    #[DataProvider('salesDiscountDocumentForms')]
+    public function test_legitimate_zero_discount_and_zero_price_complete_line_remain_valid(string $component): void
+    {
+        $table = $component === InvoiceForm::class ? 'sales_invoices' : 'quotations';
+        $saveMethod = $component === InvoiceForm::class ? 'saveDraft' : 'save';
+
+        $form = Livewire::test($component)
+            ->set('customer_id', $this->customer->id)
+            ->set('currency_code', 'ILS')
+            ->set('exchange_rate', '1.0000000000')
+            ->set('issue_date', '2026-11-25')
+            ->set('lines.0.item_description', 'Free consulting item')
+            ->set('lines.0.quantity', '1')
+            ->set('lines.0.unit_price', '0.00')
+            ->call('toggleDiscountControl')
+            ->set('discount_type', 'fixed')
+            ->set('discount_value', '0')
+            ->call('recalculate');
+
+        $form->assertHasNoErrors()
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewSubtotal', '0.000000')
+            ->assertSet('previewGrandTotal', '0.00');
+
+        $form->call($saveMethod)
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $saved = DB::table($table)->where('company_id', $this->company->id)->first();
+        $this->assertNotNull($saved);
+        $this->assertNull($saved->discount_type);
+        $this->assertTrue(BigDecimal::of((string) $saved->discount_value)->isZero());
+    }
+
+    #[DataProvider('salesDiscountDocumentForms')]
+    public function test_adding_incomplete_row_invalidates_totals_until_completed_or_removed(string $component): void
+    {
+        $form = Livewire::test($component)
+            ->set('customer_id', $this->customer->id)
+            ->set('currency_code', 'ILS')
+            ->set('exchange_rate', '1.0000000000')
+            ->set('issue_date', '2026-11-25')
+            ->set('lines.0.item_description', 'Initial service item')
+            ->set('lines.0.quantity', '2')
+            ->set('lines.0.unit_price', '50.00')
+            ->call('recalculate');
+
+        $form->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '100.00');
+
+        $form->call('addLine')
+            ->assertSet('documentTotalsValid', false)
+            ->assertSet('previewGrandTotal', '0.00');
+
+        $form->set('lines.0.quantity', '3')
+            ->call('recalculate')
+            ->assertSet('documentTotalsValid', false)
+            ->assertSet('previewGrandTotal', '0.00');
+
+        $form->set('lines.1.item_description', 'Additional delivery fee')
+            ->set('lines.1.unit_price', '20.00')
+            ->call('recalculate')
+            ->assertHasNoErrors()
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '170.00');
+
+        $form->call('addLine')
+            ->assertSet('documentTotalsValid', false);
+
+        $form->call('removeLine', 2)
+            ->assertSet('documentTotalsValid', true)
+            ->assertSet('previewGrandTotal', '170.00');
+    }
 }

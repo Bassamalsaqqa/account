@@ -14,9 +14,7 @@ use App\Domain\Money\Exceptions\InvalidMoneyException;
 use App\Domain\Sales\Calculators\SalesDocumentTotalsCalculator;
 use App\Domain\Sales\Calculators\SalesLineCalculationInput;
 use App\Domain\Sales\Calculators\SalesLineCalculator;
-use App\Domain\Sales\DocumentDiscountAllocator;
 use App\Domain\Sales\DocumentDiscountIntent;
-use App\Domain\Sales\DocumentDiscountLineCandidate;
 use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerCreditLimitQuery;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
@@ -28,6 +26,7 @@ use App\Livewire\Concerns\HandlesDocumentLineIdentity;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
 use App\Livewire\Concerns\QuickProductCreate;
+use App\Livewire\Concerns\ValidatesSalesHeaderDiscount;
 use App\Models\Company;
 use App\Models\Customer;
 use App\Models\Product;
@@ -44,7 +43,6 @@ use App\Services\Sales\SalesProductSelection;
 use App\Support\InvoiceConfirmation;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
-use Brick\Math\RoundingMode;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
@@ -69,6 +67,19 @@ class InvoiceForm extends Component
     use HandlesSearchableSelectors;
     use QuickPartyCreate;
     use QuickProductCreate;
+    use ValidatesSalesHeaderDiscount;
+
+    protected function onPreviewTotalsInvalidated(): void
+    {
+        $this->recalculateSettlementPreview();
+    }
+
+    protected function salesDiscountDocumentCurrencyMinorUnits(): ?int
+    {
+        return $this->invoice !== null && $this->invoice->currency_code === $this->currency_code
+            ? $this->invoice->resolvedCurrencyMinorUnits()
+            : null;
+    }
 
     protected function quickProductFormPermission(): string
     {
@@ -641,6 +652,7 @@ class InvoiceForm extends Component
             'tax_amount' => '0.00',
             'line_total' => '0.00',
         ];
+        $this->invalidatePreviewTotals();
     }
 
     public function removeLine(int|string $lineRef): void
@@ -807,51 +819,25 @@ class InvoiceForm extends Component
         $discountScope = $this->discount_scope;
         $allocationResult = null;
         $this->resetErrorBag('discount_value');
+        $headerDiscountIntent = $this->resolveHeaderDiscountIntent();
+        if ($headerDiscountIntent === null) {
+            $this->invalidatePreviewTotals();
 
-        if ($discountScope === 'document' && $this->discount_type !== 'none') {
-            $rawDiscVal = trim((string) ($this->discount_value ?: '0'));
-            if ($rawDiscVal !== '' && preg_match('/^\d+(\.\d{1,6})?$/D', $rawDiscVal) !== 1) {
-                $this->addError('discount_value', __('commands.exact_string_required'));
-                $this->previewDiscountTotal = '0.00';
-                $this->documentTotalsValid = false;
+            return;
+        }
+
+        if ($this->hasIncompleteDocumentLine()) {
+            $this->invalidatePreviewTotals();
+
+            return;
+        }
+
+        if ($discountScope === 'document' && ! $headerDiscountIntent->isNone()) {
+            $allocationResult = $this->allocateSalesHeaderDiscount($headerDiscountIntent, $taxes, $lineTaxIds, $minorUnits);
+            if ($allocationResult === null) {
+                $this->invalidatePreviewTotals();
 
                 return;
-            }
-            if (! BigDecimal::of($rawDiscVal ?: '0')->isZero()) {
-                $candidates = [];
-                foreach ($this->lines as $index => $line) {
-                    $qty = BigDecimal::of((string) ($line['quantity'] ?: '0'));
-                    $price = BigDecimal::of((string) ($line['unit_price'] ?: '0'));
-                    $subtotal = $qty->multipliedBy($price)->toScale($minorUnits, RoundingMode::HALF_UP);
-                    $tax = $taxes->get($lineTaxIds[$index] ?: 0);
-
-                    $candidates[] = new DocumentDiscountLineCandidate(
-                        lineNumber: $index + 1,
-                        unitPrice: $price,
-                        quantity: $qty,
-                        subtotal: $subtotal,
-                        taxInclusive: $tax?->calculation === TaxRate::CALC_INCLUSIVE,
-                        taxRate: $tax?->rate !== null ? (string) $tax->rate : null,
-                        identity: $index + 1,
-                    );
-                }
-
-                try {
-                    $intent = new DocumentDiscountIntent(
-                        discountType: $this->discount_type,
-                        discountValue: $rawDiscVal,
-                        discountScope: 'document',
-                        discountBasis: 'subtotal',
-                        version: $this->discount_calculation_version,
-                    );
-                    $allocationResult = app(DocumentDiscountAllocator::class)->allocate($intent, $candidates, $this->currency_code, $minorUnits);
-                } catch (\InvalidArgumentException $e) {
-                    $this->addError('discount_value', $e->getMessage());
-                    $this->previewDiscountTotal = '0.00';
-                    $this->documentTotalsValid = false;
-
-                    return;
-                }
             }
         }
 
@@ -1035,6 +1021,10 @@ class InvoiceForm extends Component
 
                 return null;
             }
+        }
+
+        if ($this->resolveAndValidateHeaderDiscountForSave($company) === null) {
+            return null;
         }
 
         $dtoLines = [];
@@ -1413,11 +1403,13 @@ class InvoiceForm extends Component
     private function headerDiscountInput(): array
     {
         $type = $this->discount_type === 'percentage' ? 'percent' : $this->discount_type;
-        $value = trim((string) $this->discount_value) ?: '0';
+        $value = is_string($this->discount_value) || is_int($this->discount_value)
+            ? trim((string) $this->discount_value)
+            : '';
         if ($this->discount_scope !== 'document') {
             return [];
         }
-        if ($type !== 'none' && ! preg_match('/^0+(?:\.0+)?$/D', $value)) {
+        if ($type !== 'none' && $value !== '' && ! preg_match('/^0+(?:\.0+)?$/D', $value)) {
             return ['discount_type' => $type, 'discount_value' => $value, 'discount_scope' => 'document'];
         }
 
