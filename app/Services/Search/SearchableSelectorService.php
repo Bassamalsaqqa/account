@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Search;
 
 use App\Models\Company;
+use App\Models\CompanyUser;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Models\ProductBarcode;
@@ -209,19 +210,26 @@ final class SearchableSelectorService
         int $limit = self::DEFAULT_LIMIT,
         array $options = []
     ): array {
-        $this->authorize($company, $actor, $type, $options);
+        $previousTeam = getPermissionsTeamId();
+        setPermissionsTeamId((int) $company->id);
+        try {
+            $this->authorizeInTeam($company, $actor, $type, $options);
 
-        $limit = max(1, min($limit, self::MAX_LIMIT));
-        $term = mb_substr(trim($rawTerm), 0, self::MAX_TERM_LENGTH);
-        $locale = $options['locale'] ?? app()->getLocale();
+            $limit = max(1, min($limit, self::MAX_LIMIT));
+            $term = mb_substr(trim($rawTerm), 0, self::MAX_TERM_LENGTH);
+            $locale = $options['locale'] ?? app()->getLocale();
 
-        return match ($type) {
-            'customer' => $this->searchCustomers($company, $actor, $term, $selectedId, $limit, $locale, $options),
-            'vendor' => $this->searchVendors($company, $actor, $term, $selectedId, $limit, $locale, $options),
-            'product' => $this->searchProducts($company, $actor, $term, $selectedId, $limit, $locale, $options),
-            'warehouse' => $this->searchWarehouses($company, $actor, $term, $selectedId, $limit, $locale, $options),
-            default => throw new \InvalidArgumentException("Unsupported selector type [{$type}]."),
-        };
+            return match ($type) {
+                'customer' => $this->searchCustomers($company, $actor, $term, $selectedId, $limit, $locale, $options),
+                'vendor' => $this->searchVendors($company, $actor, $term, $selectedId, $limit, $locale, $options),
+                'product' => $this->searchProducts($company, $actor, $term, $selectedId, $limit, $locale, $options),
+                'warehouse' => $this->searchWarehouses($company, $actor, $term, $selectedId, $limit, $locale, $options),
+                default => throw new \InvalidArgumentException("Unsupported selector type [{$type}]."),
+            };
+        } finally {
+            $actor->unsetRelation('roles')->unsetRelation('permissions');
+            setPermissionsTeamId($previousTeam);
+        }
     }
 
     /**
@@ -233,13 +241,31 @@ final class SearchableSelectorService
      */
     public function authorize(Company $company, User $actor, string $type, array $options = []): void
     {
+        $previousTeam = getPermissionsTeamId();
+        setPermissionsTeamId((int) $company->id);
+        try {
+            $this->authorizeInTeam($company, $actor, $type, $options);
+        } finally {
+            $actor->unsetRelation('roles')->unsetRelation('permissions');
+            setPermissionsTeamId($previousTeam);
+        }
+    }
+
+    /** @param array<string, mixed> $options */
+    private function authorizeInTeam(Company $company, User $actor, string $type, array $options): void
+    {
+        if (! Company::query()->whereKey($company->id)->where('status', 'active')->exists()
+            || ! CompanyUser::query()->where('company_id', $company->id)
+                ->where('user_id', $actor->id)->where('status', 'active')->exists()) {
+            throw new AuthorizationException('Active company membership is required.');
+        }
+
         // Intra-tenant membership verification
         if ($this->companyContext->hasCompany() && (int) $this->companyContext->companyId() !== (int) $company->id) {
             throw new AuthorizationException('Actor does not belong to the requested company.');
         }
 
-        // Always bind the target company team and clear potentially stale Spatie relations before checking permissions.
-        setPermissionsTeamId((int) $company->id);
+        // Permission relations must be fresh within the scoped team context.
         $actor->unsetRelation('roles')->unsetRelation('permissions');
         $actor->load('roles.permissions');
 

@@ -491,6 +491,43 @@ final class SelectorStabilizationRegressionTest extends TestCase
         $service->search($this->company, $user, 'product', 'DIRECT-01', null, 25, ['context' => 'purchasing']);
     }
 
+    public function test_direct_selector_requires_fresh_membership_and_company_and_restores_team_context(): void
+    {
+        $this->createProduct('SCOPE-01', 'منتج', 'Scoped Product', Product::TYPE_STOCK, true, '42.50', '60.00');
+        $service = app(SearchableSelectorService::class);
+        $previousTeam = getPermissionsTeamId();
+        setPermissionsTeamId(null);
+        try {
+            $result = $service->search($this->company, $this->owner, 'product', 'SCOPE-01', null, 25, ['context' => 'purchasing']);
+            $this->assertCount(1, $result['items']);
+            $this->assertNull(getPermissionsTeamId());
+            $service->authorize($this->company, $this->owner, 'product', ['context' => 'purchasing']);
+            $this->assertNull(getPermissionsTeamId());
+
+            CompanyUser::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->update(['status' => 'inactive']);
+            foreach (['search', 'authorize'] as $method) {
+                try {
+                    $method === 'search'
+                        ? $service->search($this->company, $this->owner, 'product', 'SCOPE-01', null, 25, ['context' => 'purchasing'])
+                        : $service->authorize($this->company, $this->owner, 'product', ['context' => 'purchasing']);
+                    $this->fail('Revoked membership must be denied.');
+                } catch (AuthorizationException) {
+                    $this->assertNull(getPermissionsTeamId());
+                }
+            }
+            CompanyUser::where('company_id', $this->company->id)->where('user_id', $this->owner->id)->update(['status' => 'active']);
+            Company::whereKey($this->company->id)->update(['status' => 'inactive']);
+            try {
+                $service->search($this->company, $this->owner, 'product', 'SCOPE-01', null, 25, ['context' => 'purchasing']);
+                $this->fail('Inactive company must be denied despite stale model status.');
+            } catch (AuthorizationException) {
+                $this->assertNull(getPermissionsTeamId());
+            }
+        } finally {
+            setPermissionsTeamId($previousTeam);
+        }
+    }
+
     private function createProduct(
         string $sku,
         string $nameAr,
