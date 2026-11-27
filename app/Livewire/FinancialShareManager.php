@@ -125,9 +125,49 @@ final class FinancialShareManager extends Component
             return;
         }
 
-        $this->from = $this->normalizeDateInput($fromDate);
-        $this->to = $this->normalizeDateInput($toDate);
+        $nextFrom = $this->normalizeDateInput($fromDate);
+        $nextTo = $this->normalizeDateInput($toDate);
+        $datesChanged = $nextFrom !== $this->normalizeDateInput($this->from)
+            || $nextTo !== $this->normalizeDateInput($this->to);
+
+        $this->from = $nextFrom;
+        $this->to = $nextTo;
         $this->resetValidation(['from', 'to']);
+
+        if ($datesChanged) {
+            $this->clearDisplayedShare();
+        }
+    }
+
+    public function updating(string $property, mixed $value): void
+    {
+        if ($property === 'from') {
+            $next = is_string($value) ? $this->normalizeDateInput($value) : null;
+            if ($next !== $this->normalizeDateInput($this->from)) {
+                $this->clearDisplayedShare();
+            }
+        } elseif ($property === 'to') {
+            $next = is_string($value) ? $this->normalizeDateInput($value) : null;
+            if ($next !== $this->normalizeDateInput($this->to)) {
+                $this->clearDisplayedShare();
+            }
+        } elseif ($property === 'locale') {
+            $next = is_string($value) ? $value : $this->locale;
+            if ($next !== $this->locale) {
+                $this->clearDisplayedShare();
+            }
+        } elseif ($property === 'expiryDays') {
+            $next = $this->normalizeExpiryDaysInput($value);
+            if ($next !== $this->normalizeExpiryDaysInput($this->expiryDays)) {
+                $this->clearDisplayedShare();
+            }
+        } elseif ($property === 'password') {
+            $current = $this->password === '' ? null : $this->password;
+            $next = ($value === '' || ! is_string($value)) ? null : $value;
+            if ($next !== $current) {
+                $this->clearDisplayedShare();
+            }
+        }
     }
 
     public function updated(string $property): void
@@ -138,6 +178,8 @@ final class FinancialShareManager extends Component
             $this->to = $this->normalizeDateInput($this->to);
         } elseif ($property === 'expiryDays') {
             $this->expiryDays = $this->normalizeExpiryDaysInput($this->expiryDays);
+        } elseif ($property === 'password') {
+            $this->password = $this->password === '' ? null : $this->password;
         }
     }
 
@@ -217,9 +259,7 @@ final class FinancialShareManager extends Component
     public function recover(string $publicId): void
     {
         $this->authorizeShare();
-        $this->url = null;
-        $this->qr = null;
-        $this->selectedShareId = null;
+        $this->clearDisplayedShare();
         $this->historyLoaded = true;
 
         try {
@@ -250,10 +290,15 @@ final class FinancialShareManager extends Component
         $this->authorizeShare();
         app(PublicShareService::class)->revokeShare($this->managed($publicId), auth()->user());
         if ($this->selectedShareId === null || $this->selectedShareId === $publicId) {
-            $this->url = null;
-            $this->qr = null;
-            $this->selectedShareId = null;
+            $this->clearDisplayedShare();
         }
+    }
+
+    private function clearDisplayedShare(): void
+    {
+        $this->url = null;
+        $this->qr = null;
+        $this->selectedShareId = null;
     }
 
     private function managed(string $publicId): PublicShare
@@ -336,9 +381,7 @@ final class FinancialShareManager extends Component
 
                 app(IssuedFinancialShares::class)->valid($selected);
             } catch (\Throwable) {
-                $this->url = null;
-                $this->qr = null;
-                $this->selectedShareId = null;
+                $this->clearDisplayedShare();
             }
         }
 

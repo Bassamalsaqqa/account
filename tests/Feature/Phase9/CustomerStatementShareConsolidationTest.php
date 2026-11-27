@@ -13,6 +13,7 @@ use App\Models\Customer;
 use App\Models\PublicShare;
 use App\Models\SalesInvoice;
 use App\Models\User;
+use App\Services\Sales\PdfRendererService;
 use App\Services\Sales\PublicShareService;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
@@ -20,6 +21,7 @@ use DOMDocument;
 use DOMElement;
 use DOMXPath;
 use Illuminate\Support\Facades\RateLimiter;
+use InvalidArgumentException;
 use Livewire\Exceptions\EventHandlerDoesNotExist;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
@@ -196,97 +198,372 @@ class CustomerStatementShareConsolidationTest extends Phase5ETestCase
 
     public function test_event_scoping_ignores_mismatched_subjects_and_preserves_manager_state(): void
     {
-        $customerA = $this->createCustomer('A');
-        $customerB = $this->createCustomer('B');
-        $invoice = $this->createPostedInvoice($customerA, '2026-03-10');
+        $originalUrl = config('app.url');
+        config(['app.url' => 'https://accounting.test']);
 
-        // Invoice manager does not register statement date listener at all.
-        $invoiceManager = Livewire::test(FinancialShareManager::class, [
-            'subjectType' => PublicShare::SUBJECT_SALES_INVOICE,
-            'subjectId' => $invoice->id,
-        ]);
         try {
-            $invoiceManager->dispatch(
-                'customer-statement-dates-updated.customer_statement.'.$customerA->id,
+            $customerA = $this->createCustomer('A');
+            $customerB = $this->createCustomer('B');
+            $invoice = $this->createPostedInvoice($customerA, '2026-03-10');
+
+            // Invoice manager does not register statement date listener at all.
+            $invoiceManager = Livewire::test(FinancialShareManager::class, [
+                'subjectType' => PublicShare::SUBJECT_SALES_INVOICE,
+                'subjectId' => $invoice->id,
+            ]);
+            try {
+                $invoiceManager->dispatch(
+                    'customer-statement-dates-updated.customer_statement.'.$customerA->id,
+                    subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                    subjectId: $customerA->id,
+                    publicId: $customerA->public_id,
+                    fromDate: '2026-04-01',
+                    toDate: '2026-04-30',
+                );
+                $this->fail('Invoice share manager unexpectedly handled a statement date event.');
+            } catch (EventHandlerDoesNotExist) {
+                $invoiceManager->assertSetStrict('from', null)->assertSetStrict('to', null);
+            }
+
+            // Customer A statement manager ignores mismatched subjectType / subjectId / publicId.
+            $managerA = Livewire::test(FinancialShareManager::class, [
+                'subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                'subjectId' => $customerA->id,
+                'initialFrom' => '2026-01-01',
+                'initialTo' => '2026-03-31',
+            ]);
+
+            // Issue a share, generate QR, and hold pending password/open state before scoping checks.
+            $managerA->set('password', 'statement-secret-1')
+                ->call('create')
+                ->assertHasNoErrors()
+                ->call('showQr')
+                ->assertHasNoErrors()
+                ->call('loadHistory', true);
+
+            $issuedUrl = $managerA->get('url');
+            $issuedQr = $managerA->get('qr');
+            $selectedShareId = $managerA->get('selectedShareId');
+            $rotatedRequestKey = $managerA->get('requestKey');
+            $this->assertNotNull($issuedUrl);
+            $this->assertStringStartsWith('data:image/png;base64,', (string) $issuedQr);
+
+            // Set a pending password, then recover the active link so both url/qr and pending password exist together.
+            $managerA->set('password', 'pending-next-password')
+                ->assertSet('url', null)
+                ->assertSet('qr', null)
+                ->assertSet('selectedShareId', null)
+                ->call('recover', $selectedShareId)
+                ->assertHasNoErrors()
+                ->call('showQr')
+                ->assertHasNoErrors()
+                ->assertSet('url', $issuedUrl)
+                ->assertSet('selectedShareId', $selectedShareId)
+                ->assertSet('password', 'pending-next-password');
+
+            $eventA = 'customer-statement-dates-updated.customer_statement.'.$customerA->id;
+
+            // Mismatched subjectId (Customer B's ID)
+            $managerA->dispatch(
+                $eventA,
+                subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                subjectId: $customerB->id,
+                publicId: $customerA->public_id,
+                fromDate: '2026-09-01',
+                toDate: '2026-09-30',
+            )
+                ->assertSet('from', '2026-01-01')
+                ->assertSet('to', '2026-03-31')
+                ->assertSet('url', $issuedUrl)
+                ->assertSet('qr', $issuedQr)
+                ->assertSet('selectedShareId', $selectedShareId);
+
+            // Mismatched publicId
+            $managerA->dispatch(
+                $eventA,
+                subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                subjectId: $customerA->id,
+                publicId: $customerB->public_id,
+                fromDate: '2026-09-01',
+                toDate: '2026-09-30',
+            )
+                ->assertSet('from', '2026-01-01')
+                ->assertSet('to', '2026-03-31')
+                ->assertSet('url', $issuedUrl)
+                ->assertSet('qr', $issuedQr)
+                ->assertSet('selectedShareId', $selectedShareId);
+
+            // Mismatched subjectType
+            $managerA->dispatch(
+                $eventA,
+                subjectType: PublicShare::SUBJECT_SALES_INVOICE,
+                subjectId: $customerA->id,
+                publicId: $customerA->public_id,
+                fromDate: '2026-09-01',
+                toDate: '2026-09-30',
+            )
+                ->assertSet('from', '2026-01-01')
+                ->assertSet('to', '2026-03-31')
+                ->assertSet('url', $issuedUrl)
+                ->assertSet('qr', $issuedQr)
+                ->assertSet('selectedShareId', $selectedShareId);
+
+            // Matching event with UNCHANGED dates preserves url, qr, selectedShareId, and manager state.
+            $managerA->dispatch(
+                $eventA,
                 subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
                 subjectId: $customerA->id,
                 publicId: $customerA->public_id,
-                fromDate: '2026-04-01',
-                toDate: '2026-04-30',
-            );
-            $this->fail('Invoice share manager unexpectedly handled a statement date event.');
-        } catch (EventHandlerDoesNotExist) {
-            $invoiceManager->assertSetStrict('from', null)->assertSetStrict('to', null);
+                fromDate: ' 2026-01-01 ',
+                toDate: '2026-03-31',
+            )
+                ->assertSet('from', '2026-01-01')
+                ->assertSet('to', '2026-03-31')
+                ->assertSet('requestKey', $rotatedRequestKey)
+                ->assertSet('password', 'pending-next-password')
+                ->assertSet('historyLoaded', true)
+                ->assertSet('historyOpen', true)
+                ->assertSet('url', $issuedUrl)
+                ->assertSet('qr', $issuedQr)
+                ->assertSet('selectedShareId', $selectedShareId);
+
+            // Exact matching statement target with CHANGED dates updates from/to, clears displayed url/qr/selectedShareId,
+            // retains requestKey, password, historyOpen, historyLoaded, and keeps the issued share active in history.
+            $managerA->dispatch(
+                $eventA,
+                subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                subjectId: $customerA->id,
+                publicId: $customerA->public_id,
+                fromDate: '2026-02-01',
+                toDate: '2026-02-28',
+            )
+                ->assertSet('from', '2026-02-01')
+                ->assertSet('to', '2026-02-28')
+                ->assertSet('requestKey', $rotatedRequestKey)
+                ->assertSet('password', 'pending-next-password')
+                ->assertSet('historyLoaded', true)
+                ->assertSet('historyOpen', true)
+                ->assertSetStrict('url', null)
+                ->assertSetStrict('qr', null)
+                ->assertSetStrict('selectedShareId', null);
+
+            $issuedShare = PublicShare::where('company_id', $this->company->id)
+                ->where('public_id', $selectedShareId)
+                ->firstOrFail();
+            $this->assertTrue($issuedShare->is_active);
+
+            // Recovering from history restores the active link and preserves pending form settings.
+            $managerA->call('recover', $selectedShareId)
+                ->assertHasNoErrors()
+                ->assertSet('url', $issuedUrl)
+                ->assertSet('selectedShareId', $selectedShareId)
+                ->assertSet('password', 'pending-next-password');
+        } finally {
+            config(['app.url' => $originalUrl]);
         }
+    }
 
-        // Customer A statement manager ignores mismatched subjectType / subjectId / publicId.
-        $managerA = Livewire::test(FinancialShareManager::class, [
-            'subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT,
-            'subjectId' => $customerA->id,
-            'initialFrom' => '2026-01-01',
-            'initialTo' => '2026-03-31',
-        ]);
+    public function test_manual_issuance_settings_changes_clear_displayed_output_without_revoking_while_unchanged_updates_retain_it(): void
+    {
+        $originalUrl = config('app.url');
+        config(['app.url' => 'https://accounting.test']);
 
-        // Issue a share and hold unsaved/open state to prove sync preserves them.
-        $managerA->set('password', 'statement-secret-1')
-            ->call('create')
-            ->assertHasNoErrors()
-            ->call('loadHistory', true);
+        try {
+            $customer = $this->createCustomer('Manual');
+            $invoice = $this->createPostedInvoice($customer, '2026-03-10');
 
-        $issuedUrl = $managerA->get('url');
-        $selectedShareId = $managerA->get('selectedShareId');
-        $rotatedRequestKey = $managerA->get('requestKey');
-        $managerA->set('password', 'pending-next-password');
+            // 1. Customer Statement manual edits and no-op updates.
+            $statementManager = Livewire::test(FinancialShareManager::class, [
+                'subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                'subjectId' => $customer->id,
+                'initialFrom' => '2026-01-01',
+                'initialTo' => '2026-03-31',
+            ]);
 
-        $eventA = 'customer-statement-dates-updated.customer_statement.'.$customerA->id;
+            $html = $statementManager->html(false);
+            $this->assertStringContainsString('wire:model.live="from"', $html);
+            $this->assertStringContainsString('wire:model.live="to"', $html);
 
-        // Mismatched subjectId (Customer B's ID)
-        $managerA->dispatch(
-            $eventA,
-            subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
-            subjectId: $customerB->id,
-            publicId: $customerA->public_id,
-            fromDate: '2026-09-01',
-            toDate: '2026-09-30',
-        )->assertSet('from', '2026-01-01')->assertSet('to', '2026-03-31');
+            $statementManager->set('password', 'manual-secret-1')
+                ->call('create')
+                ->assertHasNoErrors()
+                ->call('showQr')
+                ->assertHasNoErrors()
+                ->call('loadHistory', true);
 
-        // Mismatched publicId
-        $managerA->dispatch(
-            $eventA,
-            subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
-            subjectId: $customerA->id,
-            publicId: $customerB->public_id,
-            fromDate: '2026-09-01',
-            toDate: '2026-09-30',
-        )->assertSet('from', '2026-01-01')->assertSet('to', '2026-03-31');
+            $shareId = $statementManager->get('selectedShareId');
+            $shareUrl = $statementManager->get('url');
+            $shareQr = $statementManager->get('qr');
+            $requestKey = $statementManager->get('requestKey');
+            $this->assertNotNull($shareId);
+            $this->assertNotNull($shareUrl);
+            $this->assertStringStartsWith('data:image/png;base64,', (string) $shareQr);
 
-        // Mismatched subjectType
-        $managerA->dispatch(
-            $eventA,
-            subjectType: PublicShare::SUBJECT_SALES_INVOICE,
-            subjectId: $customerA->id,
-            publicId: $customerA->public_id,
-            fromDate: '2026-09-01',
-            toDate: '2026-09-30',
-        )->assertSet('from', '2026-01-01')->assertSet('to', '2026-03-31');
+            // Equivalent/unchanged updates and history disclosure toggling must retain displayed output.
+            $statementManager
+                ->set('from', ' 2026-01-01 ')
+                ->set('to', '2026-03-31')
+                ->set('locale', $statementManager->get('locale'))
+                ->set('expiryDays', (string) $statementManager->get('expiryDays'))
+                ->set('password', '')
+                ->set('historyOpen', false)
+                ->set('historyOpen', true)
+                ->assertSet('url', $shareUrl)
+                ->assertSet('qr', $shareQr)
+                ->assertSet('selectedShareId', $shareId)
+                ->assertSet('requestKey', $requestKey)
+                ->assertSetStrict('password', null);
 
-        // Exact matching statement target updates from/to while preserving requestKey, password, historyOpen, historyLoaded, url, selectedShareId.
-        $managerA->dispatch(
-            $eventA,
-            subjectType: PublicShare::SUBJECT_CUSTOMER_STATEMENT,
-            subjectId: $customerA->id,
-            publicId: $customerA->public_id,
-            fromDate: '2026-02-01',
-            toDate: '2026-02-28',
-        )
-            ->assertSet('from', '2026-02-01')
-            ->assertSet('to', '2026-02-28')
-            ->assertSet('requestKey', $rotatedRequestKey)
-            ->assertSet('password', 'pending-next-password')
-            ->assertSet('historyLoaded', true)
-            ->assertSet('historyOpen', true)
-            ->assertSet('url', $issuedUrl)
-            ->assertSet('selectedShareId', $selectedShareId);
+            // Manual edits to from, to, locale, expiryDays each clear url/qr/selectedShareId without revoking.
+            $statementEdits = [
+                ['from', '2026-02-01'],
+                ['to', '2026-02-28'],
+                ['locale', $statementManager->get('locale') === 'ar' ? 'en' : 'ar'],
+                ['expiryDays', 14],
+            ];
+
+            foreach ($statementEdits as [$field, $newValue]) {
+                $statementManager->set($field, $newValue)
+                    ->assertSetStrict('url', null)
+                    ->assertSetStrict('qr', null)
+                    ->assertSetStrict('selectedShareId', null)
+                    ->assertSet('historyLoaded', true)
+                    ->assertSet('historyOpen', true)
+                    ->assertSet('requestKey', $requestKey);
+
+                $this->assertTrue(PublicShare::where('public_id', $shareId)->firstOrFail()->is_active);
+
+                $statementManager->call('recover', $shareId)
+                    ->assertHasNoErrors()
+                    ->call('showQr')
+                    ->assertHasNoErrors()
+                    ->assertSet('url', $shareUrl)
+                    ->assertSet('selectedShareId', $shareId);
+            }
+
+            // Clearing from to empty clears output; repeating empty when already null retains recovered output.
+            $statementManager->set('from', '')
+                ->assertSetStrict('from', null)
+                ->assertSetStrict('url', null)
+                ->assertSetStrict('qr', null)
+                ->assertSetStrict('selectedShareId', null)
+                ->call('recover', $shareId)
+                ->call('showQr')
+                ->set('from', '')
+                ->assertSet('url', $shareUrl)
+                ->assertSet('selectedShareId', $shareId);
+
+            // Editing password to a non-empty value clears output while retaining password/history/requestKey.
+            $statementManager->set('password', 'next-manual-pass-99')
+                ->assertSetStrict('url', null)
+                ->assertSetStrict('qr', null)
+                ->assertSetStrict('selectedShareId', null)
+                ->assertSet('password', 'next-manual-pass-99')
+                ->assertSet('historyLoaded', true)
+                ->assertSet('historyOpen', true)
+                ->assertSet('requestKey', $requestKey);
+
+            // 2. Non-statement (Invoice) manual edits to locale, expiryDays, and password.
+            $invoiceManager = Livewire::test(FinancialShareManager::class, [
+                'subjectType' => PublicShare::SUBJECT_SALES_INVOICE,
+                'subjectId' => $invoice->id,
+            ]);
+
+            $invoiceManager->call('create')
+                ->assertHasNoErrors()
+                ->call('showQr')
+                ->assertHasNoErrors()
+                ->call('loadHistory', true);
+
+            $invoiceShareId = $invoiceManager->get('selectedShareId');
+            $invoiceShareUrl = $invoiceManager->get('url');
+            $invoiceRequestKey = $invoiceManager->get('requestKey');
+
+            foreach ([
+                ['locale', $invoiceManager->get('locale') === 'ar' ? 'en' : 'ar'],
+                ['expiryDays', 10],
+            ] as [$field, $newValue]) {
+                $invoiceManager->set($field, $newValue)
+                    ->assertSetStrict('url', null)
+                    ->assertSetStrict('qr', null)
+                    ->assertSetStrict('selectedShareId', null)
+                    ->assertSet('historyLoaded', true)
+                    ->assertSet('historyOpen', true)
+                    ->assertSet('requestKey', $invoiceRequestKey);
+
+                $this->assertTrue(PublicShare::where('public_id', $invoiceShareId)->firstOrFail()->is_active);
+
+                $invoiceManager->call('recover', $invoiceShareId)
+                    ->call('showQr')
+                    ->assertSet('url', $invoiceShareUrl);
+            }
+
+            $invoiceManager->set('password', 'optional-invoice-pass')
+                ->assertSetStrict('url', null)
+                ->assertSetStrict('qr', null)
+                ->assertSetStrict('selectedShareId', null)
+                ->assertSet('password', 'optional-invoice-pass')
+                ->assertSet('requestKey', $invoiceRequestKey);
+        } finally {
+            config(['app.url' => $originalUrl]);
+        }
+    }
+
+    public function test_qr_requires_https_application_url_and_fails_closed_for_loopback_http(): void
+    {
+        $originalUrl = config('app.url');
+        $customer = $this->createCustomer('QrOrigin');
+        $this->createPostedInvoice($customer, '2026-03-10');
+
+        try {
+            // Loopback HTTP in local/testing allows managed share URL issuance, while QR generation strictly enforces HTTPS.
+            config(['app.url' => 'http://127.0.0.1:8088']);
+
+            $manager = Livewire::test(FinancialShareManager::class, [
+                'subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                'subjectId' => $customer->id,
+                'initialFrom' => '2026-01-01',
+                'initialTo' => '2026-03-31',
+            ])
+                ->set('password', 'loopback-qr-pass')
+                ->call('create')
+                ->assertHasNoErrors();
+
+            $httpUrl = $manager->get('url');
+            $this->assertStringStartsWith('http://127.0.0.1:8088/share/', (string) $httpUrl);
+
+            $manager->call('showQr')
+                ->assertSetStrict('qr', null)
+                ->assertSet('url', $httpUrl)
+                ->assertHasErrors('share')
+                ->assertSee(__('sharing.issuance_unavailable'));
+
+            try {
+                app(PdfRendererService::class)->generateQrDataUri((string) $httpUrl);
+                $this->fail('Non-HTTPS loopback URL unexpectedly produced a QR data URI.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertSame('QR requires an application-owned HTTPS URL.', $exception->getMessage());
+            }
+
+            // Trusted HTTPS origin produces QR cleanly.
+            config(['app.url' => 'https://accounting.test']);
+            $httpsManager = Livewire::test(FinancialShareManager::class, [
+                'subjectType' => PublicShare::SUBJECT_CUSTOMER_STATEMENT,
+                'subjectId' => $customer->id,
+                'initialFrom' => '2026-01-01',
+                'initialTo' => '2026-03-31',
+            ])
+                ->set('password', 'https-qr-pass')
+                ->call('create')
+                ->assertHasNoErrors()
+                ->call('showQr')
+                ->assertHasNoErrors();
+
+            $this->assertStringStartsWith('https://accounting.test/share/', (string) $httpsManager->get('url'));
+            $this->assertStringStartsWith('data:image/png;base64,', (string) $httpsManager->get('qr'));
+        } finally {
+            config(['app.url' => $originalUrl]);
+        }
     }
 
     public function test_standalone_editable_dates_empty_string_normalization_and_expiry_days_clearing(): void

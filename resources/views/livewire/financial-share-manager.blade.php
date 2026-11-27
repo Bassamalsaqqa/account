@@ -71,7 +71,7 @@
                 <input id="{{ $shareScope }}-from"
                        type="date"
                        dir="ltr"
-                       wire:model="from"
+                       wire:model.live="from"
                        aria-invalid="{{ $errors->has('from') ? 'true' : 'false' }}"
                        @error('from') aria-describedby="{{ $shareScope }}-from-error" @enderror
                        class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control px-3 py-1.5 bg-surface text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary aria-invalid:border-danger">
@@ -82,7 +82,7 @@
                 <input id="{{ $shareScope }}-to"
                        type="date"
                        dir="ltr"
-                       wire:model="to"
+                       wire:model.live="to"
                        aria-invalid="{{ $errors->has('to') ? 'true' : 'false' }}"
                        @error('to') aria-describedby="{{ $shareScope }}-to-error" @enderror
                        class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control px-3 py-1.5 bg-surface text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary aria-invalid:border-danger">
