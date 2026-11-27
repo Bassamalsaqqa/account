@@ -51,11 +51,11 @@ trait ValidatesSalesHeaderDiscount
         }
 
         foreach ($this->lines as $line) {
-            if (! empty($line['product_id']) || trim((string) ($line['item_description'] ?? '')) !== '') {
+            if (! empty($line['product_id']) || trim($line['item_description']) !== '') {
                 continue;
             }
 
-            $rawPrice = $line['unit_price'] ?? '0';
+            $rawPrice = $line['unit_price'];
             if (is_string($rawPrice)) {
                 $trimmedPrice = trim($rawPrice);
                 if (preg_match('/^\d{1,14}(?:\.\d{1,6})?$/D', $trimmedPrice) === 1 && BigDecimal::of($trimmedPrice)->isZero()) {
