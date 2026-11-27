@@ -165,17 +165,24 @@
         <div>
             <label for="invoice-product-search" class="block text-sm font-bold text-text-primary mb-1">{{ __('sales.search_products') }}</label>
             <div class="flex gap-2 items-center">
-                <input id="invoice-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent
-                       placeholder="{{ __('sales.search_products_hint') }}"
-                       class="flex-1 min-w-0 h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                <div class="flex-1 min-w-0">
+                    <x-searchable-combobox
+                        id="invoice-product-search"
+                        type="product"
+                        context="sales"
+                        on-select="quickAddProduct"
+                        :reset-after-select="true"
+                        :placeholder="__('sales.search_products_hint')"
+                        :aria-label="__('sales.search_products')"
+                    />
+                </div>
                 @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
                     <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                         + {{ __('quick_product.create') }}
                     </button>
                 @endif
             </div>
-            <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('sales.products_searching') }}</p>
-            @if($productMatchCount === 0)<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('sales.no_matching_products') }}</p>@endif
+            @error('quickProduct') <span role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
         </div>
     </div>
 

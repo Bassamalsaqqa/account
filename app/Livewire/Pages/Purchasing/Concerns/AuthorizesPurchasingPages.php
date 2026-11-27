@@ -33,6 +33,27 @@ trait AuthorizesPurchasingPages
         }
     }
 
+    /**
+     * Read-only authorization for boot/hydrate/render paths without database row locks.
+     *
+     * @param  string|list<string>  $permissions
+     */
+    protected function authorizePurchasingReadOnly(string|array $permissions): Company
+    {
+        abort_unless(auth()->check(), 403);
+        $context = app(CompanyContext::class);
+        if (! $context->hasCompany() || (int) $context->companyId() !== $this->pageCompanyId) {
+            abort(403);
+        }
+        try {
+            return app(SalesActorGuard::class)->authorizeReadOnly(
+                $this->pageCompanyId, auth()->user(), $permissions
+            );
+        } catch (AuthorizationException) {
+            abort(403);
+        }
+    }
+
     protected function authorizePaymentFinancialRead(): Company
     {
         abort_unless($this->canReadVendorFinancials(), 403);

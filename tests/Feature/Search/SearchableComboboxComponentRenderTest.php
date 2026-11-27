@@ -90,9 +90,26 @@ final class SearchableComboboxComponentRenderTest extends TestCase
 
         // Clear action button
         $this->assertStringContainsString('@click.stop="clear()"', $html);
-        // Loading indicator
-        $this->assertStringContainsString('x-show="searching || syncing"', $html);
+        // Loading indicator includes idle debounce phase before async search
+        $this->assertStringContainsString('x-show="pendingDebounce || searching || syncing"', $html);
         // Empty state announcement
         $this->assertStringContainsString('role="status"', $html);
+    }
+
+    public function test_combobox_supports_reset_after_select_for_quick_product_add(): void
+    {
+        $html = Blade::render(
+            '<x-searchable-combobox
+                id="quick-add-check"
+                type="product"
+                context="purchasing"
+                on-select="quickAddProduct"
+                :reset-after-select="true"
+                aria-label="بحث الأصناف"
+            />'
+        );
+
+        $this->assertStringContainsString('resetAfterSelect: true', $html);
+        $this->assertStringContainsString('data-reset-after-select="1"', $html);
     }
 }

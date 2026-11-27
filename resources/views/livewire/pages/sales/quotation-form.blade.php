@@ -161,18 +161,24 @@
                         {{ __('sales.quotation_details') }}
                     </h2>
                     <div class="flex w-full md:w-auto min-w-0 md:flex-1 max-w-md items-center gap-2">
-                        <input id="quotation-product-search"
-                               type="text"
-                               wire:model.live.debounce.300ms="productSearch"
-                               placeholder="{{ __('workflow.search_products') }}"
-                               aria-label="{{ __('workflow.search_products') }}"
-                               class="flex-1 min-w-0 w-0 h-11 px-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
+                        <div class="flex-1 min-w-0">
+                            <x-searchable-combobox
+                                id="quotation-product-search"
+                                type="product"
+                                context="quotation"
+                                on-select="quickAddProduct"
+                                :reset-after-select="true"
+                                :placeholder="__('workflow.search_products')"
+                                :aria-label="__('workflow.search_products')"
+                            />
+                        </div>
                         @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
                             <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-2 rounded-control border border-border text-sm font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                                 + {{ __('quick_product.create') }}
                             </button>
                         @endif
                     </div>
+                    @error('quickProduct') <span role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                 </div>
                 <button type="button"
                         data-row-mutation-action

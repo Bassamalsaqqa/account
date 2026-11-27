@@ -37,6 +37,11 @@ class StockTransferForm extends Component
         return $this->authorizeInventory('inventory.stock.transfer');
     }
 
+    protected function authorizeInventoryContextReadOnly(): Company
+    {
+        return $this->authorizeInventoryReadOnly('inventory.stock.transfer');
+    }
+
     public ?int $source_warehouse_id = null;
 
     public ?int $destination_warehouse_id = null;
@@ -62,7 +67,7 @@ class StockTransferForm extends Component
     public function mount(CompanyContext $context): void
     {
         $this->pageCompanyId = $context->companyId();
-        $company = $this->authorizeInventory('inventory.stock.transfer');
+        $company = $this->authorizeInventoryContextReadOnly();
         $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
 
@@ -167,13 +172,13 @@ class StockTransferForm extends Component
     public function boot(): void
     {
         if (isset($this->pageCompanyId)) {
-            $this->authorizeInventory('inventory.stock.transfer');
+            $this->authorizeInventoryReadOnly('inventory.stock.transfer');
         }
     }
 
     public function render(CompanyContext $context): View
     {
-        $company = $this->authorizeInventory('inventory.stock.transfer');
+        $company = $this->authorizeInventoryReadOnly('inventory.stock.transfer');
 
         $productsQuery = Product::where('company_id', $company->id)
             ->where('active', true)

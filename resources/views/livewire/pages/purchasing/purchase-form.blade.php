@@ -238,15 +238,24 @@
         <div>
             <label for="purchase-product-search" class="block text-xs font-bold text-text-secondary mb-1">{{ __('purchasing.search_products') }}</label>
             <div class="flex gap-2 items-center">
-                <input id="purchase-product-search" type="search" maxlength="160" wire:model.live.debounce.300ms="productSearch" x-on:keydown.enter.prevent placeholder="{{ __('purchasing.search_products') }}" class="flex-1 min-w-0 h-10 px-3 border border-border bg-canvas rounded-control text-xs" :disabled="documentBusy || saving"/>
+                <div class="flex-1 min-w-0">
+                    <x-searchable-combobox
+                        id="purchase-product-search"
+                        type="product"
+                        context="purchasing"
+                        on-select="quickAddProduct"
+                        :reset-after-select="true"
+                        :placeholder="__('purchasing.search_products')"
+                        :aria-label="__('purchasing.search_products')"
+                    />
+                </div>
                 @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                    <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-10 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
+                    <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                         + {{ __('quick_product.create') }}
                     </button>
                 @endif
             </div>
-            <p wire:loading wire:target="productSearch" role="status" class="mt-1 text-xs text-text-secondary">{{ __('purchasing.products_searching') }}</p>
-            @if($products->isEmpty())<p role="status" class="mt-1 text-sm text-text-secondary">{{ __('purchasing.no_matching_products') }}</p>@endif
+            @error('quickProduct') <span role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
         </div>
     </div>
 

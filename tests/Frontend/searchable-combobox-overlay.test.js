@@ -252,3 +252,145 @@ test('clearing a sheet restores the visible trigger, never the hidden sheet inpu
     assert.equal(sheetFocus, 0);
     comp.destroy();
 });
+
+test('handleInput marks pendingDebounce as loading truth until debounce triggers performSearch without false No results', async () => {
+    const comp = makeComponent({ id: 'debounce-cb', options: [{ id: 1, label: 'Alpha' }] });
+    let resolvedCalls = 0;
+    let resolveSearch;
+    comp.$wire = {
+        searchSelector: async (_type, query, _sel, opts) => {
+            resolvedCalls++;
+            return new Promise((resolve) => {
+                resolveSearch = () => resolve({
+                    generation: opts.generation,
+                    items: [{ id: 2, label: 'أسعد الصباح' }],
+                    has_more: false,
+                });
+            });
+        },
+    };
+
+    comp.query = 'أسعد';
+    comp.handleInput();
+
+    // Immediately after clearing items, pendingDebounce keeps UI in loading state rather than showing false No results
+    assert.equal(comp.open, true);
+    assert.equal(comp.items.length, 0);
+    assert.equal(comp.pendingDebounce, true);
+    assert.equal(comp.searching, false);
+    assert.equal(comp.failed, false);
+
+    // Wait past 220ms debounce so performSearch starts synchronously before async resolution
+    await new Promise((r) => setTimeout(r, 250));
+    assert.equal(comp.pendingDebounce, false);
+    assert.equal(comp.searching, true);
+    assert.equal(resolvedCalls, 1);
+
+    resolveSearch();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(comp.pendingDebounce, false);
+    assert.equal(comp.searching, false);
+    assert.equal(comp.items.length, 1);
+    comp.destroy();
+});
+
+test('missing wire actions surface visible failure instead of silent no-results or silent success', async () => {
+    const comp = makeComponent({ id: 'broken-wire', onSelect: 'quickAddProduct', options: [] });
+    comp.$wire = {};
+
+    await comp.performSearch();
+    assert.equal(comp.failed, true);
+    assert.equal(comp.searching, false);
+    assert.equal(comp.pendingDebounce, false);
+
+    comp.items = [{ id: 10, label: 'Soap' }];
+    await comp.selectItem(comp.items[0]);
+    assert.equal(comp.failed, true);
+    assert.equal(comp.selectedId, null);
+    assert.equal(comp.query, '');
+    comp.destroy();
+});
+
+test('pagination failure keeps page 1 results and retrySearch resumes loadMore instead of wiping list', async () => {
+    const comp = makeComponent({ id: 'paged-cb', options: [] });
+    let failNext = true;
+    const seenCursors = [];
+    comp.$wire = {
+        searchSelector: async (_type, _query, _sel, opts) => {
+            seenCursors.push(opts.cursor ?? null);
+            if (!opts.cursor) {
+                return {
+                    generation: opts.generation,
+                    items: [{ id: 1, label: 'Page One Item' }],
+                    has_more: true,
+                    next_cursor: 'cursor-page-2',
+                };
+            }
+            if (failNext) {
+                failNext = false;
+                throw new Error('503 temporary');
+            }
+            return {
+                generation: opts.generation,
+                items: [{ id: 2, label: 'Page Two Item' }],
+                has_more: false,
+                next_cursor: null,
+            };
+        },
+    };
+
+    await comp.performSearch();
+    assert.equal(comp.items.length, 1);
+    assert.equal(comp.hasMore, true);
+    assert.equal(comp.nextCursor, 'cursor-page-2');
+
+    await comp.loadMore();
+    assert.equal(comp.failed, true);
+    assert.equal(comp.items.length, 1);
+    assert.equal(comp.nextCursor, 'cursor-page-2');
+
+    comp.retrySearch();
+    await new Promise((r) => setTimeout(r, 15));
+    assert.equal(comp.failed, false);
+    assert.deepEqual(comp.items.map((i) => i.id), [1, 2]);
+    assert.deepEqual(seenCursors, [null, 'cursor-page-2', 'cursor-page-2']);
+    comp.destroy();
+});
+
+test('resetAfterSelect clears quick-add combobox after server acceptance and rolls back on failure', async () => {
+    const comp = makeComponent({
+        id: 'purchase-product-search',
+        type: 'product',
+        context: 'purchasing',
+        onSelect: 'quickAddProduct',
+        resetAfterSelect: true,
+        options: [{ id: 5, label: 'Toothpaste (TP-1)', meta: { matched_product_unit_id: 9 } }],
+    });
+    const received = [];
+    let allow = true;
+    comp.$wire = {
+        quickAddProduct: async (...args) => {
+            received.push(args);
+            return allow;
+        },
+    };
+
+    const option = comp.items[0];
+
+    await comp.selectItem(option);
+    assert.deepEqual(received, [[5, 9]]);
+    assert.equal(comp.selectedId, null);
+    assert.equal(comp.selectedLabel, '');
+    assert.equal(comp.query, '');
+    assert.deepEqual(comp.items, []);
+    assert.equal(comp.hasMore, false);
+    assert.equal(comp.nextCursor, null);
+    assert.equal(comp.failed, false);
+
+    allow = false;
+    comp.items = [option];
+    await comp.selectItem(option);
+    assert.equal(comp.failed, true);
+    assert.equal(comp.selectedId, null);
+    comp.destroy();
+});

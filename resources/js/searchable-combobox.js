@@ -178,6 +178,7 @@ export function searchableCombobox(config) {
         wireModel: config.wireModel || null,
         onSelect: config.onSelect || null,
         extraArgs: Array.isArray(config.extraArgs) ? config.extraArgs : [],
+        resetAfterSelect: Boolean(config.resetAfterSelect),
         disabled: Boolean(config.disabled),
         required: Boolean(config.required),
         hasError: Boolean(config.hasError),
@@ -193,6 +194,7 @@ export function searchableCombobox(config) {
         items: Array.isArray(config.options) ? config.options : [],
         activeIndex: -1,
         activeId: null,
+        pendingDebounce: false,
         searching: false,
         hasMore: false,
         nextCursor: null,
@@ -329,6 +331,7 @@ export function searchableCombobox(config) {
                     if (!isOpen) {
                         this.activeIndex = -1;
                         this.activeId = null;
+                        this.pendingDebounce = false;
                         this.searching = false;
                         this.loadingMore = false;
                         this.detachOpenListeners();
@@ -368,6 +371,7 @@ export function searchableCombobox(config) {
                     'data-has-error',
                     'data-type',
                     'data-context',
+                    'data-reset-after-select',
                     'data-placeholder',
                     'data-aria-label',
                 ],
@@ -404,6 +408,7 @@ export function searchableCombobox(config) {
             if (ds.ariaLabel !== undefined) this.ariaLabel = ds.ariaLabel;
             if (ds.disabled !== undefined) this.disabled = ds.disabled === '1';
             if (ds.hasError !== undefined) this.hasError = ds.hasError === '1';
+            if (ds.resetAfterSelect !== undefined) this.resetAfterSelect = ds.resetAfterSelect === '1';
 
             if (ds.extraArgs) {
                 try {
@@ -659,6 +664,7 @@ export function searchableCombobox(config) {
             }
             this.nextCursor = null;
             this.loadingMore = false;
+            this.pendingDebounce = false;
             this.searching = false;
             return nextGen;
         },
@@ -700,6 +706,7 @@ export function searchableCombobox(config) {
         closeOverlay({ restoreFocus = false, preserveQuery = false } = {}) {
             ++generation;
             if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+            this.pendingDebounce = false;
             this.searching = false;
             this.loadingMore = false;
             const wasSheet = this.overlayMode === 'sheet';
@@ -750,6 +757,7 @@ export function searchableCombobox(config) {
             this.activeIndex = -1;
             this.activeId = null;
             this.failed = false;
+            this.pendingDebounce = true;
 
             if (!this.open) {
                 this.openOverlay();
@@ -757,7 +765,10 @@ export function searchableCombobox(config) {
             this.nextCursor = null;
 
             debounceTimer = setTimeout(() => {
-                if (currentGen !== generation || capturedInputVersion !== this.inputVersion) return;
+                if (currentGen !== generation || capturedInputVersion !== this.inputVersion) {
+                    return;
+                }
+                this.pendingDebounce = false;
                 this.performSearch(currentGen, capturedQuery, capturedInputVersion);
             }, 220);
         },
@@ -777,6 +788,12 @@ export function searchableCombobox(config) {
 
         retrySearch() {
             if (this.isBlocked()) return;
+            if (this.items.length > 0 && this.hasMore && this.nextCursor) {
+                this.failed = false;
+                this.offline = false;
+                this.loadMore();
+                return;
+            }
             const displayingSelected = this.isSelected && this.query === this.selectedLabel;
             this.performSearch(undefined, displayingSelected ? '' : this.query, this.inputVersion);
         },
@@ -784,7 +801,10 @@ export function searchableCombobox(config) {
         async performSearch(expectedGen, expectedQuery, expectedInputVersion = this.inputVersion) {
             if (this.isBlocked()) return;
             if (expectedGen !== undefined && expectedGen !== generation) return;
+            this.pendingDebounce = false;
             if (!this.$wire || typeof this.$wire.searchSelector !== 'function') {
+                this.searching = false;
+                this.failed = true;
                 return;
             }
 
@@ -871,6 +891,15 @@ export function searchableCombobox(config) {
                 return;
             }
             if (!this.$wire || typeof this.$wire.searchSelector !== 'function') {
+                this.loadingMore = false;
+                this.failed = true;
+                return;
+            }
+
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                this.offline = true;
+                this.failed = true;
+                this.loadingMore = false;
                 return;
             }
 
@@ -882,6 +911,8 @@ export function searchableCombobox(config) {
             const searchQuery = displayingSelected ? '' : this.query;
 
             this.loadingMore = true;
+            this.failed = false;
+            this.offline = false;
 
             try {
                 const response = await this.$wire.searchSelector(
@@ -1097,23 +1128,47 @@ export function searchableCombobox(config) {
                         });
                         return;
                     }
-                } else if (this.wireModel && this.$wire) {
+                } else if (this.wireModel && this.$wire && (typeof this.$wire.$set === 'function' || typeof this.$wire.set === 'function')) {
                     if (typeof this.$wire.$set === 'function') {
                         await this.$wire.$set(this.wireModel, item.id);
-                    } else if (typeof this.$wire.set === 'function') {
+                    } else {
                         await this.$wire.set(this.wireModel, item.id);
                     }
                     if (currentToken !== selectionToken) {
                         return;
                     }
+                } else if (this.onSelect || this.wireModel) {
+                    this.selectedId = prevId;
+                    this.selectedLabel = prevLabel;
+                    this.query = prevQuery;
+                    this.failed = true;
+                    this.$dispatch('combobox-selected', {
+                        id: this.id,
+                        type: this.type,
+                        value: prevId,
+                        item: null,
+                    });
+                    return;
                 }
 
                 if (currentToken !== selectionToken) {
                     return;
                 }
 
-                this.lastSyncedSelectedId = String(item.id);
-                this.lastSyncedSelectedLabel = item.label;
+                if (this.resetAfterSelect) {
+                    this.selectedId = null;
+                    this.selectedLabel = '';
+                    this.query = '';
+                    this.items = [];
+                    this.hasMore = false;
+                    this.nextCursor = null;
+                    this.lastSyncedSelectedId = null;
+                    this.lastSyncedSelectedLabel = '';
+                    this.lastSearchedQuery = undefined;
+                } else {
+                    this.lastSyncedSelectedId = String(item.id);
+                    this.lastSyncedSelectedLabel = item.label;
+                }
                 this.failed = false;
             } catch (err) {
                 if (currentToken === selectionToken) {
@@ -1153,6 +1208,7 @@ export function searchableCombobox(config) {
             this.nextCursor = null;
             this.loadingMore = false;
             this.searching = false;
+            this.pendingDebounce = false;
             this.closeOverlay({ restoreFocus: false, preserveQuery: true });
             this.failed = false;
             this.lastSearchedQuery = undefined;
@@ -1180,15 +1236,23 @@ export function searchableCombobox(config) {
                         this.failed = true;
                         return;
                     }
-                } else if (this.wireModel && this.$wire) {
+                } else if (this.wireModel && this.$wire && (typeof this.$wire.$set === 'function' || typeof this.$wire.set === 'function')) {
                     if (typeof this.$wire.$set === 'function') {
                         await this.$wire.$set(this.wireModel, null);
-                    } else if (typeof this.$wire.set === 'function') {
+                    } else {
                         await this.$wire.set(this.wireModel, null);
                     }
                     if (currentToken !== selectionToken) {
                         return;
                     }
+                } else if (this.onSelect || this.wireModel) {
+                    this.selectedId = prevId;
+                    this.selectedLabel = prevLabel;
+                    this.query = prevQuery;
+                    this.items = prevItems;
+                    this.hasMore = prevHasMore;
+                    this.failed = true;
+                    return;
                 }
 
                 if (currentToken !== selectionToken) {

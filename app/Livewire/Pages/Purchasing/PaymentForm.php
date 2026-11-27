@@ -97,22 +97,19 @@ class PaymentForm extends Component
             if (! $context->hasCompany() || (int) $context->companyId() !== $this->pageCompanyId) {
                 abort(403);
             }
-            $this->authorizePurchasing('purchasing.cost.view');
-            $this->authorizePurchasing('money.vendor_payment.create');
+            $this->authorizePurchasingReadOnly(['purchasing.cost.view', 'money.vendor_payment.create']);
         }
     }
 
     public function mount(CompanyContext $context, ?int $vendor_id = null, ?int $purchase_id = null): void
     {
         $this->pageCompanyId = (int) $context->companyId();
-        $this->authorizePurchasing('purchasing.cost.view');
-        $this->authorizePurchasing('money.vendor_payment.create');
+        $company = $this->authorizePurchasingReadOnly(['purchasing.cost.view', 'money.vendor_payment.create']);
 
         $vendor_id ??= request()->integer('vendor_id') ?: null;
         $purchase_id ??= request()->integer('purchase_id') ?: null;
 
         $this->idempotency_key = (string) Str::ulid();
-        $company = $context->company();
 
         $this->vendor_id = $vendor_id;
         $this->document_locale = $company->default_locale;
@@ -675,8 +672,7 @@ class PaymentForm extends Component
 
     public function render(CompanyContext $context): View
     {
-        $this->authorizePurchasing('purchasing.cost.view');
-        $this->authorizePurchasing('money.vendor_payment.create');
+        $this->authorizePurchasingReadOnly(['purchasing.cost.view', 'money.vendor_payment.create']);
 
         $company = $context->company();
         $vendorsQuery = Vendor::withTrashed()->where('company_id', $this->pageCompanyId)

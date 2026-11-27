@@ -15,6 +15,7 @@
     'compact' => false,
     'hasError' => false,
     'rowKey' => null,
+    'resetAfterSelect' => false,
 ])
 
 @php
@@ -36,6 +37,7 @@
         wireModel: {{ $wireModel ? "'{$wireModel}'" : 'null' }},
         onSelect: {{ $onSelect ? "'{$onSelect}'" : 'null' }},
         extraArgs: {{ $extraArgsJson }},
+        resetAfterSelect: {{ $resetAfterSelect ? 'true' : 'false' }},
         value: '{{ $selectedIdStr }}',
         label: @js($selectedLabel),
         options: {{ $initialOptionsJson }},
@@ -57,6 +59,7 @@
         data-selected-id="{{ $selectedIdStr }}"
         data-selected-label="{{ $selectedLabel }}"
         data-extra-args="{{ $extraArgsJson }}"
+        data-reset-after-select="{{ $resetAfterSelect ? '1' : '0' }}"
         data-disabled="{{ $disabled ? '1' : '0' }}"
         data-has-error="{{ $hasError ? '1' : '0' }}"
         data-placeholder="{{ $placeholder }}"
@@ -91,7 +94,7 @@
             @click="handleTriggerClick()"
             @keydown="handleKeydown($event)"
             :placeholder="placeholder"
-            :disabled="disabled || (typeof saving !== 'undefined' && saving)"
+            :disabled="disabled || (typeof saving !== 'undefined' && saving) || (typeof documentBusy !== 'undefined' && documentBusy)"
             autocomplete="off"
             spellcheck="false"
             :class="hasError ? 'border-danger' : 'border-border'"
@@ -100,16 +103,16 @@
         />
 
         <div class="absolute inset-y-0 ltr:right-0 rtl:left-0 flex items-center ltr:pr-2 rtl:pl-2 gap-1 pointer-events-auto">
-            <span x-show="searching || syncing" x-cloak class="inline-block w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin text-primary" aria-hidden="true"></span>
+            <span x-show="pendingDebounce || searching || syncing" x-cloak class="inline-block w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin text-primary" aria-hidden="true"></span>
 
             <button
                 type="button"
-                x-show="isSelected && !searching && !syncing"
+                x-show="isSelected && !pendingDebounce && !searching && !syncing"
                 x-cloak
                 @click.stop="clear()"
                 title="{{ __('search.clear_search') }}"
                 aria-label="{{ __('search.clear_search') }}"
-                :disabled="disabled || (typeof saving !== 'undefined' && saving)"
+                :disabled="disabled || (typeof saving !== 'undefined' && saving) || (typeof documentBusy !== 'undefined' && documentBusy)"
                 class="min-h-[44px] min-w-[32px] md:min-h-7 md:min-w-7 flex items-center justify-center text-text-muted hover:text-danger rounded-control transition-colors cursor-pointer"
             >
                 <span class="text-base font-bold leading-none">&times;</span>
@@ -177,7 +180,7 @@
                         />
                         <button
                             type="button"
-                            x-show="query && query.length > 0 && !searching && !syncing"
+                            x-show="query && query.length > 0 && !pendingDebounce && !searching && !syncing"
                             x-cloak
                             @click.stop="clear()"
                             aria-label="{{ __('search.clear_search') }}"
@@ -218,14 +221,14 @@
                         </div>
                     </template>
 
-                    <template x-if="searching && items.length === 0">
+                    <template x-if="(pendingDebounce || searching) && items.length === 0">
                         <div role="status" class="p-3 text-xs text-text-muted flex items-center justify-center gap-2">
                             <span class="inline-block w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
                             <span>{{ __('search.loading') }}</span>
                         </div>
                     </template>
 
-                    <template x-if="!searching && !failed && !offline && items.length === 0">
+                    <template x-if="!pendingDebounce && !searching && !failed && !offline && items.length === 0">
                         <div role="status" class="p-3 text-xs text-text-muted text-center">
                             {{ __('search.no_results') }}
                         </div>

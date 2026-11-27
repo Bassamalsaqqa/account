@@ -90,7 +90,8 @@ class ProductSelectionSearchTest extends TestCase
             $this->product('BULK-'.$index, sprintf('صنف %03d', $index), 'Item '.$index);
         }
         foreach ([InvoiceForm::class, PurchaseForm::class] as $component) {
-            Livewire::test($component)->assertViewHas('products', fn ($products) => $products->count() === 50);
+            Livewire::test($component)->assertViewHas('products', fn ($products) => $products->isEmpty());
+            Livewire::test($component)->set('productSearch', 'صنف')->assertViewHas('products', fn ($products) => $products->count() === 50);
         }
         Livewire::test(InvoiceForm::class)->call('selectProduct', 0, $this->soap->id)
             ->assertViewHas('products', fn ($products) => $products->contains('id', $this->soap->id));
@@ -151,7 +152,7 @@ class ProductSelectionSearchTest extends TestCase
         $twelve = $this->productReads();
         DB::disableQueryLog();
         $this->assertSame($single, $twelve, 'Product/unit reads must not grow with repeated lines.');
-        $this->assertSame(4, $twelve);
+        $this->assertSame(3, $twelve);
         $this->assertSame($before, $this->economicCounts());
     }
 

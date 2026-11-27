@@ -56,7 +56,7 @@ class OpeningStockForm extends Component
     public function boot(): void
     {
         if (isset($this->pageCompanyId)) {
-            $this->authorizeInventoryContext();
+            $this->authorizeInventoryContextReadOnly();
         }
     }
 
@@ -68,10 +68,15 @@ class OpeningStockForm extends Component
         return $company;
     }
 
+    protected function authorizeInventoryContextReadOnly(): Company
+    {
+        return $this->authorizeInventoryReadOnly(['inventory.stock.adjust', 'inventory.cost.view']);
+    }
+
     public function mount(CompanyContext $context): void
     {
         $this->pageCompanyId = (int) $context->companyId();
-        $company = $this->authorizeInventoryContext();
+        $company = $this->authorizeInventoryContextReadOnly();
         $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
         $this->reason = __('inventory.default_opening_stock_reason');
@@ -168,7 +173,7 @@ class OpeningStockForm extends Component
 
     public function render(CompanyContext $context): View
     {
-        $company = $this->authorizeInventoryContext();
+        $company = $this->authorizeInventoryContextReadOnly();
 
         /** @var User $user */
         $user = auth()->user();

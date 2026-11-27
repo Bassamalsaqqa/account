@@ -18,6 +18,7 @@ use App\Domain\Sales\Formatters\SalesMoneyFormatter;
 use App\Domain\Sales\Queries\CustomerLastPriceQuery;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\FindsEmptyDocumentLine;
 use App\Livewire\Concerns\HandlesDocumentLineIdentity;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
@@ -33,10 +34,12 @@ use App\Models\TaxRate;
 use App\Services\Money\CurrencyMinorUnitsResolver;
 use App\Services\Sales\SalesActorGuard;
 use App\Services\Sales\SalesProductSelection;
+use App\Services\Search\ArabicSearchNormalizer;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +53,7 @@ class QuotationForm extends Component
 {
     use AdjustsDocumentQuantity;
     use CameraBarcodeScan;
+    use FindsEmptyDocumentLine;
     use HandlesDocumentLineIdentity;
     use HandlesSearchableSelectors;
     use QuickPartyCreate;
@@ -133,6 +137,7 @@ class QuotationForm extends Component
     /**
      * @var list<array{
      *     id?: ?int,
+     *     row_key?: string,
      *     product_id?: ?int,
      *     product_unit_id?: ?int,
      *     item_description: string,
@@ -305,8 +310,29 @@ class QuotationForm extends Component
 
     public function hydrate(CompanyContext $context): void
     {
-        $this->authorizeQuoteAction();
+        $this->authorizeQuoteReadOnly();
         $this->ensureLineIdentities();
+    }
+
+    protected function authorizeQuoteReadOnly(): void
+    {
+        $user = auth()->user();
+        $context = app(CompanyContext::class);
+        abort_unless($user !== null && $context->hasCompany() && (int) $context->companyId() === (int) $this->pageCompanyId, 403);
+
+        try {
+            app(SalesActorGuard::class)->authorizeReadOnly(
+                $this->pageCompanyId,
+                $user,
+                $this->isEditing ? 'sales.quote.edit' : 'sales.quote.create'
+            );
+        } catch (AuthorizationException) {
+            abort(403);
+        }
+        if ($this->isEditing) {
+            $quote = Quotation::where('company_id', $this->pageCompanyId)->whereKey($this->quotation?->id)->firstOrFail();
+            abort_unless($quote->status === Quotation::STATUS_DRAFT, 403);
+        }
     }
 
     protected function authorizeQuoteAction(): void
@@ -507,14 +533,10 @@ class QuotationForm extends Component
             $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
         } else {
             $isTrulyEmptyFirstRow = count($this->lines) === 1
-                && empty($this->lines[0]['product_id'])
-                && trim((string) ($this->lines[0]['item_description'])) === ''
-                && in_array((string) ($this->lines[0]['quantity']), ['1', '1.000000', '1.00', ''], true)
-                && in_array((string) ($this->lines[0]['unit_price']), ['0', '0.00', '0.000000', ''], true)
-                && (($this->lines[0]['discount_type']) === 'none')
-                && empty($this->lines[0]['tax_rate_id']);
+                && $this->firstTrulyEmptyLineIndex($this->lines, 'unit_price') === 0;
 
             $newLine = [
+                'row_key' => $isTrulyEmptyFirstRow ? $this->lineRowKey(0) : $this->newUiIdentityKey(),
                 'product_id' => (int) $product->id,
                 'product_unit_id' => $selectedUnitId,
                 'item_description' => $selectedDescription,
@@ -541,6 +563,71 @@ class QuotationForm extends Component
         $this->resetErrorBag('barcodeSearch');
         $this->recalculate();
         $this->dispatch('barcode-scanned');
+    }
+
+    public function quickAddProduct(?int $productId = null, ?int $productUnitId = null): bool
+    {
+        $this->authorizeQuoteAction();
+        if ($productId === null || $productId <= 0) {
+            return false;
+        }
+
+        $company = app(CompanyContext::class)->company();
+        $product = Product::where('company_id', $company->id)
+            ->where('active', true)
+            ->find($productId);
+
+        if ($product === null) {
+            $this->addError('quickProduct', __('workflow.product_not_found'));
+
+            return false;
+        }
+
+        try {
+            $selected = app(SalesProductSelection::class)->select(
+                (int) $product->id,
+                $productUnitId,
+                $this->exchange_rate,
+                null
+            );
+        } catch (\InvalidArgumentException|MathException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException) {
+            $this->addError('quickProduct', __('commands.code_validation_failed'));
+
+            return false;
+        }
+
+        $emptyIndex = $this->firstTrulyEmptyLineIndex($this->lines, 'unit_price');
+        $rowKey = $emptyIndex !== null
+            ? $this->lineRowKey($emptyIndex)
+            : $this->newUiIdentityKey();
+
+        $newLine = [
+            'row_key' => $rowKey,
+            'product_id' => (int) $product->id,
+            'product_unit_id' => (int) $selected['product_unit_id'],
+            'item_description' => (string) $selected['item_description'],
+            'quantity' => '1',
+            'unit_price' => (string) $selected['unit_price'],
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'tax_rate_id' => null,
+            'available_quantity' => $selected['available_quantity'] ?? null,
+            'subtotal' => '0.00',
+            'discount_amount' => '0.00',
+            'tax_amount' => '0.00',
+            'line_total' => '0.00',
+        ];
+
+        if ($emptyIndex !== null) {
+            $this->lines[$emptyIndex] = $newLine;
+        } else {
+            $this->lines[] = $newLine;
+        }
+
+        $this->resetErrorBag('quickProduct');
+        $this->recalculate();
+
+        return true;
     }
 
     public function addLine(): void
@@ -870,22 +957,24 @@ class QuotationForm extends Component
 
     public function render(CompanyContext $context): View
     {
-        $this->authorizeQuoteAction();
+        $this->authorizeQuoteReadOnly();
         $this->ensureLineIdentities();
         $user = auth()->user();
         $company = $context->company();
 
         $cTerm = mb_substr(trim($this->customerSearch), 0, 100);
-        $customersQuery = Customer::where('company_id', $company->id)->where('status', 'active');
         if ($cTerm !== '') {
-            $customersQuery->where(function ($q) use ($cTerm) {
-                $q->where('name_ar', 'like', "%{$cTerm}%")
-                    ->orWhere('name_en', 'like', "%{$cTerm}%")
-                    ->orWhere('code', 'like', "%{$cTerm}%")
-                    ->orWhere('phone', 'like', "%{$cTerm}%");
-            });
+            $customersQuery = Customer::where('company_id', $company->id)->where('status', 'active');
+            ArabicSearchNormalizer::applySearchTerms(
+                $customersQuery,
+                $cTerm,
+                ['name_ar', 'name_en', 'business_name_ar', 'business_name_en', 'code', 'phone'],
+                ['name_ar', 'business_name_ar']
+            );
+            $matchingCustomers = $customersQuery->orderByRaw('COALESCE(NULLIF(name_ar, ""), name_en) ASC')->limit(50)->get();
+        } else {
+            $matchingCustomers = collect();
         }
-        $matchingCustomers = $customersQuery->orderByRaw('COALESCE(NULLIF(name_ar, ""), name_en) ASC')->limit(50)->get();
         if ($this->customer_id) {
             $selectedCustomer = Customer::where('company_id', $company->id)
                 ->where('id', $this->customer_id)
@@ -899,17 +988,24 @@ class QuotationForm extends Component
         $currencies = $company->currencies()->where('enabled', true)->get();
 
         $term = mb_substr(trim($this->productSearch), 0, 160);
-        $productsQuery = Product::where('company_id', $company->id)->where('active', true);
-        if ($term !== '') {
-            $productsQuery->where(fn ($query) => $query->where('name_ar', 'like', "%{$term}%")
-                ->orWhere('name_en', 'like', "%{$term}%")->orWhere('sku', 'like', "%{$term}%")
-                ->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $company->id)->where('barcode', $term)));
-        }
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
-        $selectedProducts = Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
-            ->whereIn('id', $selectedProductIds)->get();
+        $selectedProducts = $selectedProductIds !== []
+            ? Product::with(['productUnits.unit', 'baseUnit'])->where('company_id', $company->id)
+                ->whereIn('id', $selectedProductIds)->get()
+            : collect();
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
-        $matchingProducts = $productsQuery->with(['productUnits.unit', 'baseUnit'])->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get();
+        $matchingProducts = collect();
+        if ($term !== '') {
+            $productsQuery = Product::where('company_id', $company->id)->where('active', true);
+            ArabicSearchNormalizer::applySearchTerms(
+                $productsQuery,
+                $term,
+                ['name_ar', 'name_en', 'sku'],
+                ['name_ar'],
+                fn ($q) => $q->orWhereHas('barcodes', fn ($barcodes) => $barcodes->where('company_id', $company->id)->where('barcode', $term))
+            );
+            $matchingProducts = $productsQuery->with(['productUnits.unit', 'baseUnit'])->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get();
+        }
         $products = $matchingProducts->merge($selectedProducts)->unique('id');
         $lastCustomerPrices = $this->customer_id !== null && count($selectedProductIds) <= 100
             && app(ReportingGuard::class)->allows($company, ['reports.sales.view', 'sales.invoice.view'], $user)

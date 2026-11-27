@@ -29,4 +29,23 @@ trait AuthorizesInventoryPages
             abort(403);
         }
     }
+
+    /**
+     * Read-only authorization for boot/render paths without database row locks.
+     *
+     * @param  string|list<string>  $permissions
+     */
+    protected function authorizeInventoryReadOnly(string|array $permissions): Company
+    {
+        $context = app(CompanyContext::class);
+        abort_unless(auth()->check() && $context->hasCompany() && $context->companyId() === $this->pageCompanyId, 403);
+
+        try {
+            return app(SalesActorGuard::class)->authorizeReadOnly(
+                $this->pageCompanyId, auth()->user(), $permissions
+            );
+        } catch (AuthorizationException) {
+            abort(403);
+        }
+    }
 }

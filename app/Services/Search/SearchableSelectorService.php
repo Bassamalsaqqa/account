@@ -57,6 +57,10 @@ final class SearchableSelectorService
         ],
         'warehouse' => [
             'general' => ['sales.invoice.create', 'sales.invoice.edit_draft', 'purchasing.purchase.create', 'inventory.stock.view', 'inventory.stock.transfer', 'reports.inventory.view', 'inventory.stock.adjust'],
+            'inventory' => ['inventory.stock.view', 'inventory.stock.transfer', 'inventory.stock.adjust', 'inventory.product.manage'],
+            'purchasing' => ['purchasing.purchase.create', 'purchasing.purchase.edit_draft', 'purchasing.purchase.view'],
+            'sales' => ['sales.invoice.create', 'sales.invoice.edit_draft', 'sales.invoice.view'],
+            'reports' => ['reports.inventory.view'],
         ],
     ];
 
@@ -229,14 +233,15 @@ final class SearchableSelectorService
      */
     public function authorize(Company $company, User $actor, string $type, array $options = []): void
     {
-        if (! $actor->relationLoaded('roles')) {
-            $actor->load('roles.permissions');
-        }
-
         // Intra-tenant membership verification
         if ($this->companyContext->hasCompany() && (int) $this->companyContext->companyId() !== (int) $company->id) {
             throw new AuthorizationException('Actor does not belong to the requested company.');
         }
+
+        // Always bind the target company team and clear potentially stale Spatie relations before checking permissions.
+        setPermissionsTeamId((int) $company->id);
+        $actor->unsetRelation('roles')->unsetRelation('permissions');
+        $actor->load('roles.permissions');
 
         $allowlists = self::CAPABILITIES[$type] ?? null;
         if ($allowlists === null) {
@@ -284,7 +289,73 @@ final class SearchableSelectorService
      */
     public static function escapeLike(string $term): string
     {
-        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term);
+        return ArabicSearchNormalizer::escapeLike($term);
+    }
+
+    private function hasPermissionSafely(User $actor, string $permission): bool
+    {
+        try {
+            return $actor->hasPermissionTo($permission);
+        } catch (PermissionDoesNotExist) {
+            return false;
+        }
+    }
+
+    /**
+     * @template TParty of Customer|Vendor
+     *
+     * @param  Builder<TParty>  $query
+     */
+    private function applyPartySearchFilter(Builder $query, string $term): void
+    {
+        $rawLike = '%'.self::escapeLike($term).'%';
+        $rawPrefix = self::escapeLike($term).'%';
+        $useArabicFold = ArabicSearchNormalizer::shouldApplyFolding($term);
+        $foldedTerm = $useArabicFold ? ArabicSearchNormalizer::fold($term) : $term;
+        $foldedLike = $useArabicFold ? '%'.self::escapeLike($foldedTerm).'%' : $rawLike;
+        $foldedPrefix = $useArabicFold ? self::escapeLike($foldedTerm).'%' : $rawPrefix;
+        $foldedNameAr = $useArabicFold ? ArabicSearchNormalizer::sqlFoldColumn('name_ar') : null;
+        $foldedBizAr = $useArabicFold ? ArabicSearchNormalizer::sqlFoldColumn('business_name_ar') : null;
+
+        $query->where(function (Builder $q) use ($rawLike, $useArabicFold, $foldedLike, $foldedNameAr, $foldedBizAr) {
+            $q->where('name_ar', 'LIKE', $rawLike)
+                ->orWhere('name_en', 'LIKE', $rawLike)
+                ->orWhere('business_name_ar', 'LIKE', $rawLike)
+                ->orWhere('business_name_en', 'LIKE', $rawLike)
+                ->orWhere('code', 'LIKE', $rawLike)
+                ->orWhere('phone', 'LIKE', $rawLike)
+                ->orWhere('tax_number', 'LIKE', $rawLike);
+
+            if ($useArabicFold && $foldedNameAr !== null && $foldedBizAr !== null) {
+                $q->orWhereRaw("{$foldedNameAr} LIKE ?", [$foldedLike])
+                    ->orWhereRaw("{$foldedBizAr} LIKE ?", [$foldedLike]);
+            }
+        });
+
+        // Priority: exact code -> prefix code -> exact name/business -> raw prefix name/business -> folded prefix -> raw contains -> folded/other
+        if ($useArabicFold && $foldedNameAr !== null && $foldedBizAr !== null) {
+            $query->orderByRaw(
+                "CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN name_ar = ? OR name_en = ? OR business_name_ar = ? OR business_name_en = ? THEN 2 WHEN name_ar LIKE ? OR name_en LIKE ? OR business_name_ar LIKE ? OR business_name_en LIKE ? THEN 3 WHEN {$foldedNameAr} LIKE ? OR {$foldedBizAr} LIKE ? THEN 4 WHEN name_ar LIKE ? OR name_en LIKE ? OR business_name_ar LIKE ? OR business_name_en LIKE ? THEN 5 ELSE 6 END ASC",
+                [$term, $rawPrefix, $term, $term, $term, $term, $rawPrefix, $rawPrefix, $rawPrefix, $rawPrefix, $foldedPrefix, $foldedPrefix, $rawLike, $rawLike, $rawLike, $rawLike]
+            );
+        } else {
+            $query->orderByRaw(
+                'CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN name_ar = ? OR name_en = ? OR business_name_ar = ? OR business_name_en = ? THEN 2 WHEN name_ar LIKE ? OR name_en LIKE ? OR business_name_ar LIKE ? OR business_name_en LIKE ? THEN 3 WHEN name_ar LIKE ? OR name_en LIKE ? OR business_name_ar LIKE ? OR business_name_en LIKE ? THEN 4 ELSE 5 END ASC',
+                [$term, $rawPrefix, $term, $term, $term, $term, $rawPrefix, $rawPrefix, $rawPrefix, $rawPrefix, $rawLike, $rawLike, $rawLike, $rawLike]
+            );
+        }
+    }
+
+    private function formatPartySublabel(?string $primarySub, ?string $businessName, string $displayName): ?string
+    {
+        $primary = $primarySub !== null ? trim($primarySub) : '';
+        $biz = $businessName !== null ? trim($businessName) : '';
+
+        if ($biz !== '' && $biz !== trim($displayName)) {
+            return $primary !== '' ? "{$primary} · {$biz}" : $biz;
+        }
+
+        return $primary !== '' ? $primary : null;
     }
 
     /**
@@ -314,22 +385,7 @@ final class SearchableSelectorService
         }
 
         if ($term !== '') {
-            $like = '%'.self::escapeLike($term).'%';
-            $prefix = self::escapeLike($term).'%';
-
-            $query->where(function (Builder $q) use ($like) {
-                $q->where('name_ar', 'LIKE', $like)
-                    ->orWhere('name_en', 'LIKE', $like)
-                    ->orWhere('code', 'LIKE', $like)
-                    ->orWhere('phone', 'LIKE', $like)
-                    ->orWhere('tax_number', 'LIKE', $like);
-            });
-
-            // Priority: exact code -> prefix name -> contains
-            $query->orderByRaw(
-                'CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 2 ELSE 3 END ASC',
-                [$term, $prefix, $prefix, $prefix]
-            );
+            $this->applyPartySearchFilter($query, $term);
         }
 
         $nameCol = $locale === 'ar' ? 'name_ar' : 'name_en';
@@ -364,7 +420,10 @@ final class SearchableSelectorService
             $curr = $customer->default_currency_code ?: $baseCurrency;
             $label = "{$name} ({$curr})";
 
-            $sublabel = $customer->code ?: $customer->phone;
+            $bizAr = (string) ($customer->business_name_ar ?? '');
+            $bizEn = (string) ($customer->business_name_en ?? '');
+            $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
+            $sublabel = $this->formatPartySublabel($customer->code ?: $customer->phone, $businessName, $name);
             $isSelected = ($selectedId !== null && (int) $customer->id === $selectedId);
 
             $dto = (new SearchableOptionDTO(
@@ -397,10 +456,13 @@ final class SearchableSelectorService
                 $en = (string) ($selectedRecord->name_en ?? '');
                 $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
                 $curr = $selectedRecord->default_currency_code ?: $baseCurrency;
+                $bizAr = (string) ($selectedRecord->business_name_ar ?? '');
+                $bizEn = (string) ($selectedRecord->business_name_en ?? '');
+                $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
                 $selectedItem = (new SearchableOptionDTO(
                     id: (string) $selectedRecord->id,
                     label: "{$name} ({$curr})",
-                    sublabel: $selectedRecord->code ?: $selectedRecord->phone,
+                    sublabel: $this->formatPartySublabel($selectedRecord->code ?: $selectedRecord->phone, $businessName, $name),
                     meta: [
                         'code' => $selectedRecord->code,
                         'phone' => $selectedRecord->phone,
@@ -460,21 +522,7 @@ final class SearchableSelectorService
         }
 
         if ($term !== '') {
-            $like = '%'.self::escapeLike($term).'%';
-            $prefix = self::escapeLike($term).'%';
-
-            $query->where(function (Builder $q) use ($like) {
-                $q->where('name_ar', 'LIKE', $like)
-                    ->orWhere('name_en', 'LIKE', $like)
-                    ->orWhere('code', 'LIKE', $like)
-                    ->orWhere('phone', 'LIKE', $like)
-                    ->orWhere('tax_number', 'LIKE', $like);
-            });
-
-            $query->orderByRaw(
-                'CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 2 ELSE 3 END ASC',
-                [$term, $prefix, $prefix, $prefix]
-            );
+            $this->applyPartySearchFilter($query, $term);
         }
 
         $nameCol = $locale === 'ar' ? 'name_ar' : 'name_en';
@@ -508,7 +556,10 @@ final class SearchableSelectorService
             $curr = $vendor->default_currency_code ?: $baseCurrency;
             $label = "{$name} ({$curr})";
 
-            $sublabel = $vendor->code ?: $vendor->phone;
+            $bizAr = (string) ($vendor->business_name_ar ?? '');
+            $bizEn = (string) ($vendor->business_name_en ?? '');
+            $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
+            $sublabel = $this->formatPartySublabel($vendor->code ?: $vendor->phone, $businessName, $name);
             $isSelected = ($selectedId !== null && (int) $vendor->id === $selectedId);
 
             $dto = (new SearchableOptionDTO(
@@ -546,10 +597,13 @@ final class SearchableSelectorService
                 $en = (string) ($selectedRecord->name_en ?? '');
                 $name = $locale === 'ar' ? ($ar !== '' ? $ar : $en) : ($en !== '' ? $en : $ar);
                 $curr = $selectedRecord->default_currency_code ?: $baseCurrency;
+                $bizAr = (string) ($selectedRecord->business_name_ar ?? '');
+                $bizEn = (string) ($selectedRecord->business_name_en ?? '');
+                $businessName = $locale === 'ar' ? ($bizAr !== '' ? $bizAr : $bizEn) : ($bizEn !== '' ? $bizEn : $bizAr);
                 $selectedItem = (new SearchableOptionDTO(
                     id: (string) $selectedRecord->id,
                     label: "{$name} ({$curr})",
-                    sublabel: $selectedRecord->code ?: $selectedRecord->phone,
+                    sublabel: $this->formatPartySublabel($selectedRecord->code ?: $selectedRecord->phone, $businessName, $name),
                     meta: [
                         'code' => $selectedRecord->code,
                         'phone' => $selectedRecord->phone,
@@ -593,8 +647,8 @@ final class SearchableSelectorService
         $offset = $cursorInfo['offset'];
 
         $canViewCost = match ($context) {
-            'purchasing' => $actor->hasPermissionTo('purchasing.cost.view'),
-            'inventory' => $actor->hasPermissionTo('inventory.cost.view'),
+            'purchasing' => $this->hasPermissionSafely($actor, 'purchasing.cost.view'),
+            'inventory' => $this->hasPermissionSafely($actor, 'inventory.cost.view'),
             default => false, // NEVER expose cost in sales or public contexts
         };
 
@@ -648,21 +702,37 @@ final class SearchableSelectorService
         }
 
         if ($term !== '') {
-            $like = '%'.self::escapeLike($term).'%';
-            $prefix = self::escapeLike($term).'%';
+            $rawLike = '%'.self::escapeLike($term).'%';
+            $rawPrefix = self::escapeLike($term).'%';
+            $useArabicFold = ArabicSearchNormalizer::shouldApplyFolding($term);
+            $foldedTerm = $useArabicFold ? ArabicSearchNormalizer::fold($term) : $term;
+            $foldedLike = $useArabicFold ? '%'.self::escapeLike($foldedTerm).'%' : $rawLike;
+            $foldedPrefix = $useArabicFold ? self::escapeLike($foldedTerm).'%' : $rawPrefix;
+            $foldedNameAr = $useArabicFold ? ArabicSearchNormalizer::sqlFoldColumn('name_ar') : null;
 
-            $query->where(function (Builder $q) use ($like, $company, $term) {
-                $q->where('name_ar', 'LIKE', $like)
-                    ->orWhere('name_en', 'LIKE', $like)
-                    ->orWhere('sku', 'LIKE', $like)
+            $query->where(function (Builder $q) use ($rawLike, $company, $term, $useArabicFold, $foldedLike, $foldedNameAr) {
+                $q->where('name_ar', 'LIKE', $rawLike)
+                    ->orWhere('name_en', 'LIKE', $rawLike)
+                    ->orWhere('sku', 'LIKE', $rawLike)
                     ->orWhereHas('barcodes', fn ($b) => $b->where('company_id', $company->id)->where('barcode', $term));
+
+                if ($useArabicFold && $foldedNameAr !== null) {
+                    $q->orWhereRaw("{$foldedNameAr} LIKE ?", [$foldedLike]);
+                }
             });
 
-            // Priority: exact barcode match -> exact SKU -> prefix SKU -> prefix name -> contains
-            $query->orderByRaw(
-                'CASE WHEN id = ? THEN 0 WHEN sku = ? THEN 1 WHEN sku LIKE ? THEN 2 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 3 ELSE 4 END ASC',
-                [$exactBarcodeId, $term, $prefix, $prefix, $prefix]
-            );
+            // Priority: exact barcode match -> exact SKU -> prefix SKU -> exact name -> raw prefix name -> folded prefix -> raw contains -> fallback
+            if ($useArabicFold && $foldedNameAr !== null) {
+                $query->orderByRaw(
+                    "CASE WHEN id = ? THEN 0 WHEN sku = ? THEN 1 WHEN sku LIKE ? THEN 2 WHEN name_ar = ? OR name_en = ? THEN 3 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 4 WHEN {$foldedNameAr} LIKE ? THEN 5 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 6 ELSE 7 END ASC",
+                    [$exactBarcodeId, $term, $rawPrefix, $term, $term, $rawPrefix, $rawPrefix, $foldedPrefix, $rawLike, $rawLike]
+                );
+            } else {
+                $query->orderByRaw(
+                    'CASE WHEN id = ? THEN 0 WHEN sku = ? THEN 1 WHEN sku LIKE ? THEN 2 WHEN name_ar = ? OR name_en = ? THEN 3 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 4 ELSE 5 END ASC',
+                    [$exactBarcodeId, $term, $rawPrefix, $term, $term, $rawPrefix, $rawPrefix]
+                );
+            }
         }
 
         $nameCol = $locale === 'ar' ? 'name_ar' : 'name_en';
@@ -800,12 +870,35 @@ final class SearchableSelectorService
             ->where('active', true);
 
         if ($term !== '') {
-            $like = '%'.self::escapeLike($term).'%';
-            $query->where(function (Builder $q) use ($like) {
-                $q->where('name_ar', 'LIKE', $like)
-                    ->orWhere('name_en', 'LIKE', $like)
-                    ->orWhere('code', 'LIKE', $like);
+            $rawLike = '%'.self::escapeLike($term).'%';
+            $rawPrefix = self::escapeLike($term).'%';
+            $useArabicFold = ArabicSearchNormalizer::shouldApplyFolding($term);
+            $foldedTerm = $useArabicFold ? ArabicSearchNormalizer::fold($term) : $term;
+            $foldedLike = $useArabicFold ? '%'.self::escapeLike($foldedTerm).'%' : $rawLike;
+            $foldedPrefix = $useArabicFold ? self::escapeLike($foldedTerm).'%' : $rawPrefix;
+            $foldedNameAr = $useArabicFold ? ArabicSearchNormalizer::sqlFoldColumn('name_ar') : null;
+
+            $query->where(function (Builder $q) use ($rawLike, $useArabicFold, $foldedLike, $foldedNameAr) {
+                $q->where('name_ar', 'LIKE', $rawLike)
+                    ->orWhere('name_en', 'LIKE', $rawLike)
+                    ->orWhere('code', 'LIKE', $rawLike);
+
+                if ($useArabicFold && $foldedNameAr !== null) {
+                    $q->orWhereRaw("{$foldedNameAr} LIKE ?", [$foldedLike]);
+                }
             });
+
+            if ($useArabicFold && $foldedNameAr !== null) {
+                $query->orderByRaw(
+                    "CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN name_ar = ? OR name_en = ? THEN 2 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 3 WHEN {$foldedNameAr} LIKE ? THEN 4 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 5 ELSE 6 END ASC",
+                    [$term, $rawPrefix, $term, $term, $rawPrefix, $rawPrefix, $foldedPrefix, $rawLike, $rawLike]
+                );
+            } else {
+                $query->orderByRaw(
+                    'CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN name_ar = ? OR name_en = ? THEN 2 WHEN name_ar LIKE ? OR name_en LIKE ? THEN 3 ELSE 4 END ASC',
+                    [$term, $rawPrefix, $term, $term, $rawPrefix, $rawPrefix]
+                );
+            }
         }
 
         $query->orderBy('is_default', 'desc')

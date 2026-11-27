@@ -25,6 +25,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 
 #[Layout('layouts.app')]
 class ExpiryCenter extends Component
@@ -72,7 +73,7 @@ class ExpiryCenter extends Component
     public function mount(CompanyContext $context): void
     {
         $this->pageCompanyId = $context->companyId();
-        $company = $this->authorizeExpiry();
+        $company = $this->authorizeExpiryReadOnly();
         $this->warningDays = (string) ($company->inventorySettings->default_expiry_warning_days ?? 30);
 
         $this->disposalDate = now($context->company()->timezone)->toDateString();
@@ -84,15 +85,39 @@ class ExpiryCenter extends Component
         abort_unless(auth()->check(), 403);
         /** @var User $user */
         $user = auth()->user();
+        setPermissionsTeamId($this->pageCompanyId);
         $user->unsetRelation('roles')->unsetRelation('permissions');
 
-        return $this->authorizeInventory($user->hasPermissionTo('inventory.stock.view') ? 'inventory.stock.view' : 'inventory.product.manage');
+        try {
+            $permission = $user->hasPermissionTo('inventory.stock.view') ? 'inventory.stock.view' : 'inventory.product.manage';
+        } catch (PermissionDoesNotExist) {
+            abort(403);
+        }
+
+        return $this->authorizeInventory($permission);
+    }
+
+    private function authorizeExpiryReadOnly(): Company
+    {
+        abort_unless(auth()->check(), 403);
+        /** @var User $user */
+        $user = auth()->user();
+        setPermissionsTeamId($this->pageCompanyId);
+        $user->unsetRelation('roles')->unsetRelation('permissions');
+
+        try {
+            $permission = $user->hasPermissionTo('inventory.stock.view') ? 'inventory.stock.view' : 'inventory.product.manage';
+        } catch (PermissionDoesNotExist) {
+            abort(403);
+        }
+
+        return $this->authorizeInventoryReadOnly($permission);
     }
 
     public function boot(): void
     {
         if (isset($this->pageCompanyId)) {
-            $this->authorizeExpiry();
+            $this->authorizeExpiryReadOnly();
         }
     }
 
@@ -176,7 +201,7 @@ class ExpiryCenter extends Component
 
     public function render(CompanyContext $context): View
     {
-        $company = $this->authorizeExpiry();
+        $company = $this->authorizeExpiryReadOnly();
 
         /** @var User $user */
         $user = auth()->user();

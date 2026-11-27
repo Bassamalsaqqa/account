@@ -36,6 +36,11 @@ class StockAdjustmentForm extends Component
         return $this->authorizeInventory('inventory.stock.adjust');
     }
 
+    protected function authorizeInventoryContextReadOnly(): Company
+    {
+        return $this->authorizeInventoryReadOnly('inventory.stock.adjust');
+    }
+
     public ?int $product_id = null;
 
     public ?int $warehouse_id = null;
@@ -67,7 +72,7 @@ class StockAdjustmentForm extends Component
     public function mount(CompanyContext $context): void
     {
         $this->pageCompanyId = $context->companyId();
-        $company = $this->authorizeInventory('inventory.stock.adjust');
+        $company = $this->authorizeInventoryContextReadOnly();
         $this->movement_date = now($company->timezone)->toDateString();
         $this->formIdempotencyKey = (string) Str::ulid();
 
@@ -196,13 +201,13 @@ class StockAdjustmentForm extends Component
     public function boot(): void
     {
         if (isset($this->pageCompanyId)) {
-            $this->authorizeInventory('inventory.stock.adjust');
+            $this->authorizeInventoryReadOnly('inventory.stock.adjust');
         }
     }
 
     public function render(CompanyContext $context): View
     {
-        $company = $this->authorizeInventory('inventory.stock.adjust');
+        $company = $this->authorizeInventoryReadOnly('inventory.stock.adjust');
 
         /** @var User $user */
         $user = auth()->user();

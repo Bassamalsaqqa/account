@@ -26,6 +26,7 @@ use App\Exceptions\NoActiveCompanyException;
 use App\Livewire\Concerns\AdjustsDocumentQuantity;
 use App\Livewire\Concerns\AiUnsavedForm;
 use App\Livewire\Concerns\CameraBarcodeScan;
+use App\Livewire\Concerns\FindsEmptyDocumentLine;
 use App\Livewire\Concerns\HandlesDocumentLineIdentity;
 use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Concerns\QuickPartyCreate;
@@ -46,6 +47,7 @@ use App\Services\Purchasing\PurchaseDocumentRules;
 use App\Services\Purchasing\PurchaseDraftBuilder;
 use App\Services\Purchasing\PurchaseFormConfirmation;
 use App\Services\Purchasing\PurchaseProductSelection;
+use App\Services\Search\ArabicSearchNormalizer;
 use App\Support\Tenancy\CompanyContext;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
@@ -69,6 +71,7 @@ class PurchaseForm extends Component
     use AiUnsavedForm;
     use AuthorizesPurchasingPages;
     use CameraBarcodeScan;
+    use FindsEmptyDocumentLine;
     use HandlesDocumentLineIdentity;
     use HandlesSearchableSelectors;
     use QuickPartyCreate;
@@ -241,6 +244,22 @@ class PurchaseForm extends Component
 
     public ?string $previewGrandTotal = null;
 
+    protected function authorizeFormReadOnly(): Company
+    {
+        $company = $this->authorizePurchasingReadOnly([
+            $this->publicId === null ? 'purchasing.purchase.create' : 'purchasing.purchase.edit_draft',
+            'purchasing.cost.view',
+        ]);
+        if ($this->publicId !== null && ($this->completedConfirmation['public_id'] ?? null) !== $this->publicId
+            && ($this->confirmationRequestIdentity === '' || ! app(PurchaseFormConfirmation::class)->completed(
+                (int) $company->id, auth()->user(), $this->publicId, $this->confirmationRequestIdentity
+            ))) {
+            Purchase::where('company_id', $company->id)->where('public_id', $this->publicId)->firstOrFail()->assertMutableDraft();
+        }
+
+        return $company;
+    }
+
     protected function authorizeForm(): Company
     {
         $company = $this->authorizePurchasing($this->publicId === null ? 'purchasing.purchase.create' : 'purchasing.purchase.edit_draft');
@@ -263,7 +282,7 @@ class PurchaseForm extends Component
         $receiveProduct ??= request()->query('receiveProduct');
         abort_unless($receiveProduct === null || is_string($receiveProduct), 422);
         $vendor_id ??= request()->integer('vendor_id') ?: null;
-        $company = $this->authorizeForm();
+        $company = $this->authorizeFormReadOnly();
         // These are separate explicit entry intents; neither may silently replace the other's lines.
         abort_if($publicId === null && $receiveProduct !== null && request()->query('assistant') !== null, 422);
         if ($publicId !== null) {
@@ -317,7 +336,7 @@ class PurchaseForm extends Component
             } catch (\InvalidArgumentException) {
                 $this->warehouse_id = null;
             }
-            $this->addLine();
+            $this->appendBlankLine();
             if ($receiveProduct !== null) {
                 $product = Product::where('company_id', $company->id)->where('public_id', $receiveProduct)
                     ->where('active', true)->where('track_stock', true)->firstOrFail();
@@ -349,7 +368,7 @@ class PurchaseForm extends Component
 
     public function hydrate(): void
     {
-        $this->authorizeForm();
+        $this->authorizeFormReadOnly();
         $this->ensureLineIdentities();
     }
 
@@ -718,15 +737,10 @@ class PurchaseForm extends Component
             $this->lines[$existingIndex]['quantity'] = (string) $curQty->plus(1);
         } else {
             $isTrulyEmptyFirstRow = count($this->lines) === 1
-                && empty($this->lines[0]['product_id'])
-                && trim((string) ($this->lines[0]['item_description'] ?? '')) === ''
-                && empty($this->lines[0]['lots'])
-                && in_array((string) ($this->lines[0]['quantity'] ?? ''), ['1', '1.000000', '1.00', ''], true)
-                && in_array((string) ($this->lines[0]['unit_cost'] ?? ''), ['0', '0.00', '0.000000', ''], true)
-                && (($this->lines[0]['discount_type'] ?? 'none') === 'none')
-                && empty($this->lines[0]['tax_rate_id']);
+                && $this->firstTrulyEmptyLineIndex($this->lines, 'unit_cost') === 0;
 
             $newLine = array_replace([
+                'row_key' => $isTrulyEmptyFirstRow ? $this->lineRowKey(0) : $this->newUiIdentityKey(),
                 'product_id' => $product->id,
                 'product_unit_id' => $selectedUnitId,
                 'item_description' => $selectedDescription,
@@ -751,12 +765,90 @@ class PurchaseForm extends Component
         $this->dispatch('barcode-scanned');
     }
 
+    public function quickAddProduct(?int $productId = null, ?int $productUnitId = null): bool
+    {
+        $company = $this->authorizeForm();
+        if ($productId === null || $productId <= 0) {
+            return false;
+        }
+
+        if ($this->showPreview) {
+            $this->cancelPreview();
+        }
+
+        $product = Product::where('company_id', $company->id)
+            ->where('active', true)
+            ->where('product_type', Product::TYPE_STOCK)
+            ->where('track_stock', true)
+            ->find($productId);
+
+        if ($product === null) {
+            $this->addError('quickProduct', __('workflow.product_not_found'));
+
+            return false;
+        }
+
+        if ($this->currency_code !== $company->base_currency_code && trim((string) $this->exchange_rate) === '') {
+            $this->addError('exchange_rate', __('purchasing.exchange_rate_required'));
+
+            return false;
+        }
+
+        try {
+            $selected = app(PurchaseProductSelection::class)->select(
+                (int) $product->id,
+                $productUnitId,
+                $this->currency_code,
+                $this->exchange_rate
+            );
+        } catch (\InvalidArgumentException|ModelNotFoundException|InvalidMoneyException|InvalidQuantityException|InvalidUnitConversionException) {
+            $this->addError('quickProduct', __('purchasing.invalid_draft'));
+
+            return false;
+        }
+
+        $emptyIndex = $this->firstTrulyEmptyLineIndex($this->lines, 'unit_cost');
+        $rowKey = $emptyIndex !== null
+            ? $this->lineRowKey($emptyIndex)
+            : $this->newUiIdentityKey();
+
+        $newLine = array_replace([
+            'row_key' => $rowKey,
+            'product_id' => $product->id,
+            'product_unit_id' => (int) $selected['product_unit_id'],
+            'item_description' => (string) $selected['item_description'],
+            'quantity' => '1',
+            'unit_cost' => (string) $selected['unit_cost'],
+            'discount_type' => 'none',
+            'discount_value' => '0',
+            'tax_rate_id' => null,
+            'lots' => [],
+        ], $selected);
+
+        if ($emptyIndex !== null) {
+            unset($this->expandedLotCustomization[$emptyIndex]);
+            $this->lines[$emptyIndex] = $newLine;
+        } else {
+            $this->lines[] = $newLine;
+        }
+
+        $this->resetErrorBag('quickProduct');
+        $this->recalculate();
+
+        return true;
+    }
+
     public function addLine(): void
     {
         if ($this->showPreview) {
             $this->cancelPreview();
         }
         $this->authorizeForm();
+        $this->appendBlankLine();
+    }
+
+    private function appendBlankLine(): void
+    {
         $this->lines[] = ['row_key' => $this->newUiIdentityKey(), 'product_id' => null, 'product_unit_id' => null, 'item_description' => '',
             'quantity' => '1', 'unit_cost' => '0', 'discount_type' => 'none', 'discount_value' => '0', 'tax_rate_id' => null, 'lots' => []];
         $this->clearPurchaseTotals();
@@ -1014,7 +1106,7 @@ class PurchaseForm extends Component
         if ($this->showPreview) {
             $this->cancelPreview();
         }
-        $company = $this->authorizeForm();
+        $company = $this->authorizeFormReadOnly();
         $this->resetErrorBag('calculation');
         $this->resetErrorBag('exchange_rate');
         $this->resetErrorBag('discount_value');
@@ -1872,20 +1964,17 @@ class PurchaseForm extends Component
 
     public function render(): View
     {
-        $company = $this->authorizeForm();
+        $company = $this->authorizeFormReadOnly();
         $this->ensureLineIdentities();
         $term = mb_substr(trim($this->productSearch), 0, 160);
-        $products = Product::where('company_id', $company->id)->where('active', true)->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
-        if ($term !== '') {
-            $products->where(fn ($q) => $q->where('name_ar', 'like', "%{$term}%")->orWhere('name_en', 'like', "%{$term}%")
-                ->orWhere('sku', 'like', "%{$term}%")->orWhereHas('barcodes', fn ($b) => $b->where('company_id', $company->id)->where('barcode', $term)));
-        }
         $unitOptions = [];
         $expiryLines = [];
         $selectedProductIds = collect($this->lines)->pluck('product_id')->filter()->unique()->values()->all();
-        $selectedProducts = Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)
-            ->with(['productUnits' => fn ($units) => $units->where('company_id', $company->id)->where('active', true)
-                ->whereHas('unit', fn ($unit) => $unit->where('company_id', $company->id)->where('active', true))->with('unit')])->get()->keyBy('id');
+        $selectedProducts = $selectedProductIds !== []
+            ? Product::where('company_id', $company->id)->whereIn('id', $selectedProductIds)
+                ->with(['productUnits' => fn ($units) => $units->where('company_id', $company->id)->where('active', true)
+                    ->whereHas('unit', fn ($unit) => $unit->where('company_id', $company->id)->where('active', true))->with('unit')])->get()->keyBy('id')
+            : collect();
         abort_unless($selectedProducts->count() === count($selectedProductIds), 404);
         foreach ($this->lines as $index => $line) {
             if (! empty($line['product_id'])) {
@@ -1927,16 +2016,18 @@ class PurchaseForm extends Component
         }
 
         $vTerm = mb_substr(trim($this->vendorSearch), 0, 100);
-        $vendorsQuery = Vendor::where('company_id', $company->id)->where('status', 'active');
         if ($vTerm !== '') {
-            $vendorsQuery->where(function ($q) use ($vTerm) {
-                $q->where('name_ar', 'like', "%{$vTerm}%")
-                    ->orWhere('name_en', 'like', "%{$vTerm}%")
-                    ->orWhere('code', 'like', "%{$vTerm}%")
-                    ->orWhere('phone', 'like', "%{$vTerm}%");
-            });
+            $vendorsQuery = Vendor::where('company_id', $company->id)->where('status', 'active');
+            ArabicSearchNormalizer::applySearchTerms(
+                $vendorsQuery,
+                $vTerm,
+                ['name_ar', 'name_en', 'business_name_ar', 'business_name_en', 'code', 'phone'],
+                ['name_ar', 'business_name_ar']
+            );
+            $matchingVendors = $vendorsQuery->orderByRaw('COALESCE(NULLIF(name_ar, ""), name_en) ASC')->limit(50)->get();
+        } else {
+            $matchingVendors = collect();
         }
-        $matchingVendors = $vendorsQuery->orderByRaw('COALESCE(NULLIF(name_ar, ""), name_en) ASC')->limit(50)->get();
         if ($this->vendor_id) {
             $selectedVendor = Vendor::where('company_id', $company->id)
                 ->where('id', $this->vendor_id)
@@ -1959,7 +2050,18 @@ class PurchaseForm extends Component
             )->get()
             : collect();
 
-        $matchingProducts = $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']);
+        $matchingProducts = collect();
+        if ($term !== '') {
+            $products = Product::where('company_id', $company->id)->where('active', true)->where('product_type', Product::TYPE_STOCK)->where('track_stock', true);
+            ArabicSearchNormalizer::applySearchTerms(
+                $products,
+                $term,
+                ['name_ar', 'name_en', 'sku'],
+                ['name_ar'],
+                fn ($q) => $q->orWhereHas('barcodes', fn ($b) => $b->where('company_id', $company->id)->where('barcode', $term))
+            );
+            $matchingProducts = $products->orderByRaw('COALESCE(name_ar, name_en) ASC')->orderBy('id')->limit(50)->get(['id', 'name_ar', 'name_en', 'sku']);
+        }
         $allProducts = $matchingProducts->merge($selectedProducts->values())->unique('id');
 
         $selectedAccount = $settlementAccounts->firstWhere('id', $this->settlement['money_account_id'] ?? null);
