@@ -22,6 +22,12 @@ use Tests\Feature\Phase5E\Phase5ETestCase;
 
 class CatalogComposerTest extends Phase5ETestCase
 {
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     /** @return array<string,mixed> */
     private function fields(bool $priced = false): array
     {
@@ -354,6 +360,43 @@ class CatalogComposerTest extends Phase5ETestCase
         $this->activate($actor);
         $component->call('issueNewLink')->assertForbidden();
         $this->assertSame(0, PublicShare::where('subject_type', 'product_catalog')->where('subject_id', $catalog->id)->count());
+    }
+
+    public function test_fresh_catalog_save_draft_renders_draft_status_and_formats_published_timestamp_in_company_timezone(): void
+    {
+        $this->company->update(['timezone' => 'Asia/Hebron']);
+        $this->activate($this->owner);
+        Carbon::setTestNow(Carbon::parse('2026-11-28 03:50:44', 'UTC'));
+
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $component = Livewire::test(CatalogComposer::class)
+                ->set('headers.name_ar', 'كتالوج الحالة '.$locale)
+                ->call('addProduct', $this->product->id)
+                ->call('saveDraft')
+                ->assertHasNoErrors()
+                ->assertSet('status', 'draft')
+                ->assertSee(__('catalogs.status_draft'))
+                ->assertDontSee('catalogs.status_');
+
+            $catalog = Catalog::findOrFail($component->get('catalogId'));
+            $this->assertSame('draft', $catalog->status);
+
+            $component->call('previewPublication')
+                ->assertHasNoErrors()
+                ->call('publish')
+                ->assertHasNoErrors()
+                ->assertSet('status', 'active')
+                ->assertSee(__('catalogs.status_active'))
+                ->assertSee(__('catalogs.published_at', ['date' => '2026-11-28 05:50']))
+                ->assertDontSee('2026-11-28T03:50:44')
+                ->assertDontSee('+00:00');
+
+            Livewire::test(CatalogComposer::class, ['publicId' => $catalog->public_id])
+                ->assertSee(__('catalogs.published_at', ['date' => '2026-11-28 05:50']))
+                ->assertDontSee('2026-11-28T03:50:44')
+                ->assertDontSee('+00:00');
+        }
     }
 
     /** @return array<string,string> */

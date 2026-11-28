@@ -79,7 +79,7 @@
                             @endif
                         </span>
                         @if($publishedAt)
-                            <span>{{ __('catalogs.published_at', ['date' => $publishedAt]) }}</span>
+                            <span>{{ __('catalogs.published_at', ['date' => \Carbon\CarbonImmutable::parse($publishedAt)->timezone(app(\App\Support\Tenancy\CompanyContext::class)->company()->timezone)->format('Y-m-d H:i')]) }}</span>
                         @endif
                     </div>
                 </div>

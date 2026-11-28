@@ -93,7 +93,7 @@ final class CatalogService
                 }
                 $normalized[] = $item + ['position' => $position + 1];
             }
-            $catalog ??= new Catalog(['company_id' => $company->id, 'created_by' => auth()->id()]);
+            $catalog ??= new Catalog(['company_id' => $company->id, 'created_by' => auth()->id(), 'status' => 'draft']);
             $revision = $catalog->exists ? $catalog->draft_revision + 1 : 1;
             $catalog->fill($fields + ['draft_revision' => $revision, 'updated_by' => auth()->id()]);
             if (! $fields['show_prices']) {

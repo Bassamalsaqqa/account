@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'expired_lot_use_expiry_center' => 'This lot has expired. Use the Expiry Center to dispose of it.',
     'stock_by_location' => 'Stock by Location',
     'search_stock_placeholder' => 'Search product or SKU…',
     'all_warehouses' => 'All Warehouses',

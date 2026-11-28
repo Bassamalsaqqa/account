@@ -12,13 +12,17 @@ use App\Livewire\Pages\Inventory\StockAdjustmentForm;
 use App\Livewire\Pages\Inventory\StockTransferForm;
 use App\Models\CompanyInventorySettings;
 use App\Models\InventoryLot;
+use App\Models\InventoryLotBalance;
 use App\Models\PostingBatch;
+use App\Models\ProductUnit;
 use App\Models\StockMovement;
 use App\Models\Unit;
+use App\Models\Warehouse;
 use App\Services\Inventory\ProductCatalogService;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 use Tests\Feature\Phase8\PositionTestCase;
@@ -186,5 +190,179 @@ final class ExpiryLotUsabilityTest extends PositionTestCase
         Role::where('company_id', $this->company->id)->where('name', 'CustomRole_'.$actor->id)->firstOrFail()->revokePermissionTo('inventory.stock.adjust');
         $balanceId = $movement->lot->balances()->where('warehouse_id', $this->warehouseA->id)->firstOrFail()->id;
         $this->assertZeroEconomicWrites(fn () => $component->call('openDisposalModal', $balanceId)->assertForbidden());
+    }
+
+    public function test_stock_adjustment_form_deduplicates_base_unit_option_and_localizes_arabic_reason_attribute(): void
+    {
+        app()->setLocale('ar');
+
+        $form = Livewire::test(StockAdjustmentForm::class)
+            ->set('warehouse_id', $this->warehouseA->id)
+            ->set('product_id', $this->stockProduct->id)
+            ->assertViewHas('availableUnits', fn ($units): bool => $units->pluck('id')->all() === [$this->baseUnit->id]);
+
+        $this->assertSame(
+            1,
+            substr_count($form->html(false), '<option value="'.$this->baseUnit->id.'">')
+        );
+
+        $boxUnit = Unit::create([
+            'public_id' => (string) Str::ulid(),
+            'company_id' => (int) $this->company->id,
+            'code' => 'BOX12',
+            'name_ar' => 'كرتون',
+            'name_en' => 'Box 12',
+            'symbol_ar' => 'كرتون',
+            'symbol_en' => 'box',
+            'allows_fraction' => false,
+            'decimal_places' => 0,
+            'active' => true,
+        ]);
+        ProductUnit::create([
+            'company_id' => $this->company->id,
+            'product_id' => $this->stockProduct->id,
+            'unit_id' => $boxUnit->id,
+            'conversion_to_base' => '12.000000',
+            'is_base' => false,
+            'is_default_purchase' => false,
+            'is_default_sale' => false,
+            'active' => true,
+        ]);
+
+        $withAltForm = Livewire::test(StockAdjustmentForm::class)
+            ->set('warehouse_id', $this->warehouseA->id)
+            ->set('product_id', $this->stockProduct->id)
+            ->assertViewHas('availableUnits', fn ($units): bool => $units->pluck('id')->all() === [$this->baseUnit->id, $boxUnit->id]);
+        $this->assertSame(
+            1,
+            substr_count($withAltForm->html(false), '<option value="'.$this->baseUnit->id.'">')
+        );
+
+        $this->assertZeroEconomicWrites(function () use ($form): void {
+            $form->set('type', StockMovement::TYPE_ADJUSTMENT_INCREASE)
+                ->set('quantity', '1')
+                ->set('reason', '')
+                ->call('save')
+                ->assertHasErrors(['reason']);
+
+            $reasonError = $form->errors()->first('reason');
+            $this->assertStringContainsString(__('inventory.reason'), $reasonError);
+            $this->assertStringNotContainsString('reason', $reasonError);
+            $form->assertSee(__('inventory.reason'))
+                ->assertDontSee('حقل reason');
+        });
+    }
+
+    public function test_stock_adjustment_excludes_expired_lots_rejects_forged_expired_lot_and_allows_historical_non_expired_movement_date(): void
+    {
+        $expiredMovement = $this->postOpeningStock($this->stockProduct, $this->warehouseA, '3', '17', date: '2026-10-01', lotNumber: 'LOT-EXP-1', expiryDate: '2026-10-14');
+        $todayMovement = $this->postOpeningStock($this->stockProduct, $this->warehouseA, '3', '17', date: '2026-10-01', lotNumber: 'LOT-TODAY-1', expiryDate: '2026-10-15');
+        $laterMovement = $this->postOpeningStock($this->stockProduct, $this->warehouseA, '3', '17', date: '2026-10-01', lotNumber: 'LOT-LATER-1', expiryDate: '2026-11-01');
+        $unknownMovement = $this->postOpeningStock($this->stockProduct, $this->warehouseA, '3', '17', date: '2026-10-01', lotNumber: 'LOT-UNK-1', expiryDate: null);
+
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            foreach ([StockMovement::TYPE_DAMAGE_OR_LOSS, StockMovement::TYPE_ADJUSTMENT_DECREASE] as $outboundType) {
+                $form = Livewire::test(StockAdjustmentForm::class)
+                    ->set('warehouse_id', $this->warehouseA->id)
+                    ->set('product_id', $this->stockProduct->id)
+                    ->set('type', $outboundType)
+                    ->assertViewHas('availableLots', function ($lots) use ($expiredMovement, $todayMovement, $laterMovement, $unknownMovement): bool {
+                        $ids = $lots->pluck('lot_id')->all();
+
+                        return ! in_array($expiredMovement->lot_id, $ids, true)
+                            && in_array($todayMovement->lot_id, $ids, true)
+                            && in_array($laterMovement->lot_id, $ids, true)
+                            && in_array($unknownMovement->lot_id, $ids, true);
+                    });
+
+                $form->assertDontSee('<option value="'.$expiredMovement->lot_id.'">', false)
+                    ->assertDontSee('LOT-EXP-1');
+
+                $this->assertZeroEconomicWrites(function () use ($form, $expiredMovement): void {
+                    $form->set('lot_id', $expiredMovement->lot_id)
+                        ->set('quantity', '1')
+                        ->set('reason', 'Forged expired lot attempt')
+                        ->call('save')
+                        ->assertHasErrors(['lot_id'])
+                        ->assertSee(__('inventory.expired_lot_use_expiry_center'))
+                        ->assertDontSee('has expired as of');
+
+                    $this->assertSame(__('inventory.expired_lot_use_expiry_center'), $form->errors()->first('lot_id'));
+                });
+            }
+        }
+
+        // Cross-company forged lot_id must also fail validation with zero economic writes.
+        $context = app(CompanyContext::class);
+        $context->clear();
+        $other = app(CreateCompanyAction::class)->execute($this->owner, ['name_ar' => 'Other Co', 'base_currency_code' => 'ILS']);
+        $context->setCompany($other, $this->owner);
+        $otherWarehouse = Warehouse::where('company_id', $other->id)->firstOrFail();
+        $otherUnit = Unit::where('company_id', $other->id)->firstOrFail();
+        $otherProduct = app(ProductCatalogService::class)->createProduct($other, [
+            'name_ar' => 'منتج خارجي', 'sku' => 'OTH-EXP-1', 'product_type' => 'stock',
+            'base_unit_id' => $otherUnit->id, 'track_stock' => true, 'track_expiry' => true, 'active' => true,
+        ], $this->owner->id);
+        $otherLot = InventoryLot::create([
+            'company_id' => $other->id,
+            'product_id' => $otherProduct->id,
+            'lot_number' => 'FOREIGN-LOT-1',
+            'expiry_date' => '2026-12-01',
+            'received_date' => '2026-10-01',
+            'source_type' => 'opening_balance',
+            'source_id' => $otherWarehouse->id,
+        ]);
+        $context->setCompany($this->company, $this->owner);
+
+        $this->assertZeroEconomicWrites(function () use ($otherLot): void {
+            Livewire::test(StockAdjustmentForm::class)
+                ->set('warehouse_id', $this->warehouseA->id)
+                ->set('product_id', $this->stockProduct->id)
+                ->set('type', StockMovement::TYPE_DAMAGE_OR_LOSS)
+                ->set('lot_id', $otherLot->id)
+                ->set('quantity', '1')
+                ->set('reason', 'Cross company forged lot')
+                ->call('save')
+                ->assertHasErrors(['lot_id']);
+        });
+
+        // Historical movement_date before lot expiry (2026-10-13 < 2026-10-14) exposes and permits the lot canonically.
+        $historicalForm = Livewire::test(StockAdjustmentForm::class)
+            ->set('warehouse_id', $this->warehouseA->id)
+            ->set('product_id', $this->stockProduct->id)
+            ->set('type', StockMovement::TYPE_DAMAGE_OR_LOSS)
+            ->set('movement_date', '2026-10-13')
+            ->assertViewHas('availableLots', fn ($lots): bool => in_array($expiredMovement->lot_id, $lots->pluck('lot_id')->all(), true));
+
+        $historicalForm->set('lot_id', $expiredMovement->lot_id)
+            ->set('quantity', '1')
+            ->set('reason', 'Historical damage before expiry')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('errorMessage', null)
+            ->assertSet('successMessage', __('inventory.adjustment_success'));
+
+        $this->assertDatabaseHas('stock_movements', [
+            'company_id' => $this->company->id,
+            'product_id' => $this->stockProduct->id,
+            'warehouse_id' => $this->warehouseA->id,
+            'lot_id' => $expiredMovement->lot_id,
+            'movement_type' => StockMovement::TYPE_DAMAGE_OR_LOSS,
+            'movement_date' => '2026-10-13',
+            'quantity_delta_base' => '-1.000000',
+        ]);
+        $this->assertSame(
+            '2.000000',
+            InventoryLotBalance::where('company_id', $this->company->id)
+                ->where('lot_id', $expiredMovement->lot_id)
+                ->where('warehouse_id', $this->warehouseA->id)
+                ->value('quantity_base')
+        );
+        $this->assertDatabaseHas('posting_batches', [
+            'company_id' => $this->company->id,
+            'source_type' => 'stock_adjustment',
+            'posting_date' => '2026-10-13',
+        ]);
     }
 }

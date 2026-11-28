@@ -12,6 +12,7 @@ use App\Livewire\Concerns\HandlesSearchableSelectors;
 use App\Livewire\Pages\Inventory\Concerns\AuthorizesInventoryPages;
 use App\Livewire\Pages\Inventory\Concerns\HandlesInventoryDraftControls;
 use App\Models\Company;
+use App\Models\InventoryLot;
 use App\Models\Product;
 use App\Models\ProductUnit;
 use App\Models\StockMovement;
@@ -137,7 +138,7 @@ class StockAdjustmentForm extends Component
             'expiry_date' => ['nullable', 'date'],
             'reason' => ['required', 'string', 'max:500'],
             'movement_date' => ['required', 'date'],
-        ]);
+        ], [], ['reason' => __('inventory.reason')]);
 
         /** @var Product $product */
         $product = Product::where('company_id', $company->id)->where('id', $validated['product_id'])->firstOrFail();
@@ -150,6 +151,14 @@ class StockAdjustmentForm extends Component
                 $this->errorMessage = __('inventory.lot_required_for_expiry_decrease');
 
                 return;
+            }
+            if ($validated['type'] !== StockMovement::TYPE_ADJUSTMENT_INCREASE && ! empty($validated['lot_id'])) {
+                $lot = InventoryLot::where('company_id', $company->id)->where('product_id', $product->id)->find($validated['lot_id']);
+                if ($lot?->expiry_date !== null && $lot->expiry_date->toDateString() < $validated['movement_date']) {
+                    $this->addError('lot_id', __('inventory.expired_lot_use_expiry_center'));
+
+                    return;
+                }
             }
         }
 
@@ -248,10 +257,13 @@ class StockAdjustmentForm extends Component
                     $unitsList[] = $pu->unit;
                 }
             }
-            $availableUnits = collect($unitsList);
+            $availableUnits = collect($unitsList)->unique('id')->values();
 
             if ($selectedProduct->track_expiry && $this->warehouse_id) {
                 $availableLots = app(AvailableLotQuery::class)->get($company->id, $selectedProduct->id, $this->warehouse_id);
+                $referenceDate = preg_match('/\A\d{4}-\d{2}-\d{2}\z/', $this->movement_date) === 1
+                    ? $this->movement_date : now($company->timezone)->toDateString();
+                $availableLots = $availableLots->filter(fn ($balance) => $balance->lot?->expiry_date === null || $balance->lot->expiry_date->toDateString() >= $referenceDate);
             }
         }
 

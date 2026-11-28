@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'expired_lot_use_expiry_center' => 'التشغيلة منتهية الصلاحية. استخدم مركز الصلاحية لإتلافها.',
     'stock_by_location' => 'المخزون حسب الموقع',
     'search_stock_placeholder' => 'البحث عن صنف أو رمز…',
     'all_warehouses' => 'جميع المستودعات',

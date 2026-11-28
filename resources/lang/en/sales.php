@@ -250,6 +250,7 @@ return [
     'statement_type_return' => 'Sales return',
     'statement_type_payment' => 'Receipt',
     'statement_type_payment_reversal' => 'Receipt reversal',
+    'statement_type_currency_allocation' => 'Currency allocation',
     'document_language' => 'Document language',
     'number' => 'Document number',
     'language_ar' => 'Arabic',

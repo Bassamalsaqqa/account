@@ -6,6 +6,7 @@ namespace Tests\Feature\Phase9;
 
 use App\Actions\Company\CreateCompanyAction;
 use App\Actions\Sales\CreateSalesInvoiceDraftAction;
+use App\Actions\Sales\PostCustomerPaymentAction;
 use App\Actions\Sales\PostSalesInvoiceAction;
 use App\Livewire\FinancialShareManager;
 use App\Livewire\Pages\Sales\CustomerStatementView;
@@ -942,6 +943,65 @@ class CustomerStatementShareConsolidationTest extends Phase5ETestCase
         $this->assertNotNull($errorXpath->query('//*[@id="'.$describedBy.'"]')->item(0));
         $passwordId = $passwordInput->getAttribute('id');
         $this->assertNotNull($errorXpath->query('//label[@for="'.$passwordId.'"]')->item(0));
+    }
+
+    #[DataProvider('locales')]
+    public function test_customer_statement_view_translates_currency_allocation_in_ar_and_en(string $locale): void
+    {
+        app()->setLocale($locale);
+        $this->owner->update(['locale' => $locale]);
+        $this->activate($this->owner->fresh());
+
+        $customer = $this->createCustomer('FX-'.$locale);
+        $draft = app(CreateSalesInvoiceDraftAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $customer->id,
+            'currency_code' => 'USD',
+            'exchange_rate' => '3.5',
+            'issue_date' => '2026-03-15',
+            'lines' => [
+                [
+                    'item_description' => 'Cross-currency statement item',
+                    'quantity' => '2',
+                    'unit_price' => '50',
+                ],
+            ],
+        ]);
+        $invoice = app(PostSalesInvoiceAction::class)->execute($draft, $this->owner);
+
+        app(PostCustomerPaymentAction::class)->execute($this->company, $this->owner, [
+            'customer_id' => $customer->id,
+            'money_account_id' => $this->ilsCashAccount->id,
+            'payment_date' => '2026-03-20',
+            'payment_method' => 'cash',
+            'amount' => '330',
+            'exchange_rate' => '1',
+            'idempotency_key' => 'stmt-alloc-'.$locale,
+            'allocations' => [
+                [
+                    'sales_invoice_id' => $invoice->id,
+                    'allocated_amount' => '100',
+                    'payment_currency_amount' => '330',
+                ],
+            ],
+        ]);
+
+        $expectedLabel = $locale === 'ar' ? 'تخصيص عملة' : 'Currency allocation';
+        $this->assertSame($expectedLabel, __('sales.statement_type_currency_allocation', [], $locale));
+
+        Livewire::withQueryParams(['from' => '2026-03-01', 'to' => '2026-03-31'])
+            ->test(CustomerStatementView::class, ['publicId' => $customer->public_id])
+            ->assertOk()
+            ->assertSee($expectedLabel)
+            ->assertDontSee('sales.statement_type_currency_allocation');
+
+        $this->get(route('customers.statement', [
+            'publicId' => $customer->public_id,
+            'from' => '2026-03-01',
+            'to' => '2026-03-31',
+        ]))
+            ->assertOk()
+            ->assertSee($expectedLabel)
+            ->assertDontSee('sales.statement_type_currency_allocation');
     }
 
     /** @return array<string, mixed>|null */

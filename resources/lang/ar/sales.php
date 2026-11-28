@@ -250,6 +250,7 @@ return [
     'statement_type_return' => 'مرتجع بيع',
     'statement_type_payment' => 'سند قبض',
     'statement_type_payment_reversal' => 'عكس سند قبض',
+    'statement_type_currency_allocation' => 'تخصيص عملة',
     'document_language' => 'لغة المستند',
     'number' => 'رقم المستند',
     'language_ar' => 'العربية',
