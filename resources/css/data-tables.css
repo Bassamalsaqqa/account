@@ -263,7 +263,7 @@ tbody tr:has(a[href]):hover,
     }
 }
 @media (min-width: 1024px) {
-    .business-app #app-main .data-table.data-table--responsive [data-row-details-toggle] {
+    .business-app #app-main .data-table.data-table--responsive button[data-row-details-toggle] {
         display: none;
     }
 }
