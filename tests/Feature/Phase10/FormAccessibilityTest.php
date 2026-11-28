@@ -249,7 +249,7 @@ final class FormAccessibilityTest extends TestCase
                 $this->assertStringContainsString('min-h-11', $classes);
                 $this->assertStringContainsString('lg:min-h-9.5', $classes);
                 $this->assertStringContainsString('text-base', $classes);
-                $this->assertStringContainsString('md:text-sm', $classes);
+                $this->assertStringContainsString('lg:text-sm', $classes);
                 $this->assertDoesNotMatchRegularExpression('/\bh-8\b/', $classes);
             }
         }

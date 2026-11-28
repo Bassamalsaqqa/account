@@ -396,7 +396,7 @@
                                                 <span class="text-text-muted">&times;</span>
                                             @endif
                                         </td>
-                                        <td data-label="{{ __('inventory.actions') }}" class="table-actions p-2.5 lg:text-center">
+                                        <td data-label="{{ __('inventory.actions') }}" class="table-actions table-actions--inline p-2.5 lg:text-center">
                                             @if ($pu->is_base)
                                                 <span class="text-text-muted">-</span>
                                             @else
@@ -481,7 +481,7 @@
                                                 <x-badge variant="success">{{ __('inventory.primary') }}</x-badge>
                                             @endif
                                         </td>
-                                        <td data-label="{{ __('inventory.actions') }}" class="table-actions p-2.5 lg:text-center">
+                                        <td data-label="{{ __('inventory.actions') }}" class="table-actions table-actions--inline p-2.5 lg:text-center">
                                             <button type="button" wire:click="removeBarcode({{ $pb->id }})" wire:loading.attr="disabled"
                                                     class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center rounded-control border border-danger/30 px-3 text-danger hover:bg-danger-bg text-xs cursor-pointer">
                                                 {{ __('inventory.delete') }}

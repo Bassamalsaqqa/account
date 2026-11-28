@@ -729,6 +729,8 @@ test('desktop Escape closes overlay after Load More blur via overlay and documen
 });
 
 test('inner listbox scroll does not schedule reposition and panel tap holds placement stability', () => {
+    const prevNode = globalThis.Node;
+    globalThis.Node = class {};
     const prevDocument = globalThis.document;
     const prevWindow = globalThis.window;
     const prevRaf = globalThis.requestAnimationFrame;
@@ -742,9 +744,12 @@ test('inner listbox scroll does not schedule reposition and panel tap holds plac
         return rafQueue.length;
     };
 
-    const optionNode = { id: 'opt-1' };
+    const optionNode = new globalThis.Node();
     const panelNode = {
-        contains: (target) => target === panelNode || target === optionNode,
+        contains: (target) => {
+            if (!(target instanceof globalThis.Node)) throw new TypeError('Not a Node');
+            return target === optionNode;
+        },
         addEventListener: (type, fn) => { panelListeners[type] = fn; },
         removeEventListener: (type) => { delete panelListeners[type]; },
     };
@@ -785,6 +790,11 @@ test('inner listbox scroll does not schedule reposition and panel tap holds plac
         windowListeners.scroll({ type: 'scroll', target: optionNode });
         assert.equal(rafQueue.length, 0);
 
+        // A VisualViewport scroll target is not a DOM Node and must still reposition.
+        assert.doesNotThrow(() => windowListeners['vv:scroll']({ type: 'scroll', target: window.visualViewport }));
+        assert.equal(rafQueue.length, 1);
+        rafQueue.splice(0).forEach(fn => fn());
+
         // 2. Pointer interaction on panel holds geometry steady across immediate iOS viewport/resize jitter
         assert.equal(typeof panelListeners.pointerdown, 'function');
         panelListeners.pointerdown();
@@ -803,10 +813,37 @@ test('inner listbox scroll does not schedule reposition and panel tap holds plac
         assert.notEqual(comp.overlayStyle, initialStyle);
     } finally {
         comp.destroy();
+        if (prevNode === undefined) delete globalThis.Node;
+        else globalThis.Node = prevNode;
         globalThis.requestAnimationFrame = prevRaf;
         if (prevDocument === undefined) delete globalThis.document;
         else globalThis.document = prevDocument;
         if (prevWindow === undefined) delete globalThis.window;
         else globalThis.window = prevWindow;
+    }
+});
+
+test('fallback Tab wraps across tabbable controls, excluding native option buttons', () => {
+    const previous = globalThis.document;
+    let focused = '';
+    const input = { offsetParent: {}, getAttribute: () => null, focus: () => { focused = 'input'; } };
+    const close = { offsetParent: {}, getAttribute: () => null, focus: () => { focused = 'close'; } };
+    const option = { offsetParent: {}, getAttribute: () => '-1', focus: () => { focused = 'option'; } };
+    const comp = makeComponent();
+    comp.open = true;
+    comp.overlayMode = 'sheet';
+    comp.$refs.overlayPanel = { querySelectorAll: () => [input, close, option] };
+    globalThis.document = { activeElement: close };
+    let prevented = false;
+    try {
+        comp.handleOverlayKeydown({ key: 'Tab', shiftKey: false, preventDefault() { prevented = true; } });
+        assert.equal(prevented, true);
+        assert.equal(focused, 'input');
+        globalThis.document.activeElement = input;
+        comp.handleOverlayKeydown({ key: 'Tab', shiftKey: true, preventDefault() {} });
+        assert.equal(focused, 'close');
+    } finally {
+        if (previous === undefined) delete globalThis.document;
+        else globalThis.document = previous;
     }
 });

@@ -174,6 +174,7 @@
                                     <div class="text-end">
                                         <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}</bdi>
                                         <span class="hidden lg:block text-sm text-text-muted" dir="ltr">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
+                                        <span x-show="expanded" x-cloak class="lg:hidden text-sm text-text-muted" dir="ltr">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
                                     </div>
                                     <x-row-details-toggle />
                                 </div>

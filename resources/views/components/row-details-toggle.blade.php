@@ -1,6 +1,7 @@
 @props(['detailsId' => null])
 
 <button
+    data-row-details-toggle
     type="button"
     @click.stop="expanded = !expanded"
     :aria-expanded="expanded.toString()"

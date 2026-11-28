@@ -193,6 +193,7 @@
                                                     </div>
                                                 @endif
                                             @elseif($isEnd)
+                                                <span class="lg:hidden block text-xs font-normal text-text-secondary">{{ $column['label'] }}</span>
                                                 <div class="inline-flex items-center gap-2">
                                                     <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}" class="tabular-nums">{{ $cellVal }}</bdi>
                                                     <x-row-details-toggle />

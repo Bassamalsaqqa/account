@@ -244,3 +244,26 @@ tbody tr:has(a[href]):hover,
         margin-top: 0;
     }
 }
+
+/* Row links are text navigation, with a full touch target rather than a second button shell. */
+@media (max-width: 1023px) {
+    .business-app #app-main .compact-mobile-row a.touch-action {
+        min-width: 0;
+        padding-inline: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+}
+
+@media (max-width: 1023px) {
+    .data-table.data-table--responsive tbody td.table-actions--inline.td-end {
+        grid-column: 2;
+        width: auto;
+    }
+}
+@media (min-width: 1024px) {
+    .data-table.data-table--responsive [data-row-details-toggle] {
+        display: none;
+    }
+}

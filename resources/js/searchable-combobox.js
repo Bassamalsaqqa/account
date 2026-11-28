@@ -593,7 +593,7 @@ export function searchableCombobox(config) {
 
             this._onViewportChange = (e) => {
                 if (!this.open) return;
-                if (e?.type === 'scroll' && e.target && this.$refs?.overlayPanel?.contains?.(e.target)) {
+                if (e?.type === 'scroll' && typeof Node !== 'undefined' && e.target instanceof Node && this.$refs?.overlayPanel?.contains?.(e.target)) {
                     return;
                 }
                 if (this.$el && this.$el.isConnected === false) {
@@ -1108,7 +1108,7 @@ export function searchableCombobox(config) {
                 if (!panel || typeof panel.querySelectorAll !== 'function') return;
                 const focusables = Array.from(
                     panel.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])')
-                ).filter(el => el.offsetParent !== null || el === document.activeElement);
+                ).filter(el => !(Number(el.getAttribute?.('tabindex')) < 0) && (el.offsetParent !== null || el === document.activeElement));
                 if (focusables.length === 0) return;
                 const first = focusables[0];
                 const last = focusables[focusables.length - 1];
