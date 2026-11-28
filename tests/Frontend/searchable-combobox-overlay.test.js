@@ -193,6 +193,54 @@ test('computeOverlayGeometry anchors phone and keyboard popups and reserves fall
         viewportHeight: 200,
     });
     assert.equal(insufficient.mode, 'sheet');
+    // Keyboard/scroll adjustment can briefly leave the trigger outside the viewport.
+    for (const top of [-100, 80, 400, 900]) {
+        const geometry = computeOverlayGeometry({
+            triggerRect: { top, bottom: top + 44, left: 16, right: 304, width: 288 },
+            viewportWidth: 320,
+            viewportHeight: 200,
+        });
+        if (geometry.mode === 'popup') {
+            assert.ok(geometry.top >= 8);
+            assert.ok(geometry.top + geometry.maxHeight <= 192);
+        }
+    }
+});
+
+test('fallback follows measured keyboard height and returns focus when anchored space returns', () => {
+    const previousWindow = globalThis.window;
+    const viewport = { width: 390, height: 180, offsetTop: 0, offsetLeft: 0 };
+    globalThis.window = { innerWidth: 390, innerHeight: 800, visualViewport: viewport };
+    const comp = makeComponent();
+    const ticks = [];
+    let focused = 0;
+    comp.open = true;
+    comp.$nextTick = (fn) => ticks.push(fn);
+    comp.$refs.searchInput.getBoundingClientRect = () => ({ top: 72, bottom: 116, left: 16, right: 374, width: 358 });
+    comp.$refs.searchInput.focus = () => { focused++; comp.handleFocus(); };
+    comp.$refs.sheetInput = { focus() {} };
+    try {
+        comp.repositionOverlay();
+        assert.equal(comp.overlayMode, 'sheet');
+        assert.match(comp.overlayStyle, /height: 180px/);
+        assert.match(comp.overlayStyle, /--combobox-fallback-max-h: 164px/);
+        ticks.splice(0).forEach((fn) => fn());
+        viewport.height = 600;
+        comp.repositionOverlay();
+        assert.equal(comp.overlayMode, 'popup');
+        ticks.splice(0).forEach((fn) => fn());
+        assert.equal(focused, 1);
+        assert.equal(comp.open, true);
+        assert.equal(comp.restoringFocus, false);
+        viewport.height = 320;
+        comp.$refs.searchInput.getBoundingClientRect = () => ({ top: 240, bottom: 284, left: 16, right: 374, width: 358 });
+        comp.repositionOverlay();
+        assert.match(comp.overlayStyle, /top: 236px/);
+        assert.match(comp.overlayStyle, /transform: translateY\(-100%\)/);
+    } finally {
+        comp.open = false;
+        globalThis.window = previousWindow;
+    }
 });
 
 test('syncFromServerProps updates morph attributes and row_key without clobbering active search query', () => {

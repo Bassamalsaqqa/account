@@ -63,7 +63,7 @@ export function computeOverlayGeometry({
     isMobileSheetPreferred = false,
 } = {}) {
     const vpWidth = Math.max(240, Number(viewportWidth) || 1280);
-    const vpHeight = Math.max(200, Number(viewportHeight) || 800);
+    const vpHeight = Math.max(1, Number(viewportHeight) || 800);
     const topBound = Math.max(margin, Number(safeTop) || margin) + viewportOffsetTop;
     const rawBottomBound = safeBottom !== null && safeBottom !== undefined
         ? Number(safeBottom)
@@ -87,8 +87,10 @@ export function computeOverlayGeometry({
     const rectRight = Number(triggerRect.right) || rectLeft;
     const rectWidth = Math.max(120, Number(triggerRect.width) || 240);
 
-    const spaceBelow = Math.max(0, bottomBound - (rectBottom + gap));
-    const spaceAbove = Math.max(0, (rectTop - gap) - topBound);
+    const belowAnchor = Math.max(topBound, rectBottom + gap);
+    const aboveAnchor = Math.min(bottomBound, rectTop - gap);
+    const spaceBelow = Math.max(0, bottomBound - belowAnchor);
+    const spaceAbove = Math.max(0, aboveAnchor - topBound);
     const bestVerticalSpace = Math.max(spaceBelow, spaceAbove);
 
     // Keep the original field focused, including with a phone keyboard open.
@@ -117,8 +119,8 @@ export function computeOverlayGeometry({
     const availableHeight = openBelow ? spaceBelow : spaceAbove;
     const maxHeight = Math.min(desiredMaxHeight, Math.floor(availableHeight));
     const top = openBelow
-        ? Math.max(topBound, rectBottom + gap)
-        : Math.max(topBound, (rectTop - gap) - maxHeight);
+        ? belowAnchor
+        : Math.max(topBound, aboveAnchor - maxHeight);
 
     return {
         mode: 'popup',
@@ -494,10 +496,10 @@ export function searchableCombobox(config) {
             this.overlayMode = geom.mode;
 
             if (geom.mode === 'sheet') {
-                this.overlayStyle = `top: ${Math.round(geom.top)}px; left: ${Math.round(geom.left)}px; width: ${Math.round(geom.width)}px; height: ${Math.round(geom.maxHeight)}px;`;
+                this.overlayStyle = `top: ${Math.round(geom.top)}px; left: ${Math.round(geom.left)}px; width: ${Math.round(geom.width)}px; height: ${Math.round(geom.maxHeight)}px; --combobox-fallback-max-h: ${Math.max(0, Math.floor(geom.maxHeight) - 16)}px;`;
                 if (previousMode !== 'sheet' && this.$refs?.sheetInput && typeof this.$nextTick === 'function') {
                     this.$nextTick(() => {
-                        this.$refs.sheetInput?.focus?.({ preventScroll: true });
+                        if (this.open && this.overlayMode === 'sheet') this.$refs.sheetInput?.focus?.({ preventScroll: true });
                     });
                 }
             } else {
@@ -513,8 +515,14 @@ export function searchableCombobox(config) {
                     }
                 }
                 const appliedLeft = geom.left - offsetX;
-                const appliedTop = geom.top - offsetY;
-                this.overlayStyle = `top: ${Math.round(appliedTop)}px; left: ${Math.round(appliedLeft)}px; width: ${Math.round(geom.width)}px; --combobox-max-h: ${Math.round(geom.maxHeight)}px;`;
+                const opensAbove = geom.placement === 'top';
+                const appliedTop = geom.top + (opensAbove ? geom.maxHeight : 0) - offsetY;
+                this.overlayStyle = `top: ${Math.round(appliedTop)}px; left: ${Math.round(appliedLeft)}px; width: ${Math.round(geom.width)}px; transform: ${opensAbove ? 'translateY(-100%)' : 'none'}; --combobox-max-h: ${Math.round(geom.maxHeight)}px;`;
+                if (previousMode === 'sheet' && typeof this.$nextTick === 'function') {
+                    this.$nextTick(() => {
+                        if (this.open && this.overlayMode === 'popup') this.focusTrigger();
+                    });
+                }
             }
         },
 
@@ -802,7 +810,7 @@ export function searchableCombobox(config) {
                 }
                 this.pendingDebounce = false;
                 this.performSearch(currentGen, capturedQuery, capturedInputVersion);
-            }, 220);
+            }, 150);
         },
 
         handleFocus() {

@@ -144,7 +144,7 @@
             <div
                 class="flex flex-col w-full min-h-0"
                 :class="overlayMode === 'sheet'
-                    ? 'bg-surface w-full max-w-lg max-h-[min(65dvh,22rem)] rounded-card border border-border shadow-xl overflow-hidden'
+                    ? 'bg-surface w-full max-w-lg max-h-[min(65dvh,22rem,var(--combobox-fallback-max-h))] rounded-card border border-border shadow-xl overflow-hidden'
                     : ''"
             >
                 <div
