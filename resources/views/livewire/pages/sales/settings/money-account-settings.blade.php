@@ -27,7 +27,7 @@
 
     <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="data-table w-full text-start text-xs border-collapse">
+            <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <th class="py-3 px-4 text-start">{{ __('sales.type') }}</th>
@@ -41,28 +41,34 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse ($accounts as $acc)
-                        <tr>
-                            <td class="py-3 px-4 font-bold text-text-primary uppercase text-xs">
+                        <tr wire:key="money-acc-row-{{ $acc->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                            <td class="td-secondary py-3 px-4 font-bold text-text-primary uppercase text-xs" data-label="{{ __('sales.type') }}">
                                 {{ __('sales.money_type_'.$acc->account_type) }}
                             </td>
-                            <td class="py-3 px-4 font-bold">
-                                {{ $acc->displayName() }}
+                            <td class="td-primary py-3 px-4 font-bold">
+                                <div class="truncate text-text-primary">{{ $acc->displayName() }}</div>
+                                <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    {{ __('sales.money_type_'.$acc->account_type) }} &middot; <bdi dir="ltr" class="font-mono">{{ $acc->currency_code }}</bdi>
+                                </div>
                             </td>
-                            <td class="py-3 px-4 font-mono font-bold">
+                            <td class="td-secondary py-3 px-4 font-mono font-bold" data-label="{{ __('sales.currency') }}">
                                 {{ $acc->currency_code }}
                             </td>
-                            <td class="py-3 px-4 text-text-secondary font-mono">
+                            <td class="td-secondary py-3 px-4 text-text-secondary font-mono" data-label="{{ __('sales.bank_details') }}">
                                 {{ $acc->bank_name ? $acc->bank_name . ' (' . ($acc->account_number ?? $acc->iban) . ')' : '—' }}
                             </td>
-                            <td class="py-3 px-4 text-text-muted">
+                            <td class="td-secondary py-3 px-4 text-text-muted" data-label="{{ __('sales.ledger_account') }}">
                                 {{ $acc->ledgerAccount?->code }} - {{ $acc->ledgerAccount?->displayName() }}
                             </td>
-                            <td class="py-3 px-4">
-                                @if ($acc->is_active)
-                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">{{ __('sales.active') }}</span>
-                                @else
-                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">{{ __('sales.inactive') }}</span>
-                                @endif
+                            <td class="td-end py-3 px-4">
+                                <div class="inline-flex items-center gap-2">
+                                    @if ($acc->is_active)
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">{{ __('sales.active') }}</span>
+                                    @else
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">{{ __('sales.inactive') }}</span>
+                                    @endif
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
                                 <button id="money-account-edit-trigger-{{ $acc->id }}"

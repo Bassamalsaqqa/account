@@ -100,7 +100,7 @@
 
             <!-- Ledger Entries Table -->
             <div class="overflow-x-auto border border-border rounded-control">
-                <table class="data-table w-full text-start text-xs border-collapse">
+                <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.date') }}</th>
@@ -117,21 +117,29 @@
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $currencyStatement['opening_balance'], $curr) }}
                             </td>
                         </tr>
-                        @forelse ($currencyStatement['entries'] as $entry)
-                            <tr class="hover:bg-surface-soft/40">
-                                <td class="py-2.5 px-3" dir="ltr">{{ $entry['date'] }}</td>
-                                <td class="py-2.5 px-3">
-                                    <span class="font-bold font-mono">{{ $entry['number'] }}</span>
-                                    <span class="text-text-muted text-xs">({{ __('sales.statement_type_'.$entry['type']) }})</span>
+                        @forelse ($currencyStatement['entries'] as $entryIdx => $entry)
+                            <tr wire:key="cust-stmt-{{ $curr }}-{{ $entryIdx }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/40">
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.date') }}" dir="ltr">{{ $entry['date'] }}</td>
+                                <td class="td-primary py-2.5 px-3">
+                                    <div class="truncate">
+                                        <span class="font-bold font-mono">{{ $entry['number'] }}</span>
+                                        <span class="text-text-muted text-xs">({{ __('sales.statement_type_'.$entry['type']) }})</span>
+                                    </div>
+                                    <div class="lg:hidden text-xs text-text-secondary mt-0.5" dir="ltr">
+                                        {{ $entry['date'] }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-3 font-mono" dir="ltr">
+                                <td class="td-secondary py-2.5 px-3 font-mono" data-label="{{ __('sales.debit') }}" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $entry['debit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $entry['debit'], $curr) : '—' }}
                                 </td>
-                                <td class="py-2.5 px-3 font-mono" dir="ltr">
+                                <td class="td-secondary py-2.5 px-3 font-mono" data-label="{{ __('sales.credit_col') }}" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $entry['credit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $entry['credit'], $curr) : '—' }}
                                 </td>
-                                <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $entry['balance'], $curr) }}
+                                <td class="td-end py-2.5 px-3 font-mono font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $entry['balance'], $curr) }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
                             </tr>
                         @empty

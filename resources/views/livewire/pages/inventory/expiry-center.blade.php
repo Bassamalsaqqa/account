@@ -162,84 +162,78 @@
             </table>
         </div>
 <div class="md:hidden divide-y divide-border">
-                    @forelse ($lotBalances as $lb)
-                        @php
-                            $days = $lb->lot ? $lb->lot->daysUntilExpiry($expiryReferenceDate->copy()) : null;
-                            $isExpired = $lb->lot && $lb->lot->isExpired($expiryReferenceDate->copy());
-                            $approxVal = $canViewCost ? ($lotValuations[$lb->id] ?? null) : null;
-                        @endphp
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.product') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><a href="{{ route('products.show', $lb->product?->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                    {{ $lb->product?->name() }}
-                                </a>
-                                @if ($lb->product?->sku)
-                                    <bdi dir="ltr" class="block text-xs font-mono text-text-muted">{{ $lb->product?->sku }}</bdi>
-                                @endif</dd>
+            @forelse ($lotBalances as $lb)
+                @php
+                    $days = $lb->lot ? $lb->lot->daysUntilExpiry($expiryReferenceDate->copy()) : null;
+                    $isExpired = $lb->lot && $lb->lot->isExpired($expiryReferenceDate->copy());
+                    $approxVal = $canViewCost ? ($lotValuations[$lb->id] ?? null) : null;
+                    $whLabel = app()->getLocale() === 'en' && $lb->warehouse?->name_en ? $lb->warehouse->name_en : $lb->warehouse?->name_ar;
+                    $unitLabel = app()->getLocale() === 'en' && $lb->product?->baseUnit?->name_en ? $lb->product->baseUnit->name_en : $lb->product?->baseUnit?->name_ar;
+                @endphp
+                <x-compact-mobile-row wire:key="expiry-mobile-{{ $lb->id }}">
+                    <x-slot:primary>
+                        <a href="{{ route('products.show', $lb->product?->public_id) }}" data-row-link class="touch-action font-bold text-text-primary hover:text-primary transition-colors truncate text-sm">
+                            {{ $lb->product?->name() }}
+                        </a>
+                        <span class="shrink-0">
+                            @if ($isExpired)
+                                <x-badge variant="danger">{{ __('inventory.expired') }}</x-badge>
+                            @elseif ($days !== null && $days <= $savedWarningDays)
+                                <x-badge variant="warn">{{ $days }} {{ __('inventory.days') }}</x-badge>
+                            @elseif ($days !== null)
+                                <x-badge variant="success">{{ $days }} {{ __('inventory.days') }}</x-badge>
+                            @endif
+                        </span>
+                    </x-slot:primary>
+
+                    <x-slot:subtitle>
+                        <bdi dir="ltr" class="font-mono">{{ $lb->lot?->lot_number ?? __('inventory.lot_prefix') . $lb->lot_id }}</bdi>
+                        &middot; {{ $whLabel }}
+                        &middot; <bdi dir="ltr" class="font-mono">{{ $lb->lot?->expiry_date?->toDateString() ?? '—' }}</bdi>
+                    </x-slot:subtitle>
+
+                    <x-slot:trailing>
+                        <bdi dir="ltr" class="block font-mono font-bold text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}</bdi>
+                        <span class="block text-xs text-text-muted">{{ $unitLabel }}</span>
+                    </x-slot:trailing>
+
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.lot_number') }}</dt>
+                                <dd class="mt-0.5 font-mono text-text-primary" dir="ltr">{{ $lb->lot?->lot_number ?? __('inventory.lot_prefix') . $lb->lot_id }}</dd>
                             </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.lot_number') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $lb->lot?->lot_number ?? __('inventory.lot_prefix') . $lb->lot_id }}</dd>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.warehouse') }}</dt>
+                                <dd class="mt-0.5 text-text-primary">{{ $whLabel }}</dd>
                             </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.warehouse') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ app()->getLocale() === 'en' && $lb->warehouse?->name_en ? $lb->warehouse->name_en : $lb->warehouse?->name_ar }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.expiry_date') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary"><bdi dir="ltr">{{ $lb->lot?->expiry_date?->toDateString() ?? '—' }}</bdi></dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.days_remaining') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if ($isExpired)
-                                    <x-badge variant="danger">{{ __('inventory.expired') }}</x-badge>
-                                @elseif ($days !== null && $days <= $savedWarningDays)
-                                    <x-badge variant="warn">{{ $days }} {{ __('inventory.days') }}</x-badge>
-                                @elseif ($days !== null)
-                                    <x-badge variant="success">{{ $days }} {{ __('inventory.days') }}</x-badge>
-                                @else
-                                    <span class="text-text-muted">—</span>
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.current_stock') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($lb->quantity_base) }}
-                                <span class="text-xs text-text-muted font-arabic">{{ app()->getLocale() === 'en' && $lb->product?->baseUnit?->name_en ? $lb->product->baseUnit->name_en : $lb->product?->baseUnit?->name_ar }}</span></dd>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.expiry_date') }}</dt>
+                                <dd class="mt-0.5 font-mono text-text-primary" dir="ltr"><bdi dir="ltr">{{ $lb->lot?->expiry_date?->toDateString() ?? '—' }}</bdi></dd>
                             </div>
                             @if ($canViewCost)
-                                <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.approximate_valuation') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $approxVal ?? '—' }}
-                                    <span class="text-xs text-text-muted">{{ $company->base_currency_code }}</span></dd>
-                            </div>
-                            @endif
-                            @if ($canAdjust)
-                                <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if ($isExpired)
-                                    <button id="expiry-dispose-mobile-{{ $lb->id }}" wire:loading.attr="disabled" type="button" wire:click="openDisposalModal({{ $lb->id }})"
-                                            class="touch-action bg-danger-bg hover:bg-danger/20 text-danger font-bold text-xs transition-colors">
-                                        {{ __('inventory.dispose_expired') }}
-                                    </button>
-                                    @else
-                                        <span class="text-text-muted">—</span>
-                                    @endif</dd>
-                            </div>
+                                <div>
+                                    <dt class="text-text-secondary">{{ __('inventory.approximate_valuation') }}</dt>
+                                    <dd class="mt-0.5 font-mono text-text-primary" dir="ltr">
+                                        {{ $approxVal ?? '—' }} <span class="text-xs text-text-muted">{{ $company->base_currency_code }}</span>
+                                    </dd>
+                                </div>
                             @endif
                         </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('inventory.no_matching_lots') }}
+                        @if ($canAdjust && $isExpired)
+                            <div class="flex justify-end">
+                                <button id="expiry-dispose-mobile-{{ $lb->id }}" wire:loading.attr="disabled" type="button" wire:click="openDisposalModal({{ $lb->id }})"
+                                        class="touch-action bg-danger-bg hover:bg-danger/20 text-danger font-bold text-xs transition-colors">
+                                    {{ __('inventory.dispose_expired') }}
+                                </button>
                             </div>
-                        </dl>
-                        </article>
-                    @endforelse
-                </div>
+                        @endif
+                    </x-slot:details>
+                </x-compact-mobile-row>
+            @empty
+                <p class="p-8 text-center text-sm text-text-secondary">{{ __('inventory.no_matching_lots') }}</p>
+            @endforelse
+        </div>
 
         <div class="p-4"><x-table-pagination :paginator="$lotBalances" /></div>
     </x-card>

@@ -8,42 +8,16 @@
         <div class="flex flex-wrap items-end gap-2">
             <label for="daily-summary-date" class="text-sm text-text-secondary">
                 <span class="block mb-1">{{ __('money.selected_date') }}</span>
-                <input id="daily-summary-date" type="date" value="{{ $selectedDate }}" wire:model.live="date" class="min-h-11 rounded-control border border-border bg-surface px-3 py-2 text-sm focus:ring-2 focus:ring-primary">
+                <input id="daily-summary-date" type="date" value="{{ $selectedDate }}" wire:model.live="date" class="min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-surface px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary">
             </label>
-            <button type="button" wire:click="$set('date', '{{ $today }}')" wire:loading.attr="disabled" class="min-h-11 px-3 border border-border rounded-control text-sm hover:bg-surface-soft focus:ring-2 focus:ring-primary disabled:opacity-50">{{ __('money.today') }}</button>
-            <button type="button" wire:click="$set('date', '{{ \Carbon\CarbonImmutable::parse($today)->subDay()->format('Y-m-d') }}')" wire:loading.attr="disabled" class="min-h-11 px-3 border border-border rounded-control text-sm hover:bg-surface-soft focus:ring-2 focus:ring-primary disabled:opacity-50">{{ __('money.yesterday') }}</button>
+            <button type="button" wire:click="$set('date', '{{ $today }}')" wire:loading.attr="disabled" class="min-h-11 lg:min-h-9.5 px-3 border border-border-control rounded-control text-sm font-semibold hover:bg-surface-soft focus:ring-2 focus:ring-primary disabled:opacity-50">{{ __('money.today') }}</button>
+            <button type="button" wire:click="$set('date', '{{ \Carbon\CarbonImmutable::parse($today)->subDay()->format('Y-m-d') }}')" wire:loading.attr="disabled" class="min-h-11 lg:min-h-9.5 px-3 border border-border-control rounded-control text-sm font-semibold hover:bg-surface-soft focus:ring-2 focus:ring-primary disabled:opacity-50">{{ __('money.yesterday') }}</button>
         </div>
     </div>
     @error('date')<p class="px-4 sm:px-6 pb-3 text-sm text-danger" role="alert">{{ $message }}</p>@enderror
-    <div class="sm:hidden divide-y divide-border border-t border-border" wire:loading.class="opacity-50" wire:target="date">
-        @foreach($summaries as $summary)
-            <article class="p-4">
-                <a href="{{ route('money.accounts.show', $summary['public_id']) }}" class="font-semibold text-primary hover:underline focus:ring-2 focus:ring-primary">{{ $summary['name'] }}</a>
-                <bdi dir="ltr" class="text-xs text-text-secondary ms-2">{{ $summary['currency_code'] }}</bdi>
-                @if(!$summary['is_available'])
-                    <p class="mt-3 text-sm text-text-secondary">{{ __('money.daily_activity_restricted') }}</p>
-                @else
-                    <dl class="grid grid-cols-2 gap-x-4 gap-y-5 mt-4">
-                        @foreach(['opening' => 'opening_balance', 'inflow' => 'daily_inflows', 'outflow' => 'daily_outflows', 'closing' => 'closing_balance'] as $field => $label)
-                            <div class="min-w-0">
-                                <dt class="text-xs text-text-secondary">{{ __('money.'.$label) }}</dt>
-                                <dd class="mt-1 tabular-nums {{ $field === 'closing' ? 'font-bold text-lg' : 'font-semibold' }}">
-                                    <bdi dir="ltr">{{ $summary[$field.'_currency'] === null ? __('money.unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_currency'], $summary['currency_code']) }}</bdi>
-                                    @if($summary['currency_code'] !== $summary['base_currency_code'])
-                                        <span class="block mt-1 text-xs text-text-secondary font-normal"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_base'], $summary['base_currency_code']) }} {{ $summary['base_currency_code'] }}</bdi></span>
-                                    @endif
-                                </dd>
-                            </div>
-                        @endforeach
-                    </dl>
-                    @if(!$summary['currency_available'])<p class="mt-3 text-xs text-warning">{{ __('money.native_unavailable') }}</p>@endif
-                @endif
-            </article>
-        @endforeach
-    </div>
-    <div class="hidden sm:block overflow-x-auto" tabindex="0" role="region" aria-label="{{ __('money.daily_summary') }}">
-        <table class="w-full min-w-[640px] text-sm text-start">
-            <thead class="bg-surface-soft border-y border-border text-text-secondary">
+    <div class="overflow-x-auto border-t border-border" tabindex="0" role="region" aria-label="{{ __('money.daily_summary') }}">
+        <table class="data-table data-table--responsive w-full text-sm text-start">
+            <thead class="bg-surface-soft border-b border-border text-text-secondary">
                 <tr>
                     <th scope="col" class="px-4 py-3 text-start">{{ __('money.account') }}</th>
                     @foreach(['opening_balance', 'daily_inflows', 'daily_outflows', 'closing_balance'] as $label)
@@ -52,23 +26,34 @@
                 </tr>
             </thead>
             <tbody class="divide-y divide-border" wire:loading.class="opacity-50" wire:target="date">
-                @foreach($summaries as $summary)
-                    <tr>
-                        <th scope="row" class="px-4 py-4 text-start font-medium">
-                            <a href="{{ route('money.accounts.show', $summary['public_id']) }}" class="text-primary hover:underline focus:ring-2 focus:ring-primary">{{ $summary['name'] }}</a>
-                            <span class="block mt-1 text-xs text-text-secondary">{{ $summary['currency_code'] }}</span>
-                        </th>
+                @foreach($summaries as $summaryIdx => $summary)
+                    <tr wire:key="daily-sum-{{ $summary['public_id'] ?? $summaryIdx }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                        <td class="td-primary px-4 py-3 text-start font-medium">
+                            <a href="{{ route('money.accounts.show', $summary['public_id']) }}" data-row-link class="touch-action font-semibold text-primary hover:underline focus:ring-2 focus:ring-primary truncate block">{{ $summary['name'] }}</a>
+                            <span class="block mt-0.5 text-xs text-text-secondary"><bdi dir="ltr" class="font-mono">{{ $summary['currency_code'] }}</bdi></span>
+                        </td>
                         @if(!$summary['is_available'])
-                            <td colspan="4" class="px-4 py-4 text-text-secondary">{{ __('money.daily_activity_restricted') }}</td>
+                            <td colspan="4" class="px-4 py-3 text-text-secondary">{{ __('money.daily_activity_restricted') }}</td>
                         @else
-                            @foreach(['opening', 'inflow', 'outflow', 'closing'] as $field)
-                                <td class="px-4 py-4 text-end tabular-nums {{ $field === 'closing' ? 'font-bold' : '' }}">
+                            @foreach(['opening' => 'opening_balance', 'inflow' => 'daily_inflows', 'outflow' => 'daily_outflows'] as $field => $label)
+                                <td class="td-secondary px-4 py-3 text-end tabular-nums" data-label="{{ __('money.'.$label) }}">
                                     <bdi dir="ltr">{{ $summary[$field.'_currency'] === null ? __('money.unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_currency'], $summary['currency_code']) }}</bdi>
                                     @if($summary['currency_code'] !== $summary['base_currency_code'])
                                         <span class="block mt-1 text-xs text-text-secondary"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary[$field.'_base'], $summary['base_currency_code']) }} {{ $summary['base_currency_code'] }}</bdi></span>
                                     @endif
                                 </td>
                             @endforeach
+                            <td class="td-end px-4 py-3 text-end tabular-nums font-bold">
+                                <div class="inline-flex items-center gap-2">
+                                    <div class="text-end">
+                                        <bdi dir="ltr">{{ $summary['closing_currency'] === null ? __('money.unavailable') : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary['closing_currency'], $summary['currency_code']) }}</bdi>
+                                        @if($summary['currency_code'] !== $summary['base_currency_code'])
+                                            <span class="block mt-0.5 text-xs font-normal text-text-secondary"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($summary['closing_base'], $summary['base_currency_code']) }} {{ $summary['base_currency_code'] }}</bdi></span>
+                                        @endif
+                                    </div>
+                                    <x-row-details-toggle />
+                                </div>
+                            </td>
                         @endif
                     </tr>
                     @if($summary['is_available'] && !$summary['currency_available'])

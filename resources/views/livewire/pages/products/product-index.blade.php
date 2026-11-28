@@ -223,80 +223,94 @@
         <!-- Mobile Cards View -->
         <div class="lg:hidden divide-y divide-border">
             @forelse ($products as $product)
-                <div class="p-4 space-y-3">
-                    <div class="flex items-start justify-between gap-3">
-                        <div class="flex min-w-0 flex-1 items-center gap-3">
-                            <div class="w-12 h-12 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
+                <x-compact-mobile-row wire:key="product-mobile-{{ $product->id }}">
+                    <x-slot:primary>
+                        <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div class="w-9 h-9 rounded-control border border-border bg-surface-soft grid place-items-center shrink-0 overflow-hidden">
                                 @if ($product->primaryImage)
-                                    <img loading="lazy" decoding="async" width="40" height="40" src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
+                                    <img loading="lazy" decoding="async" width="36" height="36" src="{{ asset('storage/' . $product->primaryImage->thumbnail_path) }}"
                                          alt="{{ $product->name() }}"
                                          class="w-full h-full object-cover" />
                                 @else
-                                    <x-icon name="box" class="w-6 h-6 text-text-muted" />
+                                    <x-icon name="box" class="w-4 h-4 text-text-muted" />
                                 @endif
                             </div>
-                            <div class="min-w-0 flex-1">
-                                <a href="{{ route('products.show', $product->public_id) }}"
-                                   title="{{ $product->name() }}" class="touch-action min-w-0 truncate font-bold text-text-primary text-sm hover:text-primary transition-colors block">
-                                    {{ $product->name() }}
-                                </a>
-                                @if ($product->sku)
-                                    <span class="block truncate text-xs font-mono text-text-muted" title="{{ $product->sku }}"><bdi dir="ltr">{{ $product->sku }}</bdi></span>
-                                @endif
-                                @if ($product->name_ar && $product->name_en)
-                                    <span class="block text-xs text-text-muted truncate">/ {{ app()->getLocale() === 'en' ? $product->name_ar : $product->name_en }}</span>
-                                @endif
-                            </div>
+                            <a href="{{ route('products.show', $product->public_id) }}" data-row-link
+                               title="{{ $product->name() }}" class="touch-action min-w-0 truncate font-bold text-text-primary text-sm hover:text-primary transition-colors">
+                                {{ $product->name() }}
+                            </a>
                         </div>
-                        <div class="flex shrink-0 items-center gap-1">
+                        <span class="shrink-0">
                             @if ($product->active)
                                 <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
                             @else
                                 <x-badge>{{ __('inventory.inactive') }}</x-badge>
                             @endif
-                        </div>
-                    </div>
+                        </span>
+                    </x-slot:primary>
 
-                    <div class="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-border/40">
-                        <div>
-                            <span class="text-text-muted">{{ __('inventory.category') }}:</span>
-                            <span class="font-semibold text-text-secondary">{{ $product->category?->name() ?? '—' }}</span>
-                        </div>
-                        <div>
-                            <span class="text-text-muted">{{ __('inventory.total_stock') }}:</span>
-                            <span class="font-mono font-bold tabular-nums text-text-primary">
-                                <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}</bdi>
-                                {{ $product->baseUnit?->name() }}
-                            </span>
-                        </div>
-                        @if ($canViewCost)
-                            <div>
-                                <span class="text-text-muted">{{ __('inventory.moving_average_cost') }}:</span>
-                                <bdi dir="ltr" class="font-mono tabular-nums text-text-secondary">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}
-                                </bdi>
-                            </div>
-                            <div>
-                                <span class="text-text-muted">{{ __('inventory.inventory_value') }}:</span>
-                                <bdi dir="ltr" class="font-mono font-bold tabular-nums text-text-primary">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}
-                                </bdi>
-                            </div>
+                    <x-slot:subtitle>
+                        @if ($product->sku)<bdi dir="ltr" class="font-mono">{{ $product->sku }}</bdi>@endif
+                        @if ($product->sku && $product->category) &middot; @endif
+                        @if ($product->category){{ $product->category->name() }}@endif
+                    </x-slot:subtitle>
+
+                    <x-slot:trailing>
+                        @if ($product->track_stock)
+                            <bdi dir="ltr" class="font-mono font-bold text-sm tabular-nums {{ $product->minimum_stock_base !== null && \Brick\Math\BigDecimal::of((string) $product->stock_quantity)->isLessThanOrEqualTo(\Brick\Math\BigDecimal::of((string) $product->minimum_stock_base)) ? 'text-danger' : 'text-text-primary' }}">
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}
+                            </bdi>
+                            <span class="block text-xs text-text-muted">{{ $product->baseUnit?->name() ?? '' }}</span>
+                        @else
+                            <span class="text-xs text-text-muted">—</span>
                         @endif
-                    </div>
+                    </x-slot:trailing>
 
-                    <div class="pt-2 border-t border-border/40 flex justify-end">
-                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('refinement_lists.actions') }}">
-                            <x-row-action data-row-link :href="route('products.show', $product->public_id)" :label="__('inventory.product_details')" icon="eye" />
-                            @if ($product->active && $canPrintLabels)
-                                <x-row-action :href="route('labels.index', ['search' => mb_substr((string) ($product->sku ?: $product->name()), 0, 120)])" :label="__('refinement_lists.barcode_labels')" icon="barcode" />
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.category') }}</dt>
+                                <dd class="font-semibold text-text-primary mt-0.5">{{ $product->category?->name() ?? '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.total_stock') }}</dt>
+                                <dd class="font-mono font-bold tabular-nums text-text-primary mt-0.5">
+                                    <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($product->stock_quantity) }}</bdi>
+                                    {{ $product->baseUnit?->name() }}
+                                </dd>
+                            </div>
+                            @if ($canViewCost)
+                                <div>
+                                    <dt class="text-text-secondary">{{ __('inventory.moving_average_cost') }}</dt>
+                                    <dd class="mt-0.5">
+                                        <bdi dir="ltr" class="font-mono tabular-nums text-text-primary">
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->average_cost_base ?? '0.000000') }}
+                                        </bdi>
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt class="text-text-secondary">{{ __('inventory.inventory_value') }}</dt>
+                                    <dd class="mt-0.5">
+                                        <bdi dir="ltr" class="font-mono font-bold tabular-nums text-text-primary">
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($product->costState?->inventory_value_base ?? '0.000000') }}
+                                        </bdi>
+                                    </dd>
+                                </div>
                             @endif
-                            @if ($canManageProduct)
-                                <x-row-action :href="route('products.edit', $product->public_id)" :label="__('inventory.edit_product')" icon="edit" tone="primary" />
-                            @endif
+                        </dl>
+                        <div class="flex justify-end">
+                            <div class="row-action-group justify-end" role="group" aria-label="{{ __('refinement_lists.actions') }}">
+                                <x-row-action data-row-link :href="route('products.show', $product->public_id)" :label="__('inventory.product_details')" icon="eye" />
+                                @if ($product->active && $canPrintLabels)
+                                    <x-row-action :href="route('labels.index', ['search' => mb_substr((string) ($product->sku ?: $product->name()), 0, 120)])" :label="__('refinement_lists.barcode_labels')" icon="barcode" />
+                                @endif
+                                @if ($canManageProduct)
+                                    <x-row-action :href="route('products.edit', $product->public_id)" :label="__('inventory.edit_product')" icon="edit" tone="primary" />
+                                @endif
+                            </div>
                         </div>
-                    </div>
-                </div>
+                    </x-slot:details>
+                </x-compact-mobile-row>
             @empty
                 <div class="p-8 text-center text-text-muted">
                     <x-icon name="box" class="w-10 h-10 mx-auto mb-2 text-text-muted/40" />

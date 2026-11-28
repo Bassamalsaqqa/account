@@ -70,37 +70,55 @@
         </div>
         <div class="lg:hidden divide-y divide-border">
             @forelse ($vendors as $vendor)
-                <article wire:key="vendor-card-{{ $vendor->public_id }}" class="p-4 space-y-3">
-                    <div class="flex justify-between items-start gap-3">
-                        <a href="{{ route('vendors.show', $vendor->public_id) }}" class="touch-action font-bold text-sm text-text-primary">{{ $vendor->displayName() }}</a>
-                        <span class="text-xs {{ $vendor->active ? 'text-success' : 'text-text-secondary' }}">{{ __('purchasing.' . $vendor->status) }}</span>
-                    </div>
-                    <dl class="grid grid-cols-2 gap-3 text-xs">
-                        <div><dt class="text-text-secondary">{{ __('purchasing.vendor_code') }}</dt>
-                                <dd class="mt-1"><bdi>{{ $vendor->code ?? '—' }}</bdi></dd>
+                <x-compact-mobile-row wire:key="vendor-card-{{ $vendor->public_id }}">
+                    <x-slot:primary>
+                        <a href="{{ route('vendors.show', $vendor->public_id) }}" data-row-link class="touch-action font-bold text-sm text-text-primary hover:text-primary truncate">
+                            {{ $vendor->displayName() }}
+                        </a>
+                        <span class="text-xs font-bold shrink-0 {{ $vendor->active ? 'text-success' : 'text-text-secondary' }}">
+                            {{ __('purchasing.' . $vendor->status) }}
+                        </span>
+                    </x-slot:primary>
+
+                    <x-slot:subtitle>
+                        @if ($vendor->code)<bdi dir="ltr" class="font-mono">{{ $vendor->code }}</bdi>@endif
+                        @if ($vendor->code && ($vendor->phone || $vendor->whatsapp)) &middot; @endif
+                        @if ($vendor->phone || $vendor->whatsapp)<bdi dir="ltr" class="font-mono">{{ $vendor->phone ?? $vendor->whatsapp }}</bdi>@endif
+                        @if (($vendor->code || $vendor->phone || $vendor->whatsapp) && $vendor->default_currency_code) &middot; @endif
+                        @if ($vendor->default_currency_code)<bdi dir="ltr">{{ $vendor->default_currency_code }}</bdi>@endif
+                    </x-slot:subtitle>
+
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('purchasing.vendor_code') }}</dt>
+                                <dd class="mt-0.5 font-mono font-semibold text-text-primary" dir="ltr"><bdi>{{ $vendor->code ?? '—' }}</bdi></dd>
                             </div>
-                        <div><dt class="text-text-secondary">{{ __('purchasing.default_currency') }}</dt>
-                                <dd class="mt-1"><bdi>{{ $vendor->default_currency_code ?? '—' }}</bdi></dd>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('purchasing.default_currency') }}</dt>
+                                <dd class="mt-0.5 font-semibold text-text-primary" dir="ltr"><bdi>{{ $vendor->default_currency_code ?? '—' }}</bdi></dd>
                             </div>
-                        <div class="col-span-2"><dt class="text-text-secondary">{{ __('purchasing.phone') }}</dt>
-                                <dd class="mt-1"><bdi>{{ $vendor->phone ?? $vendor->whatsapp ?? '—' }}</bdi></dd>
+                            <div class="col-span-2">
+                                <dt class="text-text-secondary">{{ __('purchasing.phone') }}</dt>
+                                <dd class="mt-0.5 font-mono font-semibold text-text-primary" dir="ltr"><bdi>{{ $vendor->phone ?? $vendor->whatsapp ?? '—' }}</bdi></dd>
                             </div>
-                    </dl>
-                    <div class="pt-2 border-t border-border flex justify-end">
-                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('purchasing.actions') }}">
-                            <x-row-action data-row-link :href="route('vendors.show', $vendor->public_id)" :label="__('purchasing.vendor_details')" icon="eye" />
-                            @if ($vendor->active && $canCreatePurchase)
-                                <x-row-action :href="route('purchases.create', ['vendor_id' => $vendor->id])" :label="__('mobile.new_purchase')" icon="plus" tone="primary" />
-                            @endif
-                            @if ($vendor->active && $canCreatePayment)
-                                <x-row-action :href="route('vendor-payments.create', ['vendor_id' => $vendor->id])" :label="__('mobile.record_vendor_payment')" icon="money" />
-                            @endif
-                            @if ($canManage)
-                                <x-row-action :href="route('vendors.edit', $vendor->public_id)" :label="__('purchasing.edit_vendor')" icon="edit" tone="primary" />
-                            @endif
+                        </dl>
+                        <div class="flex justify-end">
+                            <div class="row-action-group justify-end" role="group" aria-label="{{ __('purchasing.actions') }}">
+                                <x-row-action data-row-link :href="route('vendors.show', $vendor->public_id)" :label="__('purchasing.vendor_details')" icon="eye" />
+                                @if ($vendor->active && $canCreatePurchase)
+                                    <x-row-action :href="route('purchases.create', ['vendor_id' => $vendor->id])" :label="__('mobile.new_purchase')" icon="plus" tone="primary" />
+                                @endif
+                                @if ($vendor->active && $canCreatePayment)
+                                    <x-row-action :href="route('vendor-payments.create', ['vendor_id' => $vendor->id])" :label="__('mobile.record_vendor_payment')" icon="money" />
+                                @endif
+                                @if ($canManage)
+                                    <x-row-action :href="route('vendors.edit', $vendor->public_id)" :label="__('purchasing.edit_vendor')" icon="edit" tone="primary" />
+                                @endif
+                            </div>
                         </div>
-                    </div>
-                </article>
+                    </x-slot:details>
+                </x-compact-mobile-row>
             @empty
                 <p class="p-8 text-center text-sm text-text-secondary">{{ __('purchasing.no_vendors_found') }}</p>
             @endforelse

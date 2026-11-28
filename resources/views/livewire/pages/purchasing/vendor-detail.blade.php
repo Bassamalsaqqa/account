@@ -222,7 +222,7 @@
     @elseif ($activeTab === 'purchases' && $withCost)
         <div class="bg-surface rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-xs">
+                <table class="data-table data-table--responsive w-full text-xs">
                     <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
@@ -233,16 +233,23 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @forelse ($tabPurchases as $purchase)
-                            <tr>
-                                <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('purchases.show', $purchase->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $purchase->purchase_number ?? __('purchasing.draft') }}
-                                    </a>
+                            <tr wire:key="vdet-pur-{{ $purchase->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                <td class="td-primary py-2.5 px-4 font-mono font-bold">
+                                    <div class="flex items-center gap-2">
+                                        <a href="{{ route('purchases.show', $purchase->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $purchase->purchase_number ?? __('purchasing.draft') }}
+                                        </a>
+                                        <span class="lg:hidden text-xs font-sans font-semibold text-text-secondary shrink-0">{{ __('purchasing.' . $purchase->status) }}</span>
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5" dir="ltr">{{ $purchase->purchase_date->toDateString() }}</div>
                                 </td>
-                                <td class="py-2.5 px-4" dir="ltr">{{ $purchase->purchase_date->toDateString() }}</td>
-                                <td class="py-2.5 px-4">{{ __('purchasing.' . $purchase->status) }}</td>
-                                <td class="py-2.5 px-4 font-mono text-end font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }} {{ $purchase->currency_code }}
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('purchasing.purchase_date') }}" dir="ltr">{{ $purchase->purchase_date->toDateString() }}</td>
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('purchasing.all_statuses') }}">{{ __('purchasing.' . $purchase->status) }}</td>
+                                <td class="td-end py-2.5 px-4 font-mono text-end font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code) }} {{ $purchase->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
                             </tr>
                         @empty
@@ -258,7 +265,7 @@
     @elseif ($activeTab === 'returns' && $withCost)
         <div class="bg-surface rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-xs">
+                <table class="data-table data-table--responsive w-full text-xs">
                     <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_return_number') }}</th>
@@ -269,16 +276,23 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @forelse ($tabReturns as $ret)
-                            <tr>
-                                <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('purchase-returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $ret->return_number ?? __('purchasing.draft') }}
-                                    </a>
+                            <tr wire:key="vdet-ret-{{ $ret->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                <td class="td-primary py-2.5 px-4 font-mono font-bold">
+                                    <div class="flex items-center gap-2">
+                                        <a href="{{ route('purchase-returns.show', $ret->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $ret->return_number ?? __('purchasing.draft') }}
+                                        </a>
+                                        <span class="lg:hidden text-xs font-sans font-semibold text-text-secondary shrink-0">{{ __('purchasing.' . $ret->status) }}</span>
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5" dir="ltr">{{ $ret->return_date->toDateString() }}</div>
                                 </td>
-                                <td class="py-2.5 px-4" dir="ltr">{{ $ret->return_date->toDateString() }}</td>
-                                <td class="py-2.5 px-4">{{ __('purchasing.' . $ret->status) }}</td>
-                                <td class="py-2.5 px-4 font-mono text-end font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('purchasing.return_date') }}" dir="ltr">{{ $ret->return_date->toDateString() }}</td>
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('purchasing.all_statuses') }}">{{ __('purchasing.' . $ret->status) }}</td>
+                                <td class="td-end py-2.5 px-4 font-mono text-end font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
                             </tr>
                         @empty
@@ -294,7 +308,7 @@
     @elseif ($activeTab === 'payments' && $withCost)
         <div class="bg-surface rounded-card border border-border overflow-hidden">
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-xs">
+                <table class="data-table data-table--responsive w-full text-xs">
                     <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <tr>
                             <th class="py-2.5 px-4 text-start">{{ __('purchasing.payment_number') }}</th>
@@ -306,18 +320,31 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @forelse ($tabPayments as $pmt)
-                            <tr>
-                                <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $pmt->payment_number }}
-                                    </a>
+                            <tr wire:key="vdet-pmt-{{ $pmt->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                <td class="td-primary py-2.5 px-4 font-mono font-bold">
+                                    <div class="flex items-center gap-2">
+                                        <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $pmt->payment_number }}
+                                        </a>
+                                        @if ($pmt->is_reversed)
+                                            <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 bg-danger-bg text-danger">{{ __('purchasing.reversed') }}</span>
+                                        @else
+                                            <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 bg-success-bg text-success">{{ __('purchasing.posted') }}</span>
+                                        @endif
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5">
+                                        <bdi dir="ltr">{{ $pmt->payment_date->toDateString() }}</bdi> &middot; {{ $pmt->moneyAccount?->displayName() ?? '—' }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-4" dir="ltr">{{ $pmt->payment_date->toDateString() }}</td>
-                                <td class="py-2.5 px-4">{{ $pmt->moneyAccount?->displayName() ?? '—' }}</td>
-                                <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('purchasing.payment_date') }}" dir="ltr">{{ $pmt->payment_date->toDateString() }}</td>
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('purchasing.money_account') }}">{{ $pmt->moneyAccount?->displayName() ?? '—' }}</td>
+                                <td class="td-end py-2.5 px-4 font-mono font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-4">
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('purchasing.all_statuses') }}">
                                     @if ($pmt->is_reversed)
                                         <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
                                             {{ __('purchasing.reversed') }}
@@ -343,11 +370,11 @@
         <div class="space-y-6">
             <!-- Date Filters -->
             <div class="bg-surface p-4 rounded-card border border-border flex flex-wrap gap-4 items-center">
-                <div class="flex items-center gap-2 text-xs">
+                <div class="flex flex-wrap items-center gap-2 text-xs">
                     <label for="statement-from" class="font-bold text-text-secondary">{{ __('purchasing.statement_from') }}:</label>
-                    <input id="statement-from" type="date" wire:model.live="statementFrom" class="h-8 px-2 rounded-control border border-border text-sm" />
-                    <label for="statement-to">{{ __('purchasing.statement_to') }}:</label>
-                    <input id="statement-to" type="date" wire:model.live="statementTo" class="h-8 px-2 rounded-control border border-border text-sm" />
+                    <input id="statement-from" type="date" wire:model.live="statementFrom" class="min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border-control text-base lg:text-sm" />
+                    <label for="statement-to" class="font-bold text-text-secondary">{{ __('purchasing.statement_to') }}:</label>
+                    <input id="statement-to" type="date" wire:model.live="statementTo" class="min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border-control text-base lg:text-sm" />
                 </div>
             </div>
 
@@ -367,7 +394,7 @@
 
                     <!-- Entries Table -->
                     <div class="overflow-x-auto">
-                        <table class="data-table w-full text-xs">
+                        <table class="data-table data-table--responsive w-full text-xs">
                             <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <tr>
                                     <th class="py-2 px-3 text-start">{{ __('purchasing.statement_date') }}</th>
@@ -384,15 +411,25 @@
                                     <td colspan="6" class="py-2 px-3">{{ __('purchasing.opening_balance') }}</td>
                                     <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($s['opening_balance'], $currKey) }}</td>
                                 </tr>
-                                @foreach ($s['entries'] as $entry)
-                                    <tr>
-                                        <td class="py-2 px-3 font-mono" dir="ltr">{{ $entry['date'] }}</td>
-                                        <td class="py-2 px-3">{{ __('purchasing.'.($entry['type'] === 'payment_reversal' ? 'vendor_payment_reversal' : $entry['type'])) }}</td>
-                                        <td class="py-2 px-3 font-mono" dir="ltr">{{ $entry['number'] }}</td>
-                                        <td class="py-2 px-3">{{ $entry['description'] }}</td>
-                                        <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ $entry['credit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['credit'], $currKey) : '—' }}</td>
-                                        <td class="py-2 px-3 text-end font-mono" dir="ltr">{{ $entry['debit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['debit'], $currKey) : '—' }}</td>
-                                        <td class="py-2 px-3 text-end font-mono font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['balance'], $currKey) }}</td>
+                                @foreach ($s['entries'] as $entryIdx => $entry)
+                                    <tr wire:key="vdet-stmt-{{ $currKey }}-{{ $entryIdx }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                        <td class="td-secondary py-2 px-3 font-mono" data-label="{{ __('purchasing.statement_date') }}" dir="ltr">{{ $entry['date'] }}</td>
+                                        <td class="td-secondary py-2 px-3" data-label="{{ __('purchasing.statement_type') }}">{{ __('purchasing.'.($entry['type'] === 'payment_reversal' ? 'vendor_payment_reversal' : $entry['type'])) }}</td>
+                                        <td class="td-primary py-2 px-3 font-mono">
+                                            <div class="font-bold text-text-primary truncate" dir="ltr">{{ $entry['number'] }}</div>
+                                            <div class="lg:hidden font-sans font-normal text-xs text-text-secondary truncate mt-0.5">
+                                                {{ __('purchasing.'.($entry['type'] === 'payment_reversal' ? 'vendor_payment_reversal' : $entry['type'])) }} &middot; <bdi dir="ltr">{{ $entry['date'] }}</bdi>
+                                            </div>
+                                        </td>
+                                        <td class="td-secondary py-2 px-3" data-label="{{ __('purchasing.description') }}">{{ $entry['description'] }}</td>
+                                        <td class="td-secondary py-2 px-3 text-end font-mono" data-label="{{ __('purchasing.statement_credit') }}" dir="ltr">{{ $entry['credit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['credit'], $currKey) : '—' }}</td>
+                                        <td class="td-secondary py-2 px-3 text-end font-mono" data-label="{{ __('purchasing.statement_debit') }}" dir="ltr">{{ $entry['debit'] !== '0.00' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['debit'], $currKey) : '—' }}</td>
+                                        <td class="td-end py-2 px-3 text-end font-mono font-bold">
+                                            <div class="inline-flex items-center gap-2">
+                                                <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['balance'], $currKey) }}</bdi>
+                                                <x-row-details-toggle />
+                                            </div>
+                                        </td>
                                     </tr>
                                 @endforeach
                                 <tr class="bg-surface-soft/60 font-bold border-t-2 border-border">
@@ -487,7 +524,7 @@
 
                 @if ($vendorProducts->isNotEmpty())
                     <div class="overflow-x-auto">
-                        <table class="data-table w-full text-xs">
+                        <table class="data-table data-table--responsive w-full text-xs">
                             <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.product') }}</th>
@@ -501,27 +538,38 @@
                             </thead>
                             <tbody class="divide-y divide-border">
                                 @foreach ($vendorProducts as $p)
-                                    <tr class="hover:bg-canvas transition-colors {{ $selectedProductId === $p['product_id'] ? 'bg-primary-50/50' : '' }}">
-                                        <td class="py-3 px-4 font-bold text-text-primary">
-                                            @if ($p['product_public_id'] && $canViewProducts)
-                                                <a href="{{ route('products.show', $p['product_public_id']) }}" class="touch-action text-primary hover:underline">
+                                    <tr wire:key="vdet-prod-{{ $p['product_id'] }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-canvas transition-colors {{ $selectedProductId === $p['product_id'] ? 'bg-primary-50/50' : '' }}">
+                                        <td class="td-primary py-3 px-4 font-bold text-text-primary">
+                                            <div class="truncate">
+                                                @if ($p['product_public_id'] && $canViewProducts)
+                                                    <a href="{{ route('products.show', $p['product_public_id']) }}" class="touch-action text-primary hover:underline">
+                                                        {{ $p['product_name'] }}
+                                                    </a>
+                                                @else
                                                     {{ $p['product_name'] }}
-                                                </a>
-                                            @else
-                                                {{ $p['product_name'] }}
-                                            @endif
+                                                @endif
+                                            </div>
                                             @if ($p['product_sku'])
-                                                <span class="block text-xs text-text-muted font-mono">{{ $p['product_sku'] }}</span>
+                                                <span class="hidden lg:block text-xs text-text-muted font-mono">{{ $p['product_sku'] }}</span>
                                             @endif
+                                            <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                                @if ($p['product_sku'])<bdi dir="ltr" class="font-mono">{{ $p['product_sku'] }}</bdi> &middot; @endif
+                                                <bdi dir="ltr" class="font-mono">{{ $p['latest_purchase_date'] }}</bdi>
+                                            </div>
                                         </td>
-                                        <td class="py-3 px-4 text-text-secondary whitespace-nowrap font-mono" dir="ltr">
+                                        <td class="td-secondary py-3 px-4 text-text-secondary whitespace-nowrap font-mono" data-label="{{ __('purchasing.last_purchase_date') }}" dir="ltr">
                                             {{ $p['latest_purchase_date'] }}
                                         </td>
-                                        <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
-                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($p['latest_unit_cost'], '.') !== false ? rtrim(rtrim($p['latest_unit_cost'], '0'), '.') : $p['latest_unit_cost']) }}
-                                            <span class="text-xs font-normal text-text-muted">{{ $p['latest_currency_code'] }} / {{ $p['latest_unit_name'] }}</span>
+                                        <td class="td-end py-3 px-4 text-end font-mono font-bold whitespace-nowrap">
+                                            <div class="inline-flex items-center gap-2">
+                                                <bdi dir="ltr" class="tabular-nums">
+                                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($p['latest_unit_cost'], '.') !== false ? rtrim(rtrim($p['latest_unit_cost'], '0'), '.') : $p['latest_unit_cost']) }}
+                                                    <span class="text-xs font-normal text-text-muted">{{ $p['latest_currency_code'] }} / {{ $p['latest_unit_name'] }}</span>
+                                                </bdi>
+                                                <x-row-details-toggle />
+                                            </div>
                                         </td>
-                                        <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
+                                        <td class="td-secondary py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" data-label="{{ __('purchasing.net_commercial_price_per_base_unit') }}" dir="ltr">
                                             @if ($p['latest_net_commercial_price_per_base_unit'] !== null)
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($p['latest_net_commercial_price_per_base_unit']) }}
                                                 <span class="text-xs font-normal text-text-muted">{{ $p['base_currency_code'] }}</span>
@@ -529,10 +577,10 @@
                                                 —
                                             @endif
                                         </td>
-                                        <td class="py-3 px-4 text-center font-mono">
+                                        <td class="td-secondary py-3 px-4 text-center font-mono" data-label="{{ __('purchasing.total_purchases') }}">
                                             {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($p['purchases_count']) }}
                                         </td>
-                                        <td class="py-3 px-4 text-end font-mono" dir="ltr">
+                                        <td class="td-secondary py-3 px-4 text-end font-mono" data-label="{{ __('purchasing.total_quantity') }}" dir="ltr">
                                             {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(strpos($p['total_quantity_base'], '.') !== false ? rtrim(rtrim($p['total_quantity_base'], '0'), '.') : $p['total_quantity_base']) }}
                                         </td>
                                         <td class="table-actions py-3 px-4 text-center whitespace-nowrap">
@@ -569,7 +617,7 @@
 
                 @if ($vendorPriceLines->isNotEmpty())
                     <div class="overflow-x-auto">
-                        <table class="data-table w-full text-xs">
+                        <table class="data-table data-table--responsive w-full text-xs">
                             <thead class="bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                 <tr>
                                     <th class="py-2.5 px-4 text-start">{{ __('purchasing.purchase_number') }}</th>
@@ -583,9 +631,9 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-border">
-                                @foreach ($vendorPriceLines as $line)
-                                    <tr class="hover:bg-canvas transition-colors">
-                                        <td class="py-3 px-4 font-mono font-bold whitespace-nowrap">
+                                @foreach ($vendorPriceLines as $lineIdx => $line)
+                                    <tr wire:key="vdet-price-{{ $lineIdx }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-canvas transition-colors">
+                                        <td class="td-secondary py-3 px-4 font-mono font-bold whitespace-nowrap" data-label="{{ __('purchasing.purchase_number') }}">
                                             @if ($canViewPurchases)
                                                 <a href="{{ route('purchases.show', $line->purchase_public_id) }}" class="touch-action text-primary hover:underline">
                                                     {{ $line->purchase_number }}
@@ -594,32 +642,42 @@
                                                 <span class="text-text-secondary">{{ $line->purchase_number }}</span>
                                             @endif
                                         </td>
-                                        <td class="py-3 px-4 text-text-secondary whitespace-nowrap font-mono" dir="ltr">
+                                        <td class="td-secondary py-3 px-4 text-text-secondary whitespace-nowrap font-mono" data-label="{{ __('purchasing.purchase_date') }}" dir="ltr">
                                             {{ $line->purchase_date }}
                                         </td>
-                                        <td class="py-3 px-4 font-bold text-text-primary">
-                                            @if ($line->product_public_id && $canViewProducts)
-                                                <a href="{{ route('products.show', $line->product_public_id) }}" class="touch-action text-primary hover:underline">
+                                        <td class="td-primary py-3 px-4 font-bold text-text-primary">
+                                            <div class="truncate">
+                                                @if ($line->product_public_id && $canViewProducts)
+                                                    <a href="{{ route('products.show', $line->product_public_id) }}" class="touch-action text-primary hover:underline">
+                                                        {{ $line->product_name }}
+                                                    </a>
+                                                @else
                                                     {{ $line->product_name }}
-                                                </a>
-                                            @else
-                                                {{ $line->product_name }}
-                                            @endif
+                                                @endif
+                                            </div>
                                             @if ($line->product_sku)
-                                                <span class="block text-xs text-text-muted font-mono">{{ $line->product_sku }}</span>
+                                                <span class="hidden lg:block text-xs text-text-muted font-mono">{{ $line->product_sku }}</span>
                                             @endif
+                                            <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                                <bdi dir="ltr" class="font-mono">{{ $line->purchase_number }}</bdi> &middot; <bdi dir="ltr" class="font-mono">{{ $line->purchase_date }}</bdi> &middot; {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(strpos($line->quantity, '.') !== false ? rtrim(rtrim($line->quantity, '0'), '.') : $line->quantity) }} {{ $line->unit_name }}
+                                            </div>
                                         </td>
-                                        <td class="py-3 px-4 text-text-secondary whitespace-nowrap">
+                                        <td class="td-secondary py-3 px-4 text-text-secondary whitespace-nowrap" data-label="{{ __('purchasing.unit') }}">
                                             {{ $line->unit_name }}
                                         </td>
-                                        <td class="py-3 px-4 text-end font-mono" dir="ltr">
+                                        <td class="td-secondary py-3 px-4 text-end font-mono" data-label="{{ __('purchasing.quantity') }}" dir="ltr">
                                             {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity(strpos($line->quantity, '.') !== false ? rtrim(rtrim($line->quantity, '0'), '.') : $line->quantity) }}
                                         </td>
-                                        <td class="py-3 px-4 text-end font-mono font-bold whitespace-nowrap" dir="ltr">
-                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($line->unit_cost, '.') !== false ? rtrim(rtrim($line->unit_cost, '0'), '.') : $line->unit_cost) }}
-                                            <span class="text-xs font-normal text-text-muted">{{ $line->currency_code }}</span>
+                                        <td class="td-end py-3 px-4 text-end font-mono font-bold whitespace-nowrap">
+                                            <div class="inline-flex items-center gap-2">
+                                                <bdi dir="ltr" class="tabular-nums">
+                                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney(strpos($line->unit_cost, '.') !== false ? rtrim(rtrim($line->unit_cost, '0'), '.') : $line->unit_cost) }}
+                                                    <span class="text-xs font-normal text-text-muted">{{ $line->currency_code }}</span>
+                                                </bdi>
+                                                <x-row-details-toggle />
+                                            </div>
                                         </td>
-                                        <td class="py-3 px-4 text-end font-mono whitespace-nowrap" dir="ltr">
+                                        <td class="td-secondary py-3 px-4 text-end font-mono whitespace-nowrap" data-label="{{ __('purchasing.discount') }}" dir="ltr">
                                             @if ($line->discount_type && $line->discount_type !== 'none')
                                                 <span class="text-danger">
                                                     {{ $line->discount_type === 'percent' ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($line->discount_value) : \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->discount_value) }}
@@ -629,7 +687,7 @@
                                                 <span class="text-text-muted">—</span>
                                             @endif
                                         </td>
-                                        <td class="py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" dir="ltr">
+                                        <td class="td-secondary py-3 px-4 text-end font-mono font-bold text-primary whitespace-nowrap" data-label="{{ __('purchasing.net_commercial_price_per_base_unit') }}" dir="ltr">
                                             @if ($line->net_commercial_price_per_base_unit !== null)
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->net_commercial_price_per_base_unit) }}
                                                 <span class="text-xs font-normal text-text-muted">{{ $line->base_currency_code }}</span>

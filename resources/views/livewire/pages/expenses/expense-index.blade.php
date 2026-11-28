@@ -50,8 +50,8 @@
 
     <!-- Table -->
     <div class="rounded-card border border-border bg-surface overflow-hidden shadow-sm">
-        <div class="hidden lg:block overflow-x-auto">
-            <table class="data-table w-full text-sm text-start">
+        <div class="overflow-x-auto">
+            <table class="data-table data-table--responsive w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
                         <th class="px-4 py-3 text-start">{{ __('expenses.expense_number') }}</th>
@@ -66,22 +66,37 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse($expenses as $exp)
-                        <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="px-4 py-3 font-semibold text-primary">
-                                <a href="{{ route('expenses.show', $exp->public_id) }}" class="touch-action hover:underline">
-                                    {{ $exp->expense_number }}
-                                </a>
+                        @php($catName = app()->getLocale() === 'en' ? ($exp->category_snapshot['name_en'] ?: $exp->category_snapshot['name_ar']) : ($exp->category_snapshot['name_ar'] ?: $exp->category_snapshot['name_en']))
+                        <tr wire:key="expense-row-{{ $exp->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60 transition-colors">
+                            <td class="td-primary px-4 py-3 font-semibold text-primary">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <a href="{{ route('expenses.show', $exp->public_id) }}" data-row-link class="touch-action font-mono hover:underline truncate" dir="ltr">
+                                        {{ $exp->expense_number }}
+                                    </a>
+                                    @if($exp->status === 'posted')
+                                        <span class="lg:hidden inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-success shrink-0">
+                                            {{ __('expenses.posted') }}
+                                        </span>
+                                    @else
+                                        <span class="lg:hidden inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger shrink-0">
+                                            {{ __('expenses.reversed') }}
+                                        </span>
+                                    @endif
+                                </div>
+                                <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    {{ $catName }} &middot; <bdi dir="ltr">{{ $exp->expense_date->toDateString() }}</bdi>
+                                </div>
                             </td>
-                            <td class="px-4 py-3 whitespace-nowrap text-text-secondary">
+                            <td class="td-secondary px-4 py-3 whitespace-nowrap text-text-secondary" data-label="{{ __('expenses.expense_date') }}" dir="ltr">
                                 {{ $exp->expense_date->toDateString() }}
                             </td>
-                            <td class="px-4 py-3 text-text-secondary">
-                                {{ app()->getLocale() === 'en' ? ($exp->category_snapshot['name_en'] ?: $exp->category_snapshot['name_ar']) : ($exp->category_snapshot['name_ar'] ?: $exp->category_snapshot['name_en']) }}
+                            <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('expenses.category') }}">
+                                {{ $catName }}
                             </td>
-                            <td class="px-4 py-3 text-text-secondary max-w-xs truncate" title="{{ $exp->description }}">
+                            <td class="td-secondary px-4 py-3 text-text-secondary lg:max-w-xs lg:truncate" data-label="{{ __('expenses.description') }}" title="{{ $exp->description }}">
                                 {{ $exp->description }}
                             </td>
-                            <td class="px-4 py-3 whitespace-nowrap">
+                            <td class="td-secondary px-4 py-3 whitespace-nowrap" data-label="{{ __('expenses.classification') }}">
                                 @if($exp->classification === 'landed_cost')
                                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
                                         {{ __('expenses.landed_cost') }}
@@ -92,17 +107,22 @@
                                     </span>
                                 @endif
                             </td>
-                            <td class="px-4 py-3 whitespace-nowrap text-text-secondary">
+                            <td class="td-secondary px-4 py-3 whitespace-nowrap text-text-secondary" data-label="{{ __('expenses.payment_method') }}">
                                 {{ __('expenses.'.$exp->payment_method) }}
                             </td>
-                            <td class="px-4 py-3 whitespace-nowrap font-medium" dir="ltr">
-                                @if($exp->amount === null)
-                                    <span class="text-text-muted italic">{{ __('expenses.cost_redacted') }}</span>
-                                @else
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($exp->amount) }} {{ $exp->currency_code }}
-                                @endif
+                            <td class="td-end px-4 py-3 whitespace-nowrap font-medium">
+                                <div class="inline-flex items-center gap-2">
+                                    <bdi dir="ltr" class="font-mono tabular-nums font-bold">
+                                        @if($exp->amount === null)
+                                            <span class="font-sans text-text-muted italic font-normal">{{ __('expenses.cost_redacted') }}</span>
+                                        @else
+                                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($exp->amount) }} {{ $exp->currency_code }}
+                                        @endif
+                                    </bdi>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
-                            <td class="px-4 py-3 whitespace-nowrap">
+                            <td class="td-secondary px-4 py-3 whitespace-nowrap" data-label="{{ __('expenses.status') }}">
                                 @if($exp->status === 'posted')
                                     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-success">
                                         {{ __('expenses.posted') }}
@@ -124,76 +144,6 @@
                 </tbody>
             </table>
         </div>
-<div class="lg:hidden divide-y divide-border">
-                    @forelse($expenses as $exp)
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.expense_number') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><a href="{{ route('expenses.show', $exp->public_id) }}" class="touch-action hover:underline">
-                                    {{ $exp->expense_number }}
-                                </a></dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.expense_date') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $exp->expense_date->toDateString() }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.category') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ app()->getLocale() === 'en' ? ($exp->category_snapshot['name_en'] ?: $exp->category_snapshot['name_ar']) : ($exp->category_snapshot['name_ar'] ?: $exp->category_snapshot['name_en']) }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.description') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $exp->description }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.classification') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if($exp->classification === 'landed_cost')
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
-                                        {{ __('expenses.landed_cost') }}
-                                    </span>
-                                @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700">
-                                        {{ __('expenses.operating') }}
-                                    </span>
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.payment_method') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ __('expenses.'.$exp->payment_method) }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.amount') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">@if($exp->amount === null)
-                                    <span class="text-text-muted italic">{{ __('expenses.cost_redacted') }}</span>
-                                @else
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($exp->amount) }} {{ $exp->currency_code }}
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.status') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if($exp->status === 'posted')
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-success">
-                                        {{ __('expenses.posted') }}
-                                    </span>
-                                @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger">
-                                        {{ __('expenses.reversed') }}
-                                    </span>
-                                @endif</dd>
-                            </div>
-                        </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('expenses.empty') }}
-                            </div>
-                        </dl>
-                        </article>
-                    @endforelse
-                </div>
 
         @if ($expenses->count() > 0 || $expenses->currentPage() > 1)
             <div class="p-4 border-t border-border">

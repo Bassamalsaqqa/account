@@ -27,7 +27,7 @@
 
         <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="data-table w-full text-start text-xs border-collapse">
+            <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <th class="py-3 px-4 text-start">{{ __('sales.settings_code') }}</th>
@@ -42,31 +42,37 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse ($taxRates as $tax)
-                        <tr>
-                            <td class="py-3 px-4 font-mono font-bold text-text-primary">
+                        <tr wire:key="tax-row-{{ $tax->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                            <td class="td-secondary py-3 px-4 font-mono font-bold text-text-primary" data-label="{{ __('sales.settings_code') }}">
                                 {{ $tax->code }}
                             </td>
-                            <td class="py-3 px-4 font-bold">
-                                {{ $tax->displayName() }}
+                            <td class="td-primary py-3 px-4 font-bold">
+                                <div class="truncate text-text-primary">{{ $tax->displayName() }}</div>
+                                <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    <bdi dir="ltr" class="font-mono">{{ $tax->code }}</bdi> &middot; <bdi dir="ltr" class="font-mono">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $tax->rate, 'ILS') }}%</bdi> &middot; {{ __('sales.' . $tax->calculation) }}
+                                </div>
                             </td>
-                            <td class="py-3 px-4 font-mono font-bold" dir="ltr">
+                            <td class="td-secondary py-3 px-4 font-mono font-bold" data-label="{{ __('sales.rate_percent') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) $tax->rate, 'ILS') }}%
                             </td>
-                            <td class="py-3 px-4 text-text-secondary capitalize">
+                            <td class="td-secondary py-3 px-4 text-text-secondary capitalize" data-label="{{ __('sales.type') }}">
                                 {{ __('sales.' . $tax->calculation) }}
                             </td>
-                            <td class="py-3 px-4 text-text-muted">
+                            <td class="td-secondary py-3 px-4 text-text-muted" data-label="{{ __('purchasing.sales_tax_account') }}">
                                 {{ $tax->salesTaxAccount?->code }} - {{ $tax->salesTaxAccount?->displayName() }}
                             </td>
-                            <td class="py-3 px-4 text-text-secondary">
+                            <td class="td-secondary py-3 px-4 text-text-secondary" data-label="{{ __('purchasing.purchase_tax_account') }}">
                                 {{ $tax->purchaseTaxAccount?->displayName() ?? __('purchasing.not_configured') }}
                             </td>
-                            <td class="py-3 px-4">
-                                @if ($tax->active)
-                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">{{ __('sales.active') }}</span>
-                                @else
-                                    <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">{{ __('sales.inactive') }}</span>
-                                @endif
+                            <td class="td-end py-3 px-4">
+                                <div class="inline-flex items-center gap-2">
+                                    @if ($tax->active)
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">{{ __('sales.active') }}</span>
+                                    @else
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">{{ __('sales.inactive') }}</span>
+                                    @endif
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
                             <td class="table-actions py-3 px-4 text-end">
                                 <button id="tax-rate-edit-trigger-{{ $tax->id }}"

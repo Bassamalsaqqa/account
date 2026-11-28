@@ -64,8 +64,8 @@
 
     <!-- Categories List -->
     <div class="rounded-card border border-border bg-surface overflow-hidden shadow-sm">
-        <div class="hidden lg:block overflow-x-auto">
-            <table class="data-table w-full text-sm text-start">
+        <div class="overflow-x-auto">
+            <table class="data-table data-table--responsive w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
                         <th class="px-4 py-3 text-start">{{ __('expenses.code') }}</th>
@@ -77,23 +77,32 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse($categories as $cat)
-                        <tr class="hover:bg-surface-soft/60">
-                            <td class="px-4 py-3 font-semibold text-text-secondary">{{ $cat->code }}</td>
-                            <td class="px-4 py-3 font-medium">{{ $cat->name_ar }}</td>
-                            <td class="px-4 py-3 text-text-secondary">{{ $cat->name_en ?: '-' }}</td>
-                            <td class="px-4 py-3 text-text-secondary">
-                                {{ $cat->ledgerAccount ? $cat->ledgerAccount->code . ' - ' . $cat->ledgerAccount->displayName() : '-' }}
+                        @php($ledgerLabel = $cat->ledgerAccount ? $cat->ledgerAccount->code . ' - ' . $cat->ledgerAccount->displayName() : '-')
+                        <tr wire:key="expense-cat-row-{{ $cat->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                            <td class="td-secondary px-4 py-3 font-semibold text-text-secondary" data-label="{{ __('expenses.code') }}" dir="ltr">{{ $cat->code }}</td>
+                            <td class="td-primary px-4 py-3 font-medium">
+                                <div class="truncate text-text-primary font-semibold">{{ $cat->name_ar }}</div>
+                                <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    <bdi dir="ltr">{{ $cat->code }}</bdi> &middot; {{ $ledgerLabel }}
+                                </div>
                             </td>
-                            <td class="px-4 py-3">
-                                @if($cat->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
-                                        {{ __('expenses.active') }}
-                                    </span>
-                                @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
-                                        {{ __('expenses.inactive') }}
-                                    </span>
-                                @endif
+                            <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('expenses.name_en') }}">{{ $cat->name_en ?: '-' }}</td>
+                            <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('expenses.ledger_account') }}">
+                                {{ $ledgerLabel }}
+                            </td>
+                            <td class="td-end px-4 py-3">
+                                <div class="inline-flex items-center gap-2">
+                                    @if($cat->active)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
+                                            {{ __('expenses.active') }}
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
+                                            {{ __('expenses.inactive') }}
+                                        </span>
+                                    @endif
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -106,51 +115,8 @@
                 </tbody>
             </table>
         </div>
-    <div class="p-4"><x-table-pagination :paginator="$categories" /></div>
-<div class="lg:hidden divide-y divide-border">
-                    @forelse($categories as $cat)
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.code') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->code }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.name_ar') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->name_ar }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.name_en') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->name_en ?: '-' }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.ledger_account') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->ledgerAccount ? $cat->ledgerAccount->code . ' - ' . $cat->ledgerAccount->displayName() : '-' }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('expenses.status') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if($cat->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
-                                        {{ __('expenses.active') }}
-                                    </span>
-                                @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
-                                        {{ __('expenses.inactive') }}
-                                    </span>
-                                @endif</dd>
-                            </div>
-                        </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('expenses.empty') }}
-                            </div>
-                        </dl>
-                        </article>
-                    @endforelse
-                </div>
-
+        @if ($categories->count() > 0 || $categories->currentPage() > 1)
+            <div class="p-4 border-t border-border"><x-table-pagination :paginator="$categories" /></div>
+        @endif
     </div>
 </div>

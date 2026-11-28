@@ -183,7 +183,7 @@
             {{ __('sales.quotation_details') }}
         </div>
         <div class="overflow-x-auto">
-            <table class="data-table w-full text-start text-xs border-collapse">
+            <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <th class="py-2.5 px-4 text-start">#</th>
@@ -197,28 +197,34 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @foreach ($quotation->lines as $line)
-                        <tr class="hover:bg-surface-soft/40">
-                            <td class="py-2.5 px-4 text-text-muted">{{ $line->line_number }}</td>
-                            <td class="py-2.5 px-4">
+                        <tr wire:key="quote-detail-line-{{ $line->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/40">
+                            <td class="td-secondary py-2.5 px-4 text-text-muted" data-label="#">{{ $line->line_number }}</td>
+                            <td class="td-primary py-2.5 px-4">
                                 <div class="font-bold text-text-primary">{{ $line->item_description }}</div>
                                 @if ($line->product_sku)
-                                    <div class="text-xs font-mono text-text-muted">SKU: {{ $line->product_sku }}</div>
+                                    <div class="hidden lg:block text-xs font-mono text-text-muted">SKU: {{ $line->product_sku }}</div>
                                 @endif
+                                <div class="lg:hidden text-xs text-text-secondary mt-0.5">
+                                    <bdi dir="ltr" class="font-mono">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line->quantity) }} {{ $line->unit_name_ar ?? '' }} &times; {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->unit_price, $quotation->currency_code) }}</bdi>
+                                </div>
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 font-mono" data-label="{{ __('sales.quantity') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line->quantity) }} {{ $line->unit_name_ar ?? '' }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 font-mono" data-label="{{ __('sales.unit_price') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->unit_price, $quotation->currency_code) }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono text-danger" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 font-mono text-danger" data-label="{{ __('sales.discount') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->discount_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->discount_amount, $quotation->currency_code) : '—' }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 font-mono" data-label="{{ __('sales.tax') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->tax_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->tax_amount, $quotation->currency_code) : '—' }}
                             </td>
-                            <td class="py-2.5 px-4 font-mono font-bold text-end" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->line_total, $quotation->currency_code) }}
+                            <td class="td-end py-2.5 px-4 font-mono font-bold text-end">
+                                <div class="inline-flex items-center gap-2">
+                                    <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->line_total, $quotation->currency_code) }}</bdi>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
                         </tr>
                     @endforeach

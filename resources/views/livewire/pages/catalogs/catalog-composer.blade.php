@@ -1001,7 +1001,7 @@
                 </div>
 
                 <div class="border border-border rounded-control overflow-hidden">
-                    <table class="data-table w-full text-xs text-start">
+                    <table class="data-table data-table--responsive w-full text-xs text-start">
                         <thead class="bg-surface-soft text-text-secondary font-bold border-b border-border">
                             <tr>
                                 <th class="py-2 px-3 text-start">#</th>
@@ -1014,9 +1014,9 @@
                         </thead>
                         <tbody class="divide-y divide-border">
                             @foreach($previewPayload['items'] ?? [] as $pIdx => $pItem)
-                                <tr>
-                                    <td class="py-2 px-3 text-text-muted"><bdi dir="ltr" class="num">{{ $pIdx + 1 }}</bdi></td>
-                                    <td class="py-2 px-3 font-medium text-text-primary">
+                                <tr wire:key="cat-prev-{{ $pIdx }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                    <td class="td-secondary py-2 px-3 text-text-muted" data-label="#"><bdi dir="ltr" class="num">{{ $pIdx + 1 }}</bdi></td>
+                                    <td class="td-primary py-2 px-3 font-medium text-text-primary">
                                         @if($previewImages[$pIdx] ?? null)
                                             <img src="{{ $previewImages[$pIdx] }}" alt="{{ $pItem['name_'.$locale] ?? $pItem['name_ar'] }}" class="mb-2 h-16 w-16 rounded-control border border-border object-contain bg-surface" loading="lazy">
                                         @endif
@@ -1028,10 +1028,13 @@
                                             <div class="font-mono text-text-muted text-xs">SKU: <bdi dir="ltr">{{ $pItem['sku'] }}</bdi></div>
                                         @endif
                                     </td>
-                                    <td class="py-2 px-3 text-text-secondary">{{ $pItem['unit_ar'] }}</td>
+                                    <td class="{{ isset($previewPayload['currency_code']) ? 'td-secondary' : 'td-end' }} py-2 px-3 text-text-secondary" data-label="{{ __('catalogs.unit') }}">{{ $pItem['unit_ar'] }}</td>
                                     @if(isset($previewPayload['currency_code']))
-                                        <td class="py-2 px-3 text-end font-bold text-text-primary">
-                                            <bdi dir="ltr" class="font-mono num">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pItem['price'] ?? __('catalogs.price_on_request_short')) }}</bdi>
+                                        <td class="td-end py-2 px-3 text-end font-bold text-text-primary">
+                                            <div class="inline-flex items-center gap-2">
+                                                <bdi dir="ltr" class="font-mono num">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pItem['price'] ?? __('catalogs.price_on_request_short')) }}</bdi>
+                                                <x-row-details-toggle />
+                                            </div>
                                         </td>
                                     @endif
                                 </tr>

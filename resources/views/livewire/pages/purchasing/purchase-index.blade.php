@@ -103,44 +103,59 @@
         </div>
         <div class="lg:hidden divide-y divide-border">
             @forelse($purchases as $purchase)
-                <article class="p-4 space-y-3" wire:key="purchase-mobile-{{ $purchase->public_id }}">
-                    <div class="flex justify-between gap-3">
+                <x-compact-mobile-row wire:key="purchase-mobile-{{ $purchase->public_id }}">
+                    <x-slot:primary>
+                        <a href="{{ route('purchases.show', $purchase->public_id) }}" data-row-link class="touch-action font-mono font-bold text-primary hover:underline truncate" dir="ltr">
+                            {{ $purchase->purchase_number ?? __('purchasing.draft') }}
+                        </a>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold shrink-0 @if($purchase->status === 'posted') bg-success-bg text-success @elseif($purchase->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                            {{ __('purchasing.'.$purchase->status) }}
+                        </span>
+                    </x-slot:primary>
+
+                    <x-slot:subtitle>
                         @if($canViewVendor && $purchase->vendor?->public_id)
-                            <a href="{{ route('vendors.show', $purchase->vendor->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary text-sm">{{ $purchase->vendor->displayName() }}</a>
+                            <a href="{{ route('vendors.show', $purchase->vendor->public_id) }}" class="touch-action font-semibold text-text-primary hover:text-primary">{{ $purchase->vendor->displayName() }}</a>
                         @else
-                            <span class="font-bold text-text-primary text-sm">{{ $purchase->vendor?->displayName() ?? '—' }}</span>
+                            <span class="font-semibold text-text-primary">{{ $purchase->vendor?->displayName() ?? '—' }}</span>
                         @endif
-                        <div class="text-end">
-                            <span class="text-xs">{{ __('purchasing.'.$purchase->status) }}</span>
-                            @if($withCost && $purchase->isPosted() && isset($payablePositions[$purchase->id]))
-                                <span class="inline-block px-1.5 py-0.5 rounded-full text-xs font-bold {{ $payablePositions[$purchase->id]->status === 'settled' ? 'bg-success-bg text-success' : ($payablePositions[$purchase->id]->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePositions[$purchase->id]->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
-                                    {{ __('purchasing.'.$payablePositions[$purchase->id]->status) }}
-                                </span>
-                            @endif
+                        &middot; <bdi dir="ltr" class="font-mono">{{ $purchase->purchase_date->format('Y-m-d') }}</bdi>
+                    </x-slot:subtitle>
+
+                    <x-slot:trailing>
+                        @if($withCost)
+                            <bdi dir="ltr" class="block font-mono font-bold text-sm tabular-nums text-text-primary">
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code, $purchase->resolvedCurrencyMinorUnits()) }} {{ $purchase->currency_code }}
+                            </bdi>
+                        @else
+                            <bdi class="block font-bold text-xs text-text-secondary">{{ $purchase->currency_code }}</bdi>
+                        @endif
+                        @if($withCost && $purchase->isPosted() && isset($payablePositions[$purchase->id]))
+                            <span class="inline-block px-1.5 py-0.5 rounded-full text-xs font-bold mt-0.5 {{ $payablePositions[$purchase->id]->status === 'settled' ? 'bg-success-bg text-success' : ($payablePositions[$purchase->id]->status === 'partially_paid' ? 'bg-warning-bg text-warning' : ($payablePositions[$purchase->id]->status === 'credit' ? 'bg-info-bg text-info' : 'bg-surface-soft text-text-secondary')) }}">
+                                {{ __('purchasing.'.$payablePositions[$purchase->id]->status) }}
+                            </span>
+                        @endif
+                    </x-slot:trailing>
+
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('purchasing.vendor_invoice_number') }}</dt>
+                                <dd class="mt-0.5 font-mono text-text-primary"><bdi dir="ltr">{{ $purchase->vendor_invoice_number ?? '—' }}</bdi></dd>
+                            </div>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('purchasing.currency') }}</dt>
+                                <dd class="mt-0.5 font-semibold text-text-primary"><bdi>{{ $purchase->currency_code }}</bdi></dd>
+                            </div>
+                        </dl>
+                        <div>
+                            @include('livewire.partials.purchase-row-actions')
                         </div>
-                    </div>
-                    <dl class="grid grid-cols-2 gap-3 text-xs">
-                        <div><dt class="text-text-secondary">{{ __('purchasing.purchase_number') }}</dt>
-                                <dd><a href="{{ route('purchases.show', $purchase->public_id) }}" class="touch-action font-mono font-bold text-primary hover:underline" dir="ltr">{{ $purchase->purchase_number ?? __('purchasing.draft') }}</a></dd>
-                            </div>
-                        <div><dt class="text-text-secondary">{{ __('purchasing.purchase_date') }}</dt>
-                                <dd><bdi>{{ $purchase->purchase_date->format('Y-m-d') }}</bdi></dd>
-                            </div>
-                        <div><dt class="text-text-secondary">{{ __('purchasing.vendor_invoice_number') }}</dt>
-                                <dd><bdi>{{ $purchase->vendor_invoice_number ?? '—' }}</bdi></dd>
-                            </div>
-                        <div><dt class="text-text-secondary">{{ __('purchasing.currency') }}</dt>
-                                <dd><bdi>{{ $purchase->currency_code }}</bdi></dd>
-                            </div>
-                        @if($withCost)<div><dt class="text-text-secondary">{{ __('purchasing.total') }}</dt>
-                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($purchase->grand_total_currency, $purchase->currency_code, $purchase->resolvedCurrencyMinorUnits()) }}</bdi></dd>
-                            </div>@endif
-                    </dl>
-                    <div class="pt-3 border-t border-border">
-                        @include('livewire.partials.purchase-row-actions')
-                    </div>
-                </article>
-            @empty<p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</p>@endforelse
+                    </x-slot:details>
+                </x-compact-mobile-row>
+            @empty
+                <p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchases') }}</p>
+            @endforelse
         </div>
         <div class="p-3 border-t border-border">
             <x-table-pagination :paginator="$purchases" />

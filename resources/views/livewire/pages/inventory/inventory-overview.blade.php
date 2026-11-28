@@ -79,7 +79,7 @@
         </div>
 
         <div class="overflow-x-auto">
-            <table class="data-table w-full text-xs">
+            <table class="data-table data-table--responsive w-full text-xs">
                 <thead class="bg-surface-soft text-text-secondary border-b border-border">
                     <tr>
                         <th class="px-4 py-2.5 text-start">{{ __('inventory.product') }}</th>
@@ -90,24 +90,35 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse($stockBalances as $balance)
-                        <tr class="hover:bg-surface-soft/40 transition-colors">
-                            <td class="px-4 py-3 font-medium text-text-primary">
-                                <a href="{{ route('products.show', $balance->product->public_id) }}" class="touch-action hover:text-primary">
-                                    {{ $balance->product->displayName() }}
-                                </a>
-                                @if($balance->product->sku)
-                                    <span class="ms-2 text-xs text-text-muted font-mono" dir="ltr">{{ $balance->product->sku }}</span>
-                                @endif
+                        @php($unitName = $balance->product->baseUnit?->name() ?? '—')
+                        <tr wire:key="stock-balance-row-{{ $balance->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/40 transition-colors">
+                            <td class="td-primary px-4 py-3 font-medium text-text-primary">
+                                <div class="min-w-0">
+                                    <a href="{{ route('products.show', $balance->product->public_id) }}" data-row-link class="touch-action font-semibold hover:text-primary truncate block">
+                                        {{ $balance->product->displayName() }}
+                                    </a>
+                                    @if($balance->product->sku)
+                                        <span class="hidden lg:inline ms-2 text-xs text-text-muted font-mono" dir="ltr">{{ $balance->product->sku }}</span>
+                                    @endif
+                                </div>
+                                <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    {{ $balance->warehouse->displayName() }}@if($balance->product->sku) &middot; <bdi dir="ltr" class="font-mono">{{ $balance->product->sku }}</bdi>@endif
+                                </div>
                             </td>
-                            <td class="px-4 py-3 text-text-secondary">
+                            <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('inventory.warehouse') }}">
                                 {{ $balance->warehouse->displayName() }}
                             </td>
-                            <td class="px-4 py-3 text-end font-mono font-bold" dir="ltr">
-                                <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($balance->quantity_base) }}</bdi>
-                                <x-stock-breakdown :parts="$stockBreakdowns[$balance->id] ?? []" :inline="true" />
+                            <td class="td-end px-4 py-3 text-end font-mono font-bold">
+                                <div class="inline-flex items-center gap-2">
+                                    <span>
+                                        <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($balance->quantity_base) }}</bdi>
+                                        <x-stock-breakdown :parts="$stockBreakdowns[$balance->id] ?? []" :inline="true" />
+                                    </span>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
-                            <td class="px-4 py-3 text-text-secondary">
-                                {{ $balance->product->baseUnit?->name() ?? '—' }}
+                            <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('inventory.unit') }}">
+                                {{ $unitName }}
                             </td>
                         </tr>
                     @empty

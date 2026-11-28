@@ -46,8 +46,8 @@
 
     <!-- Payments Table -->
     <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
-        <div class="hidden lg:block overflow-x-auto">
-            <table class="data-table w-full text-start text-xs border-collapse">
+        <div class="overflow-x-auto">
+            <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('purchasing.payment_number') }}</th>
@@ -70,13 +70,27 @@
                                 'unallocated' => $pmt->unallocated_amount,
                             ];
                         @endphp
-                        <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="py-3 px-4 font-mono font-bold" dir="ltr">
-                                <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline">
-                                    {{ $pmt->payment_number }}
-                                </a>
+                        <tr wire:key="vendor-payment-row-{{ $pmt->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60 transition-colors">
+                            <td class="td-primary py-3 px-4 font-mono font-bold">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                        {{ $pmt->payment_number }}
+                                    </a>
+                                    @if ($pmt->is_reversed)
+                                        <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 bg-danger-bg text-danger">
+                                            {{ __('purchasing.reversed') }}
+                                        </span>
+                                    @else
+                                        <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 bg-success-bg text-success">
+                                            {{ __('purchasing.posted') }}
+                                        </span>
+                                    @endif
+                                </div>
+                                <div class="lg:hidden font-sans font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    {{ $pmt->vendorDisplayName() }} &middot; <bdi dir="ltr">{{ $pmt->payment_date->toDateString() }}</bdi>
+                                </div>
                             </td>
-                            <td class="py-3 px-4">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('purchasing.vendor') }}">
                                 @if ($pmt->vendor || isset($pmt->vendor_snapshot['public_id']))
                                     <a href="{{ route('vendors.show', $pmt->vendor?->public_id ?? $pmt->vendor_snapshot['public_id']) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                                         {{ $pmt->vendorDisplayName() }}
@@ -85,27 +99,30 @@
                                     <span class="font-bold text-text-primary">{{ $pmt->vendorDisplayName() }}</span>
                                 @endif
                             </td>
-                            <td class="py-3 px-4 text-text-secondary">
+                            <td class="td-secondary py-3 px-4 text-text-secondary" data-label="{{ __('purchasing.money_account') }}">
                                 {{ $pmt->checkInstrument?->check_number ?? $pmt->moneyAccount?->displayName() ?? '—' }}
                             </td>
-                            <td class="py-3 px-4">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('purchasing.payment_method') }}">
                                 <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-surface-soft text-text-secondary">
                                     {{ $pmt->payment_method === 'check' ? __('money.check') : __('purchasing.' . $pmt->payment_method) }}
                                 </span>
                             </td>
-                            <td class="py-3 px-4" dir="ltr">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('purchasing.payment_date') }}" dir="ltr">
                                 {{ $pmt->payment_date->toDateString() }}
                             </td>
-                            <td class="py-3 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
+                            <td class="td-end py-3 px-4 font-bold">
+                                <div class="inline-flex items-center gap-2">
+                                    <bdi dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}</bdi>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
-                            <td class="py-3 px-4 text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['allocated'], $pmt->currency_code) }}
+                            <td class="td-secondary py-3 px-4 text-text-secondary" data-label="{{ __('purchasing.allocated') }}" dir="ltr">
+                                <bdi dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['allocated'], $pmt->currency_code) }} {{ $pmt->currency_code }}</bdi>
                             </td>
-                            <td class="py-3 px-4 text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['unallocated'], $pmt->currency_code) }}
+                            <td class="td-secondary py-3 px-4 text-text-secondary" data-label="{{ __('purchasing.unallocated') }}" dir="ltr">
+                                <bdi dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['unallocated'], $pmt->currency_code) }} {{ $pmt->currency_code }}</bdi>
                             </td>
-                            <td class="py-3 px-4">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('purchasing.status') }}">
                                 @if ($pmt->is_reversed)
                                     <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
                                         {{ __('purchasing.reversed') }}
@@ -135,77 +152,6 @@
                     @endforelse
                 </tbody>
             </table>
-        </div>
-
-        <!-- Mobile View -->
-        <div class="lg:hidden divide-y divide-border">
-            @forelse ($payments as $pmt)
-                @php
-                    $pmtSummary = $allocationSummaries[$pmt->id] ?? [
-                        'allocated' => $pmt->allocated_amount,
-                        'unallocated' => $pmt->unallocated_amount,
-                    ];
-                @endphp
-                <div class="p-4 space-y-3">
-                    <div class="flex items-start justify-between gap-2">
-                        <div>
-                            <a href="{{ route('vendor-payments.show', $pmt->public_id) }}" class="touch-action font-mono font-bold text-primary" dir="ltr">
-                                {{ $pmt->payment_number }}
-                            </a>
-                            <div class="font-bold text-text-primary text-xs mt-0.5">
-                                {{ $pmt->vendorDisplayName() }}
-                            </div>
-                        </div>
-                        @if ($pmt->is_reversed)
-                            <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
-                                {{ __('purchasing.reversed') }}
-                            </span>
-                        @else
-                            <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
-                                {{ __('purchasing.posted') }}
-                            </span>
-                        @endif
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                            <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.payment_date') }}</span>
-                            <span class="font-medium" dir="ltr">{{ $pmt->payment_date->toDateString() }}</span>
-                        </div>
-                        <div>
-                            <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.payment_amount') }}</span>
-                            <span class="font-bold text-text-primary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
-                            </span>
-                        </div>
-                        <div>
-                            <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.allocated') }}</span>
-                            <span class="text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['allocated'], $pmt->currency_code) }}
-                            </span>
-                        </div>
-                        <div>
-                            <span class="text-text-muted block text-xs uppercase">{{ __('purchasing.unallocated') }}</span>
-                            <span class="text-text-secondary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmtSummary['unallocated'], $pmt->currency_code) }}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div class="pt-2 border-t border-border flex justify-end">
-                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('purchasing.actions') }}">
-                            <x-row-action data-row-link :href="route('vendor-payments.show', $pmt->public_id)" :label="__('workflow.open')" icon="eye" />
-                            @can('purchasing.document.pdf')
-                                <x-row-action :href="route('pdf.vendor-payment', ['publicId' => $pmt->public_id, 'locale' => app()->getLocale()])" :label="__('refinement_lists.pdf')" icon="pdf" :new-tab="true" />
-                            @endcan
-                        </div>
-                    </div>
-                </div>
-            @empty
-                <div class="p-8 text-center text-text-muted">
-                    <p>{{ __('purchasing.no_payments_found') }}</p>
-                </div>
-            @endforelse
         </div>
 
         @if ($payments->count() > 0 || $payments->currentPage() > 1)

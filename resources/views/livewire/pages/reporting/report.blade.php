@@ -150,8 +150,14 @@
             @if($result->rows === [])
                 <p class="p-8 text-center text-sm font-semibold text-text-muted">{{ __('reports.empty') }}</p>
             @else
-                <div class="hidden md:block overflow-x-auto">
-                    <table class="data-table w-full text-sm text-start border-collapse">
+                @php
+                    $firstColumn = $columns[0] ?? null;
+                    $decimalColumns = array_values(array_filter($columns, fn ($c) => $c['type'] === 'decimal'));
+                    $endColumn = $decimalColumns !== [] ? $decimalColumns[count($decimalColumns) - 1] : ($columns[count($columns) - 1] ?? null);
+                    $subtitleColumn = ($firstColumn && count($columns) > 1 && $columns[1]['key'] !== ($endColumn['key'] ?? null)) ? $columns[1] : null;
+                @endphp
+                <div class="overflow-x-auto">
+                    <table class="data-table data-table--responsive w-full text-sm text-start border-collapse">
                         <thead class="bg-surface-soft border-b border-border text-xs font-bold uppercase tracking-wider text-text-muted">
                             <tr>
                                 @foreach($columns as $column)
@@ -162,49 +168,54 @@
                         </thead>
                         <tbody class="divide-y divide-border">
                             @foreach($result->rows as $rowIndex=>$row)
-                                <tr class="hover:bg-surface-soft/60 transition-colors">
-                                    @foreach($columns as $column)
-                                        <td class="py-3 px-4 {{ $column['type']==='decimal' ? 'tabular-nums whitespace-nowrap' : 'max-w-64' }}">
-                                            <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}">{{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row,$column) ?? __('reports.unavailable') }}</bdi>
+                                <tr wire:key="report-row-{{ $rowIndex }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60 transition-colors">
+                                    @foreach($columns as $colIdx => $column)
+                                        @php
+                                            $isPrimary = $colIdx === 0;
+                                            $isEnd = !$isPrimary && $endColumn && $column['key'] === $endColumn['key'];
+                                            $cellVal = app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row, $column) ?? __('reports.unavailable');
+                                        @endphp
+                                        <td @class([
+                                            'py-3 px-4',
+                                            'td-primary font-semibold text-text-primary' => $isPrimary,
+                                            'td-end font-bold' => $isEnd,
+                                            'td-secondary' => !$isPrimary && !$isEnd,
+                                            'tabular-nums whitespace-nowrap' => $column['type'] === 'decimal',
+                                            'lg:max-w-64' => $column['type'] !== 'decimal',
+                                        ]) @if(!$isPrimary && !$isEnd) data-label="{{ $column['label'] }}" @endif>
+                                            @if($isPrimary)
+                                                <div class="truncate">
+                                                    <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}">{{ $cellVal }}</bdi>
+                                                </div>
+                                                @if($subtitleColumn)
+                                                    <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                                        {{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row, $subtitleColumn) ?? __('reports.unavailable') }}
+                                                    </div>
+                                                @endif
+                                            @elseif($isEnd)
+                                                <div class="inline-flex items-center gap-2">
+                                                    <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}" class="tabular-nums">{{ $cellVal }}</bdi>
+                                                    <x-row-details-toggle />
+                                                </div>
+                                            @else
+                                                <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}">{{ $cellVal }}</bdi>
+                                            @endif
                                         </td>
                                     @endforeach
                                     <td class="table-actions py-3 px-4 text-end">
-                                        <div class="inline-flex items-center gap-1">
-                                            @foreach($sourceLinks[$rowIndex] ?? [] as $link)
-                                                <x-row-action :href="$link['url']" :label="$link['label']" icon="eye" />
-                                            @endforeach
-                                        </div>
+                                        @if(!empty($sourceLinks[$rowIndex]))
+                                            <div class="row-action-group justify-end">
+                                                @foreach($sourceLinks[$rowIndex] as $link)
+                                                    <x-row-action :href="$link['url']" :label="$link['label']" icon="eye" />
+                                                @endforeach
+                                            </div>
+                                        @endif
                                     </td>
                                 </tr>
                             @endforeach
                         </tbody>
                     </table>
                 </div>
-
-                <!-- Mobile Card List -->
-                <ul class="md:hidden divide-y divide-border">
-                    @foreach($result->rows as $rowIndex=>$row)
-                        <li class="p-4 space-y-3">
-                            <dl class="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
-                                @foreach($columns as $column)
-                                    <div class="min-w-0">
-                                        <dt class="text-xs font-semibold text-text-muted">{{ $column['label'] }}</dt>
-                                        <dd class="mt-0.5 text-sm font-bold text-text-primary break-words {{ $column['type']==='decimal' ? 'tabular-nums' : '' }}">
-                                            <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}">{{ app(\App\Application\Reporting\Presentation\ReportPresenter::class)->displayValue($row,$column) ?? __('reports.unavailable') }}</bdi>
-                                        </dd>
-                                    </div>
-                                @endforeach
-                            </dl>
-                            @if(!empty($sourceLinks[$rowIndex]))
-                                <div class="pt-2 border-t border-border flex flex-wrap gap-2">
-                                    @foreach($sourceLinks[$rowIndex] as $link)
-                                        <x-row-action :href="$link['url']" :label="$link['label']" icon="eye" />
-                                    @endforeach
-                                </div>
-                            @endif
-                        </li>
-                    @endforeach
-                </ul>
             @endif
 
             @if($result->pagination)
@@ -213,10 +224,10 @@
                         {{ __('reports.page') }} {{ $result->pagination['current_page'] }} {{ __('reports.of') }} {{ $result->pagination['last_page'] }} &middot; {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($result->pagination['total']) }} {{ __('reports.records') }}
                     </span>
                     <div class="flex gap-2">
-                        <button type="button" wire:click="goToPage({{ max(1,$result->pagination['current_page']-1) }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page']<=1) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-surface px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
+                        <button type="button" wire:click="goToPage({{ max(1,$result->pagination['current_page']-1) }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page']<=1) class="touch-action min-h-11 lg:min-h-8 lg:h-8 rounded-control border border-border-control bg-surface px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
                             {{ __('reports.previous') }}
                         </button>
-                        <button type="button" wire:click="goToPage({{ $result->pagination['current_page']+1 }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page'] >= $result->pagination['last_page']) class="touch-action h-8 min-h-[32px] rounded-control border border-border bg-surface px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
+                        <button type="button" wire:click="goToPage({{ $result->pagination['current_page']+1 }})" wire:loading.attr="disabled" wire:target="goToPage" @disabled($result->pagination['current_page'] >= $result->pagination['last_page']) class="touch-action min-h-11 lg:min-h-8 lg:h-8 rounded-control border border-border-control bg-surface px-3 py-0 text-sm font-bold text-text-secondary hover:text-text-primary hover:bg-surface-soft disabled:opacity-40 transition cursor-pointer">
                             {{ __('reports.next') }}
                         </button>
                     </div>

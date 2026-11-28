@@ -101,60 +101,62 @@
         </div>
         <div class="lg:hidden divide-y divide-border">
             @forelse($returns as $return)
-                <article class="p-4 space-y-3" wire:key="return-mobile-{{ $return->public_id }}">
-                    <div class="flex justify-between gap-3">
+                <x-compact-mobile-row wire:key="return-mobile-{{ $return->public_id }}">
+                    <x-slot:primary>
+                        <a href="{{ route('purchase-returns.show', $return->public_id) }}" data-row-link class="touch-action font-mono font-bold text-primary hover:underline truncate" dir="ltr">
+                            {{ $return->return_number ?? __('purchasing.draft') }}
+                        </a>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold shrink-0 @if($return->status === 'posted') bg-success-bg text-success @elseif($return->status === 'void') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                            {{ __('purchasing.'.$return->status) }}
+                        </span>
+                    </x-slot:primary>
+
+                    <x-slot:subtitle>
                         @if($canViewVendor && $return->vendor?->public_id)
-                            <a href="{{ route('vendors.show', $return->vendor->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary text-sm">
-                                {{ $return->vendor->displayName() }}
-                            </a>
+                            <a href="{{ route('vendors.show', $return->vendor->public_id) }}" class="touch-action font-semibold text-text-primary hover:text-primary">{{ $return->vendor->displayName() }}</a>
                         @else
-                            <span class="font-bold text-text-primary text-sm">{{ $return->vendor?->displayName() ?? '—' }}</span>
+                            <span class="font-semibold text-text-primary">{{ $return->vendor?->displayName() ?? '—' }}</span>
                         @endif
-                        <span class="text-xs">{{ __('purchasing.'.$return->status) }}</span>
-                    </div>
-                    <dl class="grid grid-cols-2 gap-3 text-xs">
-                        <div>
-                            <dt class="text-text-secondary">{{ __('purchasing.purchase_return_number') }}</dt>
-                            <dd>
-                                <a href="{{ route('purchase-returns.show', $return->public_id) }}" class="touch-action font-mono font-bold text-primary hover:underline" dir="ltr">
-                                    {{ $return->return_number ?? __('purchasing.draft') }}
-                                </a>
-                            </dd>
-                        </div>
-                        <div>
-                            <dt class="text-text-secondary">{{ __('purchasing.return_date') }}</dt>
-                            <dd><bdi>{{ $return->return_date->format('Y-m-d') }}</bdi></dd>
-                        </div>
-                        <div>
-                            <dt class="text-text-secondary">{{ __('purchasing.purchase_number') }}</dt>
-                            <dd>
-                                @if($return->purchase)
-                                    <a class="touch-action text-primary hover:underline" href="{{ route('purchases.show', $return->purchase->public_id) }}">
-                                        <bdi>{{ $return->purchase->purchase_number ?? '—' }}</bdi>
-                                    </a>
-                                @else
-                                    —
-                                @endif
-                            </dd>
-                        </div>
-                        <div>
-                            <dt class="text-text-secondary">{{ __('purchasing.currency') }}</dt>
-                            <dd><bdi>{{ $return->currency_code }}</bdi></dd>
-                        </div>
+                        &middot; <bdi dir="ltr" class="font-mono">{{ $return->return_date->format('Y-m-d') }}</bdi>
+                    </x-slot:subtitle>
+
+                    <x-slot:trailing>
                         @if($withCost)
-                            <div>
-                                <dt class="text-text-secondary">{{ __('purchasing.total') }}</dt>
-                                <dd><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code, $return->resolvedCurrencyMinorUnits()) }}</bdi></dd>
-                            </div>
+                            <bdi dir="ltr" class="block font-mono font-bold text-sm tabular-nums text-text-primary">
+                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($return->grand_total_currency, $return->currency_code, $return->resolvedCurrencyMinorUnits()) }} {{ $return->currency_code }}
+                            </bdi>
+                        @else
+                            <bdi class="block font-bold text-xs text-text-secondary">{{ $return->currency_code }}</bdi>
                         @endif
-                    </dl>
-                <div class="pt-2 border-t border-border flex justify-end">
-                    <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
-                        <x-row-action data-row-link :href="route('purchase-returns.show', $return->public_id)" :label="__('workflow.open')" icon="eye" />
-                        <x-correction-shortcuts family="purchase_return" :public-id="$return->public_id" :status="$return->status" />
-                    </div>
-                </div>
-                </article>
+                    </x-slot:trailing>
+
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('purchasing.purchase_number') }}</dt>
+                                <dd class="mt-0.5 font-mono">
+                                    @if($return->purchase)
+                                        <a class="touch-action text-primary hover:underline" href="{{ route('purchases.show', $return->purchase->public_id) }}">
+                                            <bdi>{{ $return->purchase->purchase_number ?? '—' }}</bdi>
+                                        </a>
+                                    @else
+                                        —
+                                    @endif
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('purchasing.currency') }}</dt>
+                                <dd class="mt-0.5 font-semibold text-text-primary"><bdi>{{ $return->currency_code }}</bdi></dd>
+                            </div>
+                        </dl>
+                        <div class="flex justify-end">
+                            <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                                <x-row-action data-row-link :href="route('purchase-returns.show', $return->public_id)" :label="__('workflow.open')" icon="eye" />
+                                <x-correction-shortcuts family="purchase_return" :public-id="$return->public_id" :status="$return->status" />
+                            </div>
+                        </div>
+                    </x-slot:details>
+                </x-compact-mobile-row>
             @empty
                 <p class="p-8 text-center text-text-secondary">{{ __('purchasing.no_purchase_returns') }}</p>
             @endforelse

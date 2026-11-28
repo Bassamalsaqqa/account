@@ -136,67 +136,78 @@
         <!-- Mobile Card List -->
         <div class="lg:hidden divide-y divide-border">
             @forelse ($customers as $customer)
-                <div class="p-4 space-y-3">
-                    <div class="flex items-start justify-between gap-2">
-                        <div>
-                            <a href="{{ route('customers.show', $customer->public_id) }}" class="touch-action font-bold text-text-primary text-sm hover:text-primary">
-                                {{ $customer->displayName() }}
-                            </a>
-                            @if ($customer->business_name_ar || $customer->business_name_en)
-                                <div class="text-xs text-text-muted">
-                                    {{ app()->getLocale() === 'ar' ? ($customer->business_name_ar ?? $customer->business_name_en) : ($customer->business_name_en ?? $customer->business_name_ar) }}
-                                </div>
-                            @endif
-                        </div>
+                @php
+                    $custCurr = $customer->default_currency_code ?? $company->base_currency_code;
+                    $custPrimaryBal = (string) ($balances[$customer->id] ?? '0');
+                    $custBizName = ($customer->business_name_ar || $customer->business_name_en)
+                        ? (app()->getLocale() === 'ar' ? ($customer->business_name_ar ?? $customer->business_name_en) : ($customer->business_name_en ?? $customer->business_name_ar))
+                        : null;
+                @endphp
+                <x-compact-mobile-row wire:key="customer-mobile-{{ $customer->id }}">
+                    <x-slot:primary>
+                        <a href="{{ route('customers.show', $customer->public_id) }}" data-row-link class="touch-action font-bold text-text-primary text-sm hover:text-primary truncate">
+                            {{ $customer->displayName() }}
+                        </a>
                         @if ($customer->is_active)
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-success-bg text-success shrink-0">
                                 {{ __('sales.active') }}
                             </span>
                         @else
-                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 shrink-0">
                                 {{ __('sales.inactive') }}
                             </span>
                         @endif
-                    </div>
+                    </x-slot:primary>
 
-                    <div class="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                            <span class="text-text-muted block text-xs">{{ __('sales.code') }}</span>
-                            <span class="font-mono text-text-secondary" dir="ltr">{{ $customer->code ?? '—' }}</span>
-                        </div>
-                        <div>
-                            <span class="text-text-muted block text-xs">{{ __('sales.phone') }}</span>
-                            <span class="text-text-secondary" dir="ltr">{{ $customer->phone ?? $customer->whatsapp ?? '—' }}</span>
-                        </div>
-                        <div class="col-span-2">
-                            <span class="text-text-muted block text-xs">{{ __('sales.outstanding_balance') }}</span>
-                            <span class="font-bold text-sm {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) ($balances[$customer->id] ?? '0')) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney((string) ($balances[$customer->id] ?? '0'), $customer->default_currency_code ?? $company->base_currency_code) }}
-                                <span class="text-text-muted">{{ $customer->default_currency_code ?? $company->base_currency_code }}</span>
-                                    @foreach ($currencyBalances[$customer->id] ?? [] as $currency => $balance)
-                                        @if ($currency !== ($customer->default_currency_code ?? $company->base_currency_code))
-                                            <span class="block text-xs" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span></span>
-                                        @endif
-                                    @endforeach
-                            </span>
-                        </div>
-                    </div>
+                    <x-slot:subtitle>
+                        @if ($custBizName){{ $custBizName }}@endif
+                        @if ($custBizName && $customer->code) &middot; @endif
+                        @if ($customer->code)<bdi dir="ltr" class="font-mono">{{ $customer->code }}</bdi>@endif
+                        @if (($custBizName || $customer->code) && ($customer->phone || $customer->whatsapp)) &middot; @endif
+                        @if ($customer->phone || $customer->whatsapp)<bdi dir="ltr" class="font-mono">{{ $customer->phone ?? $customer->whatsapp }}</bdi>@endif
+                    </x-slot:subtitle>
 
-                    <div class="pt-2 border-t border-border flex justify-end">
-                        <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
-                            <x-row-action data-row-link :href="route('customers.show', $customer->public_id)" :label="__('sales.customer_details')" icon="eye" />
-                            @if ($customer->is_active && $canCreateInvoice)
-                                <x-row-action :href="route('invoices.create', ['customer_id' => $customer->id])" :label="__('mobile.new_invoice')" icon="plus" tone="primary" />
-                            @endif
-                            @if ($customer->is_active && $canRecordPayment)
-                                <x-row-action :href="route('payments.create', ['customer_id' => $customer->id])" :label="__('mobile.record_payment')" icon="money" />
-                            @endif
-                            @if ($canManage)
-                                <x-row-action :href="route('customers.edit', $customer->public_id)" :label="__('sales.edit_customer')" icon="edit" tone="primary" />
-                            @endif
+                    <x-slot:trailing>
+                        <div class="font-bold text-sm tabular-nums {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($custPrimaryBal) ? 'text-danger' : 'text-text-primary' }}" dir="ltr">
+                            {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($custPrimaryBal, $custCurr) }}
+                            <span class="text-xs text-text-muted">{{ $custCurr }}</span>
                         </div>
-                    </div>
-                </div>
+                        @foreach ($currencyBalances[$customer->id] ?? [] as $currency => $balance)
+                            @if ($currency !== $custCurr)
+                                <div class="text-xs font-semibold tabular-nums {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive((string) $balance['outstanding']) ? 'text-danger' : 'text-text-secondary' }}" dir="ltr">
+                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($balance['outstanding'], $currency) }} <span class="text-text-muted">{{ $currency }}</span>
+                                </div>
+                            @endif
+                        @endforeach
+                    </x-slot:trailing>
+
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('sales.code') }}</dt>
+                                <dd class="font-mono font-semibold text-text-primary mt-0.5" dir="ltr">{{ $customer->code ?? '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('sales.phone') }}</dt>
+                                <dd class="font-mono font-semibold text-text-primary mt-0.5" dir="ltr">{{ $customer->phone ?? $customer->whatsapp ?? '—' }}</dd>
+                            </div>
+                        </dl>
+                        <div class="flex justify-end">
+                            <div class="row-action-group justify-end" role="group" aria-label="{{ __('sales.actions') }}">
+                                <x-row-action data-row-link :href="route('customers.show', $customer->public_id)" :label="__('sales.customer_details')" icon="eye" />
+                                @if ($customer->is_active && $canCreateInvoice)
+                                    <x-row-action :href="route('invoices.create', ['customer_id' => $customer->id])" :label="__('mobile.new_invoice')" icon="plus" tone="primary" />
+                                @endif
+                                @if ($customer->is_active && $canRecordPayment)
+                                    <x-row-action :href="route('payments.create', ['customer_id' => $customer->id])" :label="__('mobile.record_payment')" icon="money" />
+                                @endif
+                                @if ($canManage)
+                                    <x-row-action :href="route('customers.edit', $customer->public_id)" :label="__('sales.edit_customer')" icon="edit" tone="primary" />
+                                @endif
+                            </div>
+                        </div>
+                    </x-slot:details>
+                </x-compact-mobile-row>
             @empty
                 <div class="py-8 text-center text-text-muted">
                     <p>{{ __('sales.no_customers_found') }}</p>

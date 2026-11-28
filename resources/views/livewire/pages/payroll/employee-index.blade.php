@@ -34,8 +34,8 @@
 
     <!-- Table -->
     <div class="rounded-card border border-border bg-surface overflow-hidden shadow-sm">
-        <div class="hidden lg:block overflow-x-auto">
-            <table class="data-table w-full text-sm text-start">
+        <div class="overflow-x-auto">
+            <table class="data-table data-table--responsive w-full text-sm text-start">
                 <thead class="bg-surface-soft border-b border-border text-xs uppercase text-text-muted">
                     <tr>
                         <th class="px-4 py-3 text-start">{{ __('payroll.code') }}</th>
@@ -50,42 +50,48 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse($employees as $emp)
-                        <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="px-4 py-3 font-semibold text-text-secondary">
-                                <a href="{{ route('employees.show', $emp->public_id) }}" class="touch-action text-primary hover:underline">
+                        <tr wire:key="employee-row-{{ $emp->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60 transition-colors">
+                            <td class="td-secondary px-4 py-3 font-semibold text-text-secondary" data-label="{{ __('payroll.code') }}">
+                                <a href="{{ route('employees.show', $emp->public_id) }}" class="touch-action font-mono text-primary hover:underline" dir="ltr">
                                     {{ $emp->code }}
                                 </a>
                             </td>
-                            <td class="px-4 py-3 font-medium text-text-primary">
-                                <a href="{{ route('employees.show', $emp->public_id) }}" class="touch-action hover:underline">
+                            <td class="td-primary px-4 py-3 font-medium text-text-primary">
+                                <a href="{{ route('employees.show', $emp->public_id) }}" data-row-link class="touch-action font-semibold hover:text-primary hover:underline truncate block">
                                     {{ $emp->name }}
                                 </a>
+                                <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    <bdi dir="ltr">{{ $emp->code }}</bdi>@if($emp->job_title) &middot; {{ $emp->job_title }}@endif
+                                </div>
                             </td>
-                            <td class="px-4 py-3 text-text-secondary">
+                            <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('payroll.job_title') }}">
                                 {{ $emp->job_title ?: '-' }}
                             </td>
-                            <td class="px-4 py-3 text-text-secondary" dir="ltr">
+                            <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('payroll.phone') }}" dir="ltr">
                                 {{ $emp->phone ?: '-' }}
                             </td>
                             @if($canSalary)
-                                <td class="px-4 py-3 whitespace-nowrap font-medium" dir="ltr">
+                                <td class="td-secondary px-4 py-3 whitespace-nowrap font-medium" data-label="{{ __('payroll.salary') }}" dir="ltr">
                                     @if($emp->default_salary !== null)
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($emp->default_salary) }} {{ $emp->salary_currency_code }}
+                                        <bdi dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($emp->default_salary) }} {{ $emp->salary_currency_code }}</bdi>
                                     @else
                                         -
                                     @endif
                                 </td>
                             @endif
-                            <td class="px-4 py-3 whitespace-nowrap">
-                                @if($emp->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
-                                        {{ __('payroll.active') }}
-                                    </span>
-                                @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
-                                        {{ __('payroll.inactive') }}
-                                    </span>
-                                @endif
+                            <td class="td-end px-4 py-3 whitespace-nowrap">
+                                <div class="inline-flex items-center gap-2">
+                                    @if($emp->active)
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
+                                            {{ __('payroll.active') }}
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
+                                            {{ __('payroll.inactive') }}
+                                        </span>
+                                    @endif
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -98,64 +104,6 @@
                 </tbody>
             </table>
         </div>
-<div class="lg:hidden divide-y divide-border">
-                    @forelse($employees as $emp)
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.code') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><a href="{{ route('employees.show', $emp->public_id) }}" class="touch-action text-primary hover:underline">
-                                    {{ $emp->code }}
-                                </a></dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.name') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><a href="{{ route('employees.show', $emp->public_id) }}" class="touch-action hover:underline">
-                                    {{ $emp->name }}
-                                </a></dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.job_title') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $emp->job_title ?: '-' }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.phone') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $emp->phone ?: '-' }}</dd>
-                            </div>
-                            @if($canSalary)
-                                <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.salary') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">@if($emp->default_salary !== null)
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($emp->default_salary) }} {{ $emp->salary_currency_code }}
-                                    @else
-                                        -
-                                    @endif</dd>
-                            </div>
-                            @endif
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('payroll.status') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if($emp->active)
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-success-bg text-success">
-                                        {{ __('payroll.active') }}
-                                    </span>
-                                @else
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700">
-                                        {{ __('payroll.inactive') }}
-                                    </span>
-                                @endif</dd>
-                            </div>
-                        </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('payroll.empty_employees') }}
-                            </div>
-                        </dl>
-                        </article>
-                    @endforelse
-                </div>
 
         @if ($employees->count() > 0 || $employees->currentPage() > 1)
             <div class="p-4 border-t border-border">

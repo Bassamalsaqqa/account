@@ -175,7 +175,7 @@
                 @endif
             </div>
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-sm text-start">
+                <table class="data-table data-table--responsive w-full text-sm text-start">
                     <thead class="bg-surface-soft border-b border-border text-sm uppercase text-text-muted">
                         <tr>
                             <th class="px-4 py-3 text-start">{{ __('payroll.advance_number') }}</th>
@@ -192,15 +192,28 @@
                     <tbody class="divide-y divide-border">
                         @forelse($advancePositions as $pos)
                             @php $adv = $pos['advance']; @endphp
-                            <tr class="hover:bg-surface-soft/60">
-                                <td class="px-4 py-3 font-semibold">{{ $adv->advance_number }}</td>
-                                <td class="px-4 py-3 text-text-secondary">{{ $adv->advance_date->toDateString() }}</td>
-                                <td class="px-4 py-3 text-text-secondary">{{ __('payroll.'.$adv->payment_method) }}</td>
-                                <td class="px-4 py-3 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['original_amount']) }} {{ $pos['currency_code'] }}</td>
-                                <td class="px-4 py-3 font-bold {{ $pos['is_available'] ? 'text-success' : 'text-text-muted' }}" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_amount']) }} {{ $pos['currency_code'] }}
+                            <tr wire:key="edet-adv-{{ $adv->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                                <td class="td-primary px-4 py-3 font-semibold">
+                                    <div class="flex items-center gap-2">
+                                        <bdi dir="ltr" class="font-mono truncate">{{ $adv->advance_number }}</bdi>
+                                        <span class="lg:hidden inline-flex px-2 py-0.5 rounded text-xs font-semibold shrink-0 {{ $adv->status === 'posted' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
+                                            {{ __('expenses.'.$adv->status) }}
+                                        </span>
+                                    </div>
+                                    <div class="lg:hidden font-normal text-xs text-text-secondary mt-0.5">
+                                        <bdi dir="ltr">{{ $adv->advance_date->toDateString() }}</bdi> &middot; {{ __('payroll.'.$adv->payment_method) }}
+                                    </div>
                                 </td>
-                                <td class="px-4 py-3">
+                                <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('payroll.advance_date') }}" dir="ltr">{{ $adv->advance_date->toDateString() }}</td>
+                                <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('payroll.payment_method') }}">{{ __('payroll.'.$adv->payment_method) }}</td>
+                                <td class="td-secondary px-4 py-3 font-medium" data-label="{{ __('payroll.original_amount') }}" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['original_amount']) }} {{ $pos['currency_code'] }}</td>
+                                <td class="td-end px-4 py-3 font-bold {{ $pos['is_available'] ? 'text-success' : 'text-text-muted' }}">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_amount']) }} {{ $pos['currency_code'] }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
+                                </td>
+                                <td class="td-secondary px-4 py-3" data-label="{{ __('payroll.status') }}">
                                     <span class="inline-flex px-2 py-0.5 rounded text-sm font-semibold {{ $adv->status === 'posted' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
                                         {{ __('expenses.'.$adv->status) }}
                                     </span>
@@ -247,7 +260,7 @@
                 </div>
             </div>
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-sm text-start">
+                <table class="data-table data-table--responsive w-full text-sm text-start">
                     <thead class="bg-surface-soft border-b border-border text-sm uppercase text-text-muted">
                         <tr>
                             <th class="px-4 py-3 text-start">{{ __('payroll.entry_number') }}</th>
@@ -266,19 +279,32 @@
                     <tbody class="divide-y divide-border">
                         @forelse($salaryPositions as $pos)
                             @php $ent = $pos['entry']; @endphp
-                            <tr class="hover:bg-surface-soft/60">
-                                <td class="px-4 py-3 font-semibold">{{ $ent->salary_number }}</td>
-                                <td class="px-4 py-3 text-text-secondary">{{ $ent->recognition_date->toDateString() }}</td>
-                                <td class="px-4 py-3 text-text-secondary text-sm">
+                            <tr wire:key="edet-sal-{{ $ent->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                                <td class="td-primary px-4 py-3 font-semibold">
+                                    <div class="flex items-center gap-2">
+                                        <bdi dir="ltr" class="font-mono truncate">{{ $ent->salary_number }}</bdi>
+                                        <span class="lg:hidden inline-flex px-2 py-0.5 rounded text-xs font-semibold shrink-0 {{ $ent->status === 'posted' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
+                                            {{ __('expenses.'.$ent->status) }}
+                                        </span>
+                                    </div>
+                                    <div class="lg:hidden font-normal text-xs text-text-secondary mt-0.5" dir="ltr">
+                                        {{ $ent->period_start->toDateString() }} &ndash; {{ $ent->period_end->toDateString() }}
+                                    </div>
+                                </td>
+                                <td class="td-secondary px-4 py-3 text-text-secondary" data-label="{{ __('payroll.recognition_date') }}" dir="ltr">{{ $ent->recognition_date->toDateString() }}</td>
+                                <td class="td-secondary px-4 py-3 text-text-secondary text-sm" data-label="{{ __('payroll.period') }}" dir="ltr">
                                     {{ $ent->period_start->toDateString() }} – {{ $ent->period_end->toDateString() }}
                                 </td>
-                                <td class="px-4 py-3 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->earned_salary) }} {{ $ent->currency_code }}</td>
-                                <td class="px-4 py-3 text-warning font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->advance_applied) }} {{ $ent->currency_code }}</td>
-                                <td class="px-4 py-3 font-bold" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }} {{ $pos['currency_code'] }}</td>
-                                <td class="px-4 py-3 font-bold {{ $pos['is_unpaid'] ? 'text-primary' : 'text-success' }}" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }} {{ $pos['currency_code'] }}
+                                <td class="td-secondary px-4 py-3 font-medium" data-label="{{ __('payroll.earned_salary') }}" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->earned_salary) }} {{ $ent->currency_code }}</td>
+                                <td class="td-secondary px-4 py-3 text-warning font-medium" data-label="{{ __('payroll.advances_applied') }}" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ent->advance_applied) }} {{ $ent->currency_code }}</td>
+                                <td class="td-secondary px-4 py-3 font-bold" data-label="{{ __('payroll.net_payable') }}" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }} {{ $pos['currency_code'] }}</td>
+                                <td class="td-end px-4 py-3 font-bold {{ $pos['is_unpaid'] ? 'text-primary' : 'text-success' }}">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }} {{ $pos['currency_code'] }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
-                                <td class="px-4 py-3">
+                                <td class="td-secondary px-4 py-3" data-label="{{ __('payroll.status') }}">
                                     <span class="inline-flex px-2 py-0.5 rounded text-sm font-semibold {{ $ent->status === 'posted' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
                                         {{ __('expenses.'.$ent->status) }}
                                     </span>
@@ -338,7 +364,7 @@
                     <h2 class="font-bold text-sm text-text-primary">{{ __('payroll.statement') }}</h2>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="data-table w-full text-sm text-start">
+                    <table class="data-table data-table--responsive w-full text-sm text-start">
                         <thead class="bg-surface-soft border-b border-border text-sm uppercase text-text-muted">
                             <tr>
                                 <th class="px-4 py-3 text-start">{{ __('payroll.statement_date') }}</th>
@@ -350,10 +376,10 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-border">
-                            @forelse($statementEvents as $evt)
-                                <tr class="hover:bg-surface-soft/60">
-                                    <td class="px-4 py-3 whitespace-nowrap text-text-secondary">{{ $evt['date'] }}</td>
-                                    <td class="px-4 py-3 font-semibold">
+                            @forelse($statementEvents as $evtIdx => $evt)
+                                <tr wire:key="edet-stmt-{{ $evtIdx }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                                    <td class="td-secondary px-4 py-3 whitespace-nowrap text-text-secondary" data-label="{{ __('payroll.statement_date') }}" dir="ltr">{{ $evt['date'] }}</td>
+                                    <td class="td-secondary px-4 py-3 font-semibold" data-label="{{ __('payroll.statement_type') }}">
                                         @if($evt['type'] === 'advance')
                                             <span class="text-warning">{{ __('payroll.advance') }}</span>
                                         @elseif($evt['type'] === 'salary_entry')
@@ -362,16 +388,29 @@
                                             <span class="text-success">{{ __('payroll.salary_payment') }}</span>
                                         @endif
                                     </td>
-                                    <td class="px-4 py-3 font-medium">{{ $evt['number'] }}</td>
-                                    <td class="px-4 py-3 text-text-secondary text-sm">
+                                    <td class="td-primary px-4 py-3 font-medium">
+                                        <div class="flex items-center gap-2">
+                                            <bdi dir="ltr" class="font-mono font-semibold truncate">{{ $evt['number'] }}</bdi>
+                                            <span class="lg:hidden inline-flex px-2 py-0.5 rounded text-xs font-semibold shrink-0 {{ $evt['status'] === 'posted' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">
+                                                {{ __('expenses.'.$evt['status']) }}
+                                            </span>
+                                        </div>
+                                        <div class="lg:hidden font-normal text-xs text-text-secondary mt-0.5">
+                                            <bdi dir="ltr" class="font-mono">{{ $evt['date'] }}</bdi> &middot; {{ __('payroll.'.$evt['type']) }}
+                                        </div>
+                                    </td>
+                                    <td class="td-secondary px-4 py-3 text-text-secondary text-sm" data-label="{{ __('payroll.statement_details') }}">
                                         @if($evt['type'] === 'salary_entry')
                                             {{ $evt['period'] }} ({{ __('payroll.advance_settlement') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($evt['advance_applied']) }})
                                         @elseif(isset($evt['method']))
                                             {{ __('payroll.'.$evt['method']) }}
                                         @endif
                                     </td>
-                                    <td class="px-4 py-3 font-bold whitespace-nowrap" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($evt['type'] === 'salary_entry' ? $evt['net_payable'] : ($evt['amount'] ?? '')) }} {{ $evt['currency_code'] }}
+                                    <td class="td-end px-4 py-3 font-bold whitespace-nowrap">
+                                        <div class="inline-flex items-center gap-2">
+                                            <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($evt['type'] === 'salary_entry' ? $evt['net_payable'] : ($evt['amount'] ?? '')) }} {{ $evt['currency_code'] }}</bdi>
+                                            <x-row-details-toggle />
+                                        </div>
                                     </td>
                                     <td class="table-actions px-4 py-3">
                                         <span class="inline-flex px-2 py-0.5 rounded text-sm font-semibold {{ $evt['status'] === 'posted' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger' }}">

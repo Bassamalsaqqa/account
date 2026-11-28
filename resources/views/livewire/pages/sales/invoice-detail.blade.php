@@ -156,7 +156,7 @@
             {{ __('sales.invoice_details') }}
         </div>
         <div class="overflow-x-auto">
-            <table class="data-table w-full text-start text-xs border-collapse">
+            <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                         <th class="py-2.5 px-4 text-start">#</th>
@@ -173,31 +173,37 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @foreach ($invoice->lines as $line)
-                        <tr class="hover:bg-surface-soft/40">
-                            <td class="py-2.5 px-4 text-text-muted">{{ $line->line_number }}</td>
-                            <td class="py-2.5 px-4">
+                        <tr wire:key="inv-detail-line-{{ $line->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/40">
+                            <td class="td-secondary py-2.5 px-4 text-text-muted" data-label="#">{{ $line->line_number }}</td>
+                            <td class="td-primary py-2.5 px-4">
                                 <div class="font-bold text-text-primary">{{ $line->item_description }}</div>
                                 @if ($line->product_sku)
-                                    <div class="text-xs font-mono text-text-muted">SKU: {{ $line->product_sku }}</div>
+                                    <div class="hidden lg:block text-xs font-mono text-text-muted">SKU: {{ $line->product_sku }}</div>
                                 @endif
+                                <div class="lg:hidden text-xs text-text-secondary mt-0.5">
+                                    <bdi dir="ltr" class="font-mono">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line->quantity) }} {{ $line->unit_name_ar ?? '' }} &times; {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->unit_price, $invoice->currency_code) }}</bdi>
+                                </div>
                             </td>
-                            <td class="py-2.5 px-4 font-mono" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 font-mono" data-label="{{ __('sales.quantity') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line->quantity) }} {{ $line->unit_name_ar ?? '' }}
                             </td>
-                            <td class="py-2.5 px-4 tabular-nums" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 tabular-nums" data-label="{{ __('sales.unit_price') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->unit_price, $invoice->currency_code) }}
                             </td>
-                            <td class="py-2.5 px-4 tabular-nums text-danger" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 tabular-nums text-danger" data-label="{{ __('sales.discount') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->discount_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->discount_amount, $invoice->currency_code) : '—' }}
                             </td>
-                            <td class="py-2.5 px-4 tabular-nums" dir="ltr">
+                            <td class="td-secondary py-2.5 px-4 tabular-nums" data-label="{{ __('sales.tax') }}" dir="ltr">
                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($line->tax_amount) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->tax_amount, $invoice->currency_code) : '—' }}
                             </td>
-                            <td class="py-2.5 px-4 tabular-nums font-bold text-end text-text-primary" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->line_total, $invoice->currency_code) }}
+                            <td class="td-end py-2.5 px-4 tabular-nums font-bold text-end text-text-primary">
+                                <div class="inline-flex items-center gap-2">
+                                    <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->line_total, $invoice->currency_code) }}</bdi>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
                             @if ($canViewCost)
-                                <td class="py-2.5 px-4 tabular-nums text-end text-text-muted" dir="ltr">
+                                <td class="td-secondary py-2.5 px-4 tabular-nums text-end text-text-muted" data-label="{{ __('sales.cogs') }}" dir="ltr">
                                     {{ $line->cogs_total_base !== null ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($line->cogs_total_base, $invoice->company->base_currency_code) : '—' }}
                                 </td>
                             @endif
@@ -264,7 +270,7 @@
                 {{ __('sales.tab_payments') }}
             </div>
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-start text-xs border-collapse">
+                <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-4 text-start">{{ __('sales.payment_number') }}</th>
@@ -276,18 +282,24 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @foreach ($invoice->allocations as $alloc)
-                            <tr>
-                                <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('payments.show', $alloc->payment->public_id) }}" class="touch-action text-primary hover:underline">
+                            <tr wire:key="inv-alloc-{{ $alloc->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                <td class="td-primary py-2.5 px-4 font-mono font-bold">
+                                    <a href="{{ route('payments.show', $alloc->payment->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate block" dir="ltr">
                                         {{ $alloc->payment->payment_number }}
                                     </a>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5" dir="ltr">
+                                        {{ $alloc->payment?->payment_date ? $alloc->payment->payment_date->toDateString() : '—' }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-4" dir="ltr">{{ $alloc->payment?->payment_date ? $alloc->payment->payment_date->toDateString() : '—' }}</td>
-                                <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $alloc->payment->currency_code) }} {{ $alloc->payment->currency_code }}
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('sales.date') }}" dir="ltr">{{ $alloc->payment?->payment_date ? $alloc->payment->payment_date->toDateString() : '—' }}</td>
+                                <td class="td-end py-2.5 px-4 font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $alloc->payment->currency_code) }} {{ $alloc->payment->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
                                 @if ($canViewFx)
-                                <td class="py-2.5 px-4 font-mono" dir="ltr">
+                                <td class="td-secondary py-2.5 px-4 font-mono" data-label="{{ __('sales.realized_fx') }}" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->realized_fx_gain_loss_base) }}
                                 </td>
                                 @endif
@@ -311,7 +323,7 @@
                 {{ __('sales.tab_returns') }}
             </div>
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-start text-xs border-collapse">
+                <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-4 text-start">{{ __('sales.return_number') }}</th>
@@ -323,17 +335,28 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @foreach ($invoice->returns as $ret)
-                            <tr>
-                                <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $ret->return_number ?? __('sales.draft') }}
-                                    </a>
+                            <tr wire:key="inv-ret-{{ $ret->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                <td class="td-primary py-2.5 px-4 font-mono font-bold">
+                                    <div class="flex items-center gap-2">
+                                        <a href="{{ route('returns.show', $ret->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $ret->return_number ?? __('sales.draft') }}
+                                        </a>
+                                        <span class="lg:hidden shrink-0">
+                                            <x-badge :variant="$ret->status === 'posted' ? 'success' : ($ret->status === 'void' ? 'danger' : 'draft')">{{ __('sales.' . $ret->status) }}</x-badge>
+                                        </span>
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5" dir="ltr">
+                                        {{ $ret->issue_date ? $ret->issue_date->toDateString() : '—' }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-4" dir="ltr">{{ $ret->issue_date ? $ret->issue_date->toDateString() : '—' }}</td>
-                                <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('sales.date') }}" dir="ltr">{{ $ret->issue_date ? $ret->issue_date->toDateString() : '—' }}</td>
+                                <td class="td-end py-2.5 px-4 font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total, $ret->currency_code) }} {{ $ret->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-4">
+                                <td class="td-secondary py-2.5 px-4" data-label="{{ __('sales.status') }}">
                                     <x-badge :variant="$ret->status === 'posted' ? 'success' : ($ret->status === 'void' ? 'danger' : 'draft')">
                                         {{ __('sales.' . $ret->status) }}
                                     </x-badge>

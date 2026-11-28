@@ -54,8 +54,8 @@
 
     <!-- Ledger Table -->
     <x-card padding="p-0">
-        <div class="hidden lg:block overflow-x-auto">
-            <table class="data-table w-full text-xs text-right rtl:text-right ltr:text-left">
+        <div class="overflow-x-auto">
+            <table class="data-table data-table--responsive w-full text-xs text-right rtl:text-right ltr:text-left">
                 <thead class="bg-surface-soft border-b border-border text-text-secondary font-bold select-none">
                     <tr>
                         <th class="p-3.5">{{ __('inventory.movement_date') }}</th>
@@ -75,54 +75,68 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse ($movements as $m)
-                        <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="p-3.5 font-mono text-text-secondary" dir="ltr">
+                        @php($whName = app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar)
+                        <tr wire:key="movement-row-{{ $m->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60 transition-colors">
+                            <td class="td-secondary p-3.5 font-mono text-text-secondary" data-label="{{ __('inventory.movement_date') }}" dir="ltr">
                                 {{ $m->movement_date }}
                             </td>
-                            <td class="p-3.5">
+                            <td class="td-secondary p-3.5" data-label="{{ __('inventory.movement_type') }}">
                                 <x-badge variant="{{ $m->isInbound() ? 'success' : 'alert' }}">
                                     {{ __('inventory.type_' . $m->movement_type) }}
                                 </x-badge>
                             </td>
-                            <td class="p-3.5 font-bold text-text-primary">
-                                @if ($m->product)
-                                    <a href="{{ route('products.show', $m->product->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                        {{ $m->product->name() }}
-                                    </a>
-                                @else
-                                    <span class="text-text-muted">—</span>
-                                @endif
+                            <td class="td-primary p-3.5 font-bold text-text-primary">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    @if ($m->product)
+                                        <a href="{{ route('products.show', $m->product->public_id) }}" data-row-link class="touch-action hover:text-primary transition-colors truncate">
+                                            {{ $m->product->name() }}
+                                        </a>
+                                    @else
+                                        <span class="text-text-muted">—</span>
+                                    @endif
+                                    <span class="lg:hidden shrink-0">
+                                        <x-badge variant="{{ $m->isInbound() ? 'success' : 'alert' }}">
+                                            {{ __('inventory.type_' . $m->movement_type) }}
+                                        </x-badge>
+                                    </span>
+                                </div>
+                                <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    <bdi dir="ltr">{{ $m->movement_date }}</bdi>@if($whName) &middot; {{ $whName }}@endif
+                                </div>
                             </td>
-                            <td class="p-3.5 text-text-secondary">
-                                {{ app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar }}
+                            <td class="td-secondary p-3.5 text-text-secondary" data-label="{{ __('inventory.warehouse') }}">
+                                {{ $whName }}
                             </td>
-                            <td class="p-3.5 text-center font-mono text-xs text-text-muted" dir="ltr">
+                            <td class="td-secondary p-3.5 text-center font-mono text-xs text-text-muted" data-label="{{ __('inventory.lot_number') }}" dir="ltr">
                                 {{ $m->lot?->lot_number ?? ($m->lot_id ? '#' . $m->lot_id : '—') }}
                             </td>
-                            <td class="p-3.5 text-center font-mono font-bold tabular-nums {{ $m->isInbound() ? 'text-success' : 'text-danger' }}" dir="ltr">
-                                {{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}
+                            <td class="td-end p-3.5 text-center font-mono font-bold tabular-nums {{ $m->isInbound() ? 'text-success' : 'text-danger' }}">
+                                <div class="inline-flex items-center gap-2">
+                                    <bdi dir="ltr">{{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}</bdi>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
                             @if ($canViewCost)
-                                <td class="p-3.5 text-center font-mono tabular-nums text-text-secondary" dir="ltr">
+                                <td class="td-secondary p-3.5 text-center font-mono tabular-nums text-text-secondary" data-label="{{ __('inventory.unit_cost') }}" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->unit_cost_base) }}
                                 </td>
-                                <td class="p-3.5 text-center font-mono font-bold tabular-nums text-text-primary" dir="ltr">
+                                <td class="td-secondary p-3.5 text-center font-mono font-bold tabular-nums text-text-primary" data-label="{{ __('inventory.value_delta') }}" dir="ltr">
                                     {{ $m->value_delta_base }}
                                 </td>
-                                <td class="p-3.5 text-center font-mono tabular-nums text-text-muted" dir="ltr">
+                                <td class="td-secondary p-3.5 text-center font-mono tabular-nums text-text-muted" data-label="{{ __('inventory.average_cost_after') }}" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->average_cost_after) }}
                                 </td>
                             @endif
-                            <td class="p-3.5 text-text-secondary max-w-xs truncate">
+                            <td class="td-secondary p-3.5 text-text-secondary lg:max-w-xs lg:truncate" data-label="{{ __('inventory.reason') }}">
                                 {{ $m->reason ?? '—' }}
                             </td>
-                            <td class="p-3.5 text-text-muted text-xs">
+                            <td class="td-secondary p-3.5 text-text-muted text-xs" data-label="{{ __('inventory.actor') }}">
                                 {{ $m->user?->name ?? __('inventory.system') }}
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="{{ $canViewCost ? 10 : 7 }}" class="p-8 text-center text-text-muted">
+                            <td colspan="{{ $canViewCost ? 11 : 8 }}" class="p-8 text-center text-text-muted">
                                 {{ __('inventory.no_movements_recorded') }}
                             </td>
                         </tr>
@@ -130,79 +144,6 @@
                 </tbody>
             </table>
         </div>
-<div class="lg:hidden divide-y divide-border">
-                    @forelse ($movements as $m)
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.movement_date') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->movement_date }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.movement_type') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><x-badge variant="{{ $m->isInbound() ? 'success' : 'alert' }}">
-                                    {{ __('inventory.type_' . $m->movement_type) }}
-                                </x-badge></dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.product') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">
-                                    @if ($m->product)
-                                        <a href="{{ route('products.show', $m->product->public_id) }}" class="touch-action hover:text-primary transition-colors">
-                                            {{ $m->product->name() }}
-                                        </a>
-                                    @else
-                                        <span class="text-text-muted">—</span>
-                                    @endif
-                                </dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.warehouse') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ app()->getLocale() === 'en' ? ($m->warehouse?->name_en ?: $m->warehouse?->name_ar) : $m->warehouse?->name_ar }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.lot_number') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->lot?->lot_number ?? ($m->lot_id ? '#' . $m->lot_id : '—') }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.quantity_delta') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->isInbound() ? '+' : '' }}{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($m->quantity_delta_base) }}</dd>
-                            </div>
-                            @if ($canViewCost)
-                                <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.unit_cost') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->unit_cost_base) }}</dd>
-                            </div>
-                                <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.value_delta') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $m->value_delta_base }}</dd>
-                            </div>
-                                <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.average_cost_after') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($m->average_cost_after) }}</dd>
-                            </div>
-                            @endif
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.reason') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $m->reason ?? '—' }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.actor') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $m->user?->name ?? __('inventory.system') }}</dd>
-                            </div>
-                        </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('inventory.no_movements_recorded') }}
-                            </div>
-                        </dl>
-                        </article>
-                    @endforelse
-                </div>
-
 
         @if ($movements->count() > 0 || $movements->currentPage() > 1)
             <div class="p-4 border-t border-border">

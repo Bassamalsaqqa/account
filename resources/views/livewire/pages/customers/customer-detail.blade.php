@@ -225,7 +225,7 @@
 
         @elseif ($activeTab === 'invoices')
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-start text-xs border-collapse">
+                <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.invoice_number') }}</th>
@@ -242,27 +242,38 @@
                             @php
                                 $invSummary = $tabInvoiceSummaries[$inv->id] ?? $inv->calculateFinancialSummary();
                             @endphp
-                            <tr class="hover:bg-surface-soft/60">
-                                <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('invoices.show', $inv->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $inv->invoice_number ?? __('sales.draft') }}
-                                    </a>
+                            <tr wire:key="cdet-inv-{{ $inv->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                                <td class="td-primary py-2.5 px-3 font-mono font-bold">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <a href="{{ route('invoices.show', $inv->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $inv->invoice_number ?? __('sales.draft') }}
+                                        </a>
+                                        <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 {{ $inv->status === 'posted' ? 'bg-success-bg text-success' : ($inv->status === 'draft' ? 'bg-slate-100 text-slate-600' : 'bg-danger-bg text-danger') }}">
+                                            {{ __('sales.' . $inv->status) }}
+                                        </span>
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5">
+                                        <bdi dir="ltr">{{ $inv->issue_date ? (is_string($inv->issue_date) ? $inv->issue_date : $inv->issue_date->toDateString()) : '—' }}</bdi> &middot; {{ __('sales.' . $invSummary['payment_status']) }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-3" dir="ltr">{{ $inv->issue_date ? (is_string($inv->issue_date) ? $inv->issue_date : $inv->issue_date->toDateString()) : '—' }}</td>
-                                <td class="py-2.5 px-3">
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.date') }}" dir="ltr">{{ $inv->issue_date ? (is_string($inv->issue_date) ? $inv->issue_date : $inv->issue_date->toDateString()) : '—' }}</td>
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.status') }}">
                                     <span class="px-2 py-0.5 rounded-full text-xs font-bold {{ $inv->status === 'posted' ? 'bg-success-bg text-success' : ($inv->status === 'draft' ? 'bg-slate-100 text-slate-600' : 'bg-danger-bg text-danger') }}">
                                         {{ __('sales.' . $inv->status) }}
                                     </span>
                                 </td>
-                                <td class="py-2.5 px-3">
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.payment_status') }}">
                                     <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-surface-soft text-text-secondary">
                                         {{ __('sales.' . $invSummary['payment_status']) }}
                                     </span>
                                 </td>
-                                <td class="py-2.5 px-3 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->grand_total_currency, $inv->currency_code) }} {{ $inv->currency_code }}
+                                <td class="td-end py-2.5 px-3 font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($inv->grand_total_currency, $inv->currency_code) }} {{ $inv->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-3 font-bold text-danger" dir="ltr">
+                                <td class="td-secondary py-2.5 px-3 font-bold text-danger" data-label="{{ __('sales.outstanding_amount') }}" dir="ltr">
                                     {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($invSummary['outstanding'], $inv->currency_code) }} {{ $inv->currency_code }}
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
@@ -285,7 +296,7 @@
 
         @elseif ($activeTab === 'quotations')
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-start text-xs border-collapse">
+                <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.quote_number') }}</th>
@@ -298,21 +309,32 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @forelse ($tabQuotations as $quote)
-                            <tr class="hover:bg-surface-soft/60">
-                                <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $quote->quotation_number }}
-                                    </a>
+                            <tr wire:key="cdet-quote-{{ $quote->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                                <td class="td-primary py-2.5 px-3 font-mono font-bold">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <a href="{{ route('quotations.show', $quote->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $quote->quotation_number }}
+                                        </a>
+                                        <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 bg-surface-soft text-text-secondary">
+                                            {{ __('sales.status_' . $quote->status) }}
+                                        </span>
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5" dir="ltr">
+                                        {{ $quote->issue_date ? (is_string($quote->issue_date) ? $quote->issue_date : $quote->issue_date->toDateString()) : '—' }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-3" dir="ltr">{{ $quote->issue_date ? (is_string($quote->issue_date) ? $quote->issue_date : $quote->issue_date->toDateString()) : '—' }}</td>
-                                <td class="py-2.5 px-3" dir="ltr">{{ $quote->expiry_date ? (is_string($quote->expiry_date) ? $quote->expiry_date : $quote->expiry_date->toDateString()) : '—' }}</td>
-                                <td class="py-2.5 px-3">
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.date') }}" dir="ltr">{{ $quote->issue_date ? (is_string($quote->issue_date) ? $quote->issue_date : $quote->issue_date->toDateString()) : '—' }}</td>
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.valid_until') }}" dir="ltr">{{ $quote->expiry_date ? (is_string($quote->expiry_date) ? $quote->expiry_date : $quote->expiry_date->toDateString()) : '—' }}</td>
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.status') }}">
                                     <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-surface-soft text-text-secondary">
                                         {{ __('sales.status_' . $quote->status) }}
                                     </span>
                                 </td>
-                                <td class="py-2.5 px-3 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total_currency, $quote->currency_code) }} {{ $quote->currency_code }}
+                                <td class="td-end py-2.5 px-3 font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total_currency, $quote->currency_code) }} {{ $quote->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
                                     <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
@@ -334,7 +356,7 @@
 
         @elseif ($activeTab === 'payments')
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-start text-xs border-collapse">
+                <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.payment_number') }}</th>
@@ -348,19 +370,32 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @forelse ($tabPayments as $pmt)
-                            <tr class="hover:bg-surface-soft/60">
-                                <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('payments.show', $pmt->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $pmt->payment_number }}
-                                    </a>
+                            <tr wire:key="cdet-pmt-{{ $pmt->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                                <td class="td-primary py-2.5 px-3 font-mono font-bold">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <a href="{{ route('payments.show', $pmt->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $pmt->payment_number }}
+                                        </a>
+                                        @if ($pmt->is_reversed)
+                                            <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 bg-danger-bg text-danger">{{ __('sales.voided') }}</span>
+                                        @else
+                                            <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 bg-success-bg text-success">{{ __('sales.posted') }}</span>
+                                        @endif
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5">
+                                        <bdi dir="ltr">{{ $pmt->payment_date ? (is_string($pmt->payment_date) ? $pmt->payment_date : $pmt->payment_date->toDateString()) : '—' }}</bdi> &middot; {{ __('sales.' . $pmt->payment_method) }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-3" dir="ltr">{{ $pmt->payment_date ? (is_string($pmt->payment_date) ? $pmt->payment_date : $pmt->payment_date->toDateString()) : '—' }}</td>
-                                <td class="py-2.5 px-3">{{ __('sales.' . $pmt->payment_method) }}</td>
-                                <td class="py-2.5 px-3">{{ $pmt->moneyAccount?->displayName() ?? '—' }}</td>
-                                <td class="py-2.5 px-3 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.date') }}" dir="ltr">{{ $pmt->payment_date ? (is_string($pmt->payment_date) ? $pmt->payment_date : $pmt->payment_date->toDateString()) : '—' }}</td>
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.payment_method') }}">{{ __('sales.' . $pmt->payment_method) }}</td>
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.money_account') }}">{{ $pmt->moneyAccount?->displayName() ?? '—' }}</td>
+                                <td class="td-end py-2.5 px-3 font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pmt->amount, $pmt->currency_code) }} {{ $pmt->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-3">
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.status') }}">
                                     @if ($pmt->is_reversed)
                                         <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-danger-bg text-danger">
                                             {{ __('sales.voided') }}
@@ -391,7 +426,7 @@
 
         @elseif ($activeTab === 'returns')
             <div class="overflow-x-auto">
-                <table class="data-table w-full text-start text-xs border-collapse">
+                <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                     <thead>
                         <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                             <th class="py-2.5 px-3 text-start">{{ __('sales.return_number') }}</th>
@@ -404,21 +439,32 @@
                     </thead>
                     <tbody class="divide-y divide-border">
                         @forelse ($tabReturns as $ret)
-                            <tr class="hover:bg-surface-soft/60">
-                                <td class="py-2.5 px-3 font-mono font-bold" dir="ltr">
-                                    <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $ret->return_number ?? __('sales.draft') }}
-                                    </a>
+                            <tr wire:key="cdet-ret-{{ $ret->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60">
+                                <td class="td-primary py-2.5 px-3 font-mono font-bold">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <a href="{{ route('returns.show', $ret->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                            {{ $ret->return_number ?? __('sales.draft') }}
+                                        </a>
+                                        <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 {{ $ret->status === 'posted' ? 'bg-success-bg text-success' : 'bg-slate-100 text-slate-600' }}">
+                                            {{ __('sales.' . $ret->status) }}
+                                        </span>
+                                    </div>
+                                    <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5" dir="ltr">
+                                        {{ $ret->issue_date ? (is_string($ret->issue_date) ? $ret->issue_date : $ret->issue_date->toDateString()) : '—' }}
+                                    </div>
                                 </td>
-                                <td class="py-2.5 px-3" dir="ltr">{{ $ret->issue_date ? (is_string($ret->issue_date) ? $ret->issue_date : $ret->issue_date->toDateString()) : '—' }}</td>
-                                <td class="py-2.5 px-3 font-mono" dir="ltr">{{ $ret->salesInvoice?->invoice_number ?? '—' }}</td>
-                                <td class="py-2.5 px-3">
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.date') }}" dir="ltr">{{ $ret->issue_date ? (is_string($ret->issue_date) ? $ret->issue_date : $ret->issue_date->toDateString()) : '—' }}</td>
+                                <td class="td-secondary py-2.5 px-3 font-mono" data-label="{{ __('sales.original_invoice') }}" dir="ltr">{{ $ret->salesInvoice?->invoice_number ?? '—' }}</td>
+                                <td class="td-secondary py-2.5 px-3" data-label="{{ __('sales.status') }}">
                                     <span class="px-2 py-0.5 rounded-full text-xs font-bold {{ $ret->status === 'posted' ? 'bg-success-bg text-success' : 'bg-slate-100 text-slate-600' }}">
                                         {{ __('sales.' . $ret->status) }}
                                     </span>
                                 </td>
-                                <td class="py-2.5 px-3 font-bold" dir="ltr">
-                                    {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}
+                                <td class="td-end py-2.5 px-3 font-bold">
+                                    <div class="inline-flex items-center gap-2">
+                                        <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($ret->grand_total_currency, $ret->currency_code) }} {{ $ret->currency_code }}</bdi>
+                                        <x-row-details-toggle />
+                                    </div>
                                 </td>
                                 <td class="table-actions py-2.5 px-3 text-end">
                                     <a href="{{ route('returns.show', $ret->public_id) }}" class="touch-action text-primary hover:underline font-bold text-xs">
@@ -444,11 +490,11 @@
                 <div class="flex flex-wrap items-center gap-4 bg-canvas p-3 rounded-control border border-border text-xs">
                     <div class="flex items-center gap-2">
                         <label class="font-bold text-text-primary">{{ __('sales.from_date') }}:</label>
-                        <input type="date" wire:model.live="statementFrom" class="h-8 px-2 rounded-control border border-border bg-surface text-sm" />
+                        <input type="date" wire:model.live="statementFrom" class="min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border-control bg-surface text-base lg:text-sm" />
                     </div>
                     <div class="flex items-center gap-2">
                         <label class="font-bold text-text-primary">{{ __('sales.to_date') }}:</label>
-                        <input type="date" wire:model.live="statementTo" class="h-8 px-2 rounded-control border border-border bg-surface text-sm" />
+                        <input type="date" wire:model.live="statementTo" class="min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border-control bg-surface text-base lg:text-sm" />
                     </div>
                     <a href="{{ route('pdf.statement', ['publicId' => $customer->public_id, 'from' => $statementFrom, 'to' => $statementTo]) }}"
                        target="_blank"
@@ -498,7 +544,7 @@
 
                         <!-- Statement Entries Table -->
                         <div class="overflow-x-auto">
-                            <table class="data-table w-full text-start text-xs border-collapse">
+                            <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                                 <thead>
                                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase">
                                         <th class="py-2 px-3 text-start">{{ __('sales.date') }}</th>
@@ -515,21 +561,27 @@
                                             {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($currencyStatement['opening_balance'], $curr) }}
                                         </td>
                                     </tr>
-                                    @foreach (($currencyStatement['entries'] ?? []) as $entry)
-                                        <tr>
-                                            <td class="py-2 px-3" dir="ltr">{{ $entry['date'] }}</td>
-                                            <td class="py-2 px-3">
-                                                <span class="font-bold font-mono">{{ $entry['number'] }}</span>
-                                                <span class="text-text-muted text-xs">({{ $entry['type'] }})</span>
+                                    @foreach (($currencyStatement['entries'] ?? []) as $entryIdx => $entry)
+                                        <tr wire:key="cdet-stmt-{{ $curr }}-{{ $entryIdx }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                            <td class="td-secondary py-2 px-3" data-label="{{ __('sales.date') }}" dir="ltr">{{ $entry['date'] }}</td>
+                                            <td class="td-primary py-2 px-3">
+                                                <div class="truncate">
+                                                    <span class="font-bold font-mono">{{ $entry['number'] }}</span>
+                                                    <span class="text-text-muted text-xs">({{ $entry['type'] }})</span>
+                                                </div>
+                                                <div class="lg:hidden text-xs text-text-secondary mt-0.5" dir="ltr">{{ $entry['date'] }}</div>
                                             </td>
-                                            <td class="py-2 px-3" dir="ltr">
+                                            <td class="td-secondary py-2 px-3" data-label="{{ __('sales.debit') }}" dir="ltr">
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($entry['debit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['debit'], $curr) : '—' }}
                                             </td>
-                                            <td class="py-2 px-3" dir="ltr">
+                                            <td class="td-secondary py-2 px-3" data-label="{{ __('sales.credit_col') }}" dir="ltr">
                                                 {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($entry['credit']) ? \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['credit'], $curr) : '—' }}
                                             </td>
-                                            <td class="py-2 px-3 font-bold" dir="ltr">
-                                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['balance'], $curr) }}
+                                            <td class="td-end py-2 px-3 font-bold">
+                                                <div class="inline-flex items-center gap-2">
+                                                    <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($entry['balance'], $curr) }}</bdi>
+                                                    <x-row-details-toggle />
+                                                </div>
                                             </td>
                                         </tr>
                                     @endforeach

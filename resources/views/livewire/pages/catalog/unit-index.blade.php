@@ -98,65 +98,56 @@
             </table>
         </div>
 <div class="lg:hidden divide-y divide-border">
-                    @forelse ($units as $unit)
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.unit_code') }}</dt>
-                                <dd dir="ltr" class="break-words text-sm tabular-nums text-text-primary">{{ $unit->code }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.unit_name') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $unit->name_ar }}</span>
-                                @if ($unit->name_en)
-                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $unit->name_en }}</bdi>
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.abbreviation') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $unit->symbol_ar ?? $unit->symbol_en ?? '—' }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.allows_decimals') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if ($unit->allows_fraction)
-                                    <span class="text-success font-bold">&#10003; {{ __('inventory.yes') }}</span>
-                                 @else
-                                    <span class="text-text-muted">{{ __('inventory.no') }}</span>
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.decimal_places') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $unit->decimal_places }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.status') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if ($unit->active)
-                                    <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
-                                @else
-                                    <x-badge>{{ __('inventory.inactive') }}</x-badge>
-                                @endif</dd>
-                            </div>
-                            @if ($canManage)
-                                <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><button id="unit-edit-mobile-{{ $unit->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $unit->id }})"
-                                            class="touch-action text-primary hover:underline font-bold text-xs">
-                                        {{ __('inventory.edit') }}
-                                    </button></dd>
-                            </div>
+            @forelse ($units as $unit)
+                <x-compact-mobile-row wire:key="unit-mobile-{{ $unit->id }}" :has-details="true">
+                    <x-slot:primary>
+                        <span class="font-bold text-sm text-text-primary truncate">{{ $unit->name_ar }}</span>
+                        <span class="shrink-0">
+                            @if ($unit->active)
+                                <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
+                            @else
+                                <x-badge>{{ __('inventory.inactive') }}</x-badge>
                             @endif
-                        </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('inventory.no_units_registered_catalog') }}
+                        </span>
+                    </x-slot:primary>
+
+                    <x-slot:subtitle>
+                        <bdi dir="ltr" class="font-mono">{{ $unit->code }}</bdi>
+                        @if ($unit->symbol_ar ?? $unit->symbol_en) &middot; {{ $unit->symbol_ar ?? $unit->symbol_en }}@endif
+                        @if ($unit->name_en) &middot; <bdi dir="ltr">{{ $unit->name_en }}</bdi>@endif
+                    </x-slot:subtitle>
+
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.allows_decimals') }}</dt>
+                                <dd class="mt-0.5 text-text-primary">
+                                    @if ($unit->allows_fraction)
+                                        <span class="text-success font-bold">&#10003; {{ __('inventory.yes') }}</span>
+                                    @else
+                                        <span class="text-text-muted">{{ __('inventory.no') }}</span>
+                                    @endif
+                                </dd>
+                            </div>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.decimal_places') }}</dt>
+                                <dd class="mt-0.5 font-mono text-text-primary">{{ $unit->decimal_places }}</dd>
                             </div>
                         </dl>
-                        </article>
-                    @endforelse
-                </div>
+                        @if ($canManage)
+                            <div class="flex justify-end">
+                                <button id="unit-edit-mobile-{{ $unit->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $unit->id }})"
+                                        class="touch-action text-primary hover:underline font-bold text-xs">
+                                    {{ __('inventory.edit') }}
+                                </button>
+                            </div>
+                        @endif
+                    </x-slot:details>
+                </x-compact-mobile-row>
+            @empty
+                <p class="p-6 text-center text-sm text-text-secondary">{{ __('inventory.no_units_registered_catalog') }}</p>
+            @endforelse
+        </div>
 
     <div class="p-4"><x-table-pagination :paginator="$units" /></div>
     </x-card>

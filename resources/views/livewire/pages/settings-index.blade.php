@@ -639,23 +639,8 @@
                         </button>
                     </form>
 
-                    <div class="lg:hidden space-y-3">
-                        @forelse ($auditEvents as $event)
-                            <article class="rounded-control border border-border p-3.5 space-y-2 text-sm" wire:key="audit-card-{{ $event->id }}">
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <span class="font-bold text-text-primary break-words">{{ $event->actor?->name ?? __('settings.actor_system') }}</span>
-                                    <time class="font-mono text-xs text-text-muted num" dir="ltr">{{ $event->created_at->format('Y-m-d H:i') }}</time>
-                                </div>
-                                <p class="font-mono text-xs text-primary break-all" dir="ltr">{{ $event->event_key }}</p>
-                                <p class="text-text-secondary break-words">{{ $event->summary }}</p>
-                            </article>
-                        @empty
-                            <p class="py-6 text-center text-sm text-text-muted">{{ __('settings.no_audit_events') }}</p>
-                        @endforelse
-                    </div>
-
-                    <div class="hidden lg:block overflow-x-auto">
-                        <table class="data-table w-full text-sm text-start">
+                    <div class="overflow-x-auto">
+                        <table class="data-table data-table--responsive w-full text-sm text-start">
                             <thead>
                                 <tr class="border-b border-border bg-surface-soft text-text-muted text-xs">
                                     <th class="py-2.5 px-3 font-bold text-start">{{ __('settings.audit_occurred_at') }}</th>
@@ -666,17 +651,23 @@
                             </thead>
                             <tbody class="divide-y divide-border/60">
                                 @forelse ($auditEvents as $event)
-                                    <tr wire:key="audit-row-{{ $event->id }}" class="hover:bg-surface-soft/60 transition-colors">
-                                        <td class="py-3 px-3 font-mono text-xs text-text-muted whitespace-nowrap">
+                                    <tr wire:key="audit-row-{{ $event->id }}" x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60 transition-colors">
+                                        <td class="td-secondary py-3 px-3 font-mono text-xs text-text-muted whitespace-nowrap" data-label="{{ __('settings.audit_occurred_at') }}">
                                             <bdi dir="ltr" class="num">{{ $event->created_at->format('Y-m-d H:i') }}</bdi>
                                         </td>
-                                        <td class="py-3 px-3 font-bold text-text-primary">
-                                            {{ $event->actor?->name ?? __('settings.actor_system') }}
+                                        <td class="td-primary py-3 px-3 font-bold text-text-primary">
+                                            <div class="truncate">{{ $event->actor?->name ?? __('settings.actor_system') }}</div>
+                                            <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                                <bdi dir="ltr" class="font-mono text-primary">{{ $event->event_key }}</bdi> &middot; <bdi dir="ltr" class="font-mono num">{{ $event->created_at->format('Y-m-d H:i') }}</bdi>
+                                            </div>
                                         </td>
-                                        <td class="py-3 px-3 font-mono text-xs text-primary">
-                                            <bdi dir="ltr">{{ $event->event_key }}</bdi>
+                                        <td class="td-end py-3 px-3 font-mono text-xs text-primary">
+                                            <div class="inline-flex items-center gap-2">
+                                                <bdi dir="ltr" class="hidden lg:inline">{{ $event->event_key }}</bdi>
+                                                <x-row-details-toggle />
+                                            </div>
                                         </td>
-                                        <td class="py-3 px-3 text-text-secondary">
+                                        <td class="td-secondary py-3 px-3 text-text-secondary" data-label="{{ __('settings.audit_details') }}">
                                             {{ $event->summary }}
                                         </td>
                                     </tr>

@@ -137,7 +137,7 @@
             {{ __('sales.invoice_allocations') }}
         </div>
         <div class="overflow-x-auto">
-            <table class="data-table w-full text-start text-sm border-collapse">
+            <table class="data-table data-table--responsive w-full text-start text-sm border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-sm uppercase">
                         <th class="py-2.5 px-4 text-start">{{ __('sales.invoice_number') }}</th>
@@ -151,23 +151,34 @@
                         @php
                             $allocationCurrency = $alloc->openingTradeItem?->currency_code ?? $alloc->salesInvoice?->currency_code ?? $payment->currency_code;
                         @endphp
-                        <tr>
-                            <td class="py-2.5 px-4 font-mono font-bold" dir="ltr">
-                                @if ($alloc->openingTradeItem)
-                                    <span>{{ __('accounting.opening_balance') }} — {{ $alloc->openingTradeItem->public_id }}</span>
-                                @elseif ($alloc->salesInvoice && auth()->user()?->hasPermissionTo('sales.invoice.view'))
-                                    <a href="{{ route('invoices.show', $alloc->salesInvoice->public_id) }}" class="touch-action text-primary hover:underline">
-                                        {{ $alloc->salesInvoice?->invoice_number }}
-                                    </a>
-                                @else
-                                    <span>{{ $alloc->salesInvoice?->invoice_number }}</span>
-                                @endif
+                        <tr wire:key="pmt-alloc-{{ $alloc->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                            <td class="td-primary py-2.5 px-4 font-mono font-bold">
+                                <div class="truncate">
+                                    @if ($alloc->openingTradeItem)
+                                        <span>{{ __('accounting.opening_balance') }} — {{ $alloc->openingTradeItem->public_id }}</span>
+                                    @elseif ($alloc->salesInvoice && auth()->user()?->hasPermissionTo('sales.invoice.view'))
+                                        <a href="{{ route('invoices.show', $alloc->salesInvoice->public_id) }}" data-row-link class="touch-action text-primary hover:underline">
+                                            {{ $alloc->salesInvoice?->invoice_number }}
+                                        </a>
+                                    @else
+                                        <span>{{ $alloc->salesInvoice?->invoice_number }}</span>
+                                    @endif
+                                </div>
+                                <div class="lg:hidden font-sans font-normal text-xs text-text-secondary mt-0.5" dir="ltr">
+                                    {{ $alloc->salesInvoice?->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}
+                                </div>
                             </td>
-                            <td class="py-2.5 px-4" dir="ltr">{{ $alloc->salesInvoice?->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}</td>
-                            <td class="py-2.5 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}<span class="block text-sm text-text-muted">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
+                            <td class="td-secondary py-2.5 px-4" data-label="{{ __('sales.date') }}" dir="ltr">{{ $alloc->salesInvoice?->issue_date ? $alloc->salesInvoice->issue_date->toDateString() : '—' }}</td>
+                            <td class="td-end py-2.5 px-4 font-bold">
+                                <div class="inline-flex items-center gap-2">
+                                    <div class="text-end">
+                                        <bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_amount, $allocationCurrency) }} {{ $allocationCurrency }}</bdi>
+                                        <span class="hidden lg:block text-sm text-text-muted" dir="ltr">{{ __('money.payment_consumed') }}: {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->payment_currency_amount, $payment->currency_code) }} {{ $payment->currency_code }}</span>
+                                    </div>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
-                            @if($canViewFx)<td class="py-2.5 px-4 font-mono" dir="ltr">
+                            @if($canViewFx)<td class="td-secondary py-2.5 px-4 font-mono" data-label="{{ __('sales.realized_fx') }}" dir="ltr">
                                 @php
                                     $fxVal = $alloc->realized_fx_gain_loss_base;
                                     $isPos = \App\Domain\Sales\Formatters\SalesMoneyFormatter::isPositive($fxVal);

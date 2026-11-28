@@ -99,7 +99,7 @@
             <!-- Table of Available Barcodes -->
             <div class="relative overflow-hidden flex-1">
             <div class="overflow-x-auto">
-                <table class="data-table min-w-full divide-y divide-border text-sm">
+                <table class="data-table data-table--responsive min-w-full divide-y divide-border text-sm">
                     <thead>
                         <tr class="bg-surface-soft text-text-secondary text-xs uppercase font-medium">
                             <th scope="col" class="py-3 px-3 text-start">@lang('labels.sku')</th>
@@ -114,20 +114,22 @@
                                 $p = $b->product;
                                 $u = $b->unit;
                                 $isSelected = isset($quantities[$b->id]);
+                                $unitLabel = $u ? ($locale === 'ar' ? ($u->name_ar ?: $u->name_en) : ($u->name_en ?: $u->name_ar)) : ($locale === 'ar' ? 'الأساسية' : 'Base');
                             @endphp
-                            <tr class="hover:bg-surface-soft transition">
-                                <td class="py-3 px-3 font-medium text-text-primary">
+                            <tr wire:key="lbl-avail-{{ $b->id }}" class="hover:bg-surface-soft transition">
+                                <td class="td-primary py-3 px-3 font-medium text-text-primary">
                                     <div><bdi dir="ltr">{{ $p?->sku }}</bdi></div>
                                     <div class="text-xs text-text-secondary">{{ $locale === 'ar' ? ($p?->name_ar ?: $p?->name_en) : ($p?->name_en ?: $p?->name_ar) }}</div>
+                                    <div class="lg:hidden text-xs text-text-muted mt-0.5"><bdi dir="ltr" class="font-mono">{{ $b->barcode }}</bdi> &middot; {{ $unitLabel }}</div>
                                 </td>
-                                <td class="py-3 px-3">
+                                <td class="td-secondary py-3 px-3" data-label="@lang('labels.barcode')">
                                     <div class="font-mono text-xs text-text-primary" dir="ltr">{{ $b->barcode }}</div>
                                     <div class="text-xs text-text-muted uppercase">{{ $b->type ?: 'standard' }}</div>
                                 </td>
-                                <td class="py-3 px-3 text-text-secondary">
-                                    {{ $u ? ($locale === 'ar' ? ($u->name_ar ?: $u->name_en) : ($u->name_en ?: $u->name_ar)) : ($locale === 'ar' ? 'الأساسية' : 'Base') }}
+                                <td class="td-secondary py-3 px-3 text-text-secondary" data-label="@lang('labels.unit')">
+                                    {{ $unitLabel }}
                                 </td>
-                                <td class="table-actions py-3 px-3 text-end">
+                                <td class="td-end table-actions table-actions--inline py-3 px-3 text-end">
                                     @if($isSelected)
                                         <button
                                             type="button"

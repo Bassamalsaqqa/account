@@ -47,10 +47,10 @@
             </select>
     </x-refinement-filters>
 
-    <!-- Quotations Table / Cards -->
+    <!-- Quotations Table -->
     <div class="bg-surface rounded-card border border-border shadow-xs overflow-hidden">
-        <div class="hidden lg:block overflow-x-auto">
-            <table class="data-table w-full text-start text-xs border-collapse">
+        <div class="overflow-x-auto">
+            <table class="data-table data-table--responsive w-full text-start text-xs border-collapse">
                 <thead>
                     <tr class="border-b border-border bg-surface-soft text-text-muted font-bold text-xs uppercase tracking-wider">
                         <th class="py-3 px-4 text-start">{{ __('sales.quote_number') }}</th>
@@ -64,27 +64,38 @@
                 </thead>
                 <tbody class="divide-y divide-border">
                     @forelse ($quotations as $quote)
-                        <tr class="hover:bg-surface-soft/60 transition-colors">
-                            <td class="py-3 px-4 font-mono font-bold" dir="ltr">
-                                <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action text-primary hover:underline">
-                                    {{ $quote->quotation_number }}
-                                </a>
+                        <tr wire:key="quote-row-{{ $quote->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'" class="hover:bg-surface-soft/60 transition-colors">
+                            <td class="td-primary py-3 px-4 font-mono font-bold">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <a href="{{ route('quotations.show', $quote->public_id) }}" data-row-link class="touch-action text-primary hover:underline truncate" dir="ltr">
+                                        {{ $quote->quotation_number }}
+                                    </a>
+                                    <span class="lg:hidden px-2 py-0.5 rounded-full text-xs font-sans font-bold shrink-0 @if ($quote->status === 'accepted' || $quote->status === 'converted') bg-success-bg text-success @elseif ($quote->status === 'sent') bg-primary-50 text-primary @elseif ($quote->status === 'rejected') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
+                                        {{ __('sales.status_' . $quote->status) }}
+                                    </span>
+                                </div>
+                                <div class="lg:hidden font-sans font-normal text-xs text-text-secondary truncate mt-0.5">
+                                    {{ $quote->customer->displayName() }} &middot; <bdi dir="ltr">{{ $quote->quotation_date->toDateString() }}</bdi>
+                                </div>
                             </td>
-                            <td class="py-3 px-4">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('sales.customer') }}">
                                 <a href="{{ route('customers.show', $quote->customer->public_id) }}" class="touch-action font-bold text-text-primary hover:text-primary">
                                     {{ $quote->customer->displayName() }}
                                 </a>
                             </td>
-                            <td class="py-3 px-4" dir="ltr">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('sales.date') }}" dir="ltr">
                                 {{ $quote->quotation_date->toDateString() }}
                             </td>
-                            <td class="py-3 px-4" dir="ltr">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('sales.valid_until') }}" dir="ltr">
                                 {{ $quote->expiry_date ? $quote->expiry_date->toDateString() : '—' }}
                             </td>
-                            <td class="py-3 px-4 font-bold" dir="ltr">
-                                {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total, $quote->currency_code) }} {{ $quote->currency_code }}
+                            <td class="td-end py-3 px-4 font-bold">
+                                <div class="inline-flex items-center gap-2">
+                                    <bdi dir="ltr" class="font-mono tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total, $quote->currency_code) }} {{ $quote->currency_code }}</bdi>
+                                    <x-row-details-toggle />
+                                </div>
                             </td>
-                            <td class="py-3 px-4">
+                            <td class="td-secondary py-3 px-4" data-label="{{ __('sales.status') }}">
                                 <span class="px-2 py-0.5 rounded-full text-xs font-bold @if ($quote->status === 'accepted' || $quote->status === 'converted') bg-success-bg text-success @elseif ($quote->status === 'sent') bg-primary-50 text-primary @elseif ($quote->status === 'rejected') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
                                     {{ __('sales.status_' . $quote->status) }}
                                 </span>
@@ -103,44 +114,6 @@
                     @endforelse
                 </tbody>
             </table>
-        </div>
-
-        <!-- Mobile View -->
-        <div class="lg:hidden divide-y divide-border">
-            @forelse ($quotations as $quote)
-                <div class="p-4 space-y-3">
-                    <div class="flex items-start justify-between gap-2">
-                        <div>
-                            <a href="{{ route('quotations.show', $quote->public_id) }}" class="touch-action font-mono font-bold text-primary" dir="ltr">
-                                {{ $quote->quotation_number }}
-                            </a>
-                            <div class="font-bold text-text-primary text-xs mt-0.5">
-                                {{ $quote->customer->displayName() }}
-                            </div>
-                        </div>
-                        <span class="px-2 py-0.5 rounded-full text-xs font-bold @if ($quote->status === 'accepted' || $quote->status === 'converted') bg-success-bg text-success @elseif ($quote->status === 'sent') bg-primary-50 text-primary @elseif ($quote->status === 'rejected') bg-danger-bg text-danger @else bg-slate-100 text-slate-600 @endif">
-                            {{ __('sales.status_' . $quote->status) }}
-                        </span>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                            <span class="text-text-muted block text-xs">{{ __('sales.date') }}</span>
-                            <span dir="ltr">{{ $quote->quotation_date->toDateString() }}</span>
-                        </div>
-                        <div>
-                            <span class="text-text-muted block text-xs">{{ __('sales.grand_total') }}</span>
-                            <span class="font-bold text-text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($quote->grand_total, $quote->currency_code) }} {{ $quote->currency_code }}</span>
-                        </div>
-                    </div>
-
-                    <div class="pt-3 border-t border-border">@include('livewire.partials.quotation-row-actions')</div>
-                </div>
-            @empty
-                <div class="py-8 text-center text-text-muted">
-                    <p>{{ __('sales.no_quotations_found') }}</p>
-                </div>
-            @endforelse
         </div>
 
         @if ($quotations->count() > 0 || $quotations->currentPage() > 1)

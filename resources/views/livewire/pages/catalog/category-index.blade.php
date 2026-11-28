@@ -97,64 +97,55 @@
             </table>
         </div>
 <div class="lg:hidden divide-y divide-border">
-                    @forelse ($categories as $cat)
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.category_name') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $cat->name_ar }}</span>
-                                @if ($cat->name_en)
-                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $cat->name_en }}</bdi>
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.parent_category') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->parent?->name_ar ?? '—' }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.sort_order') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ $cat->sort_order }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.products_count') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($cat->products->count()) }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.status') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if ($cat->active)
-                                    <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
-                                @else
-                                    <x-badge>{{ __('inventory.inactive') }}</x-badge>
-                                @endif</dd>
-                            </div>
-                            @if ($canManage)
-                                <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><div class="flex items-center justify-center gap-2">
-                                        <button id="category-edit-mobile-{{ $cat->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $cat->id }})"
-                                                class="touch-action text-primary hover:underline font-bold text-xs">
-                                            {{ __('inventory.edit') }}
-                                        </button>
-                                        <button wire:loading.attr="disabled" type="button" wire:click="deleteCategory({{ $cat->id }})"
-                                                onclick="confirm('{{ __('inventory.confirm_delete_category') }}') || event.stopImmediatePropagation()"
-                                                class="touch-action text-danger hover:underline text-xs">
-                                            {{ __('inventory.delete') }}
-                                        </button>
-                                    </div></dd>
-                            </div>
+            @forelse ($categories as $cat)
+                <x-compact-mobile-row wire:key="category-mobile-{{ $cat->id }}" :has-details="true">
+                    <x-slot:primary>
+                        <span class="font-bold text-sm text-text-primary truncate">{{ $cat->name_ar }}</span>
+                        <span class="shrink-0">
+                            @if ($cat->active)
+                                <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
+                            @else
+                                <x-badge>{{ __('inventory.inactive') }}</x-badge>
                             @endif
-                        </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('inventory.no_categories_defined') }}
+                        </span>
+                    </x-slot:primary>
+
+                    <x-slot:subtitle>
+                        @if ($cat->name_en)<bdi dir="ltr">{{ $cat->name_en }}</bdi> &middot; @endif
+                        @if ($cat->parent){{ $cat->parent->name_ar }} &middot; @endif
+                        {{ __('inventory.products_count') }}: <bdi dir="ltr" class="font-mono">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($cat->products->count()) }}</bdi>
+                    </x-slot:subtitle>
+
+                    <x-slot:details>
+                        <dl class="grid grid-cols-2 gap-2">
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.parent_category') }}</dt>
+                                <dd class="mt-0.5 text-text-primary">{{ $cat->parent?->name_ar ?? '—' }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-text-secondary">{{ __('inventory.sort_order') }}</dt>
+                                <dd class="mt-0.5 font-mono text-text-primary">{{ $cat->sort_order }}</dd>
                             </div>
                         </dl>
-                        </article>
-                    @endforelse
-                </div>
+                        @if ($canManage)
+                            <div class="flex flex-wrap items-center justify-end gap-2">
+                                <button id="category-edit-mobile-{{ $cat->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $cat->id }})"
+                                        class="touch-action text-primary hover:underline font-bold text-xs">
+                                    {{ __('inventory.edit') }}
+                                </button>
+                                <button wire:loading.attr="disabled" type="button" wire:click="deleteCategory({{ $cat->id }})"
+                                        onclick="confirm('{{ __('inventory.confirm_delete_category') }}') || event.stopImmediatePropagation()"
+                                        class="touch-action text-danger hover:underline text-xs">
+                                    {{ __('inventory.delete') }}
+                                </button>
+                            </div>
+                        @endif
+                    </x-slot:details>
+                </x-compact-mobile-row>
+            @empty
+                <p class="p-6 text-center text-sm text-text-secondary">{{ __('inventory.no_categories_defined') }}</p>
+            @endforelse
+        </div>
 
     <div class="p-4"><x-table-pagination :paginator="$categories" /></div>
     </x-card>

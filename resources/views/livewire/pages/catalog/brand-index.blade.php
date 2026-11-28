@@ -103,58 +103,41 @@
             </table>
         </div>
 <div class="lg:hidden divide-y divide-border">
-                    @forelse ($brands as $brand)
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.brand_name') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><span class="font-bold text-text-primary block">{{ $brand->name_ar }}</span>
-                                @if ($brand->name_en)
-                                    <bdi dir="ltr" class="text-xs text-text-muted block">{{ $brand->name_en }}</bdi>
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.products_count') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($brand->products_count) }}</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.status') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary">@if ($brand->active)
-                                    <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
-                                @else
-                                    <x-badge>{{ __('inventory.inactive') }}</x-badge>
-                                @endif</dd>
-                            </div>
-                            <div class="min-w-0 space-y-1">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('inventory.toggle_active') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><button wire:loading.attr="disabled" type="button" wire:click="toggleActive({{ $brand->id }})"
-                                        class="touch-action gap-1 border text-xs font-semibold transition-colors {{ $brand->active ? 'border-border text-text-secondary hover:bg-surface-soft hover:text-danger' : 'border-success/40 bg-success-bg text-success hover:bg-success/20' }}">
-                                    @if ($brand->active)
-                                        <span>{{ __('inventory.deactivate') }}</span>
-                                    @else
-                                        <span>{{ __('inventory.activate') }}</span>
-                                    @endif
-                                </button></dd>
-                            </div>
-                            <div class="min-w-0 space-y-1 col-span-2">
-                                <dt class="text-xs font-medium text-text-secondary">{{ __('refinement_lists.actions') }}</dt>
-                                <dd class="break-words text-sm tabular-nums text-text-primary"><button id="brand-edit-mobile-{{ $brand->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $brand->id }})"
-                                        class="touch-action text-primary hover:underline font-bold text-xs">
-                                    {{ __('inventory.edit') }}
-                                </button></dd>
-                            </div>
-                        </dl>
-                        </article>
-                    @empty
-                        <article class="p-4">
-                            <dl class="grid grid-cols-2 gap-x-3 gap-y-4">
-                            <div class="col-span-2 py-4 text-center text-sm text-text-secondary">
-                                {{ __('inventory.no_brands_defined') }}
-                            </div>
-                        </dl>
-                        </article>
-                    @endforelse
-                </div>
+            @forelse ($brands as $brand)
+                <x-compact-mobile-row wire:key="brand-mobile-{{ $brand->id }}">
+                    <x-slot:primary>
+                        <span class="font-bold text-sm text-text-primary truncate">{{ $brand->name_ar }}</span>
+                        <span class="shrink-0">
+                            @if ($brand->active)
+                                <x-badge variant="success">{{ __('inventory.active') }}</x-badge>
+                            @else
+                                <x-badge>{{ __('inventory.inactive') }}</x-badge>
+                            @endif
+                        </span>
+                    </x-slot:primary>
+
+                    <x-slot:subtitle>
+                        @if ($brand->name_en)<bdi dir="ltr">{{ $brand->name_en }}</bdi> &middot; @endif
+                        {{ __('inventory.products_count') }}: <bdi dir="ltr" class="font-mono">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayQuantity($brand->products_count) }}</bdi>
+                    </x-slot:subtitle>
+
+                    <x-slot:details>
+                        <div class="flex flex-wrap items-center justify-end gap-2">
+                            <button wire:loading.attr="disabled" type="button" wire:click="toggleActive({{ $brand->id }})"
+                                    class="touch-action gap-1 border text-xs font-semibold transition-colors {{ $brand->active ? 'border-border text-text-secondary hover:bg-surface-soft hover:text-danger' : 'border-success/40 bg-success-bg text-success hover:bg-success/20' }}">
+                                {{ $brand->active ? __('inventory.deactivate') : __('inventory.activate') }}
+                            </button>
+                            <button id="brand-edit-mobile-{{ $brand->id }}" wire:loading.attr="disabled" type="button" wire:click="openEditModal({{ $brand->id }})"
+                                    class="touch-action text-primary hover:underline font-bold text-xs">
+                                {{ __('inventory.edit') }}
+                            </button>
+                        </div>
+                    </x-slot:details>
+                </x-compact-mobile-row>
+            @empty
+                <p class="p-6 text-center text-sm text-text-secondary">{{ __('inventory.no_brands_defined') }}</p>
+            @endforelse
+        </div>
 
 
         @if ($brands->count() > 0 || $brands->currentPage() > 1)

@@ -115,9 +115,8 @@
              class="space-y-4">
         <!-- Dense Report Workspace Table -->
         <div class="bg-surface border border-border rounded-xl shadow-xs overflow-hidden">
-            <!-- Desktop Table View -->
-            <div class="hidden md:block overflow-x-auto">
-                <table class="data-table w-full text-xs text-start border-collapse">
+            <div class="overflow-x-auto">
+                <table class="data-table data-table--responsive w-full text-xs text-start border-collapse">
                     <thead class="bg-surface-soft border-b border-border text-xs font-extrabold uppercase tracking-wider text-text-muted select-none">
                         <tr>
                             <th scope="col" class="py-3 px-4 text-start">{{ __('reports.title') }}</th>
@@ -133,29 +132,36 @@
                                 $groupBadgeColor = $groupColors[$group] ?? 'bg-surface-soft text-text-secondary border-border';
                             @endphp
                             @foreach ($reports as $report)
-                                <tr x-show="matches({ group: '{{ $group }}', title: @js($report['title']), groupTitle: @js(__('reports.groups.'.$group)), key: '{{ $report['key'] }}' })"
+                                <tr data-row-surface x-show="matches({ group: '{{ $group }}', title: @js($report['title']), groupTitle: @js(__('reports.groups.'.$group)), key: '{{ $report['key'] }}' })"
                                     class="hover:bg-surface-soft/60 transition-colors group">
-                                    <td class="py-3 px-4">
-                                        <a href="{{ route('reports.show', ['reportKey' => $report['key']]) }}"
-                                           class="touch-action font-bold text-xs sm:text-sm text-text-primary group-hover:text-primary transition flex items-center gap-2.5">
+                                    <td class="td-primary py-3 px-4">
+                                        <a href="{{ route('reports.show', ['reportKey' => $report['key']]) }}" data-row-link
+                                           class="touch-action font-bold text-sm text-text-primary group-hover:text-primary transition flex items-center gap-2.5">
                                             <div class="w-7 h-7 rounded-lg bg-surface-soft group-hover:bg-primary-50 group-hover:text-primary text-text-muted grid place-items-center transition shrink-0">
                                                 <x-icon :name="$groupIcon" class="w-3.5 h-3.5" />
                                             </div>
-                                            <span>{{ $report['title'] }}</span>
+                                            <span class="truncate">{{ $report['title'] }}</span>
                                         </a>
+                                        <div class="lg:hidden flex items-center gap-2 mt-1 ps-9">
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold border {{ $groupBadgeColor }}">
+                                                {{ __('reports.groups.'.$group) }}
+                                            </span>
+                                            <bdi dir="ltr" class="font-mono text-xs text-text-muted truncate">{{ $report['key'] }}</bdi>
+                                        </div>
                                     </td>
-                                    <td class="py-3 px-4">
+                                    <td class="td-secondary py-3 px-4" data-label="{{ __('reports.category_id') }}">
                                         <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border {{ $groupBadgeColor }}">
                                             {{ __('reports.groups.'.$group) }}
                                         </span>
                                     </td>
-                                    <td class="py-3 px-4 font-mono text-xs text-text-muted" dir="ltr">
+                                    <td class="td-secondary py-3 px-4 font-mono text-xs text-text-muted" data-label="{{ __('reports.options.code_asc') ?? 'Key' }}" dir="ltr">
                                         {{ $report['key'] }}
                                     </td>
-                                    <td class="py-3 px-4 text-end">
+                                    <td class="td-end py-3 px-4 text-end">
                                         <a href="{{ route('reports.show', ['reportKey' => $report['key']]) }}"
                                            title="{{ __('reports.show') ?? 'View' }}"
-                                           class="touch-action inline-flex items-center justify-center w-8 h-8 rounded-control border border-border/80 bg-surface hover:bg-surface-soft text-text-secondary hover:text-primary transition shadow-2xs">
+                                           aria-label="{{ $report['title'] }}"
+                                           class="touch-action inline-flex items-center justify-center min-h-11 min-w-11 lg:min-h-8 lg:min-w-8 lg:w-8 lg:h-8 rounded-control border border-border/80 bg-surface hover:bg-surface-soft text-text-secondary hover:text-primary transition shadow-2xs">
                                             <x-icon name="chevron" class="w-3.5 h-3.5 rtl:rotate-180" />
                                         </a>
                                     </td>
@@ -165,38 +171,6 @@
                     </tbody>
                 </table>
             </div>
-
-            <!-- Mobile Compact List View -->
-            <ul class="md:hidden divide-y divide-border">
-                @foreach ($groups as $group => $reports)
-                    @php
-                        $groupIcon = $groupIcons[$group] ?? 'chart';
-                        $groupBadgeColor = $groupColors[$group] ?? 'bg-surface-soft text-text-secondary border-border';
-                    @endphp
-                    @foreach ($reports as $report)
-                        <li x-show="matches({ group: '{{ $group }}', title: @js($report['title']), groupTitle: @js(__('reports.groups.'.$group)), key: '{{ $report['key'] }}' })">
-                            <a href="{{ route('reports.show', ['reportKey' => $report['key']]) }}"
-                               class="touch-action p-3.5 flex items-center justify-between gap-3 hover:bg-surface-soft/60 transition">
-                                <div class="flex items-center gap-3 min-w-0">
-                                    <div class="w-8 h-8 rounded-lg bg-surface-soft text-text-muted grid place-items-center shrink-0">
-                                        <x-icon :name="$groupIcon" class="w-4 h-4 text-primary" />
-                                    </div>
-                                    <div class="min-w-0">
-                                        <div class="font-bold text-xs sm:text-sm text-text-primary truncate">{{ $report['title'] }}</div>
-                                        <div class="flex items-center gap-2 mt-0.5">
-                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold border {{ $groupBadgeColor }}">
-                                                {{ __('reports.groups.'.$group) }}
-                                            </span>
-                                            <bdi dir="ltr" class="font-mono text-xs text-text-muted">{{ $report['key'] }}</bdi>
-                                        </div>
-                                    </div>
-                                </div>
-                                <x-icon name="chevron" class="w-4 h-4 text-text-muted shrink-0 rtl:rotate-180" />
-                            </a>
-                        </li>
-                    @endforeach
-                @endforeach
-            </ul>
         </div>
 
         <!-- No Match Found Notice -->

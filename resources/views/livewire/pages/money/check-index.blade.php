@@ -47,17 +47,30 @@
 @error('dateFrom')<p class="text-sm text-danger" role="alert">{{ $message }}</p>@enderror
 @error('dateTo')<p class="text-sm text-danger" role="alert">{{ $message }}</p>@enderror
 
-<div class="rounded-card border border-border bg-surface p-4 sm:p-6">@forelse($checks as $check)<a href="{{ route('money.checks.show', $check->public_id) }}" class="grid w-full gap-3 rounded-control border border-border p-3 my-3 focus-visible:outline-2 focus-visible:outline-primary active:bg-primary-50 sm:grid-cols-4">
-<div>
-<bdi class="font-semibold">{{ $check->check_number }}</bdi>
-<p class="text-xs">{{ __('money.'.$check->direction) }}</p>
+<div class="rounded-card border border-border bg-surface overflow-hidden">
+    <div class="divide-y divide-border">
+        @forelse($checks as $check)
+            <a href="{{ route('money.checks.show', $check->public_id) }}" class="flex items-center justify-between gap-3 px-4 py-2.5 min-h-11 hover:bg-surface-soft focus-visible:outline-2 focus-visible:outline-primary active:bg-primary-50 transition-colors">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <bdi dir="ltr" class="font-mono font-bold text-sm text-primary truncate">{{ $check->check_number }}</bdi>
+                        <x-badge variant="{{ in_array($check->status, ['cleared', 'deposited'], true) ? 'success' : ($check->status === 'returned' || $check->status === 'cancelled' ? 'danger' : 'neutral') }}">{{ __('money.'.$check->status) }}</x-badge>
+                    </div>
+                    <p class="text-xs text-text-secondary truncate mt-0.5">
+                        {{ $check->partyDisplayName() }} &middot; {{ __('money.'.$check->direction) }} &middot; {{ __('money.due_date') }}: <bdi dir="ltr" class="font-mono tabular-nums">{{ $check->due_date->toDateString() }}</bdi>
+                    </p>
+                </div>
+                <div class="text-end shrink-0">
+                    <bdi dir="ltr" class="block font-mono tabular-nums font-bold text-sm text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($check->amount) }} {{ $check->currency_code }}</bdi>
+                    <span class="hidden sm:inline text-xs text-primary font-semibold">{{ __('refinement_lists.open') }}</span>
+                </div>
+            </a>
+        @empty
+            <p class="px-4 py-8 text-center text-sm text-text-muted">{{ __('money.empty') }}</p>
+        @endforelse
+    </div>
+    @if ($checks->count() > 0 || $checks->currentPage() > 1)
+        <div class="p-4 border-t border-border"><x-table-pagination :paginator="$checks" /></div>
+    @endif
 </div>
-<p class="text-sm">{{ $check->partyDisplayName() }}</p>
-<div>
-<bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($check->amount) }} {{ $check->currency_code }}</bdi>
-<p class="text-xs">{{ __('money.due_date') }}: {{ $check->due_date->toDateString() }}</p>
-</div>
-<div class="space-y-2"><span class="block text-sm">{{ __('money.'.$check->status) }}</span><span class="touch-action bg-surface-soft text-sm font-semibold">{{ __('refinement_lists.open') }}</span></div>
-</a>@empty<p>{{ __('money.empty') }}</p>
-@endforelse<x-table-pagination :paginator="$checks" /></div>
 </div>

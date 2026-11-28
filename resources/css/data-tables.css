@@ -174,10 +174,18 @@ tbody tr:has(a[href]):hover,
         row-gap: 0.25rem;
         padding: 0.625rem 0.75rem;
     }
-    .data-table.data-table--responsive tbody tr:has(> td[colspan]) {
+    .data-table.data-table--responsive tbody tr:has(> td[colspan]:only-child) {
         display: block;
         padding: 1.5rem 0.75rem;
         text-align: center;
+    }
+    .data-table.data-table--responsive tbody tr:has(> td[colspan]:not(:only-child)) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem 0.75rem;
+        padding: 0.625rem 0.75rem;
     }
     .data-table.data-table--responsive tbody :is(td, th) {
         white-space: normal;
@@ -187,10 +195,12 @@ tbody tr:has(a[href]):hover,
     }
     .data-table.data-table--responsive tbody td.td-primary {
         grid-column: 1;
+        grid-row: 1;
         min-width: 0;
     }
     .data-table.data-table--responsive tbody td.td-end {
         grid-column: 2;
+        grid-row: 1;
         justify-self: end;
         text-align: end;
     }

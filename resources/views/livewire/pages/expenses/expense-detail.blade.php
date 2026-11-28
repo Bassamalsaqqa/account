@@ -140,7 +140,7 @@
 
             @if($detail['allocations']->isNotEmpty())
                 <div class="overflow-x-auto">
-                    <table class="data-table w-full text-sm text-start">
+                    <table class="data-table data-table--responsive w-full text-sm text-start">
                         <thead class="bg-surface-soft border-b border-border text-sm text-text-muted">
                             <tr>
                                 <th class="px-3 py-2 text-start">{{ __('expenses.purchase') }}</th>
@@ -151,19 +151,28 @@
                         </thead>
                         <tbody class="divide-y divide-border">
                             @foreach($detail['allocations'] as $alloc)
-                                <tr>
-                                    <td class="px-3 py-2 font-medium text-primary">
-                                        @if($canViewPurchase)<a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" class="touch-action hover:underline">@endif
-                                            {{ $alloc->purchase->purchase_number }}
-                                        @if($canViewPurchase)</a>@endif
+                                @php($allocProdName = app()->getLocale()==='en' ? ($alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->item_description) : ($alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->item_description))
+                                <tr wire:key="exp-alloc-{{ $alloc->id }}" data-row-surface x-data="{ expanded: false }" :data-expanded="expanded ? 'true' : 'false'">
+                                    <td class="td-primary px-3 py-2 font-medium text-primary">
+                                        <div class="truncate">
+                                            @if($canViewPurchase)<a href="{{ route('purchases.show', $alloc->purchase->public_id) }}" data-row-link class="touch-action hover:underline">@endif
+                                                {{ $alloc->purchase->purchase_number }}
+                                            @if($canViewPurchase)</a>@endif
+                                        </div>
+                                        <div class="lg:hidden font-normal text-xs text-text-secondary truncate mt-0.5">
+                                            {{ $allocProdName }}
+                                        </div>
                                     </td>
-                                    <td class="px-3 py-2 text-text-secondary">
-                                        {{ app()->getLocale()==='en' ? ($alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->item_description) : ($alloc->purchaseLine->product_name_ar ?: $alloc->purchaseLine->product_name_en ?: $alloc->purchaseLine->item_description) }}
+                                    <td class="td-secondary px-3 py-2 text-text-secondary" data-label="{{ __('purchasing.product') }}">
+                                        {{ $allocProdName }}
                                     </td>
-                                    <td class="px-3 py-2 font-semibold" dir="ltr">
-                                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_base) }} {{ $baseCurrencyCode }}
+                                    <td class="td-end px-3 py-2 font-semibold">
+                                        <div class="inline-flex items-center gap-2">
+                                            <bdi dir="ltr" class="tabular-nums">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($alloc->allocated_base) }} {{ $baseCurrencyCode }}</bdi>
+                                            <x-row-details-toggle />
+                                        </div>
                                     </td>
-                                    <td class="px-3 py-2">
+                                    <td class="td-secondary px-3 py-2" data-label="{{ __('expenses.status') }}">
                                         <span class="text-sm font-semibold px-2 py-0.5 rounded {{ $alloc->status === 'locked' ? 'bg-success-bg text-success' : 'bg-surface-soft text-text-secondary' }}">
                                             {{ __('expenses.allocation_'.$alloc->status) }}
                                         </span>
