@@ -108,6 +108,12 @@ class StockAdjustmentForm extends Component
         $this->lot_id = null;
     }
 
+    public function updatedMovementDate(): void
+    {
+        $this->lot_id = null;
+        $this->resetErrorBag('lot_id');
+    }
+
     public function updatedType(): void
     {
         $this->lot_id = null;

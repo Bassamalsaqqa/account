@@ -276,8 +276,11 @@ final class ExpiryLotUsabilityTest extends PositionTestCase
                             && in_array($unknownMovement->lot_id, $ids, true);
                     });
 
-                $form->assertDontSee('<option value="'.$expiredMovement->lot_id.'">', false)
-                    ->assertDontSee('LOT-EXP-1');
+                $form->assertDontSee('LOT-EXP-1');
+                $document = new \DOMDocument;
+                @$document->loadHTML($form->html());
+                $options = (new \DOMXPath($document))->query('//select[@id="inventory-lot"]/option[@value="'.$expiredMovement->lot_id.'"]');
+                $this->assertSame(0, $options->length);
 
                 $this->assertZeroEconomicWrites(function () use ($form, $expiredMovement): void {
                     $form->set('lot_id', $expiredMovement->lot_id)
@@ -333,6 +336,15 @@ final class ExpiryLotUsabilityTest extends PositionTestCase
             ->set('product_id', $this->stockProduct->id)
             ->set('type', StockMovement::TYPE_DAMAGE_OR_LOSS)
             ->set('movement_date', '2026-10-13')
+            ->assertViewHas('availableLots', fn ($lots): bool => in_array($expiredMovement->lot_id, $lots->pluck('lot_id')->all(), true));
+
+        $historicalForm->assertSee('wire:model.live="movement_date"', false)
+            ->set('lot_id', $expiredMovement->lot_id)
+            ->set('movement_date', '2026-10-20')
+            ->assertSet('lot_id', null)
+            ->assertViewHas('availableLots', fn ($lots): bool => ! in_array($expiredMovement->lot_id, $lots->pluck('lot_id')->all(), true))
+            ->set('movement_date', '2026-10-13')
+            ->assertSet('lot_id', null)
             ->assertViewHas('availableLots', fn ($lots): bool => in_array($expiredMovement->lot_id, $lots->pluck('lot_id')->all(), true));
 
         $historicalForm->set('lot_id', $expiredMovement->lot_id)

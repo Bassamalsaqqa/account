@@ -102,7 +102,7 @@
                 <!-- Movement Date -->
                 <div>
                     <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.movement_date') }} *</label>
-                    <input type="date" wire:model="movement_date" dir="ltr" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-mono"  :disabled="documentBusy || saving"/>
+                    <input type="date" wire:model.live="movement_date" dir="ltr" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-mono"  :disabled="documentBusy || saving"/>
                     @error('movement_date') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
 
