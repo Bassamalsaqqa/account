@@ -103,7 +103,7 @@
         </div>
         <div class="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-border">
             @if ($canView)
-                <a href="{{ $vendorId ? route('vendors.show', $vendorPublicId) : route('vendors.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center px-4 rounded-control border border-border-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">{{ __('purchasing.cancel') }}</a>
+                <a href="{{ route('vendors.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center px-4 rounded-control border border-border-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">{{ __('purchasing.cancel') }}</a>
             @endif
             <button type="submit" wire:loading.attr="disabled" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center px-5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50 cursor-pointer">{{ __('purchasing.save_vendor') }}</button>
         </div>

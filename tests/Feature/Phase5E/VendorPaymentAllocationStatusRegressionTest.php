@@ -32,13 +32,13 @@ final class VendorPaymentAllocationStatusRegressionTest extends Phase5ETestCase
             libxml_use_internal_errors($errors);
         }
         $xpath = new DOMXPath($document);
-        $rows = $xpath->query('//table/tbody/tr[td[1]/a]');
+        $rows = $xpath->query('//table/tbody/tr[td[1]//a[@data-row-link]]');
         $this->assertNotFalse($rows);
         $statuses = [];
         foreach ($rows as $row) {
             $cells = $xpath->query('./td', $row);
             $this->assertSame(5, $cells->length);
-            $number = trim($cells->item(0)->textContent);
+            $number = trim($xpath->query('./td[1]//a[@data-row-link]', $row)->item(0)->textContent);
             $statuses[$number] = trim(preg_replace('/\s+/u', ' ', $cells->item(4)->textContent));
         }
 

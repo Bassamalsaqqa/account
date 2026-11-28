@@ -766,7 +766,7 @@ final class Correction01RegressionsTest extends TradeTestCase
         try {
             $document = new \DOMDocument;
             $this->assertTrue($document->loadHTML($html, LIBXML_NONET));
-            $matches = (new \DOMXPath($document))->query('//td[normalize-space(.)="'.$expected.'"]');
+            $matches = (new \DOMXPath($document))->query('//td//bdi[normalize-space(.)="'.$expected.'"]');
             $this->assertNotFalse($matches);
             $this->assertGreaterThan(0, $matches->length);
         } finally {
