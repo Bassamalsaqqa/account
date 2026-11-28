@@ -156,6 +156,11 @@
                     $endColumn = $decimalColumns !== [] ? $decimalColumns[count($decimalColumns) - 1] : ($columns[count($columns) - 1] ?? null);
                     $rowCurrencyColumn = collect($columns)->firstWhere('key', 'currency_code');
                     $subtitleColumn = ($firstColumn && count($columns) > 1 && $columns[1]['key'] !== ($endColumn['key'] ?? null)) ? $columns[1] : null;
+                    // Keep the principal amount next to the row identity at every viewport width.
+                    if ($firstColumn && $endColumn && $firstColumn['key'] !== $endColumn['key']) {
+                        $otherColumns = array_values(array_filter($columns, fn ($column) => ! in_array($column['key'], [$firstColumn['key'], $endColumn['key']], true)));
+                        $columns = [$firstColumn, $endColumn, ...$otherColumns];
+                    }
                 @endphp
                 <div class="overflow-x-auto">
                     <table class="data-table data-table--responsive w-full text-sm text-start border-collapse">

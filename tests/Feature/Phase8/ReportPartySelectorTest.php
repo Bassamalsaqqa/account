@@ -11,7 +11,9 @@ use App\Domain\Sales\Queries\CustomerStatementQuery;
 use App\Livewire\Pages\Reporting\ReportView;
 use App\Livewire\Pages\Sales\CustomerStatementView;
 use App\Models\Customer;
+use App\Models\StockMovement;
 use App\Models\User;
+use App\Models\Vendor;
 use App\Support\Tenancy\CompanyContext;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +21,34 @@ use Livewire\Livewire;
 
 final class ReportPartySelectorTest extends Phase8TestCase
 {
+    public function test_report_party_search_folds_arabic_and_matches_business_names(): void
+    {
+        foreach ([Customer::class => ['customers.statement', 'customer_id'], Vendor::class => ['vendors.statement', 'vendor_id']] as $model => [$report, $field]) {
+            $party = $model::create(['company_id' => $this->company->id, 'name_ar' => 'الأمل', 'name_en' => 'Hope',
+                'business_name_ar' => 'مكتبة أحمد', 'active' => true, 'created_by' => $this->owner->id]);
+            foreach (['ar', 'en'] as $locale) {
+                app()->setLocale($locale);
+                foreach (['الأمل', 'الامل', 'مكتبه احمد'] as $term) {
+                    $options = app(ReportFilterOptions::class)->forReport($this->company, app(ReportRegistry::class)->definition($report), [], [$field => $term]);
+                    $this->assertContains((string) $party->id, array_column($options[$field], 'id'));
+                }
+            }
+        }
+    }
+
+    public function test_all_canonical_stock_movement_types_have_bilingual_labels(): void
+    {
+        foreach (['ar', 'en'] as $locale) {
+            foreach ((new \ReflectionClass(StockMovement::class))->getConstants() as $name => $type) {
+                if (! str_starts_with($name, 'TYPE_')) {
+                    continue;
+                }
+                $key = 'inventory.type_'.$type;
+                $this->assertNotSame($key, __($key, [], $locale));
+            }
+        }
+    }
+
     public function test_custom_statement_dates_show_inline_errors_and_recover(): void
     {
         $component = Livewire::test(ReportView::class, ['reportKey' => 'customers.statement'])

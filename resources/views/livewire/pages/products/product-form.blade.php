@@ -512,8 +512,8 @@
                         <p class="text-xs font-bold text-text-primary">{{ __('inventory.add_product_images') }}</p>
                         <p class="text-xs text-text-muted mt-0.5">{{ __('inventory.accepted_image_formats_hint') }}</p>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <input id="product-new-image" aria-label="{{ __('inventory.add_product_images') }}" @error('new_image') aria-invalid="true" aria-describedby="product-new-image-error" @enderror type="file" wire:model="new_image" accept="image/jpeg,image/png,image/webp" class="text-sm text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-control file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary hover:file:bg-primary-100" />
+                    <div class="flex w-full min-w-0 flex-col items-stretch gap-2 sm:w-auto sm:items-end">
+                        <input id="product-new-image" aria-label="{{ __('inventory.add_product_images') }}" @error('new_image') aria-invalid="true" aria-describedby="product-new-image-error" @enderror type="file" wire:model="new_image" accept="image/jpeg,image/png,image/webp" class="block w-full min-w-0 max-w-full text-base lg:text-sm text-text-secondary file:mr-2 file:py-1.5 file:px-3 file:rounded-control file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary hover:file:bg-primary-100" />
                         <button type="button" wire:click="uploadImage" wire:loading.attr="disabled"
                                 class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors disabled:opacity-50">
                             {{ __('inventory.upload_image') }}

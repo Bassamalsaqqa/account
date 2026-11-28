@@ -6,6 +6,7 @@ namespace App\Application\Reporting\Presentation;
 
 use App\Application\Reporting\Security\ReportingGuard;
 use App\Models\Company;
+use App\Services\Search\ArabicSearchNormalizer;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
@@ -89,15 +90,27 @@ final class ReportFilterOptions
             // Search filtering if term is supplied
             $searchTerm = trim((string) ($search[$field] ?? ''));
             if ($searchTerm !== '') {
-                $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $searchTerm);
+                $escaped = ArabicSearchNormalizer::escapeLike($searchTerm);
                 $like = '%'.$escaped.'%';
 
-                $query->where(function ($q) use ($like, $field, $table) {
+                $query->where(function ($q) use ($like, $field, $table, $nameColumns, $searchTerm) {
                     if ($field === 'employee_id') {
                         $q->where('name', 'LIKE', $like);
                     } else {
                         $q->where('name_ar', 'LIKE', $like)
                             ->orWhere('name_en', 'LIKE', $like);
+                    }
+
+                    $searchNames = $nameColumns;
+                    if (in_array($table, ['customers', 'vendors'], true)) {
+                        $searchNames = [...$searchNames, 'business_name_ar', 'business_name_en'];
+                        $q->orWhere('business_name_ar', 'LIKE', $like)->orWhere('business_name_en', 'LIKE', $like);
+                    }
+                    if (ArabicSearchNormalizer::shouldApplyFolding($searchTerm)) {
+                        $foldedLike = '%'.ArabicSearchNormalizer::escapeLike(ArabicSearchNormalizer::fold($searchTerm)).'%';
+                        foreach ($searchNames as $column) {
+                            $q->orWhereRaw(ArabicSearchNormalizer::sqlFoldColumn($column).' LIKE ?', [$foldedLike]);
+                        }
                     }
 
                     if (in_array($table, ['customers', 'vendors', 'warehouses', 'employees', 'expense_categories'], true)) {
