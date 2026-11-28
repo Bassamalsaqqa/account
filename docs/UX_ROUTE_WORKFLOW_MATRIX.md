@@ -40,4 +40,4 @@ Company roles are seeded idempotently in [`app/Services/Tenancy/CompanyRoleServi
 
 - **Testing & Build Gates:** Focused MariaDB PHPUnit suites, `vendor/bin/pint --test`, `vendor/bin/phpstan analyse --no-progress`, Node JS unit suites (`tests/Frontend/*`, `tests/JavaScript/*`), `npm run build` (no source maps), and `tools/release/qualify` govern acceptance for each slice.
 - **Open Rendered & Device Gates:** Full `320px`/`390px`/`820px`/`1024px`/`1440px` rendered sweeps across `ar` RTL / `en` LTR, native `200%` zoom, full restricted-role rendered matrix, remaining uncompleted route families, and physical Android device acceptance remain unverified until explicitly run (there is **no iOS app gate**).
-- **Explicit Hold Items:** Cold-route latency qualification, demand-mounted AI, client bundle splitting, and automated bug-report retention/pruning remain **ON HOLD**.
+- **Explicit Hold Items:** Cold/warm navigation and selector performance qualification is active. Demand-mounted AI, client bundle splitting, and automated bug-report retention/pruning remain **ON HOLD**.

@@ -138,13 +138,13 @@
             @click.self="overlayMode === 'sheet' ? handleOutsideClick() : null"
             class="fixed z-[70] text-text-primary focus:outline-none"
             :class="overlayMode === 'sheet'
-                ? 'flex flex-col justify-end sm:justify-center sm:items-center bg-black/50 p-0 sm:p-4'
+                ? 'flex items-center justify-center bg-black/30 p-2'
                 : 'bg-surface border border-border rounded-control shadow-lg overflow-hidden'"
         >
             <div
                 class="flex flex-col w-full min-h-0"
                 :class="overlayMode === 'sheet'
-                    ? 'bg-surface w-full max-w-lg max-h-full sm:max-h-[85vh] rounded-t-2xl sm:rounded-card border-t sm:border border-border shadow-xl overflow-hidden flex-1 sm:flex-initial'
+                    ? 'bg-surface w-full max-w-lg max-h-[min(65dvh,22rem)] rounded-card border border-border shadow-xl overflow-hidden'
                     : ''"
             >
                 <div

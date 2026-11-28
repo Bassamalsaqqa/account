@@ -32,4 +32,4 @@ Built for high-frequency bilingual trade, treasury, and inventory workflows. **C
   - Transaction forms enforce `Totals -> Discount/Notes -> Grand Total` before `Immediate Settlement` in DOM and visual grids.
   - Document details show one cohesive summary band (`Total`, `Paid/Applied`, `Remaining`, `Due Date`) plus inline permitted actions and `FinancialShareManager` (clearing displayed URL/QR/selection on date or issuance-setting changes while keeping issued links recoverable in history).
   - Catalogs and Barcode Labels live under **Products** (retaining `/settings?section=catalogs` redirect compatibility); Settings uses categorized navigation groups (`SettingsNavigation`).
-- **Explicit Hold Gates:** Demand-mounted AI, client bundle splitting, and cold-route latency qualification remain **ON HOLD** until a separate measured phase decision.
+- **Explicit Hold Gates:** Cold/warm navigation and selector performance qualification is active. Demand-mounted AI and client bundle splitting remain **ON HOLD**.

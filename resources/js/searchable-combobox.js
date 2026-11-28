@@ -57,7 +57,7 @@ export function computeOverlayGeometry({
     dir = 'ltr',
     minPopupWidth = 280,
     desiredMaxHeight = 256,
-    minPopupHeight = 180,
+    minPopupHeight = 96,
     margin = 8,
     gap = 4,
     isMobileSheetPreferred = false,
@@ -91,10 +91,9 @@ export function computeOverlayGeometry({
     const spaceAbove = Math.max(0, (rectTop - gap) - topBound);
     const bestVerticalSpace = Math.max(spaceBelow, spaceAbove);
 
-    const compactPhone = vpWidth < 640;
-    const compressedKeyboard = vpHeight < 380 && vpWidth < 900;
-
-    if (compactPhone || compressedKeyboard || bestVerticalSpace < minPopupHeight) {
+    // Keep the original field focused, including with a phone keyboard open.
+    // A compact dialog is reserved for genuinely insufficient visible space.
+    if (bestVerticalSpace < minPopupHeight) {
         return {
             mode: 'sheet',
             placement: 'sheet',
@@ -116,7 +115,7 @@ export function computeOverlayGeometry({
     const openBelow = spaceBelow >= Math.min(desiredMaxHeight, 210) || spaceBelow >= spaceAbove;
     const placement = openBelow ? 'bottom' : 'top';
     const availableHeight = openBelow ? spaceBelow : spaceAbove;
-    const maxHeight = Math.max(120, Math.min(desiredMaxHeight, Math.floor(availableHeight)));
+    const maxHeight = Math.min(desiredMaxHeight, Math.floor(availableHeight));
     const top = openBelow
         ? Math.max(topBound, rectBottom + gap)
         : Math.max(topBound, (rectTop - gap) - maxHeight);

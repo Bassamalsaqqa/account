@@ -124,7 +124,7 @@ test('Enter always calls preventDefault and stopPropagation while overlay is ope
     comp.destroy();
 });
 
-test('computeOverlayGeometry adapts popup width, bottom-flip, RTL clamp, and phone sheet mode cleanly', () => {
+test('computeOverlayGeometry anchors phone and keyboard popups and reserves fallback for insufficient space', () => {
     // Desktop narrow cell expands cleanly within 1280px viewport
     const desktopNarrow = computeOverlayGeometry({
         triggerRect: { top: 200, bottom: 232, left: 120, right: 280, width: 160 },
@@ -159,7 +159,7 @@ test('computeOverlayGeometry adapts popup width, bottom-flip, RTL clamp, and pho
     assert.ok(rtlLeftEdge.left >= 8);
     assert.ok(rtlLeftEdge.left + rtlLeftEdge.width <= 812);
 
-    // Mobile 320x568 with sticky header + mobile bottom bar switches to full sheet
+    // Phone width does not force a different input or a full-screen sheet.
     const mobileSmall = computeOverlayGeometry({
         triggerRect: { top: 264, bottom: 308, left: 16, right: 304, width: 288 },
         viewportWidth: 320,
@@ -169,11 +169,12 @@ test('computeOverlayGeometry adapts popup width, bottom-flip, RTL clamp, and pho
         dir: 'ltr',
         isMobileSheetPreferred: true,
     });
-    assert.equal(mobileSmall.mode, 'sheet');
-    assert.equal(mobileSmall.width, 320);
-    assert.equal(mobileSmall.maxHeight, 568);
+    assert.equal(mobileSmall.mode, 'popup');
+    assert.equal(mobileSmall.width, 288);
+    assert.ok(mobileSmall.top >= 60);
+    assert.ok(mobileSmall.top + mobileSmall.maxHeight <= 411);
 
-    // Virtual keyboard shrinking visualViewport on phone forces sheet sizing to visualViewport
+    // A keyboard-compressed visual viewport still has room above the field.
     const keyboardPhone = computeOverlayGeometry({
         triggerRect: { top: 180, bottom: 224, left: 16, right: 374, width: 358 },
         viewportWidth: 390,
@@ -181,9 +182,17 @@ test('computeOverlayGeometry adapts popup width, bottom-flip, RTL clamp, and pho
         viewportOffsetTop: 20,
         dir: 'rtl',
     });
-    assert.equal(keyboardPhone.mode, 'sheet');
-    assert.equal(keyboardPhone.top, 20);
-    assert.equal(keyboardPhone.maxHeight, 320);
+    assert.equal(keyboardPhone.mode, 'popup');
+    assert.equal(keyboardPhone.placement, 'top');
+    assert.ok(keyboardPhone.top >= 28);
+    assert.ok(keyboardPhone.top + keyboardPhone.maxHeight <= 176);
+
+    const insufficient = computeOverlayGeometry({
+        triggerRect: { top: 86, bottom: 130, left: 16, right: 304, width: 288 },
+        viewportWidth: 320,
+        viewportHeight: 200,
+    });
+    assert.equal(insufficient.mode, 'sheet');
 });
 
 test('syncFromServerProps updates morph attributes and row_key without clobbering active search query', () => {
