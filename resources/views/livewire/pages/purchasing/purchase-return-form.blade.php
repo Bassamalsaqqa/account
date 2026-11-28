@@ -1,4 +1,4 @@
-<div class="space-y-6" x-data="{
+<div class="max-w-4xl mx-auto space-y-6 pb-28 md:pb-6" x-data="{
         saving: false, documentBusy: false, operationFailed: false,
         run(method, args = [], terminal = false) {
             if (this.saving || window.isDocumentBlocked($wire)) return;
@@ -13,24 +13,16 @@
     <x-draft-operation-feedback />
     <p x-cloak x-show="operationFailed" role="alert" class="text-sm text-danger">{{ __('camera.network_error') }}</p>
     <x-form-attention />
-    <header class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <header class="flex items-center justify-between gap-4">
         <div>
-            <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary text-sm text-primary">
-                {{ __('purchasing.back') }}
-            </a>
-            <h1 class="text-2xl font-bold mt-1">
+            <h1 class="text-2xl font-bold tracking-tight text-text-primary">
                 {{ $mode === 'create' ? __('purchasing.create_purchase_return') : __('purchasing.edit_purchase_return') }}
             </h1>
+            <p class="text-xs text-text-secondary mt-1">{{ __('purchasing.return_details') }}</p>
         </div>
-        <div class="flex items-center gap-3">
-            <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">
-                {{ __('purchasing.cancel') }}
-            </a>
-            <button type="button" data-mobile-confirm @click="run('saveAndConfirm', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{{ __('purchasing.post_return') }}</button>
-        <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
-                {{ __('purchasing.save_draft') }}
-            </button>
-        </div>
+        <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control border border-border-control bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
+            {{ __('purchasing.back') }}
+        </a>
     </header>
 
     @error('save')
@@ -70,25 +62,25 @@
         <h2 class="text-base font-bold">{{ __('purchasing.return_details') }}</h2>
         <div class="grid sm:grid-cols-2 gap-4">
             <div>
-                <label for="return_date" class="block text-sm font-semibold text-text-secondary mb-1">
+                <label for="return_date" class="block text-sm font-semibold text-text-primary mb-1.5">
                     {{ __('purchasing.return_date') }} *
                 </label>
-                <input type="date" id="return_date" wire:model="return_date" min="{{ $purchaseDate }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
+                <input type="date" id="return_date" wire:model="return_date" min="{{ $purchaseDate }}" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 @error('return_date') <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
             </div>
             <div>
-                <label for="reason" class="block text-sm font-semibold text-text-secondary mb-1">
+                <label for="reason" class="block text-sm font-semibold text-text-primary mb-1.5">
                     {{ __('purchasing.return_reason') }}
                 </label>
-                <input type="text" id="reason" wire:model="reason" placeholder="{{ __('purchasing.return_reason') }}" class="w-full h-11 px-3 rounded-control border border-border text-sm"  :disabled="documentBusy || saving"/>
+                <input type="text" id="reason" wire:model="reason" placeholder="{{ __('purchasing.return_reason') }}" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"  :disabled="documentBusy || saving"/>
                 @error('reason') <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
             </div>
         </div>
         <div>
-            <label for="notes" class="block text-sm font-semibold text-text-secondary mb-1">
+            <label for="notes" class="block text-sm font-semibold text-text-primary mb-1.5">
                 {{ __('purchasing.notes') }}
             </label>
-            <textarea id="notes" wire:model="notes" rows="2" class="w-full p-3 rounded-control border border-border text-sm" :disabled="documentBusy || saving"></textarea>
+            <textarea id="notes" wire:model="notes" rows="2" class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving"></textarea>
             @error('notes') <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p> @enderror
         </div>
     </section>
@@ -103,37 +95,41 @@
                         <p class="text-xs text-text-secondary"><bdi>{{ $line['product_sku'] }}</bdi></p>
                     </div>
                     <div class="text-xs text-text-secondary text-end">
-                        <span>{{ __('purchasing.remaining_quantity') }}: <bdi class="font-bold text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['remaining_quantity']) }}</bdi> {{ $line['unit_name'] }}</span>
+                        <span>{{ __('purchasing.remaining_quantity') }}: <bdi dir="ltr" class="font-mono font-bold tabular-nums text-text-primary">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['remaining_quantity']) }}</bdi> {{ $line['unit_name'] }}</span>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs bg-surface-soft p-3 rounded-control">
-                    <div>
-                        <span class="text-text-secondary">{{ __('purchasing.original_quantity') }}</span>
-                        <p class="font-semibold mt-0.5"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['purchased_quantity']) }}</bdi> {{ $line['unit_name'] }}</p>
-                    </div>
-                    <div>
-                        <span class="text-text-secondary">{{ __('purchasing.previously_returned') }}</span>
-                        <p class="font-semibold mt-0.5"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['prior_returned_quantity']) }}</bdi> {{ $line['unit_name'] }}</p>
-                    </div>
-                    <div>
-                        <span class="text-text-secondary">{{ __('purchasing.remaining_quantity') }}</span>
-                        <p class="font-semibold mt-0.5"><bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['remaining_quantity']) }}</bdi> {{ $line['unit_name'] }}</p>
-                    </div>
-                    <div class="col-span-2 sm:col-span-3">
-                        <label for="purchase-return-quantity-{{ $idx }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.return_quantity') }}</label>
-                        <div class="flex items-center gap-2" dir="ltr">
-                            <x-touch-quantity-stepper
-                                :index="$idx"
-                                field="return_quantity"
-                                :step="$line['quantity_step'] ?? '1'"
-                                :allows-fraction="($line['quantity_step'] ?? '1') !== '1'"
-                                :max="$line['remaining_quantity']"
-                                id="purchase-return-quantity-{{ $idx }}"
-                                :aria-label="__('refinement.return_quantity') . ' ' . ($idx + 1)"
-                            />
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start text-xs bg-surface-soft p-3 rounded-control">
+                    <dl class="grid grid-cols-3 gap-2 md:col-span-6">
+                        <div class="min-w-0">
+                            <dt class="text-text-secondary">{{ __('purchasing.original_quantity') }}</dt>
+                            <dd class="font-mono tabular-nums font-semibold mt-1 text-text-primary"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['purchased_quantity']) }}</bdi> {{ $line['unit_name'] }}</dd>
                         </div>
-                        <button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full mt-2 rounded-control border border-primary px-3 py-2 text-primary font-semibold disabled:opacity-50">{{ __('refinement.return_remaining') }}</button>
+                        <div class="min-w-0">
+                            <dt class="text-text-secondary">{{ __('purchasing.previously_returned') }}</dt>
+                            <dd class="font-mono tabular-nums font-semibold mt-1 text-text-primary"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['prior_returned_quantity']) }}</bdi> {{ $line['unit_name'] }}</dd>
+                        </div>
+                        <div class="min-w-0">
+                            <dt class="text-text-secondary">{{ __('purchasing.remaining_quantity') }}</dt>
+                            <dd class="font-mono tabular-nums font-bold mt-1 text-primary"><bdi dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($line['remaining_quantity']) }}</bdi> {{ $line['unit_name'] }}</dd>
+                        </div>
+                    </dl>
+                    <div class="md:col-span-6 space-y-2">
+                        <label for="purchase-return-quantity-{{ $idx }}" class="block text-xs font-semibold text-text-secondary">{{ __('purchasing.return_quantity') }}</label>
+                        <div class="flex flex-wrap items-start gap-2">
+                            <div dir="ltr" class="shrink-0">
+                                <x-touch-quantity-stepper
+                                    :index="$idx"
+                                    field="return_quantity"
+                                    :step="$line['quantity_step'] ?? '1'"
+                                    :allows-fraction="($line['quantity_step'] ?? '1') !== '1'"
+                                    :max="$line['remaining_quantity']"
+                                    id="purchase-return-quantity-{{ $idx }}"
+                                    :aria-label="__('refinement.return_quantity') . ' ' . ($idx + 1)"
+                                />
+                            </div>
+                            <button type="button" @click="run('returnFullRemaining', [{{ $idx }}])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 w-full sm:w-auto flex-1 rounded-control border border-primary px-3 py-2 text-sm text-primary font-semibold hover:bg-primary-50 transition-colors disabled:opacity-50 cursor-pointer">{{ __('refinement.return_remaining') }}</button>
+                        </div>
                     </div>
                 </div>
 
@@ -165,8 +161,8 @@
                                         <bdi>{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::formatQuantity($alloc['available_quantity']) }}</bdi> {{ $line['unit_name'] }}
                                     </div>
                                     <div>
-                                        <label for="alloc_qty_{{ $idx }}_{{ $aIdx }}" class="text-text-secondary block text-sm">{{ __('purchasing.return_quantity') }}</label>
-                                        <input type="text" id="alloc_qty_{{ $idx }}_{{ $aIdx }}" wire:model="lines.{{ $idx }}.allocations.{{ $aIdx }}.quantity" placeholder="0" class="w-full min-h-11 px-2 rounded-control border border-border text-sm text-end" dir="ltr" inputmode="decimal"  :disabled="documentBusy || saving"/>
+                                        <label for="alloc_qty_{{ $idx }}_{{ $aIdx }}" class="text-text-secondary block text-xs font-semibold mb-1">{{ __('purchasing.return_quantity') }}</label>
+                                        <input type="text" id="alloc_qty_{{ $idx }}_{{ $aIdx }}" wire:model="lines.{{ $idx }}.allocations.{{ $aIdx }}.quantity" placeholder="0" class="w-full min-h-11 lg:min-h-9.5 px-2 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums text-end" dir="ltr" inputmode="decimal"  :disabled="documentBusy || saving"/>
                                         @error("lines.{$idx}.allocations.{$aIdx}.quantity")
                                             <p role="alert" class="text-danger text-xs mt-1">{{ $message }}</p>
                                         @enderror
@@ -232,13 +228,13 @@
     @endif
 
     <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
-            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap justify-end gap-3 rounded-control border border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
-        <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control border border-border text-sm font-semibold hover:bg-surface-soft">
+            <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 rounded-control border border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
+        <a href="{{ $mode === 'create' ? route('purchases.show', $purchasePublicId) : route('purchase-returns.show', $returnPublicId) }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 rounded-control border border-border-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">
             {{ __('purchasing.cancel') }}
         </a>
-        <button type="button" data-mobile-confirm @click="run('saveAndConfirm', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50">{{ __('purchasing.post_return') }}</button>
-        <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary h-11 px-4 rounded-control bg-primary text-white text-sm font-bold disabled:opacity-50">
+        <button type="button" @click="run('saveDraft', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 rounded-control border border-primary text-primary hover:bg-primary-50 text-sm font-bold transition-colors disabled:opacity-50 cursor-pointer">
             {{ __('purchasing.save_draft') }}
         </button>
+        <button type="button" data-mobile-confirm @click="run('saveAndConfirm', [], true)" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center rounded-control bg-primary px-5 text-sm font-bold text-white hover:bg-primary-hover focus-visible:ring-2 focus-visible:ring-primary transition-colors shadow-sm disabled:opacity-50 cursor-pointer">{{ __('purchasing.post_return') }}</button>
     </div>
 </div>

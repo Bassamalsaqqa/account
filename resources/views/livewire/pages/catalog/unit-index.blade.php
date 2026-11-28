@@ -172,7 +172,7 @@
                            placeholder="{{ __('inventory.unit_code_placeholder') }}"
                            aria-invalid="{{ $errors->has('code') ? 'true' : 'false' }}"
                            @if ($errors->has('code')) aria-describedby="unit-code-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono @error('code') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums @error('code') border-danger @enderror" />
                     @error('code') <span id="unit-code-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
@@ -183,7 +183,7 @@
                            dir="rtl"
                            aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
                            @if ($errors->has('name_ar')) aria-describedby="unit-name-ar-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_ar') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm @error('name_ar') border-danger @enderror" />
                     @error('name_ar') <span id="unit-name-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
@@ -194,7 +194,7 @@
                            dir="ltr"
                            aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
                            @if ($errors->has('name_en')) aria-describedby="unit-name-en-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_en') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm @error('name_en') border-danger @enderror" />
                     @error('name_en') <span id="unit-name-en-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -207,7 +207,7 @@
                                placeholder="{{ __('inventory.symbol_ar_placeholder') }}"
                                aria-invalid="{{ $errors->has('symbol_ar') ? 'true' : 'false' }}"
                                @if ($errors->has('symbol_ar')) aria-describedby="unit-symbol-ar-error" @endif
-                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
+                               class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm" />
                         @error('symbol_ar') <span id="unit-symbol-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                     </div>
                     <div>
@@ -219,7 +219,7 @@
                                placeholder="{{ __('inventory.symbol_en_placeholder') }}"
                                aria-invalid="{{ $errors->has('symbol_en') ? 'true' : 'false' }}"
                                @if ($errors->has('symbol_en')) aria-describedby="unit-symbol-en-error" @endif
-                               class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
+                               class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono" />
                         @error('symbol_en') <span id="unit-symbol-en-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                     </div>
                 </div>
@@ -240,7 +240,7 @@
                                    dir="ltr"
                                    aria-invalid="{{ $errors->has('decimal_places') ? 'true' : 'false' }}"
                                    @if ($errors->has('decimal_places')) aria-describedby="unit-decimal-places-error" @endif
-                                   class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono" />
+                                   class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono" />
                             @error('decimal_places') <span id="unit-decimal-places-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                         </div>
                     @endif

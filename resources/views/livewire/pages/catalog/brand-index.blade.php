@@ -158,7 +158,7 @@
                     <input id="brand-name-ar" type="text" wire:model="name_ar" dir="rtl"
                            aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
                            @if ($errors->has('name_ar')) aria-describedby="brand-name-ar-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_ar') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:outline-none focus:border-primary @error('name_ar') border-danger @enderror" />
                     @error('name_ar')
                         <span role="alert" id="brand-name-ar-error" class="text-danger text-xs">{{ $message }}</span>
                     @enderror
@@ -170,7 +170,7 @@
                     <input id="brand-name-en" type="text" wire:model="name_en" dir="ltr"
                            aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
                            @if ($errors->has('name_en')) aria-describedby="brand-name-en-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm focus:outline-none focus:border-primary @error('name_en') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:outline-none focus:border-primary @error('name_en') border-danger @enderror" />
                     @error('name_en')
                         <span role="alert" id="brand-name-en-error" class="text-danger text-xs">{{ $message }}</span>
                     @enderror

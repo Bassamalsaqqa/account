@@ -103,7 +103,7 @@
                             @disabled($editingAccountId !== null)
                             aria-invalid="{{ $errors->has('account_type') ? 'true' : 'false' }}"
                             @if ($errors->has('account_type')) aria-describedby="money-account-type-error" @endif
-                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                            class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         <option value="cash">{{ __('sales.cash') }}</option>
                         <option value="bank">{{ __('sales.bank') }}</option>
                     </select>
@@ -119,7 +119,7 @@
                            required
                            aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
                            @if ($errors->has('name_ar')) aria-describedby="money-account-name-ar-error" @endif
-                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('name_ar') <span id="money-account-name-ar-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                 </div>
 
@@ -131,7 +131,7 @@
                            dir="ltr"
                            aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
                            @if ($errors->has('name_en')) aria-describedby="money-account-name-en-error" @endif
-                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('name_en') <span id="money-account-name-en-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                 </div>
 
@@ -142,7 +142,7 @@
                             @disabled($editingAccountId !== null)
                             aria-invalid="{{ $errors->has('currency_code') ? 'true' : 'false' }}"
                             @if ($errors->has('currency_code')) aria-describedby="money-account-currency-error" @endif
-                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                            class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         @foreach ($currencies as $curr)
                             <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
                         @endforeach
@@ -158,7 +158,7 @@
                                wire:model="bank_name"
                                aria-invalid="{{ $errors->has('bank_name') ? 'true' : 'false' }}"
                                @if ($errors->has('bank_name')) aria-describedby="money-account-bank-name-error" @endif
-                               class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                         @error('bank_name') <span id="money-account-bank-name-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -170,7 +170,7 @@
                                    dir="ltr"
                                    aria-invalid="{{ $errors->has('account_number') ? 'true' : 'false' }}"
                                    @if ($errors->has('account_number')) aria-describedby="money-account-number-error" @endif
-                                   class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm font-mono" />
+                                   class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                             @error('account_number') <span id="money-account-number-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                         </div>
                         <div>
@@ -181,7 +181,7 @@
                                    dir="ltr"
                                    aria-invalid="{{ $errors->has('iban') ? 'true' : 'false' }}"
                                    @if ($errors->has('iban')) aria-describedby="money-account-iban-error" @endif
-                                   class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm font-mono" />
+                                   class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                             @error('iban') <span id="money-account-iban-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                         </div>
                     </div>

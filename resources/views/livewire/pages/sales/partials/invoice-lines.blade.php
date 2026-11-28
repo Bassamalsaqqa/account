@@ -55,7 +55,7 @@
         <div class="document-entry-field min-w-0"><span class="block text-xs font-semibold text-text-secondary mb-1">{{ __('sales.unit') }}</span>
             @if ($selectedProduct && $selectedProduct->productUnits->isNotEmpty())
                 <select wire:key="inv-unit-{{ $line['row_key'] }}" id="invoice-line-{{ $line['row_key'] }}-product-unit-id" aria-label="{{ __('sales.unit') }} {{ $index + 1 }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="invoice-line-{{ $line['row_key'] }}-product-unit-id-error" @enderror wire:change="changeUnit('{{ $line['row_key'] }}', $event.target.value)"
-                        class="w-full h-11 lg:h-9 px-1.5 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
+                        class="w-full min-h-11 lg:min-h-9.5 px-1.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm" :disabled="documentBusy || saving">
                     @foreach ($selectedProduct->productUnits as $pu)
                          <option value="{{ $pu->id }}" @selected(($line['product_unit_id'] ?? null) == $pu->id)>
                             {{ $pu->unit?->name() ?? $pu->unit?->code ?? 'Unit' }}
@@ -98,7 +98,7 @@
                    min="0"
                    dir="ltr"
                    @if (! $canChangePrice) readonly title="{{ __('sales.price_permission_required') }}" @endif
-                   class="w-full h-11 lg:h-9 px-2 rounded-control border border-border bg-canvas text-sm font-mono {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/>
+                   class="w-full min-h-11 lg:min-h-9.5 px-2 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums {{ ! $canChangePrice ? 'opacity-70 bg-slate-100 cursor-not-allowed' : '' }}"  :disabled="documentBusy || saving"/>
 <x-customer-last-price :price="$lastCustomerPrices[$line['product_id'] ?? 0] ?? null" /> @error('lines.'.$index.'.unit_price') <span id="invoice-line-{{ $line['row_key'] }}-unit-price-error" role="alert" class="text-danger text-xs block">{{ $message }}</span> @enderror
         </div>
 
@@ -106,7 +106,7 @@
             <div class="document-entry-field min-w-0"><span class="block text-xs font-semibold text-text-secondary mb-1">{{ __('sales.tax') }}</span>
                 <select wire:key="inv-tax-{{ $line['row_key'] }}" id="invoice-line-{{ $line['row_key'] }}-tax-rate-id" aria-label="{{ __('sales.tax') }} {{ $index + 1 }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="invoice-line-{{ $line['row_key'] }}-tax-rate-id-error" @enderror wire:model.change="lines.{{ $index }}.tax_rate_id"
                         wire:change="recalculate"
-                        class="w-full h-11 lg:h-9 px-1.5 rounded-control border border-border bg-canvas text-sm" :disabled="documentBusy || saving">
+                        class="w-full min-h-11 lg:min-h-9.5 px-1.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm" :disabled="documentBusy || saving">
                     <option value="">{{ __('sales.none') }} (0%)</option>
                     @foreach ($taxes as $t)
                         <option value="{{ $t->id }}">
@@ -129,7 +129,7 @@
                         wire:click="removeLine('{{ $line['row_key'] }}')"
                         title="{{ __('sales.remove_line') }}"
                         aria-label="{{ __('sales.remove_line') }} {{ $index + 1 }}"
-                        class="min-h-11 min-w-11 lg:min-h-9 lg:min-w-9 inline-flex items-center justify-center rounded-control text-danger hover:bg-danger/10 hover:text-danger-hover transition-colors p-1 cursor-pointer" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
+                        class="min-h-11 min-w-11 lg:min-h-9.5 lg:min-w-9.5 inline-flex items-center justify-center rounded-control text-danger hover:bg-danger/10 hover:text-danger-hover transition-colors p-1 cursor-pointer" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                     <x-icon name="trash" class="w-5 h-5" />
                 </button>
             @endif

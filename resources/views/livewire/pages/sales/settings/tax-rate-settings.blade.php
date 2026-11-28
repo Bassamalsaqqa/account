@@ -123,7 +123,7 @@
                            required
                            aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
                            @if ($errors->has('name_ar')) aria-describedby="tax-name-ar-error" @endif
-                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('name_ar') <span id="tax-name-ar-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                 </div>
 
@@ -135,7 +135,7 @@
                            dir="ltr"
                            aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
                            @if ($errors->has('name_en')) aria-describedby="tax-name-en-error" @endif
-                           class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('name_en') <span id="tax-name-en-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                 </div>
 
@@ -153,7 +153,7 @@
                                dir="ltr"
                                aria-invalid="{{ $errors->has('rate') ? 'true' : 'false' }}"
                                @if ($errors->has('rate')) aria-describedby="tax-rate-error" @endif
-                               class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm font-mono" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                         @error('rate') <span id="tax-rate-error" role="alert" class="text-danger text-xs block mt-0.5">{{ $message }}</span> @enderror
                     </div>
 
@@ -163,7 +163,7 @@
                                 wire:model="calculation"
                                 aria-invalid="{{ $errors->has('calculation') ? 'true' : 'false' }}"
                                 @if ($errors->has('calculation')) aria-describedby="tax-calculation-error" @endif
-                                class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                                class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                             <option value="exclusive">{{ __('sales.exclusive') }}</option>
                             <option value="inclusive">{{ __('sales.inclusive') }}</option>
                         </select>
@@ -178,7 +178,7 @@
                             required
                             aria-invalid="{{ $errors->has('sales_tax_account_id') ? 'true' : 'false' }}"
                             @if ($errors->has('sales_tax_account_id')) aria-describedby="tax-sales-account-error" @endif
-                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                            class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         <option value="">{{ __('sales.select_tax_account') }}</option>
                         @foreach ($accounts as $acc)
                             <option value="{{ $acc->id }}">{{ $acc->code }} - {{ $acc->displayName() }}</option>
@@ -193,7 +193,7 @@
                             wire:model="purchase_tax_account_id"
                             aria-invalid="{{ $errors->has('purchase_tax_account_id') ? 'true' : 'false' }}"
                             @if ($errors->has('purchase_tax_account_id')) aria-describedby="tax-purchase-account-error" @endif
-                            class="w-full min-h-11 lg:min-h-9.5 px-2.5 rounded-control border border-border text-sm">
+                            class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         <option value="">{{ __('purchasing.not_configured') }}</option>
                         @foreach ($purchaseAccounts as $account)
                             <option value="{{ $account->id }}">{{ $account->code }} — {{ $account->displayName() }}</option>

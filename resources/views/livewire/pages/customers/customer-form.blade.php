@@ -24,7 +24,7 @@
         </div>
 
         <a href="{{ $isEditing ? route('customers.show', $customer->public_id) : route('customers.index') }}"
-           class="touch-action px-3 py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-xs font-bold transition-colors">
+           class="min-h-11 lg:min-h-9.5 inline-flex items-center px-3 rounded-control border border-border-control bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">
             {{ __('sales.back') }}
         </a>
     </div>
@@ -53,7 +53,7 @@
                     </label>
                     <input id="customer-name-ar" @error('name_ar') aria-invalid="true" aria-describedby="customer-name-ar-error" @enderror type="text"
                            wire:model="name_ar"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('name_ar') <span id="customer-name-ar-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
@@ -64,7 +64,7 @@
                     </label>
                     <input id="customer-name-en" @error('name_en') aria-invalid="true" aria-describedby="customer-name-en-error" @enderror type="text"
                            wire:model="name_en"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('name_en') <span id="customer-name-en-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
@@ -76,7 +76,7 @@
                     <input id="customer-phone" inputmode="tel" autocomplete="tel" @error('phone') aria-invalid="true" aria-describedby="customer-phone-error" @enderror type="text"
                            wire:model="phone"
                            dir="ltr"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
                     @error('phone') <span id="customer-phone-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
@@ -100,7 +100,7 @@
                     <input id="customer-code" @error('code') aria-invalid="true" aria-describedby="customer-code-error" @enderror type="text"
                            wire:model="code"
                            placeholder="CUST-001"
-                           class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm font-mono text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                           class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                     @error('code') <span id="customer-code-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                 </div>
 
@@ -111,7 +111,7 @@
                     </label>
                     <select id="customer-default-currency-code" @error('default_currency_code') aria-invalid="true" aria-describedby="customer-default-currency-code-error" @enderror wire:model="default_currency_code"
                             required
-                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                            class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         @foreach ($currencies as $curr)
                             <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
                         @endforeach
@@ -126,7 +126,7 @@
                     </label>
                     <select id="customer-preferred-locale" @error('preferred_locale') aria-invalid="true" aria-describedby="customer-preferred-locale-error" @enderror wire:model="preferred_locale"
                             required
-                            class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
+                            class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         <option value="ar">العربية (Arabic)</option>
                         <option value="en">English (الإنجليزية)</option>
                     </select>
@@ -155,7 +155,7 @@
                             </label>
                             <input id="customer-business-name" @error('business_name') aria-invalid="true" aria-describedby="customer-business-name-error" @enderror type="text"
                                    wire:model="business_name"
-                                   class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                                   class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                             @error('business_name') <span id="customer-business-name-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                         </div>
 
@@ -165,7 +165,7 @@
                             </label>
                             <input id="customer-business-name-en" @error('business_name_en') aria-invalid="true" aria-describedby="customer-business-name-en-error" @enderror type="text"
                                    wire:model="business_name_en"
-                                   class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                                   class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                             @error('business_name_en') <span id="customer-business-name-en-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                         </div>
 
@@ -176,7 +176,7 @@
                         <input id="customer-tax-number" @error('tax_number') aria-invalid="true" aria-describedby="customer-tax-number-error" @enderror type="text"
                                wire:model="tax_number"
                                dir="ltr"
-                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start font-mono" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start font-mono tabular-nums" />
                         @error('tax_number') <span id="customer-tax-number-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
                 </div>
@@ -195,7 +195,7 @@
                         <input id="customer-whatsapp" @error('whatsapp') aria-invalid="true" aria-describedby="customer-whatsapp-error" @enderror type="text"
                                wire:model="whatsapp"
                                dir="ltr"
-                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
                         @error('whatsapp') <span id="customer-whatsapp-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
@@ -206,7 +206,7 @@
                         <input id="customer-email" @error('email') aria-invalid="true" aria-describedby="customer-email-error" @enderror type="email"
                                wire:model="email"
                                dir="ltr"
-                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start" />
                         @error('email') <span id="customer-email-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
@@ -216,7 +216,7 @@
                         </label>
                         <textarea id="customer-address-line-1-ar" @error('address_line_1_ar') aria-invalid="true" aria-describedby="customer-address-line-1-ar-error" @enderror wire:model="address_line_1_ar"
                                   rows="2"
-                                  class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
+                                  class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
                         @error('address_line_1_ar') <span id="customer-address-line-1-ar-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
@@ -226,7 +226,7 @@
                         </label>
                         <textarea id="customer-address-line-1-en" @error('address_line_1_en') aria-invalid="true" aria-describedby="customer-address-line-1-en-error" @enderror wire:model="address_line_1_en"
                                   rows="2"
-                                  class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
+                                  class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
                         @error('address_line_1_en') <span id="customer-address-line-1-en-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
@@ -236,7 +236,7 @@
                         </label>
                         <input id="customer-city-ar" @error('city_ar') aria-invalid="true" aria-describedby="customer-city-ar-error" @enderror type="text"
                                wire:model="city_ar"
-                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                         @error('city_ar') <span id="customer-city-ar-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
@@ -246,7 +246,7 @@
                         </label>
                         <input id="customer-city-en" @error('city_en') aria-invalid="true" aria-describedby="customer-city-en-error" @enderror type="text"
                                wire:model="city_en"
-                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" />
                         @error('city_en') <span id="customer-city-en-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
                 </div>
@@ -267,7 +267,7 @@
                                wire:model="credit_limit"
                                dir="ltr"
                                placeholder="0.00"
-                               class="w-full h-9 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start font-mono" />
+                               class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden text-start font-mono tabular-nums" />
                         @error('credit_limit') <span id="customer-credit-limit-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
 
@@ -277,7 +277,7 @@
                         </label>
                         <textarea id="customer-notes" @error('notes') aria-invalid="true" aria-describedby="customer-notes-error" @enderror wire:model="notes"
                                   rows="2"
-                                  class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
+                                  class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"></textarea>
                         @error('notes') <span id="customer-notes-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
                     </div>
                 </div>
@@ -285,13 +285,13 @@
         </div>
 
         <!-- Buttons -->
-        <div class="flex items-center justify-end gap-3 pt-4 border-t border-border">
+        <div class="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-border">
             <a href="{{ $isEditing ? route('customers.show', $customer->public_id) : route('customers.index') }}"
-               class="touch-action px-4 py-2 rounded-control border border-border text-xs font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="touch-action min-h-11 lg:min-h-9.5 inline-flex items-center justify-center px-4 rounded-control border border-border-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
             <button type="submit"
-                    class="px-5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
+                    class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center px-5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer">
                 {{ __('workflow.save_customer') }}
             </button>
         </div>

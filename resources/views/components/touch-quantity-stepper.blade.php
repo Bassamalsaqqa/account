@@ -36,14 +36,14 @@
           data-quantum="{{ $quantum }}"
           data-min="{{ $minVal }}"
           data-max="{{ $maxVal ?? '' }}"></span>
-    <div class="inline-flex items-stretch border border-border rounded-control bg-surface shadow-xs overflow-hidden">
+    <div class="inline-flex items-stretch border border-border-control rounded-control bg-canvas shadow-xs overflow-hidden">
         <!-- Decrement Button (>=44px touch target, clear contrast) -->
         <button type="button"
                 wire:loading.attr="disabled"
                 wire:target="save,saveDraft,selectProduct,quickAddProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || @js((bool) $disabled)"
                 @click="tap('down')"
-                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-danger-bg hover:bg-danger-bg active:bg-rose-200 text-danger border-e border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                class="min-h-[44px] min-w-[44px] lg:min-h-9.5 lg:min-w-9.5 px-3 lg:px-2.5 flex items-center justify-center bg-danger-bg hover:bg-danger-bg active:bg-rose-200 text-danger border-e border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.decrement') }} {{ $index + 1 }}">
             <span aria-hidden="true">−</span>
         </button>
@@ -73,7 +73,7 @@
                :readonly="pending > 0"
                :disabled="(typeof documentBusy !== 'undefined' && documentBusy) || failed || recovering || (typeof saving !== 'undefined' && saving) || @js((bool) $disabled)"
                @disabled($disabled)
-               class="min-h-[44px] w-16 text-center border-0 bg-surface text-xs font-mono font-bold text-text-primary focus:ring-1 focus:ring-primary focus:outline-hidden disabled:opacity-60" />
+               class="min-h-[44px] lg:min-h-9.5 w-16 text-center border-0 bg-transparent text-base lg:text-sm font-mono tabular-nums font-bold text-text-primary focus:ring-1 focus:ring-primary focus:outline-hidden disabled:opacity-60" />
 
         <!-- Increment Button (>=44px touch target, clear contrast) -->
         <button type="button"
@@ -81,7 +81,7 @@
                 wire:target="save,saveDraft,selectProduct,quickAddProduct,changeUnit,scanCameraBarcode,addLine,removeLine"
                 :disabled="failed || recovering || (typeof saving !== 'undefined' && saving) || @js((bool) $disabled)"
                 @click="tap('up')"
-                class="min-h-[44px] min-w-[44px] px-3 flex items-center justify-center bg-success-bg hover:bg-success-bg active:bg-emerald-200 text-success border-s border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                class="min-h-[44px] min-w-[44px] lg:min-h-9.5 lg:min-w-9.5 px-3 lg:px-2.5 flex items-center justify-center bg-success-bg hover:bg-success-bg active:bg-emerald-200 text-success border-s border-border text-lg font-bold transition-colors select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="{{ __('mobile.increment') }} {{ $index + 1 }}">
             <span aria-hidden="true">+</span>
         </button>

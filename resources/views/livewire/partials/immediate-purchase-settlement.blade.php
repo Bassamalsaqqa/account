@@ -39,7 +39,7 @@
                     <select id="purchase-settlement-payment_method"
                             wire:model.live="settlement.payment_method"
                             @error('settlement.payment_method') aria-invalid="true" aria-describedby="purchase-settlement-payment_method-error" @enderror
-                            class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary"
+                            class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary"
                             :disabled="documentBusy || saving">
                         <option value="cash">{{ __('purchase_settlement.cash') }}</option>
                         <option value="bank_transfer">{{ __('purchase_settlement.bank_transfer') }}</option>
@@ -57,7 +57,7 @@
                     <select id="purchase-settlement-money_account_id"
                             wire:model.live="settlement.money_account_id"
                             @error('settlement.money_account_id') aria-invalid="true" aria-describedby="purchase-settlement-money_account_id-error" @enderror
-                            class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary"
+                            class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary"
                             :disabled="documentBusy || saving">
                         <option value="">{{ __('purchase_settlement.choose') }}</option>
                         @foreach ($settlementAccounts as $account)
@@ -77,7 +77,7 @@
                            type="date"
                            wire:model="settlement.payment_date"
                            @error('settlement.payment_date') aria-invalid="true" aria-describedby="purchase-settlement-payment_date-error" @enderror
-                           class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary"
+                           class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary"
                            :disabled="documentBusy || saving" />
                     @error('settlement.payment_date') <p id="purchase-settlement-payment_date-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                 </div>
@@ -93,7 +93,7 @@
                            wire:model="settlement.amount" data-purchase-preview-input
                            @readonly($isSameCurrency && ($settlement['mode'] ?? null) === 'full')
                            @error('settlement.amount') aria-invalid="true" aria-describedby="purchase-settlement-amount-error" @enderror
-                           class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
+                           class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary"
                            :disabled="documentBusy || saving" />
                     @error('settlement.amount') <p id="purchase-settlement-amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                 </div>
@@ -109,7 +109,7 @@
                                dir="ltr"
                                wire:model="settlement.purchase_amount" data-purchase-preview-input
                                @error('settlement.purchase_amount') aria-invalid="true" aria-describedby="purchase-settlement-purchase_amount-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
                         @error('settlement.purchase_amount') <p id="purchase-settlement-purchase_amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
@@ -126,7 +126,7 @@
                                dir="ltr"
                                wire:model="settlement.exchange_rate" data-purchase-preview-input
                                @error('settlement.exchange_rate') aria-invalid="true" aria-describedby="purchase-settlement-exchange_rate-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
                         @error('settlement.exchange_rate') <p id="purchase-settlement-exchange_rate-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
@@ -143,7 +143,7 @@
                                dir="ltr"
                                wire:model="settlement.payment_currency_amount" data-purchase-preview-input
                                @error('settlement.payment_currency_amount') aria-invalid="true" aria-describedby="purchase-settlement-payment_currency_amount-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary"
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
                         @error('settlement.payment_currency_amount') <p id="purchase-settlement-payment_currency_amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
@@ -158,7 +158,7 @@
                                type="text"
                                wire:model="settlement.check_number"
                                @error('settlement.check_number') aria-invalid="true" aria-describedby="purchase-settlement-check_number-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary"
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
                         @error('settlement.check_number') <p id="purchase-settlement-check_number-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
@@ -170,7 +170,7 @@
                                type="text"
                                wire:model="settlement.bank_name"
                                @error('settlement.bank_name') aria-invalid="true" aria-describedby="purchase-settlement-bank_name-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary"
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
                         @error('settlement.bank_name') <p id="purchase-settlement-bank_name-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
@@ -182,7 +182,7 @@
                                type="text"
                                wire:model="settlement.drawer"
                                @error('settlement.drawer') aria-invalid="true" aria-describedby="purchase-settlement-drawer-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary"
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
                         @error('settlement.drawer') <p id="purchase-settlement-drawer-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
@@ -194,7 +194,7 @@
                                type="date"
                                wire:model="settlement.due_date"
                                @error('settlement.due_date') aria-invalid="true" aria-describedby="purchase-settlement-due_date-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary"
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary"
                                :disabled="documentBusy || saving" />
                         @error('settlement.due_date') <p id="purchase-settlement-due_date-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>

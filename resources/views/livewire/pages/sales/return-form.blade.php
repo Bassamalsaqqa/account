@@ -25,7 +25,7 @@
         </div>
 
         <a href="{{ route('returns.index') }}"
-           class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary py-1.5 rounded-control bg-surface-soft text-text-secondary hover:text-text-primary text-sm font-bold transition-colors">
+           class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control border border-border-control bg-surface text-text-secondary hover:bg-surface-soft hover:text-text-primary text-sm font-semibold transition-colors">
             {{ __('sales.back') }}
         </a>
     </div>
@@ -35,7 +35,7 @@
         <!-- Invoice & Date Selection -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-border">
             <div class="md:col-span-2">
-                <label for="sales-return-invoice" class="block text-sm font-bold text-text-primary mb-1">
+                <label for="sales-return-invoice" class="block text-sm font-semibold text-text-primary mb-1.5">
                     {{ __('sales.original_invoice') }} <span class="text-danger">*</span>
                 </label>
                 <select id="sales-return-invoice"
@@ -43,7 +43,7 @@
                         @disabled($draftPublicId !== null)
                         @error('sales_invoice_id') aria-invalid="true" aria-describedby="sales-return-invoice-error" @enderror
                         required
-                        class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono"
+                        class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden font-mono"
                         :disabled="{{ $draftPublicId !== null ? 'true' : 'false' }} || documentBusy || saving">
                     <option value="">-- {{ __('sales.original_invoice') }} --</option>
                     @foreach ($invoices as $inv)
@@ -56,7 +56,7 @@
             </div>
 
             <div>
-                <label for="sales-return-date" class="block text-sm font-bold text-text-primary mb-1">
+                <label for="sales-return-date" class="block text-sm font-semibold text-text-primary mb-1.5">
                     {{ __('sales.date') }} <span class="text-danger">*</span>
                 </label>
                 <input id="sales-return-date"
@@ -64,13 +64,13 @@
                        wire:model="issue_date"
                        @error('issue_date') aria-invalid="true" aria-describedby="sales-return-date-error" @enderror
                        required
-                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
+                       class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
                        :disabled="documentBusy || saving"/>
                 @error('issue_date') <span id="sales-return-date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
             <div class="md:col-span-3">
-                <label for="sales-return-reason" class="block text-sm font-bold text-text-primary mb-1">
+                <label for="sales-return-reason" class="block text-sm font-semibold text-text-primary mb-1.5">
                     {{ __('sales.return_reason') }}
                 </label>
                 <input id="sales-return-reason"
@@ -78,7 +78,7 @@
                        wire:model="reason"
                        @error('reason') aria-invalid="true" aria-describedby="sales-return-reason-error" @enderror
                        placeholder="{{ __('sales.return_reason_hint') }}"
-                       class="w-full min-h-11 px-3 rounded-control border border-border bg-canvas text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
+                       class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
                        :disabled="documentBusy || saving"/>
                 @error('reason') <span id="sales-return-reason-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
@@ -226,14 +226,14 @@
         @endif
 
         <div>
-            <label for="sales-return-notes" class="block text-sm font-bold text-text-primary mb-1">
+            <label for="sales-return-notes" class="block text-sm font-semibold text-text-primary mb-1.5">
                 {{ __('sales.notes') }}
             </label>
             <textarea id="sales-return-notes"
                       wire:model="notes"
                       rows="2"
                       @error('notes') aria-invalid="true" aria-describedby="sales-return-notes-error" @enderror
-                      class="w-full p-2.5 rounded-control border border-border bg-canvas text-sm text-text-primary outline-hidden"
+                      class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
                       :disabled="documentBusy || saving"></textarea>
             @error('notes') <span id="sales-return-notes-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
         </div>
@@ -242,19 +242,19 @@
         <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
             <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-3 border-t border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
             <a href="{{ route('returns.index') }}"
-               class="min-h-11 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-sm font-bold text-text-secondary hover:bg-surface-soft transition-colors">
+               class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 rounded-control border border-border-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">
                 {{ __('sales.cancel') }}
             </a>
             <button type="button"
                     @click="run('save', [false], true)" :disabled="saving || window.isDocumentBlocked($wire)"
-                    class="min-h-11 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-primary text-primary hover:bg-primary-50 text-sm font-bold transition-colors cursor-pointer" wire:loading.attr="disabled">
+                    class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 rounded-control border border-primary text-primary hover:bg-primary-50 text-sm font-bold transition-colors cursor-pointer" wire:loading.attr="disabled">
                 {{ __('sales.save_draft') }}
             </button>
             @if ($canPost)
                 <button type="button"
                         @click="run('save', [true], true)" :disabled="saving || window.isDocumentBlocked($wire)"
-                        class="min-h-11 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled">
-                    ⚡ {{ __('sales.post') }}
+                        class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors shadow-sm cursor-pointer" wire:loading.attr="disabled">
+                    {{ __('sales.post') }}
                 </button>
             @endif
         </div>

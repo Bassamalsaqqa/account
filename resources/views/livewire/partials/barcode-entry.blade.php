@@ -1,16 +1,16 @@
 <div x-data="barcodeEntry($wire)" data-network-error="{{ __('camera.network_error') }}" @barcode-scanned.window="focusInput()">
-    <label for="{{ $prefix }}-barcodeSearch" class="block text-sm font-bold text-text-primary mb-1">{{ __('workflow.scan_barcode_or_sku') }}</label>
+    <label for="{{ $prefix }}-barcodeSearch" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('workflow.scan_barcode_or_sku') }}</label>
     <div class="flex gap-2 items-start">
-        <div class="flex min-w-0 flex-1 items-center rounded-control border border-border bg-canvas focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
+        <div class="flex min-w-0 flex-1 items-center rounded-control border border-border-control bg-canvas focus-within:border-primary focus-within:ring-1 focus-within:ring-primary">
         <input id="{{ $prefix }}-barcodeSearch" x-ref="scanner" type="text" maxlength="128" autocomplete="off" dir="ltr"
                data-row-mutation-enter
                x-model="entry" @keydown.enter.prevent="if (!$event.repeat) submit()" @input="scanned = false"
                placeholder="{{ __('workflow.scan_barcode_hint') }}"
-               class="min-w-0 w-full h-11 px-3 rounded-control border-0 bg-transparent text-sm text-text-primary focus:ring-0 outline-hidden" />
-            <x-camera-scanner :compact="true" button-class="min-h-11 min-w-11 inline-flex items-center justify-center rounded-control text-primary hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />
+               class="min-w-0 w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border-0 bg-transparent text-base lg:text-sm text-text-primary focus:ring-0 outline-hidden" />
+            <x-camera-scanner :compact="true" button-class="min-h-11 lg:min-h-9.5 min-w-11 lg:min-w-9.5 inline-flex items-center justify-center rounded-control text-primary hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />
         </div>
         <button type="button" data-row-mutation-action @click="submit()" :disabled="pending > 0"
-                class="shrink-0 min-h-11 px-3 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50">
+                class="shrink-0 min-h-11 lg:min-h-9.5 px-3 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50 cursor-pointer">
             {{ __('workflow.add_scanned_product') }}
         </button>
     </div>

@@ -4,7 +4,7 @@
             <h1 class="text-2xl font-bold">{{ __('payroll.create_advance') }}</h1>
             <p class="text-sm text-text-muted">{{ __('payroll.advances') }}</p>
         </div>
-        <a href="{{ route('employees.index') }}" class="touch-action inline-flex items-center rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+        <a href="{{ route('employees.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center rounded-control border border-border-control bg-surface px-3 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
             {{ __('payroll.cancel') }}
         </a>
     </div>
@@ -20,11 +20,11 @@
         </div>
     @endif
 
-    <form wire:submit.prevent="save" class="rounded-card border border-border bg-surface p-6 space-y-6">
+    <form wire:submit.prevent="save" class="rounded-card border border-border bg-surface p-4 sm:p-6 space-y-6">
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
                 <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.employee') }} *</label>
-                <select wire:model="employeeId" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <select wire:model="employeeId" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary" required>
                     <option value="">{{ __('payroll.select_employee') }}</option>
                     @foreach($employees as $emp)
                         <option value="{{ $emp->id }}">{{ $emp->name }} ({{ $emp->code }})</option>
@@ -34,7 +34,7 @@
             </div>
             <div>
                 <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.advance_date') }} *</label>
-                <input type="date" wire:model="advanceDate" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <input type="date" wire:model="advanceDate" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary" required>
                 @error('advanceDate') <span class="text-xs text-danger">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -42,12 +42,12 @@
         <div class="grid gap-4 sm:grid-cols-3">
             <div>
                 <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.amount') }} *</label>
-                <input type="text" inputmode="decimal" dir="ltr" wire:model="amount" placeholder="0.00" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary" required>
+                <input type="text" inputmode="decimal" dir="ltr" wire:model="amount" placeholder="0.00" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary" required>
                 @error('amount') <span class="text-xs text-danger">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.currency') }} *</label>
-                <select wire:model.live="currencyCode" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                <select wire:model.live="currencyCode" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary" required>
                     @foreach($currencies as $curr)
                         <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
                     @endforeach
@@ -57,7 +57,7 @@
             @if ($currencyCode !== $baseCurrency)
 <div>
                 <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.rate') }} *</label>
-                <input type="text" inputmode="decimal" dir="ltr" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary" required>
+                <input type="text" inputmode="decimal" dir="ltr" wire:model="exchangeRate" placeholder="1.0000000000" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary" required>
                 @error('exchangeRate') <span class="text-xs text-danger">{{ $message }}</span> @enderror
             </div>
             @endif
@@ -78,7 +78,7 @@
             @if($paymentMethod !== 'check')
                 <div>
                     <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.account') }} *</label>
-                    <select wire:model="moneyAccountId" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                    <select wire:model="moneyAccountId" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary" required>
                         <option value="">{{ __('expenses.select_account') }}</option>
                         @foreach($accounts as $acc)
                             <option value="{{ $acc->id }}">{{ $acc->displayName() }}</option>
@@ -92,17 +92,17 @@
                     <div class="grid gap-4 sm:grid-cols-2">
                         <div>
                             <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('money.check_number') }} *</label>
-                            <input type="text" wire:model="checkNumber" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                            <input type="text" wire:model="checkNumber" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary" required>
                             @error('checkNumber') <span class="text-xs text-danger">{{ $message }}</span> @enderror
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('money.due_date') }} *</label>
-                            <input type="date" wire:model="dueDate" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                            <input type="date" wire:model="dueDate" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary" required>
                             @error('dueDate') <span class="text-xs text-danger">{{ $message }}</span> @enderror
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('money.drawn_bank') }} *</label>
-                            <select wire:model="drawnMoneyAccountId" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary" required>
+                            <select wire:model="drawnMoneyAccountId" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary" required>
                                 <option value="">{{ __('money.select_account') }}</option>
                                 @foreach($accounts as $acc)
                                     <option value="{{ $acc->id }}">{{ $acc->displayName() }}</option>
@@ -112,7 +112,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('money.bank_name') }}</label>
-                            <input type="text" wire:model="bankName" placeholder="Bank of Palestine" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                            <input type="text" wire:model="bankName" placeholder="Bank of Palestine" class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary">
                         </div>
                     </div>
                 </div>
@@ -120,15 +120,15 @@
         </div>
 
         <div>
-            <label class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.notes') }}</label>
-            <textarea wire:model="notes" rows="3" class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"></textarea>
+            <label for="advance-notes" class="block text-sm font-semibold text-text-secondary mb-1">{{ __('payroll.notes') }}</label>
+            <textarea id="advance-notes" wire:model="notes" rows="3" class="w-full rounded-control border border-border-control bg-canvas px-3 py-2.5 text-base lg:text-sm focus:border-primary focus:ring-primary"></textarea>
         </div>
 
-        <div class="flex justify-end gap-3 pt-4 border-t border-border">
-            <a href="{{ route('employees.index') }}" class="touch-action inline-flex justify-center items-center rounded-control border border-border bg-surface px-4 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+        <div class="flex flex-wrap justify-end gap-3 pt-4 border-t border-border">
+            <a href="{{ route('employees.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex justify-center items-center rounded-control border border-border-control bg-surface px-4 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                 {{ __('payroll.cancel') }}
             </a>
-            <button type="submit" class="inline-flex justify-center items-center rounded-control bg-primary px-6 py-2 text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary">
+            <button type="submit" class="min-h-11 lg:min-h-9.5 inline-flex justify-center items-center rounded-control bg-primary px-6 text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary cursor-pointer">
                 {{ __('payroll.save') }}
             </button>
         </div>

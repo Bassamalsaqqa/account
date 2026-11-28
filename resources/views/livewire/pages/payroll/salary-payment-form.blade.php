@@ -4,7 +4,7 @@
             <h1 class="text-2xl font-bold">{{ __('payroll.create_salary_payment') }}</h1>
             <p class="text-sm text-text-muted">{{ __('payroll.salary_payments') }}</p>
         </div>
-        <a href="{{ route('employees.index') }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control border border-border bg-surface py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+        <a href="{{ route('employees.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control border border-border-control bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft">
             {{ __('payroll.cancel') }}
         </a>
     </div>
@@ -20,7 +20,7 @@
         </div>
     @endif
 
-    <form wire:submit.prevent="save" class="rounded-card border border-border bg-surface p-6 space-y-6">
+    <form wire:submit.prevent="save" class="rounded-card border border-border bg-surface p-4 sm:p-6 space-y-6">
         <!-- Employee & Date -->
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
@@ -29,7 +29,7 @@
                         wire:model.live="employeeId"
                         aria-invalid="{{ $errors->has('employeeId') ? 'true' : 'false' }}"
                         @if ($errors->has('employeeId')) aria-describedby="salary-payment-employee-error" @endif
-                        class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                        class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                         required>
                     <option value="">{{ __('payroll.select_employee') }}</option>
                     @foreach($employees as $emp)
@@ -50,7 +50,7 @@
                        wire:model="paymentDate"
                        aria-invalid="{{ $errors->has('paymentDate') ? 'true' : 'false' }}"
                        @if ($errors->has('paymentDate')) aria-describedby="salary-payment-date-error" @endif
-                       class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                       class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                        required>
                 @error('paymentDate') <span id="salary-payment-date-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
             </div>
@@ -64,7 +64,7 @@
                         wire:model.live="currencyCode"
                         aria-invalid="{{ $errors->has('currencyCode') ? 'true' : 'false' }}"
                         @if ($errors->has('currencyCode')) aria-describedby="salary-payment-currency-error" @endif
-                        class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                        class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                         required>
                     @foreach($currencies as $curr)
                         <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
@@ -83,7 +83,7 @@
                            aria-invalid="{{ $errors->has('exchangeRate') ? 'true' : 'false' }}"
                            @if ($errors->has('exchangeRate')) aria-describedby="salary-payment-exchange-rate-error" @endif
                            placeholder="1.0000000000"
-                           class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary"
+                           class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary"
                            required>
                     @error('exchangeRate') <span id="salary-payment-exchange-rate-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                 </div>
@@ -109,7 +109,7 @@
                             wire:model="moneyAccountId"
                             aria-invalid="{{ $errors->has('moneyAccountId') ? 'true' : 'false' }}"
                             @if ($errors->has('moneyAccountId')) aria-describedby="salary-payment-account-error" @endif
-                            class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                            class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                             required>
                         <option value="">{{ __('expenses.select_account') }}</option>
                         @foreach($accounts as $acc)
@@ -130,7 +130,7 @@
                                    wire:model="checkNumber"
                                    aria-invalid="{{ $errors->has('checkNumber') ? 'true' : 'false' }}"
                                    @if ($errors->has('checkNumber')) aria-describedby="salary-payment-check-number-error" @endif
-                                   class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                                   class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                                    required>
                             @error('checkNumber') <span id="salary-payment-check-number-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                         </div>
@@ -141,7 +141,7 @@
                                    wire:model="dueDate"
                                    aria-invalid="{{ $errors->has('dueDate') ? 'true' : 'false' }}"
                                    @if ($errors->has('dueDate')) aria-describedby="salary-payment-due-date-error" @endif
-                                   class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                                   class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                                    required>
                             @error('dueDate') <span id="salary-payment-due-date-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                         </div>
@@ -151,7 +151,7 @@
                                     wire:model="drawnMoneyAccountId"
                                     aria-invalid="{{ $errors->has('drawnMoneyAccountId') ? 'true' : 'false' }}"
                                     @if ($errors->has('drawnMoneyAccountId')) aria-describedby="salary-payment-drawn-bank-error" @endif
-                                    class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                                    class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                                     required>
                                 <option value="">{{ __('money.select_account') }}</option>
                                 @foreach($accounts as $acc)
@@ -168,7 +168,7 @@
                                    aria-invalid="{{ $errors->has('bankName') ? 'true' : 'false' }}"
                                    @if ($errors->has('bankName')) aria-describedby="salary-payment-bank-name-error" @endif
                                    placeholder="Bank of Palestine"
-                                   class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary">
+                                   class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary">
                             @error('bankName') <span id="salary-payment-bank-name-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                         </div>
                     </div>
@@ -184,7 +184,7 @@
             @if(count($unpaidEntries) > 0)
                 <div class="relative rounded-control border border-border overflow-hidden">
                     <div class="relative overflow-x-auto">
-                        <table class="data-table w-full text-sm text-start">
+                        <table class="data-table data-table--responsive w-full text-sm text-start">
                             <thead class="bg-surface-soft border-b border-border text-xs text-text-muted">
                                 <tr>
                                     <th class="px-3 py-2 text-start">{{ __('payroll.entry_number') }}</th>
@@ -199,14 +199,14 @@
                                 @foreach($unpaidEntries as $pos)
                                     @php $ent = $pos['entry']; @endphp
                                     <tr>
-                                        <td class="px-3 py-2 font-semibold">{{ $ent->salary_number }}</td>
-                                        <td class="px-3 py-2 text-text-secondary" dir="ltr">{{ $ent->recognition_date->toDateString() }}</td>
-                                        <td class="px-3 py-2 text-text-secondary text-xs" dir="ltr">
+                                        <td data-label="{{ __('payroll.entry_number') }}" class="px-3 py-2 font-semibold font-mono">{{ $ent->salary_number }}</td>
+                                        <td data-label="{{ __('payroll.recognition_date') }}" class="px-3 py-2 text-text-secondary font-mono tabular-nums" dir="ltr">{{ $ent->recognition_date->toDateString() }}</td>
+                                        <td data-label="{{ __('payroll.period') }}" class="px-3 py-2 text-text-secondary text-xs font-mono tabular-nums" dir="ltr">
                                             {{ $ent->period_start->toDateString() }} – {{ $ent->period_end->toDateString() }}
                                         </td>
-                                        <td class="px-3 py-2 font-medium" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }}</td>
-                                        <td class="px-3 py-2 font-bold text-primary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }}</td>
-                                        <td class="px-3 py-2 min-w-[10rem]">
+                                        <td data-label="{{ __('payroll.net_payable') }}" class="px-3 py-2 font-medium font-mono tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['net_payable']) }}</td>
+                                        <td data-label="{{ __('payroll.remaining_payable') }}" class="px-3 py-2 font-bold text-primary font-mono tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_payable']) }}</td>
+                                        <td data-label="{{ __('payroll.allocate_payment') }}" class="px-3 py-2 lg:min-w-[10rem]">
                                             <label for="salary-payment-entry-{{ $ent->id }}" class="sr-only">{{ __('payroll.allocate_payment') }} — {{ $ent->salary_number }}</label>
                                             <input id="salary-payment-entry-{{ $ent->id }}"
                                                    type="text"
@@ -217,7 +217,7 @@
                                                    aria-invalid="{{ $errors->has('entryAllocations.'.$ent->id) ? 'true' : 'false' }}"
                                                    @if ($errors->has('entryAllocations.'.$ent->id)) aria-describedby="salary-payment-entry-{{ $ent->id }}-error" @endif
                                                    placeholder="0.00"
-                                                   class="w-full rounded-control border border-border bg-surface px-2 py-1 text-sm font-mono focus:border-primary focus:ring-primary text-end">
+                                                   class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-2.5 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary text-end">
                                             @error('entryAllocations.'.$ent->id)
                                                 <p id="salary-payment-entry-{{ $ent->id }}-error" role="alert" class="mt-1 whitespace-normal text-xs text-danger">{{ $message }}</p>
                                             @enderror
@@ -250,15 +250,15 @@
                       rows="2"
                       aria-invalid="{{ $errors->has('notes') ? 'true' : 'false' }}"
                       @if ($errors->has('notes')) aria-describedby="salary-payment-notes-error" @endif
-                      class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"></textarea>
+                      class="w-full rounded-control border border-border-control bg-canvas px-3 py-2.5 text-base lg:text-sm focus:border-primary focus:ring-primary"></textarea>
             @error('notes') <span id="salary-payment-notes-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
         </div>
 
-        <div class="flex justify-end gap-3 pt-4 border-t border-border">
-            <a href="{{ route('employees.index') }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control border border-border bg-surface px-4 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+        <div class="flex flex-wrap justify-end gap-3 pt-4 border-t border-border">
+            <a href="{{ route('employees.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control border border-border-control bg-surface px-4 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                 {{ __('payroll.cancel') }}
             </a>
-            <button type="submit" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control bg-emerald-600 px-6 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-500" wire:loading.attr="disabled" wire:target="save">
+            <button type="submit" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary rounded-control bg-emerald-600 px-6 text-sm font-semibold text-white hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-500 cursor-pointer" wire:loading.attr="disabled" wire:target="save">
                 {{ __('payroll.save') }}
             </button>
         </div>

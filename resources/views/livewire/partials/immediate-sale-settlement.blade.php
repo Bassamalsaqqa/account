@@ -24,7 +24,7 @@
             <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label for="settlement-method" class="mb-1 block text-sm font-semibold">{{ __('fin1.payment_method') }}</label>
-                    <select id="settlement-method" wire:model.live="settlement.payment_method" @error('settlement.payment_method') aria-invalid="true" aria-describedby="settlement-payment_method-error" @enderror class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary">
+                    <select id="settlement-method" wire:model.live="settlement.payment_method" @error('settlement.payment_method') aria-invalid="true" aria-describedby="settlement-payment_method-error" @enderror class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary">
                         <option value="cash">{{ __('fin1.cash') }}</option>
                         <option value="bank_transfer">{{ __('fin1.bank_transfer') }}</option>
                         @if ($canReceiveCheck) <option value="check">{{ __('fin1.check') }}</option> @endif
@@ -33,7 +33,7 @@
                 @if (($settlement['payment_method'] ?? null) === 'check')
                     <div>
                         <label for="settlement-currency" class="mb-1 block text-sm font-semibold">{{ __('fin1.currency_code') }}</label>
-                        <select id="settlement-currency" wire:model.live="settlement.currency_code" @error('settlement.currency_code') aria-invalid="true" aria-describedby="settlement-currency_code-error" @enderror class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary">
+                        <select id="settlement-currency" wire:model.live="settlement.currency_code" @error('settlement.currency_code') aria-invalid="true" aria-describedby="settlement-currency_code-error" @enderror class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary">
                             <option value="">{{ __('fin1.choose') }}</option>
                             @foreach ($currencies as $currency) <option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option> @endforeach
                         </select>
@@ -41,7 +41,7 @@
                 @else
                     <div>
                         <label for="settlement-account" class="mb-1 block text-sm font-semibold">{{ __('fin1.money_account_id') }}</label>
-                        <select id="settlement-account" wire:model.live="settlement.money_account_id" @error('settlement.money_account_id') aria-invalid="true" aria-describedby="settlement-money_account_id-error" @enderror class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary">
+                        <select id="settlement-account" wire:model.live="settlement.money_account_id" @error('settlement.money_account_id') aria-invalid="true" aria-describedby="settlement-money_account_id-error" @enderror class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary">
                             <option value="">{{ __('fin1.choose') }}</option>
                             @foreach ($settlementAccounts as $account)
                                 <option value="{{ $account->id }}">{{ app()->getLocale() === 'ar' ? ($account->name_ar ?: $account->name_en) : ($account->name_en ?: $account->name_ar) }} — {{ $account->currency_code }}</option>
@@ -57,7 +57,7 @@
                            wire:model="settlement.payment_date"
                            @if ($errors->has('settlement.payment_date')) aria-invalid="true" aria-describedby="settlement-payment_date-error settlement-date-help"
                            @else aria-describedby="settlement-date-help" @endif
-                           class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary" />
+                           class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary" />
                     @error('settlement.payment_date') <p id="settlement-payment_date-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                 </div>
 
@@ -68,7 +68,7 @@
                     <input id="settlement-amount" type="text" inputmode="decimal" dir="ltr"
                            wire:model.live.debounce.300ms="settlement.amount"
                            @error('settlement.amount') aria-invalid="true" aria-describedby="settlement-amount-error" @enderror
-                           class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
+                           class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary" />
                     @error('settlement.amount') <p id="settlement-amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                 </div>
 
@@ -80,7 +80,7 @@
                         <input id="settlement-invoice_amount" type="text" inputmode="decimal" dir="ltr"
                                wire:model.live.debounce.300ms="settlement.invoice_amount"
                                @error('settlement.invoice_amount') aria-invalid="true" aria-describedby="settlement-invoice_amount-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary" />
                         @error('settlement.invoice_amount') <p id="settlement-invoice_amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
                 @endif
@@ -93,7 +93,7 @@
                         <input id="settlement-exchange_rate" type="text" inputmode="decimal" dir="ltr"
                                wire:model.live.debounce.300ms="settlement.exchange_rate"
                                @error('settlement.exchange_rate') aria-invalid="true" aria-describedby="settlement-exchange_rate-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary" />
                         @error('settlement.exchange_rate') <p id="settlement-exchange_rate-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
                 @endif
@@ -106,7 +106,7 @@
                         <input id="settlement-payment_currency_amount" type="text" inputmode="decimal" dir="ltr"
                                wire:model.live.debounce.300ms="settlement.payment_currency_amount"
                                @error('settlement.payment_currency_amount') aria-invalid="true" aria-describedby="settlement-payment_currency_amount-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm font-mono text-start focus:ring-2 focus:ring-primary" />
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums text-start focus:ring-2 focus:ring-primary" />
                         @error('settlement.payment_currency_amount') <p id="settlement-payment_currency_amount-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
                 @endif
@@ -117,7 +117,7 @@
                         <input id="settlement-check_number" type="text"
                                wire:model="settlement.check_number"
                                @error('settlement.check_number') aria-invalid="true" aria-describedby="settlement-check_number-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary" />
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary" />
                         @error('settlement.check_number') <p id="settlement-check_number-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
                     <div>
@@ -125,7 +125,7 @@
                         <input id="settlement-bank_name" type="text"
                                wire:model="settlement.bank_name"
                                @error('settlement.bank_name') aria-invalid="true" aria-describedby="settlement-bank_name-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary" />
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary" />
                         @error('settlement.bank_name') <p id="settlement-bank_name-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
                     <div>
@@ -133,7 +133,7 @@
                         <input id="settlement-drawer" type="text"
                                wire:model="settlement.drawer"
                                @error('settlement.drawer') aria-invalid="true" aria-describedby="settlement-drawer-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary" />
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary" />
                         @error('settlement.drawer') <p id="settlement-drawer-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
                     <div>
@@ -141,7 +141,7 @@
                         <input id="settlement-due_date" type="date"
                                wire:model="settlement.due_date"
                                @error('settlement.due_date') aria-invalid="true" aria-describedby="settlement-due_date-error" @enderror
-                               class="min-h-11 w-full rounded-control border border-border bg-surface px-3 text-sm focus:ring-2 focus:ring-primary" />
+                               class="min-h-11 lg:min-h-9.5 w-full rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:ring-2 focus:ring-primary" />
                         @error('settlement.due_date') <p id="settlement-due_date-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
                     </div>
                 @endif

@@ -4,7 +4,7 @@
             <h1 class="text-2xl font-bold">{{ __('payroll.create_salary_entry') }}</h1>
             <p class="text-sm text-text-muted">{{ __('payroll.salary_entries') }}</p>
         </div>
-        <a href="{{ route('employees.index') }}" class="touch-action inline-flex items-center rounded-control border border-border bg-surface px-3 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+        <a href="{{ route('employees.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center rounded-control border border-border-control bg-surface px-3 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
             {{ __('payroll.cancel') }}
         </a>
     </div>
@@ -20,7 +20,7 @@
         </div>
     @endif
 
-    <form wire:submit.prevent="save" class="rounded-card border border-border bg-surface p-6 space-y-6">
+    <form wire:submit.prevent="save" class="rounded-card border border-border bg-surface p-4 sm:p-6 space-y-6">
         <!-- Employee & Period -->
         <div class="grid gap-4 sm:grid-cols-2">
             <div>
@@ -29,7 +29,7 @@
                         wire:model.live="employeeId"
                         aria-invalid="{{ $errors->has('employeeId') ? 'true' : 'false' }}"
                         @if ($errors->has('employeeId')) aria-describedby="salary-entry-employee-error" @endif
-                        class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                        class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                         required>
                     <option value="">{{ __('payroll.select_employee') }}</option>
                     @foreach($employees as $emp)
@@ -46,7 +46,7 @@
                        wire:model="recognitionDate"
                        aria-invalid="{{ $errors->has('recognitionDate') ? 'true' : 'false' }}"
                        @if ($errors->has('recognitionDate')) aria-describedby="salary-entry-recognition-date-error" @endif
-                       class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                       class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                        required>
                 @error('recognitionDate') <span id="salary-entry-recognition-date-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
             </div>
@@ -60,7 +60,7 @@
                        wire:model="periodStart"
                        aria-invalid="{{ $errors->has('periodStart') ? 'true' : 'false' }}"
                        @if ($errors->has('periodStart')) aria-describedby="salary-entry-period-start-error" @endif
-                       class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                       class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                        required>
                 @error('periodStart') <span id="salary-entry-period-start-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
             </div>
@@ -71,7 +71,7 @@
                        wire:model="periodEnd"
                        aria-invalid="{{ $errors->has('periodEnd') ? 'true' : 'false' }}"
                        @if ($errors->has('periodEnd')) aria-describedby="salary-entry-period-end-error" @endif
-                       class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                       class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                        required>
                 @error('periodEnd') <span id="salary-entry-period-end-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
             </div>
@@ -85,7 +85,7 @@
                         wire:model.live="currencyCode"
                         aria-invalid="{{ $errors->has('currencyCode') ? 'true' : 'false' }}"
                         @if ($errors->has('currencyCode')) aria-describedby="salary-entry-currency-error" @endif
-                        class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"
+                        class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm focus:border-primary focus:ring-primary"
                         required>
                     @foreach($currencies as $curr)
                         <option value="{{ $curr->currency_code }}">{{ $curr->currency_code }}</option>
@@ -104,7 +104,7 @@
                            aria-invalid="{{ $errors->has('exchangeRate') ? 'true' : 'false' }}"
                            @if ($errors->has('exchangeRate')) aria-describedby="salary-entry-exchange-rate-error" @endif
                            placeholder="1.0000000000"
-                           class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary"
+                           class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary"
                            required>
                     @error('exchangeRate') <span id="salary-entry-exchange-rate-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
                 </div>
@@ -122,7 +122,7 @@
                        aria-invalid="{{ $errors->has('baseSalary') ? 'true' : 'false' }}"
                        @if ($errors->has('baseSalary')) aria-describedby="salary-entry-base-salary-error" @endif
                        placeholder="0.00"
-                       class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary"
+                       class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary"
                        required>
                 @error('baseSalary') <span id="salary-entry-base-salary-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
             </div>
@@ -136,7 +136,7 @@
                        aria-invalid="{{ $errors->has('bonus') ? 'true' : 'false' }}"
                        @if ($errors->has('bonus')) aria-describedby="salary-entry-bonus-error" @endif
                        placeholder="0.00"
-                       class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary">
+                       class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary">
                 @error('bonus') <span id="salary-entry-bonus-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
             </div>
             <div>
@@ -149,7 +149,7 @@
                        aria-invalid="{{ $errors->has('deduction') ? 'true' : 'false' }}"
                        @if ($errors->has('deduction')) aria-describedby="salary-entry-deduction-error" @endif
                        placeholder="0.00"
-                       class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm font-mono focus:border-primary focus:ring-primary">
+                       class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-3 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary">
                 @error('deduction') <span id="salary-entry-deduction-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
             </div>
         </div>
@@ -162,7 +162,7 @@
             @if(count($availableAdvances) > 0)
                 <div class="relative rounded-control border border-border overflow-hidden">
                     <div class="relative overflow-x-auto">
-                        <table class="data-table w-full text-sm text-start">
+                        <table class="data-table data-table--responsive w-full text-sm text-start">
                             <thead class="bg-surface-soft border-b border-border text-xs text-text-muted">
                                 <tr>
                                     <th class="px-3 py-2 text-start">{{ __('payroll.advance_number') }}</th>
@@ -176,11 +176,11 @@
                                 @foreach($availableAdvances as $pos)
                                     @php $adv = $pos['advance']; @endphp
                                     <tr>
-                                        <td class="px-3 py-2 font-semibold">{{ $adv->advance_number }}</td>
-                                        <td class="px-3 py-2 text-text-secondary" dir="ltr">{{ $adv->advance_date->toDateString() }}</td>
-                                        <td class="px-3 py-2 text-text-secondary" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['original_amount']) }}</td>
-                                        <td class="px-3 py-2 font-bold text-success" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_amount']) }}</td>
-                                        <td class="px-3 py-2 min-w-[10rem]">
+                                        <td data-label="{{ __('payroll.advance_number') }}" class="px-3 py-2 font-semibold font-mono">{{ $adv->advance_number }}</td>
+                                        <td data-label="{{ __('payroll.advance_date') }}" class="px-3 py-2 text-text-secondary font-mono tabular-nums" dir="ltr">{{ $adv->advance_date->toDateString() }}</td>
+                                        <td data-label="{{ __('payroll.original_amount') }}" class="px-3 py-2 text-text-secondary font-mono tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['original_amount']) }}</td>
+                                        <td data-label="{{ __('payroll.remaining_amount') }}" class="px-3 py-2 font-bold text-success font-mono tabular-nums" dir="ltr">{{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($pos['remaining_amount']) }}</td>
+                                        <td data-label="{{ __('payroll.allocate_advance') }}" class="px-3 py-2 lg:min-w-[10rem]">
                                             <label for="salary-entry-advance-{{ $adv->id }}" class="sr-only">{{ __('payroll.allocate_advance') }} — {{ $adv->advance_number }}</label>
                                             <input id="salary-entry-advance-{{ $adv->id }}"
                                                    type="text"
@@ -191,7 +191,7 @@
                                                    aria-invalid="{{ $errors->has('advanceAllocations.'.$adv->id) ? 'true' : 'false' }}"
                                                    @if ($errors->has('advanceAllocations.'.$adv->id)) aria-describedby="salary-entry-advance-{{ $adv->id }}-error" @endif
                                                    placeholder="0.00"
-                                                   class="w-full rounded-control border border-border bg-surface px-2 py-1 text-sm font-mono focus:border-primary focus:ring-primary text-end">
+                                                   class="w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-2.5 text-base lg:text-sm font-mono tabular-nums focus:border-primary focus:ring-primary text-end">
                                             @error('advanceAllocations.'.$adv->id)
                                                 <p id="salary-entry-advance-{{ $adv->id }}-error" role="alert" class="mt-1 whitespace-normal text-xs text-danger">{{ $message }}</p>
                                             @enderror
@@ -235,15 +235,15 @@
                       rows="2"
                       aria-invalid="{{ $errors->has('notes') ? 'true' : 'false' }}"
                       @if ($errors->has('notes')) aria-describedby="salary-entry-notes-error" @endif
-                      class="w-full rounded-control border border-border bg-surface px-3 py-2 text-sm focus:border-primary focus:ring-primary"></textarea>
+                      class="w-full rounded-control border border-border-control bg-canvas px-3 py-2.5 text-base lg:text-sm focus:border-primary focus:ring-primary"></textarea>
             @error('notes') <span id="salary-entry-notes-error" role="alert" class="mt-1 block text-xs text-danger">{{ $message }}</span> @enderror
         </div>
 
-        <div class="flex justify-end gap-3 pt-4 border-t border-border">
-            <a href="{{ route('employees.index') }}" class="touch-action inline-flex justify-center items-center rounded-control border border-border bg-surface px-4 py-2 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
+        <div class="flex flex-wrap justify-end gap-3 pt-4 border-t border-border">
+            <a href="{{ route('employees.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex justify-center items-center rounded-control border border-border-control bg-surface px-4 text-sm font-semibold text-text-secondary hover:bg-surface-soft">
                 {{ __('payroll.cancel') }}
             </a>
-            <button type="submit" class="inline-flex justify-center items-center rounded-control bg-primary px-6 py-2 text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary" wire:loading.attr="disabled" wire:target="save">
+            <button type="submit" class="min-h-11 lg:min-h-9.5 inline-flex justify-center items-center rounded-control bg-primary px-6 text-sm font-semibold text-white hover:bg-primary-hover focus:ring-2 focus:ring-primary cursor-pointer" wire:loading.attr="disabled" wire:target="save">
                 {{ __('payroll.save') }}
             </button>
         </div>

@@ -115,7 +115,7 @@
                         id="opening-amount" aria-invalid="{{ $errors->has('amount') ? 'true' : 'false' }}"
                         wire:model.live.debounce.300ms="amount"
                         placeholder="0.00"
-                        class="block w-full min-h-11 rounded-control border border-border-strong bg-surface pl-3 pr-16 py-2 text-base sm:text-sm font-semibold tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas pl-3 pr-16 text-base lg:text-sm font-mono font-semibold tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
                         dir="ltr"
                         required
                     />
@@ -134,7 +134,7 @@
                 <select
                     id="opening-currency" aria-invalid="{{ $errors->has('currency_code') ? 'true' : 'false' }}"
                     wire:model.live="currency_code"
-                    class="block w-full min-h-11 rounded-control border border-border-strong bg-surface text-base sm:text-sm py-2 px-3 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
+                    class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm px-3 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden"
                 >
                     @foreach ($currencies as $curr)
                         <option value="{{ $curr }}">{{ $curr }}</option>
@@ -164,7 +164,7 @@
                         id="opening-exchange-rate" aria-invalid="{{ $errors->has('exchange_rate') ? 'true' : 'false' }}"
                         wire:model.live.debounce.300ms="exchange_rate"
                         placeholder="1.0000000000"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface px-2.5 py-1.5 text-base sm:text-xs font-mono tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas px-2.5 text-base lg:text-sm font-mono tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary text-left"
                     />
                 </div>
                 <x-input-error :messages="$errors->get('exchange_rate')" class="mt-0.5" />
@@ -184,7 +184,7 @@
                         type="date"
                         id="opening-date" aria-invalid="{{ $errors->has('opening_date') ? 'true' : 'false' }}"
                         wire:model="opening_date"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('opening_date')" class="mt-0.5" />
                 </div>
@@ -195,7 +195,7 @@
                         id="opening-reference" aria-invalid="{{ $errors->has('original_reference') ? 'true' : 'false' }}"
                         wire:model="original_reference"
                         placeholder="{{ __('accounting.original_reference_placeholder') }}"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('original_reference')" class="mt-0.5" />
                 </div>
@@ -205,7 +205,7 @@
                         type="date"
                         id="opening-due-date" aria-invalid="{{ $errors->has('due_date') ? 'true' : 'false' }}"
                         wire:model="due_date"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('due_date')" class="mt-0.5" />
                 </div>
@@ -216,7 +216,7 @@
                         id="opening-notes" aria-invalid="{{ $errors->has('notes') ? 'true' : 'false' }}"
                         wire:model="notes"
                         placeholder="{{ __('accounting.notes_placeholder') }}"
-                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-strong bg-surface text-base sm:text-xs py-1.5 px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
+                        class="block w-full min-h-11 lg:min-h-9.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm px-2.5 text-text-primary focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <x-input-error :messages="$errors->get('notes')" class="mt-0.5" />
                 </div>
@@ -250,17 +250,17 @@
                         @endif
                     @endif
                 </div>
-                <x-secondary-button type="button" wire:click="removeAdditionalLine({{ $index }})" class="min-h-11">{{ __('accounting.remove_line') }}</x-secondary-button>
+                <x-secondary-button type="button" wire:click="removeAdditionalLine({{ $index }})" class="min-h-11 lg:min-h-9.5">{{ __('accounting.remove_line') }}</x-secondary-button>
             </div>
         @endforeach
-        <button type="button" wire:click="addAdditionalLine" class="min-h-11 text-sm text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary">{{ __('accounting.add_another_line') }}</button>
+        <button type="button" wire:click="addAdditionalLine" class="min-h-11 lg:min-h-9.5 text-sm text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary cursor-pointer">{{ __('accounting.add_another_line') }}</button>
 
-        <div class="flex items-center justify-end pt-2">
+        <div class="flex items-center justify-end pt-2 border-t border-border">
             <x-primary-button
                 x-bind:disabled="saving"
                 wire:loading.attr="disabled"
                 :disabled="$glOverlapMessage !== null"
-                class="min-h-11 px-5"
+                class="min-h-11 lg:min-h-9.5 px-5"
             >
                 <span wire:loading.remove>{{ __('accounting.confirm_opening_balance') }}</span>
                 <span wire:loading class="flex items-center gap-1.5">

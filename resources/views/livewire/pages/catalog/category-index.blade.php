@@ -162,7 +162,7 @@
                            dir="rtl"
                            aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
                            @if ($errors->has('name_ar')) aria-describedby="category-name-ar-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_ar') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm @error('name_ar') border-danger @enderror" />
                     @error('name_ar') <span id="category-name-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
@@ -173,7 +173,7 @@
                            dir="ltr"
                            aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
                            @if ($errors->has('name_en')) aria-describedby="category-name-en-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_en') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm @error('name_en') border-danger @enderror" />
                     @error('name_en') <span id="category-name-en-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
@@ -182,7 +182,7 @@
                             wire:model="parent_id"
                             aria-invalid="{{ $errors->has('parent_id') ? 'true' : 'false' }}"
                             @if ($errors->has('parent_id')) aria-describedby="category-parent-id-error" @endif
-                            class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm">
+                            class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm">
                         <option value="">{{ __('inventory.none_root') }}</option>
                         @foreach ($parentOptions as $c)
                             @if ($editingId !== $c->id)
@@ -201,7 +201,7 @@
                            dir="ltr"
                            aria-invalid="{{ $errors->has('sort_order') ? 'true' : 'false' }}"
                            @if ($errors->has('sort_order')) aria-describedby="category-sort-order-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm" />
                     @error('sort_order') <span id="category-sort-order-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div class="pt-1">

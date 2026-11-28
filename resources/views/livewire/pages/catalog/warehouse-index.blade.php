@@ -173,7 +173,7 @@
                            placeholder="{{ __('inventory.warehouse_code_placeholder') }}"
                            aria-invalid="{{ $errors->has('code') ? 'true' : 'false' }}"
                            @if ($errors->has('code')) aria-describedby="warehouse-code-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm font-mono @error('code') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono @error('code') border-danger @enderror" />
                     @error('code') <span id="warehouse-code-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
@@ -184,7 +184,7 @@
                            dir="rtl"
                            aria-invalid="{{ $errors->has('name_ar') ? 'true' : 'false' }}"
                            @if ($errors->has('name_ar')) aria-describedby="warehouse-name-ar-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_ar') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm @error('name_ar') border-danger @enderror" />
                     @error('name_ar') <span id="warehouse-name-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
@@ -195,7 +195,7 @@
                            dir="ltr"
                            aria-invalid="{{ $errors->has('name_en') ? 'true' : 'false' }}"
                            @if ($errors->has('name_en')) aria-describedby="warehouse-name-en-error" @endif
-                           class="min-h-11 w-full h-11 px-2.5 rounded-control border border-border text-sm @error('name_en') border-danger @enderror" />
+                           class="min-h-11 lg:min-h-9.5 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm @error('name_en') border-danger @enderror" />
                     @error('name_en') <span id="warehouse-name-en-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div>
@@ -206,7 +206,7 @@
                               rows="2"
                               aria-invalid="{{ $errors->has('address_ar') ? 'true' : 'false' }}"
                               @if ($errors->has('address_ar')) aria-describedby="warehouse-address-ar-error" @endif
-                              class="w-full p-2.5 rounded-control border border-border text-sm"></textarea>
+                              class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm"></textarea>
                     @error('address_ar') <span id="warehouse-address-ar-error" role="alert" class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
                 <div class="p-3 rounded-control bg-surface-soft border border-border space-y-2">

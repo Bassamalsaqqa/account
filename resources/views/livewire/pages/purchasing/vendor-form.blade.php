@@ -13,7 +13,7 @@
 <div data-entry-form class="max-w-7xl mx-auto space-y-5" x-data="{ showAdvanced: {{ ($vendorId || $hasAdvanced) ? 'true' : 'false' }} }">
     <header class="flex items-center justify-between gap-3">
         <h1 class="text-xl sm:text-2xl font-bold text-text-primary">{{ __($vendorId ? 'purchasing.edit_vendor' : 'purchasing.create_vendor') }}</h1>
-        @if ($canView)<a href="{{ route('vendors.index') }}" class="touch-action text-sm text-primary px-3 py-3">{{ __('purchasing.back') }}</a>@endif
+        @if ($canView)<a href="{{ route('vendors.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center px-3 rounded-control border border-border-control bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">{{ __('purchasing.back') }}</a>@endif
     </header>
     @if (session()->has('success'))<p role="status" class="p-3 rounded-control bg-success-bg text-success text-sm">{{ session('success') }}</p>@endif
     <form wire:submit="save"
@@ -48,16 +48,16 @@
             <legend class="px-2 text-sm font-bold">{{ __('purchasing.preferences_section') }}</legend>
             <div class="grid sm:grid-cols-2 gap-4">
                 <div>
-                    <label for="vendorLocale" class="block text-sm font-bold mb-1.5">{{ __('purchasing.preferred_locale') }}</label>
-                    <select id="vendorLocale" wire:model="preferred_locale" class="w-full h-11 px-3 border border-border rounded-control text-sm">
+                    <label for="vendorLocale" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('purchasing.preferred_locale') }}</label>
+                    <select id="vendorLocale" wire:model="preferred_locale" class="w-full min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-canvas rounded-control text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         <option value="">{{ __('purchasing.company_default') }}</option>
                         @foreach ($locales as $language)<option value="{{ $language->locale }}">{{ __('purchasing.language_' . $language->locale) }}</option>@endforeach
                     </select>
                     @error('preferred_locale')<p role="alert" class="text-xs text-danger">{{ $message }}</p>@enderror
                 </div>
                 <div>
-                    <label for="vendorCurrency" class="block text-sm font-bold mb-1.5">{{ __('purchasing.default_currency') }}</label>
-                    <select id="vendorCurrency" wire:model="default_currency_code" class="w-full h-11 px-3 border border-border rounded-control text-sm">
+                    <label for="vendorCurrency" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('purchasing.default_currency') }}</label>
+                    <select id="vendorCurrency" wire:model="default_currency_code" class="w-full min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-canvas rounded-control text-base lg:text-sm focus:border-primary focus:ring-1 focus:ring-primary outline-hidden">
                         <option value="">{{ __('purchasing.company_default') }}</option>
                         @foreach ($currencies as $currency)<option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>@endforeach
                     </select>
@@ -101,8 +101,11 @@
                     <x-purchasing.field name="notes" :label="__('purchasing.notes')" type="textarea" :maxlength="4000" />
                 </fieldset>
         </div>
-        <div class="flex justify-end">
-            <button type="submit" wire:loading.attr="disabled" class="h-11 px-5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50">{{ __('purchasing.save_vendor') }}</button>
+        <div class="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-border">
+            @if ($canView)
+                <a href="{{ $vendorId ? route('vendors.show', $vendorPublicId) : route('vendors.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center px-4 rounded-control border border-border-control text-sm font-semibold text-text-secondary hover:bg-surface-soft transition-colors">{{ __('purchasing.cancel') }}</a>
+            @endif
+            <button type="submit" wire:loading.attr="disabled" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center px-5 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover disabled:opacity-50 cursor-pointer">{{ __('purchasing.save_vendor') }}</button>
         </div>
     </form>
 </div>

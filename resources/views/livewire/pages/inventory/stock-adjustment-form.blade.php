@@ -1,4 +1,4 @@
-<div class="space-y-6 max-w-3xl mx-auto" x-data="{
+<div class="space-y-6 max-w-3xl mx-auto pb-28 md:pb-6" x-data="{
         saving: false, documentBusy: false, operationFailed: false,
         run(method, args = [], terminal = false) {
             if (this.saving || window.isDocumentBlocked($wire)) return;
@@ -41,8 +41,8 @@
         </div>
     @endif
 
-    <x-card padding="p-6">
-        <form @submit.prevent="run('save', [], true)" class="space-y-4 text-xs">
+    <x-card padding="p-4 sm:p-6">
+        <form @submit.prevent="run('save', [], true)" class="space-y-4 text-sm">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2 rounded-control border border-border bg-surface-soft p-3 space-y-2">
                     <x-camera-scanner />
@@ -51,6 +51,7 @@
                 </div>
                 <!-- Product -->
                 <div>
+                    <label for="stock-adjustment-product-id" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.product') }} <span class="text-danger">*</span></label>
                     @php
                         $selectedProd = $product_id ? $products->firstWhere('id', $product_id) : null;
                         $prodLabel = $selectedProd ? (app()->getLocale() === 'en' ? ($selectedProd->name_en ?: $selectedProd->name_ar) : $selectedProd->name_ar) . ($selectedProd->sku ? ' (' . $selectedProd->sku . ')' : '') : '';
@@ -78,8 +79,8 @@
 
                 <!-- Warehouse -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.warehouse') }} *</label>
-                    <select wire:model.live="warehouse_id" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
+                    <label for="stock-adjustment-warehouse-id" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.warehouse') }} <span class="text-danger">*</span></label>
+                    <select id="stock-adjustment-warehouse-id" wire:model.live="warehouse_id" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
                         <option value="">{{ __('inventory.select_warehouse') }}</option>
                         @foreach ($warehouses as $w)
                             <option value="{{ $w->id }}">{{ app()->getLocale() === 'en' ? ($w->name_en ?: $w->name_ar) : $w->name_ar }} {{ $w->is_default ? ('(' . __('inventory.default') . ')') : '' }}</option>
@@ -90,8 +91,8 @@
 
                 <!-- Adjustment Type -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.movement_type') }} *</label>
-                    <select wire:model.live="type" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
+                    <label for="stock-adjustment-type" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.movement_type') }} <span class="text-danger">*</span></label>
+                    <select id="stock-adjustment-type" wire:model.live="type" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
                         <option value="{{ \App\Models\StockMovement::TYPE_ADJUSTMENT_INCREASE }}">{{ __('inventory.type_adjustment_increase') }}</option>
                         <option value="{{ \App\Models\StockMovement::TYPE_ADJUSTMENT_DECREASE }}">{{ __('inventory.type_adjustment_decrease') }}</option>
                         <option value="{{ \App\Models\StockMovement::TYPE_DAMAGE_OR_LOSS }}">{{ __('inventory.type_damage_or_loss') }}</option>
@@ -101,8 +102,8 @@
 
                 <!-- Movement Date -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.movement_date') }} *</label>
-                    <input type="date" wire:model.live="movement_date" dir="ltr" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-mono"  :disabled="documentBusy || saving"/>
+                    <label for="stock-adjustment-movement-date" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.movement_date') }} <span class="text-danger">*</span></label>
+                    <input id="stock-adjustment-movement-date" type="date" wire:model.live="movement_date" dir="ltr" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono"  :disabled="documentBusy || saving"/>
                     @error('movement_date') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
 
@@ -110,19 +111,19 @@
 
                 <!-- Quantity -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.quantity_delta') }} *</label>
+                    <label for="stock-adjustment-quantity" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.quantity_delta') }} <span class="text-danger">*</span></label>
                     <div class="flex items-center gap-2" dir="ltr">
-                        <button type="button" @click="run('stepInventoryQuantity', ['down'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
-                        <input type="text" inputmode="decimal" wire:model="quantity" dir="ltr" placeholder="0" aria-label="{{ __('inventory.quantity') }}" class="min-h-11 min-w-0 w-full px-3 rounded-control border border-border text-center font-mono tabular-nums"  :disabled="documentBusy || saving"/>
-                        <button type="button" @click="run('stepInventoryQuantity', ['up'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.increase_quantity') }}">+</button>
+                        <button type="button" @click="run('stepInventoryQuantity', ['down'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 lg:min-h-9.5 lg:min-w-9.5 rounded-control border border-border-control bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
+                        <input id="stock-adjustment-quantity" type="text" inputmode="decimal" wire:model="quantity" dir="ltr" placeholder="0" aria-label="{{ __('inventory.quantity') }}" class="min-h-11 lg:min-h-9.5 min-w-0 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-center font-mono tabular-nums"  :disabled="documentBusy || saving"/>
+                        <button type="button" @click="run('stepInventoryQuantity', ['up'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 lg:min-h-9.5 lg:min-w-9.5 rounded-control border border-border-control bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.increase_quantity') }}">+</button>
                     </div>
                     @error('quantity') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
 
                 <!-- Unit -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.unit') }}</label>
-                    <select wire:model="unit_id" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary" :disabled="documentBusy || saving">
+                    <label for="stock-adjustment-unit-id" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.unit') }}</label>
+                    <select id="stock-adjustment-unit-id" wire:model="unit_id" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary" :disabled="documentBusy || saving">
                         @foreach ($availableUnits as $u)
                             <option value="{{ $u->id }}">{{ app()->getLocale() === 'en' ? ($u->name_en ?: $u->name_ar) : $u->name_ar }}</option>
                         @endforeach
@@ -132,8 +133,8 @@
                 <!-- Unit Cost (Increase only, Gated by canViewCost) -->
                 @if ($type === \App\Models\StockMovement::TYPE_ADJUSTMENT_INCREASE && $canViewCost)
                     <div>
-                        <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.unit_cost') }} ({{ $company->base_currency_code }})</label>
-                        <input type="number" step="any" wire:model="unit_cost_base" dir="ltr" placeholder="{{ __('inventory.optional_current_average_cost') }}" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-mono" inputmode="decimal"  :disabled="documentBusy || saving"/>
+                        <label for="stock-adjustment-unit-cost" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.unit_cost') }} ({{ $company->base_currency_code }})</label>
+                        <input id="stock-adjustment-unit-cost" type="number" step="any" wire:model="unit_cost_base" dir="ltr" placeholder="{{ __('inventory.optional_current_average_cost') }}" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums" inputmode="decimal"  :disabled="documentBusy || saving"/>
                         <span class="text-xs text-text-muted">{{ __('inventory.optional_cost_hint') }}</span>
                     </div>
                 @endif
@@ -143,12 +144,12 @@
                     @if ($type === \App\Models\StockMovement::TYPE_ADJUSTMENT_INCREASE)
                         <!-- New lot or existing -->
                         <div>
-                            <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.lot_number') }}</label>
-                            <input type="text" wire:model="lot_number" dir="ltr" placeholder="{{ __('inventory.lot_number_optional') }}" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-mono"  :disabled="documentBusy || saving"/>
+                            <label for="stock-adjustment-lot-number" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.lot_number') }}</label>
+                            <input id="stock-adjustment-lot-number" type="text" wire:model="lot_number" dir="ltr" placeholder="{{ __('inventory.lot_number_optional') }}" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono"  :disabled="documentBusy || saving"/>
                         </div>
                         <div>
-                            <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.expiry_date') }}</label>
-                            <input type="date" wire:model="expiry_date" dir="ltr" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-mono"  :disabled="documentBusy || saving"/>
+                            <label for="stock-adjustment-expiry-date" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.expiry_date') }}</label>
+                            <input id="stock-adjustment-expiry-date" type="date" wire:model="expiry_date" dir="ltr" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono"  :disabled="documentBusy || saving"/>
                         </div>
                     @else
                         <!-- Outbound requires lot selection -->
@@ -160,19 +161,19 @@
 
                 <!-- Reason (Mandatory) -->
                 <div class="md:col-span-2">
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.reason') }} *</label>
-                    <textarea wire:model="reason" rows="2" placeholder="{{ __('inventory.adjustment_reason_placeholder') }}" class="w-full p-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary @error('reason') border-danger @enderror" :disabled="documentBusy || saving"></textarea>
+                    <label for="stock-adjustment-reason" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.reason') }} <span class="text-danger">*</span></label>
+                    <textarea id="stock-adjustment-reason" wire:model="reason" rows="2" placeholder="{{ __('inventory.adjustment_reason_placeholder') }}" class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:outline-none focus:border-primary @error('reason') border-danger @enderror" :disabled="documentBusy || saving"></textarea>
                     @error('reason') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
             </div>
 
             <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
             <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
-                <a href="{{ route('inventory.overview') }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-text-secondary hover:bg-surface-soft font-semibold text-sm">
+                <a href="{{ route('inventory.overview') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 rounded-control border border-border-control text-text-secondary hover:bg-surface-soft font-semibold text-sm">
                     {{ __('inventory.cancel') }}
                 </a>
                 <button type="submit" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled"
-                        class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white hover:bg-primary-hover font-bold text-sm shadow-button transition-colors disabled:opacity-50">
+                        class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 rounded-control bg-primary text-white hover:bg-primary-hover font-bold text-sm shadow-button transition-colors disabled:opacity-50 cursor-pointer">
                     <span wire:loading.remove wire:target="save">{{ __('inventory.save_stock_adjustment') }}</span>
                     <span wire:loading wire:target="save">{{ __('inventory.saving') }}</span>
                 </button>

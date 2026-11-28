@@ -18,12 +18,12 @@
                 <label for="expiry-warning-days" class="block text-sm font-bold text-text-primary">{{ __('inventory.warning_window') }}</label>
                 <p id="expiry-warning-hint" class="mt-1 text-sm text-text-secondary">{{ __('inventory.warning_hint') }}</p>
                 <div class="mt-3 flex items-center gap-2">
-                    <input inputmode="numeric" id="expiry-warning-days" type="number" min="1" max="365" wire:model="warningDays" aria-describedby="expiry-warning-hint @if ($errors->has('warningDays')) expiry-warning-error @endif" aria-invalid="{{ $errors->has('warningDays') ? 'true' : 'false' }}" dir="ltr" class="min-h-11 h-11 w-24 px-3 rounded-control border border-border text-sm focus-visible:outline-2 focus-visible:outline-primary" />
+                    <input inputmode="numeric" id="expiry-warning-days" type="number" min="1" max="365" wire:model="warningDays" aria-describedby="expiry-warning-hint @if ($errors->has('warningDays')) expiry-warning-error @endif" aria-invalid="{{ $errors->has('warningDays') ? 'true' : 'false' }}" dir="ltr" class="min-h-11 lg:min-h-9.5 w-24 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono tabular-nums focus-visible:outline-2 focus-visible:outline-primary" />
                     <span class="text-sm text-text-secondary">{{ __('inventory.days') }}</span>
                 </div>
                 @error('warningDays') <p role="alert" id="expiry-warning-error" class="mt-1 text-sm text-danger">{{ $message }}</p> @enderror
             </div>
-            <button type="submit" wire:loading.attr="disabled" wire:target="saveWarningDays" class="touch-action h-11 bg-primary text-white text-sm font-bold">{{ __('inventory.save_warning') }}</button>
+            <button type="submit" wire:loading.attr="disabled" wire:target="saveWarningDays" class="touch-action min-h-11 lg:min-h-9.5 px-4 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover cursor-pointer">{{ __('inventory.save_warning') }}</button>
         </form>
         </details>
     @endif

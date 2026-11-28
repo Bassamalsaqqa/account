@@ -68,10 +68,10 @@
     <!-- Header / Breadcrumbs -->
     <header class="flex flex-wrap justify-between items-center gap-3">
         <div>
-            <a href="{{ route('purchases.index') }}" class="touch-action text-sm text-primary font-medium hover:underline">{{ __('purchasing.purchases') }}</a>
-            <h1 class="text-xl sm:text-2xl font-bold tracking-tight mt-0.5">{{ __($publicId ? 'purchasing.edit_purchase' : 'purchasing.new_purchase') }}</h1>
+            <h1 class="text-xl sm:text-2xl font-bold tracking-tight">{{ __($publicId ? 'purchasing.edit_purchase' : 'purchasing.new_purchase') }}</h1>
+            <span class="inline-block mt-1 text-xs font-bold bg-surface-blue text-primary px-2.5 py-1 rounded-control">{{ __('purchasing.draft') }}</span>
         </div>
-        <span class="text-xs font-bold bg-surface-blue text-primary px-3 py-1.5 rounded-control">{{ __('purchasing.draft') }}</span>
+        <a href="{{ route('purchases.index') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center px-3 rounded-control border border-border-control bg-surface text-sm font-semibold text-text-secondary hover:bg-surface-soft hover:text-text-primary transition-colors">{{ __('purchasing.purchases') }}</a>
     </header>
 
     <p class="p-3 bg-info-bg text-info text-xs sm:text-sm rounded-control">{{ __('purchasing.draft_notice') }}</p>
@@ -82,82 +82,110 @@
         <p role="status" class="text-sm text-text-secondary">{{ __('quick_product.receive_help') }}</p>
     @endif
 
-    <!-- 1. Context Ribbon & Core Primary Inputs -->
-    <section class="bg-surface border border-border rounded-card p-3 sm:p-4 space-y-3">
-        <!-- Compact Context Ribbon Strip -->
-        <div class="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/60 pb-3">
-            <div class="flex flex-wrap items-center gap-2 sm:gap-3 text-xs">
-                <div class="flex items-center gap-1.5 bg-surface-soft px-2.5 py-1 rounded-control border border-border font-mono text-text-secondary">
-                    <span class="font-sans font-medium text-text-muted">{{ __('purchasing.purchase_date') }}:</span>
-                    <span class="font-semibold text-text-primary">{{ $purchase_date }}</span>
-                </div>
-                <div class="flex items-center gap-1.5 bg-surface-soft px-2.5 py-1 rounded-control border border-border font-mono text-text-secondary">
-                    <span class="font-sans font-medium text-text-muted">{{ __('purchasing.currency') }}:</span>
-                    <span class="font-semibold text-text-primary">{{ $currency_code }}</span>
+    <!-- 1. Primary Header & Vendor / Core Controls -->
+    <section class="bg-surface border border-border rounded-card p-4 sm:p-5 space-y-4">
+        @php
+            $hasDrawerErrors = $errors->hasAny([
+                'vendor_invoice_number',
+                'due_date',
+                'document_locale',
+                'notes',
+            ]);
+            $isMoreDetailsOpen = $showMoreDetails || $hasDrawerErrors;
+        @endphp
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+            <!-- Primary Core Input: Supplier / Vendor -->
+            <div class="md:col-span-2">
+                <div class="flex items-center justify-between mb-1.5">
+                    <label for="purchase-vendor" class="block text-sm font-semibold text-text-primary">
+                        {{ __('purchasing.vendor') }} <span class="text-danger">*</span>
+                    </label>
                 </div>
                 @php
-                    $resolvedWh = $warehouse_id ? $warehouses->firstWhere('id', $warehouse_id) : null;
+                    $selectedVendor = $vendor_id ? $vendors->firstWhere('id', $vendor_id) : null;
+                    $vendorLabel = $selectedVendor ? $selectedVendor->displayName() : '';
                 @endphp
-                <div class="flex items-center gap-1.5 bg-surface-soft px-2.5 py-1 rounded-control border border-border text-xs text-text-secondary">
-                    <span class="w-1.5 h-1.5 rounded-full {{ $resolvedWh ? 'bg-emerald-500' : 'bg-amber-500' }}"></span>
-                    <span class="text-text-muted">{{ __('purchasing.resolved_warehouse') }}:</span>
-                    <span class="font-semibold text-text-primary">{{ $resolvedWh ? $resolvedWh->displayName() : __('purchasing.select_warehouse') }}</span>
+                <div class="party-picker flex gap-2 items-center">
+                    <x-searchable-combobox
+                        id="purchase-vendor"
+                        type="vendor"
+                        context="purchasing"
+                        wire-model="vendor_id"
+                        :selected-id="$vendor_id"
+                        :selected-label="$vendorLabel"
+                        :placeholder="__('purchasing.select_vendor')"
+                        :aria-label="__('purchasing.vendor')"
+                        :has-error="$errors->has('vendor_id')"
+                        required
+                    />
+                    @if ($canManageVendors)
+                        <button type="button" wire:click="openQuickVendorModal" class="party-create-button shrink-0 min-h-11 lg:min-h-9.5 px-3 bg-surface-blue hover:bg-surface-blue/80 text-primary border border-primary/20 rounded-control font-semibold text-sm flex items-center gap-1 transition-colors cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
+                            + {{ __('workflow.quick_vendor') }}
+                        </button>
+                    @endif
+                </div>
+                @error('vendor_id') <span id="purchase-vendor-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+            </div>
+
+            <!-- Purchase Date -->
+            <div>
+                <label for="purchase-purchase_date" class="block text-sm font-semibold text-text-primary mb-1.5">
+                    {{ __('purchasing.purchase_date') }} <span class="text-danger">*</span>
+                </label>
+                <input id="purchase-purchase_date" @error('purchase_date') aria-invalid="true" aria-describedby="purchase-purchase_date-error" @enderror type="date" wire:model="purchase_date" class="w-full min-w-0 min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-canvas rounded-control text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" required :disabled="documentBusy || saving"/>
+                @error('purchase_date') <span id="purchase-purchase_date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+            </div>
+        </div>
+
+        <div class="border-t border-border pt-3 space-y-3">
+            <div class="entry-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label for="purchase-warehouse" class="block text-sm font-semibold text-text-primary mb-1.5">
+                        {{ __('purchasing.receiving_warehouse') }} <span class="text-danger">*</span>
+                    </label>
+                    <select id="purchase-warehouse" @error('warehouse_id') aria-invalid="true" aria-describedby="purchase-warehouse-error" @enderror wire:model="warehouse_id" required class="w-full min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-canvas rounded-control text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
+                        <option value="">{{ __('purchasing.select_warehouse') }}</option>
+                        @foreach($warehouses as $warehouse)
+                            <option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>
+                        @endforeach
+                    </select>
+                    @error('warehouse_id') <span id="purchase-warehouse-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                <div>
+                    <label for="purchase-currency" class="block text-sm font-semibold text-text-primary mb-1.5">
+                        {{ __('purchasing.currency') }} <span class="text-danger">*</span>
+                    </label>
+                    <select id="purchase-currency" @error('currency_code') aria-invalid="true" aria-describedby="purchase-currency-error" @enderror wire:model.live="currency_code" class="w-full min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-canvas rounded-control text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving">
+                        @foreach($currencies as $currency)
+                            <option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>
+                        @endforeach
+                    </select>
+                    @error('currency_code') <span id="purchase-currency-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+
+                @if ($currency_code !== $baseCurrencyCode)
+                <div>
+                    <label for="purchase-rate" class="block text-sm font-semibold text-text-primary mb-1.5">
+                        {{ __('purchasing.exchange_rate') }} <span class="text-danger">*</span>
+                    </label>
+                    <input id="purchase-rate" @error('exchange_rate') aria-invalid="true" aria-describedby="purchase-rate-error" @enderror wire:model="exchange_rate" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full min-w-0 min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-canvas rounded-control text-base lg:text-sm font-mono tabular-nums text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden" :disabled="documentBusy || saving"/>
+                    @error('exchange_rate') <span id="purchase-rate-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
+                </div>
+                @endif
+
+                <div class="{{ $currency_code !== $baseCurrencyCode ? 'flex sm:justify-end' : 'sm:col-span-1 lg:col-span-2 flex sm:justify-end' }}">
+                    <button type="button" wire:click="toggleMoreDetails" aria-expanded="{{ $isMoreDetailsOpen ? 'true' : 'false' }}" aria-controls="extendedDetailsDrawer" class="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 min-h-11 lg:min-h-9.5 bg-surface-soft hover:bg-surface-soft/80 text-text-primary rounded-control font-semibold text-sm lg:text-xs border border-border-control transition-colors cursor-pointer">
+                        <x-icon name="tune" class="w-3.5 h-3.5 text-text-secondary" />
+                        <span>{{ $isMoreDetailsOpen ? __('purchasing.hide_more_details') : __('purchasing.more_details') }}</span>
+                        <x-icon name="chevron-down" class="w-3.5 h-3.5 text-text-secondary transition-transform duration-200 {{ $isMoreDetailsOpen ? 'rotate-180' : '' }}" />
+                    </button>
                 </div>
             </div>
-            @php
-                $hasDrawerErrors = $errors->hasAny([
-                    'vendor_invoice_number',
-                    'due_date',
-                    'warehouse_id',
-                    'purchase_date',
-                    'currency_code',
-                    'exchange_rate',
-                    'document_locale',
-                    'notes',
-                ]);
-                $isMoreDetailsOpen = $showMoreDetails || $hasDrawerErrors;
-            @endphp
-            <button type="button" wire:click="toggleMoreDetails" aria-expanded="{{ $isMoreDetailsOpen ? 'true' : 'false' }}" aria-controls="extendedDetailsDrawer" class="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[44px] bg-surface-soft hover:bg-surface-soft/80 text-text-primary rounded-control font-medium text-xs border border-border transition-colors cursor-pointer">
-                <x-icon name="tune" class="w-3.5 h-3.5 text-text-secondary" />
-                <span>{{ $isMoreDetailsOpen ? __('purchasing.hide_more_details') : __('purchasing.more_details') }}</span>
-                <x-icon name="chevron-down" class="w-3.5 h-3.5 text-text-secondary transition-transform duration-200 {{ $isMoreDetailsOpen ? 'rotate-180' : '' }}" />
-            </button>
         </div>
 
-        <!-- Primary Core Input: Supplier / Vendor -->
-        <div class="space-y-1">
-            <div class="flex items-center justify-between mb-1">
-                <label for="purchase-vendor" class="block text-xs font-bold text-text-primary">
-                    {{ __('purchasing.vendor') }} <span class="text-danger">*</span>
-                </label>
-            </div>
-            @php
-                $selectedVendor = $vendor_id ? $vendors->firstWhere('id', $vendor_id) : null;
-                $vendorLabel = $selectedVendor ? $selectedVendor->displayName() : '';
-            @endphp
-            <div class="party-picker flex gap-2 items-center">
-                <x-searchable-combobox
-                    id="purchase-vendor"
-                    type="vendor"
-                    context="purchasing"
-                    wire-model="vendor_id"
-                    :selected-id="$vendor_id"
-                    :selected-label="$vendorLabel"
-                    :placeholder="__('purchasing.select_vendor')"
-                    :aria-label="__('purchasing.vendor')"
-                    :has-error="$errors->has('vendor_id')"
-                    required
-                />
-                @if ($canManageVendors)
-                    <button type="button" wire:click="openQuickVendorModal" class="party-create-button shrink-0 min-h-11 px-3 py-2 bg-surface-blue hover:bg-surface-blue/80 text-primary border border-primary/20 rounded-control font-medium text-xs flex items-center gap-1 transition-colors cursor-pointer" aria-haspopup="dialog" wire:loading.attr="disabled" wire:target="openQuickVendorModal" :disabled="documentBusy || saving">
-                        + {{ __('workflow.quick_vendor') }}
-                    </button>
-                @endif
-            </div>
-            @error('vendor_id') <span id="purchase-vendor-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
-        </div>
-
-        <!-- Collapsible More Details Drawer: Optional Bill #, Due Date & Contextual Fields -->
+        <!-- Collapsible More Details Drawer: Optional Bill #, Due Date & Contextual Metadata -->
         <div id="extendedDetailsDrawer" @class([
             'pt-3 border-t border-border bg-surface-soft p-3 rounded-control',
             'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3' => $isMoreDetailsOpen,
@@ -167,7 +195,7 @@
                 <label for="supplier-number" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.vendor_invoice_number') }}
                 </label>
-                <input id="supplier-number" @error('vendor_invoice_number') aria-invalid="true" aria-describedby="supplier-number-error" @enderror wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs font-mono" placeholder="PUR-..." :disabled="documentBusy || saving"/>
+                <input id="supplier-number" @error('vendor_invoice_number') aria-invalid="true" aria-describedby="supplier-number-error" @enderror wire:model.blur="vendor_invoice_number" maxlength="128" dir="ltr" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border-control bg-surface rounded-control text-base lg:text-sm font-mono tabular-nums" placeholder="PUR-..." :disabled="documentBusy || saving"/>
                 @error('vendor_invoice_number') <span id="supplier-number-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
 
@@ -175,78 +203,35 @@
                 <label for="purchase-due_date" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.due_date') }}
                 </label>
-                <input id="purchase-due_date" @error('due_date') aria-invalid="true" aria-describedby="purchase-due_date-error" @enderror type="date" wire:model="due_date" class="w-full min-w-0 h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving"/>
+                <input id="purchase-due_date" @error('due_date') aria-invalid="true" aria-describedby="purchase-due_date-error" @enderror type="date" wire:model="due_date" class="w-full min-w-0 min-h-11 lg:min-h-9.5 px-2.5 border border-border-control bg-surface rounded-control text-base lg:text-sm" :disabled="documentBusy || saving"/>
                 @error('due_date') <span id="purchase-due_date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
             </div>
-
-            <div>
-                <label for="purchase-warehouse" class="block text-xs font-semibold text-text-secondary mb-1">
-                    {{ __('purchasing.receiving_warehouse') }}
-                </label>
-                <select id="purchase-warehouse" @error('warehouse_id') aria-invalid="true" aria-describedby="purchase-warehouse-error" @enderror wire:model="warehouse_id" required class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
-                    <option value="">{{ __('purchasing.select_warehouse') }}</option>
-                    @foreach($warehouses as $warehouse)
-                        <option value="{{ $warehouse->id }}">{{ $warehouse->displayName() }}</option>
-                    @endforeach
-                </select>
-                @error('warehouse_id') <span id="purchase-warehouse-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
-            </div>
-
-            <div>
-                <label for="purchase-purchase_date" class="block text-xs font-semibold text-text-secondary mb-1">
-                    {{ __('purchasing.purchase_date') }}
-                </label>
-                <input id="purchase-purchase_date" @error('purchase_date') aria-invalid="true" aria-describedby="purchase-purchase_date-error" @enderror type="date" wire:model="purchase_date" class="w-full min-w-0 h-10 px-2.5 border border-border bg-surface rounded-control text-xs" required :disabled="documentBusy || saving"/>
-                @error('purchase_date') <span id="purchase-purchase_date-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
-            </div>
-
-            <div>
-                <label for="purchase-currency" class="block text-xs font-semibold text-text-secondary mb-1">
-                    {{ __('purchasing.currency') }}
-                </label>
-                <select id="purchase-currency" @error('currency_code') aria-invalid="true" aria-describedby="purchase-currency-error" @enderror wire:model.live="currency_code" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
-                    @foreach($currencies as $currency)
-                        <option value="{{ $currency->currency_code }}">{{ $currency->currency_code }}</option>
-                    @endforeach
-                </select>
-                @error('currency_code') <span id="purchase-currency-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
-            </div>
-
-            @if ($currency_code !== $baseCurrencyCode)
-            <div>
-                <label for="purchase-rate" class="block text-xs font-semibold text-text-secondary mb-1">
-                    {{ __('purchasing.exchange_rate') }}
-                </label>
-                <input id="purchase-rate" @error('exchange_rate') aria-invalid="true" aria-describedby="purchase-rate-error" @enderror wire:model="exchange_rate" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
-                @error('exchange_rate') <span id="purchase-rate-error" role="alert" class="text-danger text-xs mt-1 block">{{ $message }}</span> @enderror
-            </div>
-            @endif
 
             <div>
                 <label for="purchase-locale" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.document_language') }}
                 </label>
-                <select id="purchase-locale" wire:model="document_locale" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
+                <select id="purchase-locale" wire:model="document_locale" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border-control bg-surface rounded-control text-base lg:text-sm" :disabled="documentBusy || saving">
                     @foreach($languages as $language)
                         <option value="{{ $language->locale }}">{{ __('purchasing.locale_'.$language->locale) }}</option>
                     @endforeach
                 </select>
             </div>
 
-            <div class="{{ $currency_code !== $baseCurrencyCode ? 'sm:col-span-2 lg:col-span-2' : 'sm:col-span-2 lg:col-span-2' }}">
+            <div class="sm:col-span-2 lg:col-span-3">
                 <label for="purchase-notes" class="block text-xs font-semibold text-text-secondary mb-1">
                     {{ __('purchasing.notes') }}
                 </label>
-                <textarea id="purchase-notes" wire:model="notes" rows="1" class="w-full h-10 border border-border bg-surface rounded-control p-2 text-xs" placeholder="{{ __('purchasing.notes') }}" :disabled="documentBusy || saving"></textarea>
+                <textarea id="purchase-notes" wire:model="notes" rows="2" class="w-full border border-border-control bg-surface rounded-control p-2.5 text-base lg:text-sm" placeholder="{{ __('purchasing.notes') }}" :disabled="documentBusy || saving"></textarea>
             </div>
         </div>
     </section>
 
     <!-- Quick Barcode Scanner & Product Search -->
-    <div class="bg-surface border border-border rounded-card p-3 sm:p-4 grid gap-3 md:grid-cols-2 items-center">
+    <div class="bg-surface border border-border rounded-card p-3 sm:p-4 grid gap-4 md:grid-cols-2 items-center">
         @include('livewire.partials.barcode-entry', ['prefix' => 'purchase'])
         <div>
-            <label for="purchase-product-search" class="block text-xs font-bold text-text-secondary mb-1">{{ __('purchasing.search_products') }}</label>
+            <label for="purchase-product-search" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('purchasing.search_products') }}</label>
             <div class="flex gap-2 items-center">
                 <div class="flex-1 min-w-0">
                     <x-searchable-combobox
@@ -261,7 +246,7 @@
                     />
                 </div>
                 @if (auth()->user()->hasPermissionTo('inventory.product.manage'))
-                    <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 px-3 py-1.5 rounded-control border border-border text-xs font-bold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
+                    <button type="button" wire:click="openQuickProductModal" aria-haspopup="dialog" class="shrink-0 min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control text-sm font-semibold text-primary hover:bg-surface-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer" wire:loading.attr="disabled" wire:target="openQuickProductModal" :disabled="documentBusy || saving">
                         + {{ __('quick_product.create') }}
                     </button>
                 @endif
@@ -272,11 +257,11 @@
 
     <!-- 2. Invoice Lines Section -->
     <section class="space-y-3">
-        <!-- Table Action Bar (Clean: No visual shortcut/count clutter) -->
+        <!-- Table Action Bar -->
         <div class="px-4 py-2.5 bg-surface border border-border rounded-card flex items-center justify-between">
             <h2 class="font-bold text-sm text-text-primary">{{ __('purchasing.purchase_lines') }}</h2>
-            <button type="button" data-row-mutation-action @click="handleAddLine()" class="h-11 lg:h-9 px-3 text-primary border border-border bg-surface hover:bg-surface-soft rounded-control text-xs font-bold inline-flex items-center gap-1 cursor-pointer shadow-2xs transition-colors">
-                + {{ __('purchasing.add_line') }}
+            <button type="button" data-row-mutation-action @click="handleAddLine()" class="min-h-11 lg:min-h-9.5 px-3 bg-primary text-white hover:bg-primary-hover rounded-control text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors">
+                <span>+ {{ __('purchasing.add_line') }}</span>
             </button>
         </div>
 
@@ -312,10 +297,10 @@
                         @endif
                     </div>
                     <div class="flex items-center gap-2">
-                        <button type="button" wire:click="toggleRowOptions('{{ $line['row_key'] }}')" aria-expanded="{{ $isRowOptionsOpen ? 'true' : 'false' }}" aria-controls="purchase-line-options-{{ $index }}" class="px-2.5 py-1 text-xs text-text-secondary hover:text-text-primary border border-border rounded-control hover:bg-surface-soft transition-colors cursor-pointer">
+                        <button type="button" wire:click="toggleRowOptions('{{ $line['row_key'] }}')" aria-expanded="{{ $isRowOptionsOpen ? 'true' : 'false' }}" aria-controls="purchase-line-options-{{ $index }}" class="min-h-11 lg:min-h-9.5 px-2.5 text-xs font-semibold text-text-secondary hover:text-text-primary border border-border-control rounded-control hover:bg-surface-soft transition-colors cursor-pointer">
                             {{ __('purchasing.row_options') }}
                         </button>
-                        <button type="button" wire:click="removeLine('{{ $line['row_key'] }}')" class="min-h-[36px] px-2.5 text-danger text-xs font-bold cursor-pointer hover:bg-danger/10 rounded-control transition-colors" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
+                        <button type="button" wire:click="removeLine('{{ $line['row_key'] }}')" class="min-h-11 lg:min-h-9.5 px-2.5 text-danger text-xs font-bold cursor-pointer hover:bg-danger/10 rounded-control transition-colors" wire:loading.attr="disabled" wire:target="removeLine" :disabled="documentBusy || saving">
                             {{ __('purchasing.remove_line') }}
                         </button>
                     </div>
@@ -343,7 +328,7 @@
 
                     <div class="lg:col-span-2">
                         <label for="line-unit-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.unit') }}</label>
-                        <select wire:key="pf-unit-{{ $line['row_key'] }}" id="line-unit-{{ $index }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="line-unit-{{ $index }}-error" @enderror wire:change="changeUnit('{{ $line['row_key'] }}', $event.target.value)" class="w-full h-11 px-2 border border-border rounded-control text-xs" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving">
+                        <select wire:key="pf-unit-{{ $line['row_key'] }}" id="line-unit-{{ $index }}" @error('lines.'.$index.'.product_unit_id') aria-invalid="true" aria-describedby="line-unit-{{ $index }}-error" @enderror wire:change="changeUnit('{{ $line['row_key'] }}', $event.target.value)" class="w-full min-h-11 lg:min-h-9.5 px-2 border border-border-control bg-canvas rounded-control text-base lg:text-sm" @disabled(empty($line['product_id'])) :disabled="documentBusy || saving">
                             <option value="">{{ __('purchasing.select_unit') }}</option>
                             @foreach($unitOptions[$index] ?? [] as $unit)
                                 <option value="{{ $unit->id }}" @selected(($line['product_unit_id'] ?? null) == $unit->id)>{{ $unit->unit->name() }}</option>
@@ -368,7 +353,7 @@
 
                     <div class="lg:col-span-2">
                         <label for="line-unit_cost-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.unit_cost') }} <span class="text-danger">*</span></label>
-                        <input wire:key="pf-cost-{{ $line['row_key'] }}" id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.unit_cost" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full min-w-0 h-11 px-2 border border-border bg-surface rounded-control text-xs font-mono text-end" placeholder="0.00" :disabled="documentBusy || saving"/>
+                        <input wire:key="pf-cost-{{ $line['row_key'] }}" id="line-unit_cost-{{ $index }}" @error('lines.'.$index.'.unit_cost') aria-invalid="true" aria-describedby="line-unit_cost-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.unit_cost" data-purchase-preview-input inputmode="decimal" dir="ltr" class="w-full min-w-0 min-h-11 lg:min-h-9.5 px-2 border border-border-control bg-canvas rounded-control text-base lg:text-sm font-mono tabular-nums text-end" placeholder="0.00" :disabled="documentBusy || saving"/>
                         @error('lines.'.$index.'.unit_cost') <span id="line-unit_cost-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                         @if(isset($lastPriceHints[$index]))
                             <p class="text-xs text-text-muted mt-1 leading-tight" dir="{{ app()->getLocale() === 'ar' ? 'rtl' : 'ltr' }}">
@@ -403,13 +388,13 @@
                     <div class="grid sm:grid-cols-2 gap-3">
                         <div>
                             <label for="line-description-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.description') }}</label>
-                            <input wire:key="pf-desc-{{ $line['row_key'] }}" id="line-description-{{ $index }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="line-description-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving"/>
+                            <input wire:key="pf-desc-{{ $line['row_key'] }}" id="line-description-{{ $index }}" @error('lines.'.$index.'.item_description') aria-invalid="true" aria-describedby="line-description-{{ $index }}-error" @enderror wire:model="lines.{{ $index }}.item_description" maxlength="500" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border-control bg-surface rounded-control text-base lg:text-sm" :disabled="documentBusy || saving"/>
                             @error('lines.'.$index.'.item_description') <span id="line-description-{{ $index }}-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                         </div>
                         @if($taxes->isNotEmpty())
                             <div>
                                 <label for="line-tax-{{ $index }}" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.tax') }}</label>
-                                <select wire:key="pf-tax-{{ $line['row_key'] }}" id="line-tax-{{ $index }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="line-tax-{{ $index }}-error" @enderror wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full h-10 px-2.5 border border-border bg-surface rounded-control text-xs" :disabled="documentBusy || saving">
+                                <select wire:key="pf-tax-{{ $line['row_key'] }}" id="line-tax-{{ $index }}" @error('lines.'.$index.'.tax_rate_id') aria-invalid="true" aria-describedby="line-tax-{{ $index }}-error" @enderror wire:model.live="lines.{{ $index }}.tax_rate_id" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border-control bg-surface rounded-control text-base lg:text-sm" :disabled="documentBusy || saving">
                                     <option value="">{{ __('purchasing.no_tax') }}</option>
                                     @foreach($taxes as $tax)
                                         <option value="{{ $tax->id }}">{{ $tax->displayName() }} ({{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($tax->rate, 'ILS') }}%) — {{ __('refinement.tax_'.$tax->calculation) }}</option>
@@ -429,14 +414,14 @@
                                 </div>
                                 <div class="flex items-center gap-2">
                                     @if(! ($expandedLotCustomization[$index] ?? false))
-                                        <button type="button" wire:click="customizeLots('{{ $line['row_key'] }}')" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-primary text-xs font-medium cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="customizeLots" :disabled="documentBusy || saving">
+                                        <button type="button" wire:click="customizeLots('{{ $line['row_key'] }}')" class="min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-surface rounded-control text-primary text-xs font-medium cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="customizeLots" :disabled="documentBusy || saving">
                                             {{ __('purchase_settlement.customize_lots') }}
                                         </button>
                                     @else
-                                        <button type="button" wire:click="resetToAutoLot('{{ $line['row_key'] }}')" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-text-secondary text-xs cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="resetToAutoLot" :disabled="documentBusy || saving">
+                                        <button type="button" wire:click="resetToAutoLot('{{ $line['row_key'] }}')" class="min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-surface rounded-control text-text-secondary text-xs cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="resetToAutoLot" :disabled="documentBusy || saving">
                                             {{ __('purchase_settlement.collapse_lots') }}
                                         </button>
-                                        <button type="button" wire:click="addLot('{{ $line['row_key'] }}')" class="min-h-[36px] px-3 border border-border bg-surface rounded-control text-primary text-xs font-bold cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="addLot" :disabled="documentBusy || saving">
+                                        <button type="button" wire:click="addLot('{{ $line['row_key'] }}')" class="min-h-11 lg:min-h-9.5 px-3 border border-border-control bg-surface rounded-control text-primary text-xs font-bold cursor-pointer hover:bg-surface-soft" wire:loading.attr="disabled" wire:target="addLot" :disabled="documentBusy || saving">
                                             {{ __('purchasing.add_lot') }}
                                         </button>
                                     @endif
@@ -455,20 +440,20 @@
                                     <div wire:key="intent-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" class="grid grid-cols-2 lg:grid-cols-4 gap-3 bg-surface rounded-control p-2.5 border border-border/50">
                                         <div>
                                             <label for="lot-{{ $index }}-{{ $lotIndex }}-lot_number" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.lot_number') }}</label>
-                                            <input wire:key="pf-lot-num-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-lot_number" @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" @enderror type="text" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.lot_number" dir="ltr" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
+                                            <input wire:key="pf-lot-num-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-lot_number" @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" @enderror type="text" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.lot_number" dir="ltr" class="w-full min-w-0 min-h-11 lg:min-h-9.5 px-2 border border-border-control bg-canvas rounded-control text-base lg:text-sm font-mono tabular-nums" :disabled="documentBusy || saving"/>
                                             @error('lines.'.$index.'.lots.'.$lotIndex.'.lot_number') <span id="lot-{{ $index }}-{{ $lotIndex }}-lot_number-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                         </div>
                                         <div>
                                             <label for="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.expiry_date') }}</label>
-                                            <input wire:key="pf-lot-exp-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" @enderror type="date" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.expiry_date" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs" :disabled="documentBusy || saving"/>
+                                            <input wire:key="pf-lot-exp-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date" @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" @enderror type="date" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.expiry_date" class="w-full min-w-0 min-h-11 lg:min-h-9.5 px-2 border border-border-control bg-canvas rounded-control text-base lg:text-sm" :disabled="documentBusy || saving"/>
                                             @error('lines.'.$index.'.lots.'.$lotIndex.'.expiry_date') <span id="lot-{{ $index }}-{{ $lotIndex }}-expiry_date-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                         </div>
                                         <div>
                                             <label for="lot-{{ $index }}-{{ $lotIndex }}-quantity" class="block text-xs text-text-secondary mb-1">{{ __('purchasing.allocated_quantity') }}</label>
-                                            <input wire:key="pf-lot-qty-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-quantity" @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" @enderror type="text" inputmode="decimal" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.quantity" dir="ltr" class="w-full min-w-0 h-9 px-2 border border-border bg-canvas rounded-control text-xs font-mono" :disabled="documentBusy || saving"/>
+                                            <input wire:key="pf-lot-qty-{{ $line['row_key'] }}-{{ $lot['lot_key'] }}" id="lot-{{ $index }}-{{ $lotIndex }}-quantity" @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') aria-invalid="true" aria-describedby="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" @enderror type="text" inputmode="decimal" wire:model="lines.{{ $index }}.lots.{{ $lotIndex }}.quantity" dir="ltr" class="w-full min-w-0 min-h-11 lg:min-h-9.5 px-2 border border-border-control bg-canvas rounded-control text-base lg:text-sm font-mono tabular-nums" :disabled="documentBusy || saving"/>
                                             @error('lines.'.$index.'.lots.'.$lotIndex.'.quantity') <span id="lot-{{ $index }}-{{ $lotIndex }}-quantity-error" role="alert" class="text-danger text-xs block mt-1">{{ $message }}</span> @enderror
                                         </div>
-                                        <button type="button" wire:click="removeLot('{{ $line['row_key'] }}', '{{ $lot['lot_key'] }}')" class="self-end min-h-[36px] px-3 text-danger text-xs font-semibold cursor-pointer hover:bg-danger/10 rounded-control" wire:loading.attr="disabled" wire:target="removeLot" :disabled="documentBusy || saving">{{ __('purchasing.remove_lot') }}</button>
+                                        <button type="button" wire:click="removeLot('{{ $line['row_key'] }}', '{{ $lot['lot_key'] }}')" class="self-end min-h-11 lg:min-h-9.5 px-3 text-danger text-xs font-semibold cursor-pointer hover:bg-danger/10 rounded-control" wire:loading.attr="disabled" wire:target="removeLot" :disabled="documentBusy || saving">{{ __('purchasing.remove_lot') }}</button>
                                     </div>
                                 @endforeach
                             @endif
@@ -520,7 +505,7 @@
                                     <div class="grid @if($discount_type !== 'none') grid-cols-2 @else grid-cols-1 @endif gap-2">
                                         <div>
                                             <label for="purchase-discount-type" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.discount') }}</label>
-                                            <select id="purchase-discount-type" wire:model.live="discount_type" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border bg-surface rounded-control text-base md:text-sm" :disabled="documentBusy || saving">
+                                            <select id="purchase-discount-type" wire:model.live="discount_type" class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border-control bg-surface rounded-control text-base lg:text-sm" :disabled="documentBusy || saving">
                                                 <option value="none">{{ __('purchasing.discount_none') }}</option>
                                                 <option value="percent">{{ __('purchasing.discount_percent') }}</option>
                                                 <option value="fixed">{{ __('purchasing.discount_fixed') }}</option>
@@ -529,7 +514,7 @@
                                         @if ($discount_type !== 'none')
                                             <div>
                                                 <label for="purchase-discount-value" class="block text-xs font-semibold text-text-secondary mb-1">{{ __('purchasing.discount_value') }}</label>
-                                                <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" data-purchase-preview-input class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border bg-surface rounded-control text-base md:text-sm font-mono" placeholder="0.00" :disabled="documentBusy || saving" />
+                                                <input id="purchase-discount-value" @error('discount_value') aria-invalid="true" aria-describedby="purchase-discount-value-error" @enderror type="text" inputmode="decimal" dir="ltr" wire:model="discount_value" data-purchase-preview-input class="w-full min-h-11 lg:min-h-9.5 px-2.5 border border-border-control bg-surface rounded-control text-base lg:text-sm font-mono tabular-nums" placeholder="0.00" :disabled="documentBusy || saving" />
                                             </div>
                                         @endif
                                     </div>
@@ -621,17 +606,17 @@
     @endif
 
     <!-- Footer Actions -->
-    <footer class="flex flex-wrap items-center gap-3 pt-2">
+    <footer class="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-border">
+        <a href="{{ route('purchases.index') }}" class="touch-action inline-flex items-center justify-center min-h-11 lg:min-h-9.5 px-4 border border-border-control text-text-secondary hover:bg-surface-soft hover:text-text-primary rounded-control text-sm font-semibold transition-colors">{{ __('purchasing.cancel') }}</a>
+        <button type="submit" wire:loading.attr="disabled" wire:target="save" class="min-h-11 lg:min-h-9.5 px-4 bg-surface border border-primary text-primary hover:bg-primary-50 font-bold text-sm rounded-control inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors">
+            <span>{{ __('purchasing.save_draft') }}</span>
+            <kbd class="px-1 py-0.5 text-xs font-mono rounded border border-primary/30 bg-primary-50/50 text-primary leading-none">Ctrl+S</kbd>
+        </button>
         @can('purchasing.purchase.post')
-            <button type="button" data-row-mutation-action @click="if (!saving && !window.isDocumentBlocked($wire)) { clearTimeout(previewTimer); previewPending = false; saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { operationFailed = true; }).finally(() => { saving = false; flushPendingPreview(); }); }" :disabled="saving || documentBusy" class="min-h-11 px-5 bg-primary text-white font-bold text-sm rounded-control hover:bg-primary-hover transition-colors shadow-xs cursor-pointer">
+            <button type="button" data-row-mutation-action @click="if (!saving && !window.isDocumentBlocked($wire)) { clearTimeout(previewTimer); previewPending = false; saving = true; window.enqueueDocumentOperation($wire, 'saveAndConfirm').catch(() => { operationFailed = true; }).finally(() => { saving = false; flushPendingPreview(); }); }" :disabled="saving || documentBusy" class="min-h-11 lg:min-h-9.5 px-5 bg-primary text-white font-bold text-sm rounded-control hover:bg-primary-hover transition-colors shadow-xs cursor-pointer inline-flex items-center justify-center">
                 {{ __('purchasing.post_purchase') }}
             </button>
         @endcan
-        <button type="submit" wire:loading.attr="disabled" wire:target="save" class="h-11 px-5 bg-surface border border-border text-text-primary hover:bg-surface-soft font-bold text-sm rounded-control inline-flex items-center gap-1.5 cursor-pointer transition-colors">
-            <span>{{ __('purchasing.save_draft') }}</span>
-            <kbd class="px-1 py-0.5 text-xs font-mono rounded bg-surface-soft border border-border text-text-secondary leading-none">Ctrl+S</kbd>
-        </button>
-        <a href="{{ route('purchases.index') }}" class="touch-action inline-flex items-center h-11 px-4 border border-border text-text-secondary hover:text-text-primary rounded-control text-sm transition-colors">{{ __('purchasing.cancel') }}</a>
     </footer>
 
     @php($canConfirmPurchase = auth()->user()->hasPermissionTo('purchasing.purchase.post'))

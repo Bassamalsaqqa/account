@@ -1,4 +1,4 @@
-<div class="space-y-6 max-w-3xl mx-auto" x-data="{
+<div class="space-y-6 max-w-3xl mx-auto pb-28 md:pb-6" x-data="{
         saving: false, documentBusy: false, operationFailed: false,
         run(method, args = [], terminal = false) {
             if (this.saving || window.isDocumentBlocked($wire)) return;
@@ -41,13 +41,13 @@
         </div>
     @endif
 
-    <x-card padding="p-6">
-        <form @submit.prevent="run('save', [], true)" class="space-y-4 text-xs">
+    <x-card padding="p-4 sm:p-6">
+        <form @submit.prevent="run('save', [], true)" class="space-y-4 text-sm">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- Source Warehouse -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.source_warehouse') }} *</label>
-                    <select wire:model.live="source_warehouse_id" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
+                    <label for="stock-transfer-source-warehouse" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.source_warehouse') }} <span class="text-danger">*</span></label>
+                    <select id="stock-transfer-source-warehouse" wire:model.live="source_warehouse_id" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
                         <option value="">{{ __('inventory.select_source_warehouse') }}</option>
                         @foreach ($warehouses as $w)
                             <option value="{{ $w->id }}">{{ app()->getLocale() === 'en' ? ($w->name_en ?: $w->name_ar) : $w->name_ar }}</option>
@@ -58,8 +58,8 @@
 
                 <!-- Destination Warehouse -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.destination_warehouse') }} *</label>
-                    <select wire:model.live="destination_warehouse_id" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
+                    <label for="stock-transfer-destination-warehouse" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.destination_warehouse') }} <span class="text-danger">*</span></label>
+                    <select id="stock-transfer-destination-warehouse" wire:model.live="destination_warehouse_id" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving">
                         <option value="">{{ __('inventory.select_destination_warehouse') }}</option>
                         @foreach ($warehouses as $w)
                             @if ($w->id !== (int) $source_warehouse_id)
@@ -77,6 +77,7 @@
                 </div>
                 <!-- Product -->
                 <div>
+                    <label for="stock-transfer-product-id" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.product') }} <span class="text-danger">*</span></label>
                     @php
                         $selectedProd = $product_id ? $products->firstWhere('id', $product_id) : null;
                         $prodLabel = $selectedProd ? (app()->getLocale() === 'en' ? ($selectedProd->name_en ?: $selectedProd->name_ar) : $selectedProd->name_ar) . ($selectedProd->sku ? ' (' . $selectedProd->sku . ')' : '') : '';
@@ -104,8 +105,8 @@
 
                 <!-- Movement Date -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.movement_date') }} *</label>
-                    <input type="date" wire:model="movement_date" dir="ltr" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm font-mono"  :disabled="documentBusy || saving"/>
+                    <label for="stock-transfer-movement-date" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.movement_date') }} <span class="text-danger">*</span></label>
+                    <input id="stock-transfer-movement-date" type="date" wire:model="movement_date" dir="ltr" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm font-mono"  :disabled="documentBusy || saving"/>
                     @error('movement_date') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
 
@@ -113,19 +114,19 @@
 
                 <!-- Quantity -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.quantity_delta') }} *</label>
+                    <label for="stock-transfer-quantity" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.quantity_delta') }} <span class="text-danger">*</span></label>
                     <div class="flex items-center gap-2" dir="ltr">
-                        <button type="button" @click="run('stepInventoryQuantity', ['down'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
-                        <input type="text" inputmode="decimal" wire:model="quantity" dir="ltr" placeholder="0" aria-label="{{ __('inventory.quantity') }}" class="min-h-11 min-w-0 w-full px-3 rounded-control border border-border text-center font-mono tabular-nums"  :disabled="documentBusy || saving"/>
-                        <button type="button" @click="run('stepInventoryQuantity', ['up'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 rounded-control border border-border bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.increase_quantity') }}">+</button>
+                        <button type="button" @click="run('stepInventoryQuantity', ['down'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 lg:min-h-9.5 lg:min-w-9.5 rounded-control border border-border-control bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.decrease_quantity') }}">-</button>
+                        <input id="stock-transfer-quantity" type="text" inputmode="decimal" wire:model="quantity" dir="ltr" placeholder="0" aria-label="{{ __('inventory.quantity') }}" class="min-h-11 lg:min-h-9.5 min-w-0 w-full px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-center font-mono tabular-nums"  :disabled="documentBusy || saving"/>
+                        <button type="button" @click="run('stepInventoryQuantity', ['up'])" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled" class="min-h-11 min-w-11 lg:min-h-9.5 lg:min-w-9.5 rounded-control border border-border-control bg-surface text-xl font-bold disabled:opacity-50" aria-label="{{ __('refinement.increase_quantity') }}">+</button>
                     </div>
                     @error('quantity') <span class="text-danger text-xs">{{ $message }}</span> @enderror
                 </div>
 
                 <!-- Unit -->
                 <div>
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.unit') }}</label>
-                    <select wire:model="unit_id" class="w-full min-h-11 px-2.5 rounded-control border border-border bg-surface text-sm text-text-primary" :disabled="documentBusy || saving">
+                    <label for="stock-transfer-unit-id" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.unit') }}</label>
+                    <select id="stock-transfer-unit-id" wire:model="unit_id" class="w-full min-h-11 lg:min-h-9.5 px-3 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary" :disabled="documentBusy || saving">
                         @foreach ($availableUnits as $u)
                             <option value="{{ $u->id }}">{{ app()->getLocale() === 'en' ? ($u->name_en ?: $u->name_ar) : $u->name_ar }}</option>
                         @endforeach
@@ -141,18 +142,18 @@
 
                 <!-- Reason (Optional) -->
                 <div class="md:col-span-2">
-                    <label class="block font-bold text-text-secondary mb-1">{{ __('inventory.reason') }}</label>
-                    <textarea wire:model="reason" rows="2" placeholder="{{ __('inventory.transfer_reason_notes') }}" class="w-full p-2.5 rounded-control border border-border bg-surface text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving"></textarea>
+                    <label for="stock-transfer-reason" class="block text-sm font-semibold text-text-primary mb-1.5">{{ __('inventory.reason') }}</label>
+                    <textarea id="stock-transfer-reason" wire:model="reason" rows="2" placeholder="{{ __('inventory.transfer_reason_notes') }}" class="w-full p-2.5 rounded-control border border-border-control bg-canvas text-base lg:text-sm text-text-primary focus:outline-none focus:border-primary" :disabled="documentBusy || saving"></textarea>
                 </div>
             </div>
 
             <p wire:loading role="status" class="text-sm font-semibold text-primary">{{ __('refinement.working') }}</p>
             <div class="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-surface p-3 shadow-sm md:static md:shadow-none">
-                <a href="{{ route('inventory.overview') }}" class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 py-2 rounded-control border border-border text-text-secondary hover:bg-surface-soft font-semibold text-sm">
+                <a href="{{ route('inventory.overview') }}" class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-4 rounded-control border border-border-control text-text-secondary hover:bg-surface-soft font-semibold text-sm">
                     {{ __('inventory.cancel') }}
                 </a>
                 <button type="submit" :disabled="saving || window.isDocumentBlocked($wire)" wire:loading.attr="disabled"
-                        class="min-h-11 inline-flex items-center justify-center gap-2 px-3 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 py-2 rounded-control bg-primary text-white hover:bg-primary-hover font-bold text-sm shadow-button transition-colors disabled:opacity-50">
+                        class="min-h-11 lg:min-h-9.5 inline-flex items-center justify-center gap-2 active:bg-surface-soft focus-visible:ring-2 focus-visible:ring-primary px-5 rounded-control bg-primary text-white hover:bg-primary-hover font-bold text-sm shadow-button transition-colors disabled:opacity-50 cursor-pointer">
                     <span wire:loading.remove wire:target="save">{{ __('inventory.execute_transfer') }}</span>
                     <span wire:loading wire:target="save">{{ __('inventory.saving') }}</span>
                 </button>

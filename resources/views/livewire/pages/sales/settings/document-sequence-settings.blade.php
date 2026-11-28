@@ -71,7 +71,7 @@
                             <td class="table-actions py-3 px-4 text-end">
                                 <button type="button"
                                         wire:click="updateSequence({{ $idx }})"
-                                        class="min-h-11 lg:min-h-8 px-3 py-1 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors" wire:loading.attr="disabled" wire:target="updateSequence">
+                                        class="min-h-11 lg:min-h-9 px-3 rounded-control bg-primary text-white text-sm font-bold hover:bg-primary-hover transition-colors cursor-pointer" wire:loading.attr="disabled" wire:target="updateSequence">
                                     {{ __('sales.save') }}
                                 </button>
                             </td>
