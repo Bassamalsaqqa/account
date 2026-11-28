@@ -201,7 +201,7 @@
                                             @elseif($isEnd)
                                                 <span class="lg:hidden block text-xs font-normal text-text-secondary">{{ $column['label'] }}</span>
                                                 @if ($rowCurrencyColumn && isset($row['currency_code']))
-                                                    <span class="lg:hidden block text-xs font-normal text-text-secondary">{{ $rowCurrencyColumn['label'] }}: <bdi dir="ltr">{{ $row['currency_code'] }}</bdi></span>
+                                                    <span class="block text-xs font-normal text-text-secondary">{{ $rowCurrencyColumn['label'] }}: <bdi dir="ltr">{{ $row['currency_code'] }}</bdi></span>
                                                 @endif
                                                 <div class="inline-flex items-center gap-2">
                                                     <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}" class="tabular-nums">{{ $cellVal }}</bdi>

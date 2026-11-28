@@ -52,6 +52,8 @@ final class UiReportPresentationTest extends Phase8TestCase
                 $this->assertNotNull($cell);
                 $this->assertStringContainsString($currency, $cell->textContent);
                 $this->assertSame(1, $xpath->query('.//span[not(@x-show)]/bdi[text()="'.$currency.'"]', $cell)->length);
+                $currencyLabel = $xpath->query('.//span/bdi[text()="'.$currency.'"]/parent::span', $cell)->item(0);
+                $this->assertStringNotContainsString('lg:hidden', $currencyLabel->getAttribute('class'));
             }
         }
     }
