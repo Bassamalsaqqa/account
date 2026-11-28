@@ -248,7 +248,7 @@ tbody tr:has(a[href]):hover,
 /* Row links are text navigation, with a full touch target rather than a second button shell. */
 @media (max-width: 1023px) {
     .business-app #app-main .compact-mobile-row a.touch-action {
-        min-width: 0;
+        min-width: 44px;
         padding-inline: 0;
         border: 0;
         background: transparent;

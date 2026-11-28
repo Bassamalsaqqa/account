@@ -25,6 +25,37 @@ use Spatie\Permission\Models\Role;
 
 final class UiReportPresentationTest extends Phase8TestCase
 {
+    public function test_collapsed_report_amount_keeps_row_currency_context(): void
+    {
+        foreach (['ar', 'en'] as $locale) {
+            app()->setLocale($locale);
+            $columns = [
+                ['key' => 'invoice_number', 'label' => 'Invoice', 'type' => 'text'],
+                ['key' => 'currency_code', 'label' => __('reports.columns.currency_code'), 'type' => 'text'],
+                ['key' => 'outstanding_currency', 'label' => 'Outstanding', 'type' => 'decimal'],
+            ];
+            $rendered = view('livewire.pages.reporting.report', [
+                'result' => new ReportResult('sales.outstanding', [], [], [
+                    ['invoice_number' => 'INV-USD', 'currency_code' => 'USD', 'outstanding_currency' => '12.500000'],
+                    ['invoice_number' => 'INV-JOD', 'currency_code' => 'JOD', 'outstanding_currency' => '8.750000'],
+                ], ['base_currency_code' => 'ILS']),
+                'columns' => $columns, 'totals' => [],
+                'definition' => ['current' => true, 'required' => [], 'options' => []],
+                'options' => [], 'title' => 'Outstanding', 'exportUrl' => 'http://localhost/test',
+                'missing' => false, 'company' => $this->company, 'sourceLinks' => [], 'errors' => new ViewErrorBag,
+            ])->render();
+            $dom = new \DOMDocument;
+            @$dom->loadHTML('<?xml encoding="UTF-8">'.$rendered);
+            $xpath = new \DOMXPath($dom);
+            foreach (['USD', 'JOD'] as $index => $currency) {
+                $cell = $xpath->query('//tbody/tr['.($index + 1).']/td[contains(@class,"td-end")]')->item(0);
+                $this->assertNotNull($cell);
+                $this->assertStringContainsString($currency, $cell->textContent);
+                $this->assertSame(1, $xpath->query('.//span[not(@x-show)]/bdi[text()="'.$currency.'"]', $cell)->length);
+            }
+        }
+    }
+
     public function test_hub_discovers_all_required_families_and_variants_in_both_languages(): void
     {
         foreach (['ar', 'en'] as $locale) {

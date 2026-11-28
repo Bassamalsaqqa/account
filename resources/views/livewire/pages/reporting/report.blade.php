@@ -154,6 +154,7 @@
                     $firstColumn = $columns[0] ?? null;
                     $decimalColumns = array_values(array_filter($columns, fn ($c) => $c['type'] === 'decimal'));
                     $endColumn = $decimalColumns !== [] ? $decimalColumns[count($decimalColumns) - 1] : ($columns[count($columns) - 1] ?? null);
+                    $rowCurrencyColumn = collect($columns)->firstWhere('key', 'currency_code');
                     $subtitleColumn = ($firstColumn && count($columns) > 1 && $columns[1]['key'] !== ($endColumn['key'] ?? null)) ? $columns[1] : null;
                 @endphp
                 <div class="overflow-x-auto">
@@ -194,6 +195,9 @@
                                                 @endif
                                             @elseif($isEnd)
                                                 <span class="lg:hidden block text-xs font-normal text-text-secondary">{{ $column['label'] }}</span>
+                                                @if ($rowCurrencyColumn && isset($row['currency_code']))
+                                                    <span class="lg:hidden block text-xs font-normal text-text-secondary">{{ $rowCurrencyColumn['label'] }}: <bdi dir="ltr">{{ $row['currency_code'] }}</bdi></span>
+                                                @endif
                                                 <div class="inline-flex items-center gap-2">
                                                     <bdi dir="{{ in_array($column['type'], ['decimal', 'integer', 'date', 'datetime'], true) ? 'ltr' : 'auto' }}" class="tabular-nums">{{ $cellVal }}</bdi>
                                                     <x-row-details-toggle />
