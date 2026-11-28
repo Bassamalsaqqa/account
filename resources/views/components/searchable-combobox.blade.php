@@ -99,8 +99,8 @@
             :disabled="disabled || (typeof saving !== 'undefined' && saving) || (typeof documentBusy !== 'undefined' && documentBusy)"
             autocomplete="off"
             spellcheck="false"
-            :class="hasError ? 'border-danger' : 'border-border'"
-            class="w-full rounded-control border {{ $hasError ? 'border-danger' : 'border-border' }} bg-canvas px-3 text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden transition-colors {{ $compact ? 'min-h-[44px] md:min-h-8 md:h-8 py-1' : 'min-h-[44px] h-11 py-2' }} ltr:pr-8 rtl:pl-8"
+            :class="hasError ? 'border-danger' : 'border-border-control'"
+            class="w-full rounded-control border {{ $hasError ? 'border-danger' : 'border-border-control' }} bg-canvas px-3 text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden transition-colors touch-manipulation {{ $compact ? 'min-h-[44px] lg:min-h-8 lg:h-8 py-1' : 'min-h-[44px] lg:min-h-9.5 lg:h-9.5 py-1.5' }} ltr:pr-8 rtl:pl-8"
             dir="auto"
         />
 
@@ -115,7 +115,7 @@
                 title="{{ __('search.clear_search') }}"
                 aria-label="{{ __('search.clear_search') }}"
                 :disabled="disabled || (typeof saving !== 'undefined' && saving) || (typeof documentBusy !== 'undefined' && documentBusy)"
-                class="min-h-[44px] min-w-[32px] md:min-h-7 md:min-w-7 flex items-center justify-center text-text-muted hover:text-danger rounded-control transition-colors cursor-pointer"
+                class="min-h-[44px] min-w-[36px] lg:min-h-7 lg:min-w-7 flex items-center justify-center text-text-muted hover:text-danger rounded-control transition-colors cursor-pointer touch-manipulation"
             >
                 <span class="text-base font-bold leading-none">&times;</span>
             </button>
@@ -158,7 +158,7 @@
                             x-ref="sheetCloseBtn"
                             @click="closeOverlay({ restoreFocus: true })"
                             aria-label="{{ __('search.close_search') }}"
-                            class="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-control text-text-muted hover:text-text-primary hover:bg-surface border border-border cursor-pointer shrink-0"
+                            class="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-control text-text-muted hover:text-text-primary hover:bg-surface border border-border cursor-pointer shrink-0 touch-manipulation"
                         >
                             <span aria-hidden="true" class="text-lg font-bold leading-none">&times;</span>
                         </button>
@@ -180,7 +180,7 @@
                             autocomplete="off"
                             spellcheck="false"
                             dir="auto"
-                            class="w-full min-h-[44px] rounded-control border border-border bg-canvas px-3 py-2 text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden ltr:pr-10 rtl:pl-10"
+                            class="w-full min-h-[44px] rounded-control border border-border-control bg-canvas px-3 py-2 text-base lg:text-sm text-text-primary focus:border-primary focus:ring-1 focus:ring-primary outline-hidden touch-manipulation ltr:pr-10 rtl:pl-10"
                         />
                         <button
                             type="button"
@@ -188,7 +188,7 @@
                             x-cloak
                             @click.stop="clear()"
                             aria-label="{{ __('search.clear_search') }}"
-                            class="absolute inset-y-0 ltr:right-0 rtl:left-0 min-h-[44px] min-w-[40px] flex items-center justify-center text-text-muted hover:text-danger cursor-pointer"
+                            class="absolute inset-y-0 ltr:right-0 rtl:left-0 min-h-[44px] min-w-[40px] flex items-center justify-center text-text-muted hover:text-danger cursor-pointer touch-manipulation"
                         >
                             <span class="text-base font-bold leading-none">&times;</span>
                         </button>
@@ -209,7 +209,7 @@
                             <button
                                 type="button"
                                 @click.stop="retrySearch()"
-                                class="min-h-[36px] px-2.5 py-1 rounded-control border border-danger/30 bg-surface text-danger hover:bg-danger-bg text-xs font-semibold cursor-pointer shrink-0"
+                                class="min-h-[44px] lg:min-h-9 px-2.5 py-1 rounded-control border border-danger/30 bg-surface text-danger hover:bg-danger-bg text-xs font-semibold cursor-pointer shrink-0 touch-manipulation"
                             >{{ __('search.retry') }}</button>
                         </div>
                     </template>
@@ -220,7 +220,7 @@
                             <button
                                 type="button"
                                 @click.stop="retrySearch()"
-                                class="min-h-[36px] px-2.5 py-1 rounded-control border border-danger/30 bg-surface text-danger hover:bg-danger-bg text-xs font-semibold cursor-pointer shrink-0"
+                                class="min-h-[44px] lg:min-h-9 px-2.5 py-1 rounded-control border border-danger/30 bg-surface text-danger hover:bg-danger-bg text-xs font-semibold cursor-pointer shrink-0 touch-manipulation"
                             >{{ __('search.retry') }}</button>
                         </div>
                     </template>
@@ -239,10 +239,13 @@
                     </template>
 
                     <template x-for="(item, index) in items" :key="item.id">
-                        <div
+                        <button
+                            type="button"
+                            tabindex="-1"
                             :id="optionId(item)"
                             role="option"
                             :aria-selected="(String(item.id) === String(selectedId)).toString()"
+                            @pointerdown="if ($event.pointerType === 'mouse') $event.preventDefault(); markOverlayInteraction(550);"
                             @click="selectItem(item)"
                             @mouseenter="activeIndex = index; activeId = optionId(item)"
                             :class="{
@@ -250,7 +253,7 @@
                                 'bg-primary/10 font-bold': String(item.id) === String(selectedId) && activeIndex !== index,
                                 'text-text-primary hover:bg-surface-soft': String(item.id) !== String(selectedId) && activeIndex !== index
                             }"
-                            class="min-h-[44px] md:min-h-9 px-3 py-2 flex items-center justify-between gap-2 cursor-pointer transition-colors select-none"
+                            class="w-full text-start touch-manipulation min-h-[44px] lg:min-h-9 px-3 py-2 flex items-center justify-between gap-2 cursor-pointer transition-colors select-none"
                         >
                             <div class="flex-1 min-w-0 flex items-center gap-2">
                                 <span x-show="String(item.id) === String(selectedId)" class="text-primary font-bold text-xs shrink-0" aria-hidden="true">&check;</span>
@@ -275,7 +278,7 @@
                                     </template>
                                 </span>
                             </template>
-                        </div>
+                        </button>
                     </template>
 
                     <template x-if="hasMore">
@@ -284,7 +287,7 @@
                                 type="button"
                                 @click.stop="loadMore()"
                                 :disabled="loadingMore"
-                                class="w-full min-h-[44px] py-2 px-3 text-xs font-medium text-primary hover:text-primary-hover hover:bg-surface-soft rounded-control transition-colors flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
+                                class="w-full min-h-[44px] py-2 px-3 text-xs font-medium text-primary hover:text-primary-hover hover:bg-surface-soft rounded-control transition-colors flex items-center justify-center gap-2 cursor-pointer touch-manipulation focus:outline-none focus:ring-1 focus:ring-primary"
                             >
                                 <span x-show="loadingMore" class="inline-block w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
                                 <span x-text="loadingMore ? '{{ __('search.loading') }}' : '{{ __('search.load_more') }}'"></span>

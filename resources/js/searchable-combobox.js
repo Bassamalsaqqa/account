@@ -216,10 +216,13 @@ export function searchableCombobox(config) {
         _openListenersAttached: false,
         _onDocPointerDown: null,
         _onDocFocusIn: null,
+        _onPanelPointerDown: null,
         _onViewportChange: null,
         _onOnline: null,
         _onOffline: null,
         _repositionRaf: null,
+        _holdRepositionUntil: 0,
+        _holdRepositionTimer: null,
         _syncObserver: null,
         _morphHookCleanup: null,
         _movedOverlayToModal: false,
@@ -458,8 +461,37 @@ export function searchableCombobox(config) {
             }
         },
 
+        markOverlayInteraction(durationMs = 550) {
+            this._holdRepositionUntil = Date.now() + durationMs;
+            if (this._holdRepositionTimer) {
+                clearTimeout(this._holdRepositionTimer);
+                this._holdRepositionTimer = null;
+            }
+            if (typeof setTimeout === 'function') {
+                this._holdRepositionTimer = setTimeout(() => {
+                    this._holdRepositionTimer = null;
+                    if (this._destroyed || !this.open) return;
+                    if (Date.now() >= this._holdRepositionUntil) {
+                        this.repositionOverlay();
+                    }
+                }, durationMs + 20);
+                this._holdRepositionTimer?.unref?.();
+            }
+        },
+
+        clearOverlayInteraction() {
+            this._holdRepositionUntil = 0;
+            if (this._holdRepositionTimer) {
+                clearTimeout(this._holdRepositionTimer);
+                this._holdRepositionTimer = null;
+            }
+        },
+
         repositionOverlay() {
             if (!this.open) return;
+            if (this.overlayStyle && this._holdRepositionUntil && Date.now() < this._holdRepositionUntil) {
+                return;
+            }
 
             const input = this.$refs?.searchInput;
             if (!input || typeof input.getBoundingClientRect !== 'function' || typeof window === 'undefined') {
@@ -544,7 +576,7 @@ export function searchableCombobox(config) {
             this._onDocFocusIn = (e) => {
                 if (!this.open || this.overlayMode === 'sheet') return;
                 const target = e.target;
-                if (!target || target === document.body || target === document.documentElement) {
+                if (!target || target === document.body || target === document.documentElement || (typeof window !== 'undefined' && target === window)) {
                     return;
                 }
                 if (this.$el?.contains?.(target) || this.$refs?.overlayPanel?.contains?.(target)) {
@@ -553,10 +585,22 @@ export function searchableCombobox(config) {
                 this.handleOutsideClick();
             };
 
-            this._onViewportChange = () => {
+            this._onPanelPointerDown = () => {
+                if (this.open) {
+                    this.markOverlayInteraction(550);
+                }
+            };
+
+            this._onViewportChange = (e) => {
                 if (!this.open) return;
+                if (e?.type === 'scroll' && e.target && this.$refs?.overlayPanel?.contains?.(e.target)) {
+                    return;
+                }
                 if (this.$el && this.$el.isConnected === false) {
                     this.closeOverlay({ restoreFocus: false, preserveQuery: false });
+                    return;
+                }
+                if (this.overlayStyle && this._holdRepositionUntil && Date.now() < this._holdRepositionUntil) {
                     return;
                 }
                 if (this._repositionRaf) return;
@@ -579,6 +623,10 @@ export function searchableCombobox(config) {
             document.addEventListener('pointerdown', this._onDocPointerDown, true);
             document.addEventListener('focusin', this._onDocFocusIn, true);
             document.addEventListener('keydown', this._onDocKeydown, true);
+            if (typeof this.$refs?.overlayPanel?.addEventListener === 'function') {
+                this.$refs.overlayPanel.addEventListener('pointerdown', this._onPanelPointerDown, { passive: true });
+                this.$refs.overlayPanel.addEventListener('touchstart', this._onPanelPointerDown, { passive: true });
+            }
             window.addEventListener('resize', this._onViewportChange, { passive: true });
             window.addEventListener('scroll', this._onViewportChange, { capture: true, passive: true });
             if (window.visualViewport) {
@@ -588,10 +636,17 @@ export function searchableCombobox(config) {
         },
 
         detachOpenListeners() {
+            this.clearOverlayInteraction();
             if (!this._openListenersAttached || typeof document === 'undefined' || typeof document.removeEventListener !== 'function' || typeof window === 'undefined' || typeof window.removeEventListener !== 'function') {
                 return;
             }
             this._openListenersAttached = false;
+
+            if (this._onPanelPointerDown && typeof this.$refs?.overlayPanel?.removeEventListener === 'function') {
+                this.$refs.overlayPanel.removeEventListener('pointerdown', this._onPanelPointerDown);
+                this.$refs.overlayPanel.removeEventListener('touchstart', this._onPanelPointerDown);
+            }
+            this._onPanelPointerDown = null;
 
             if (this._onDocPointerDown) {
                 document.removeEventListener('pointerdown', this._onDocPointerDown, true);
@@ -1159,6 +1214,7 @@ export function searchableCombobox(config) {
             if (this.isBlocked() || this.syncing || !item) return;
             if (!this.items.some(candidate => String(candidate.id) === String(item.id))) return;
 
+            this.clearOverlayInteraction();
             this.invalidateIntent();
             const currentToken = ++selectionToken;
             const capturedInputVersion = this.inputVersion;

@@ -272,6 +272,8 @@ summary:focus-visible {
     :is(.business-app #app-main, .platform-admin #platform-main, .guest-app) :is(button:not(.assistant-icon-button), .touch-action, .app-button, .home-action) { min-height: 44px; }
     .guest-app :is(a, label:has(input[type='checkbox'])) { display: inline-flex; align-items: center; min-height: 44px; }
     .app-quick-add-trigger { min-height: 44px; }
+    [data-combobox-overlay] :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), select, textarea),
+    [role="dialog"] :is(input:not([type='checkbox']):not([type='radio']):not([type='hidden']), select, textarea) { min-height: 44px; font-size: 16px; }
 }
 
 /* A single bound editor per line, shared by narrow and wide layouts. */

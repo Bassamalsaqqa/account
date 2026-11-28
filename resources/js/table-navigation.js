@@ -3,7 +3,7 @@ const interactive = 'a,button,input,select,textarea,label,summary,[role="button"
 
 function rowLink(event) {
     if (!(event.target instanceof Element) || event.target.closest(interactive)) return null;
-    const row = event.target.closest('tbody tr');
+    const row = event.target.closest('tbody tr, [data-row-surface]');
     if (!row || row.closest('[data-entry-form]')) return null;
     const links = [...row.querySelectorAll('a[data-row-link]'), ...row.querySelectorAll('a[href]:not([data-row-link])')];
     return links.find(link => {

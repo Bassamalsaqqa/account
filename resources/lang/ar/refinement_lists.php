@@ -8,4 +8,6 @@ return [
     'open' => 'فتح',
     'pdf' => 'PDF',
     'barcode_labels' => 'ملصقات الباركود',
+    'show_details' => 'عرض التفاصيل',
+    'hide_details' => 'إخفاء التفاصيل',
 ];

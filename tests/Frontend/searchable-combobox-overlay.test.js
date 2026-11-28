@@ -727,3 +727,86 @@ test('desktop Escape closes overlay after Load More blur via overlay and documen
         else globalThis.window = prevWindow;
     }
 });
+
+test('inner listbox scroll does not schedule reposition and panel tap holds placement stability', () => {
+    const prevDocument = globalThis.document;
+    const prevWindow = globalThis.window;
+    const prevRaf = globalThis.requestAnimationFrame;
+
+    const panelListeners = {};
+    const windowListeners = {};
+    const rafQueue = [];
+
+    globalThis.requestAnimationFrame = (fn) => {
+        rafQueue.push(fn);
+        return rafQueue.length;
+    };
+
+    const optionNode = { id: 'opt-1' };
+    const panelNode = {
+        contains: (target) => target === panelNode || target === optionNode,
+        addEventListener: (type, fn) => { panelListeners[type] = fn; },
+        removeEventListener: (type) => { delete panelListeners[type]; },
+    };
+
+    globalThis.document = {
+        addEventListener() {},
+        removeEventListener() {},
+        documentElement: { dir: 'ltr' },
+    };
+    globalThis.window = {
+        innerWidth: 390,
+        innerHeight: 844,
+        visualViewport: {
+            width: 390,
+            height: 460,
+            offsetTop: 0,
+            offsetLeft: 0,
+            addEventListener(type, fn) { windowListeners[`vv:${type}`] = fn; },
+            removeEventListener(type) { delete windowListeners[`vv:${type}`]; },
+        },
+        addEventListener(type, fn) { windowListeners[type] = fn; },
+        removeEventListener(type) { delete windowListeners[type]; },
+    };
+
+    const comp = makeComponent();
+    let topPx = 280;
+    comp.$refs.searchInput.getBoundingClientRect = () => ({ top: topPx, bottom: topPx + 44, left: 16, right: 374, width: 358 });
+    comp.$refs.overlayPanel = panelNode;
+
+    try {
+        comp.open = true;
+        comp.attachOpenListeners();
+        comp.repositionOverlay();
+        const initialStyle = comp.overlayStyle;
+        assert.match(initialStyle, /top:/);
+
+        // 1. Scroll originating inside the overlay listbox must not queue reposition
+        windowListeners.scroll({ type: 'scroll', target: optionNode });
+        assert.equal(rafQueue.length, 0);
+
+        // 2. Pointer interaction on panel holds geometry steady across immediate iOS viewport/resize jitter
+        assert.equal(typeof panelListeners.pointerdown, 'function');
+        panelListeners.pointerdown();
+        topPx = 100;
+        globalThis.window.visualViewport.height = 800;
+        comp.repositionOverlay();
+        assert.equal(comp.overlayStyle, initialStyle);
+
+        // 3. Scroll outside panel also respects active tap hold window
+        windowListeners.scroll({ type: 'scroll', target: { id: 'outer-page' } });
+        assert.equal(rafQueue.length, 0);
+
+        // Clearing tap hold allows reposition cleanly
+        comp.clearOverlayInteraction();
+        comp.repositionOverlay();
+        assert.notEqual(comp.overlayStyle, initialStyle);
+    } finally {
+        comp.destroy();
+        globalThis.requestAnimationFrame = prevRaf;
+        if (prevDocument === undefined) delete globalThis.document;
+        else globalThis.document = prevDocument;
+        if (prevWindow === undefined) delete globalThis.window;
+        else globalThis.window = prevWindow;
+    }
+});
