@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'total_unavailable_short' => 'Unavailable',
     'operation_review' => 'A request was interrupted. Pending actions were stopped. Review the visible entries before continuing; nothing will be retried automatically.',
     'operation_discard' => 'Discard pending actions and review',
 

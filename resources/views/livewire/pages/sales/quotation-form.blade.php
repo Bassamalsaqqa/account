@@ -322,63 +322,7 @@
             </button>
         </div>
 
-        <!-- Responsive Sticky Mobile Summary & Actions Toolbar -->
-        <div class="md:hidden fixed inset-x-0 z-30 bg-surface/95 backdrop-blur-xs border-t border-border shadow-lg px-3 py-2 transition-transform mobile-document-actions"
-             style="bottom: var(--mobile-nav-height, calc(4.5rem + env(safe-area-inset-bottom)));"
-             x-data="{ busy: false }">
-            <div class="max-w-[500px] mx-auto flex items-center justify-between gap-2">
-                <div class="min-w-0 flex-1">
-                    <span class="text-xs text-text-muted block leading-none truncate">{{ __('mobile.grand_total') }}</span>
-                    @if ($documentTotalsValid)
-<span data-document-total class="text-xs font-mono font-extrabold text-primary block leading-tight truncate" dir="ltr">
-                        {{ \App\Domain\Sales\Formatters\SalesMoneyFormatter::displayMoney($previewGrandTotal, $currency_code) }} {{ $currency_code }}
-                    </span>
-                    @else
-                        <span role="status" class="text-xs text-warning">{{ __('camera.totals_unavailable') }}</span>
-                    @endif
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button"
-                            @click="$dispatch('mobile-camera-open')"
-                            :disabled="busy || saving || window.isDocumentBlocked($wire)"
-                            wire:loading.attr="disabled"
-                            wire:target="scanBarcode,addLine,saveDraft,save"
-                            class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-border bg-surface-soft hover:bg-slate-200 active:bg-slate-300 text-text-primary text-sm font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                            title="{{ __('mobile.scan') }}">
-                        <x-icon name="barcode" class="w-4 h-4 shrink-0" />
-                        <span class="hidden xs:inline text-xs">{{ __('mobile.scan') }}</span>
-                    </button>
-                    <button type="button"
-                            data-row-mutation-action
-                            :disabled="busy || saving || window.isDocumentBlocked($wire)"
-                            wire:loading.attr="disabled"
-                            wire:target="addLine,scanBarcode,saveDraft,save"
-                            @click="handleAddLine()"
-                            class="min-h-[44px] min-w-[44px] px-2.5 rounded-control border border-primary/30 bg-primary-50 text-primary hover:bg-primary-100 active:bg-primary-200 text-sm font-bold flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                            title="{{ __('mobile.add_item') }}">
-                        <x-icon name="plus" class="w-4 h-4 shrink-0" />
-                        <span class="hidden xs:inline text-xs">{{ __('mobile.add_item') }}</span>
-                    </button>
-                    <button type="button"
-                            data-row-mutation-action
-                            :disabled="busy || saving || window.isDocumentBlocked($wire)"
-                            wire:loading.attr="disabled"
-                            wire:target="saveDraft,save,addLine,scanBarcode"
-                            @click="handleSaveDraft()"
-                            class="min-h-[44px] px-3 rounded-control bg-primary text-white hover:bg-primary-hover active:bg-primary-hover/90 text-sm font-bold flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-colors"
-                            title="{{ __('mobile.save_draft') }}">
-                        <span wire:loading.remove wire:target="saveDraft">{{ __('mobile.save_draft') }}</span>
-                        <span wire:loading wire:target="saveDraft">...</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-        <style>
-            html.mobile-keyboard-open .mobile-document-actions,
-            body.--mobile-keyboard-open .mobile-document-actions {
-                display: none !important;
-            }
-        </style>
+        <x-document-mobile-actions :total="$previewGrandTotal" :currency="$currency_code" :valid="$documentTotalsValid" />
     </form>
 
     @include('livewire.partials.quick-customer-modal')

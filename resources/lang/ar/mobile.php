@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 return [
+    'total_unavailable_short' => 'غير متاح',
     'operation_review' => 'انقطع أحد الطلبات وتوقفت الإجراءات المعلّقة. راجع القيم الظاهرة قبل المتابعة؛ لن يُعاد أي إجراء تلقائياً.',
     'operation_discard' => 'إلغاء الإجراءات المعلّقة والمراجعة',
 

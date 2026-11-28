@@ -359,12 +359,6 @@
         <!-- Responsive Sticky Mobile Summary & Actions Toolbar -->
         @if (! $showPreview)
             <x-document-mobile-actions :total="$previewGrandTotal" :currency="$currency_code" :valid="$documentTotalsValid" :can-confirm="$canPost" :confirm-label="__('commands.review_post')" />
-            <style>
-                html.mobile-keyboard-open .mobile-document-actions,
-                body.--mobile-keyboard-open .mobile-document-actions {
-                    display: none !important;
-                }
-            </style>
         @endif
     </div>
 
